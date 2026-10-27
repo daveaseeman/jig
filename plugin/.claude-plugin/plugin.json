@@ -1,0 +1,16 @@
+{
+  "name": "jig",
+  "version": "0.1.0",
+  "description": "Minimal scaffolding for prototyping software and firmware with AI agents: brief, bug, verify, review, retro; init/survey/adopt to set up a repo; hubnode/subnode for parallel lanes; feedback for bugs in the tool itself.",
+  "author": {
+    "name": "Dave Seeman",
+    "email": "dave@squarish.com"
+  },
+  "keywords": [
+    "workflow",
+    "firmware",
+    "esp-idf",
+    "hooks"
+  ],
+  "license": "MIT"
+}

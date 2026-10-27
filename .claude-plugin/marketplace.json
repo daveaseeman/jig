@@ -1,0 +1,14 @@
+{
+  "name": "squarish",
+  "owner": {
+    "name": "Dave Seeman",
+    "email": "dave@squarish.com"
+  },
+  "plugins": [
+    {
+      "name": "jig",
+      "source": "./plugin",
+      "description": "Minimal scaffolding for prototyping software and firmware with AI agents: specs, bug protocol, adversarial review, parallel lanes enforced by git hooks."
+    }
+  ]
+}
