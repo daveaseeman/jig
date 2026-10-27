@@ -40,6 +40,10 @@ Each one gets exactly one job and one home:
 Then decide per file: **keep** · **merge into X** · **move to Y** · **split** · **delete**.
 
 Judgment, in order:
+0. **Is it a document at all?** A directory that ships markdown as code — skill files,
+   templates, fixtures, a docs site's source — gets a `payload` glob (`dir/**`) in the plan,
+   not a move. Survey reads trunk's board, so after `jig init` and a commit, re-run survey and
+   judge only what is still listed.
 1. **Does anything read it?** Zero inbound links and months since the last commit is the
    signature of a document written once and never consulted. Deleting it loses nothing —
    git still has it.

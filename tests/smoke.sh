@@ -77,5 +77,42 @@ msg="gate does not refuse a lane behind trunk"
 ( cd "$T" && printf 'r\n' > r.txt && git add -A && git commit -qm trunk5 )
 out=$(cd "$T" && $J gate L1 2>&1); if echo "$out" | grep -q behind; then bad "$msg"; else ok "$msg"; fi
 
+S="$T/survey"
+mkdir -p "$S" && cd "$S" && git init -q -b main && git config user.email t@t && git config user.name t
+mkdir -p .jig src/widgets plugin/skills/x
+cp "$P/jig/jig.py" .jig/
+printf '# W\n' > src/widgets/README.md && printf '# X\n' > plugin/skills/x/SKILL.md
+git add -A && git commit -qm init && $J init --no-hooks >/dev/null
+
+msg="init: a new board has an empty payload"
+expect_pass python3 -c "import json,sys; sys.exit(json.load(open('.jig/lanes.json'))['payload'] != [])"
+
+msg="payload: survey skips declared globs, still flags the stray README"
+python3 - <<'EOF'
+import json; b = json.load(open('.jig/lanes.json'))
+b['payload'] = ['plugin/**']
+json.dump(b, open('.jig/lanes.json', 'w'), indent=2)
+EOF
+git add -A && git commit -qm board   # survey reads trunk's board, not the working tree
+expect_pass python3 -c "
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+homeless = [e['path'] for e in r['homeless']]
+assert r['payload'] == ['plugin/**'], r['payload']
+assert 'src/widgets/README.md' in homeless and 'plugin/skills/x/SKILL.md' not in homeless, homeless
+assert r['payload_unmatched'] == [], r['payload_unmatched']"
+
+msg="payload: a directory-style glob that matches nothing is named"
+python3 - <<'EOF'
+import json; b = json.load(open('.jig/lanes.json'))
+b['payload'] = ['plugin/']
+json.dump(b, open('.jig/lanes.json', 'w'), indent=2)
+EOF
+git add -A && git commit -qm board2
+expect_pass python3 -c "
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+assert r['payload_unmatched'] == ['plugin/'], r['payload_unmatched']"
+
 rm -rf "$T"
 exit $fail

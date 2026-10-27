@@ -316,6 +316,7 @@ def cmd_init(root: Path, args) -> int:
             "append_files": ["AGENTS.md", "ledgers/**", "CHANGELOG.md"],
             "reserve": {},
             "docmap": {},
+            "payload": [],
             "lanes": {},
             "log": [],
         }, indent=2) + "\n")
@@ -880,8 +881,18 @@ def cmd_survey(root: Path, args) -> int:
            and not re.search(r"(^|/)\.", f)
            and not re.search(r"(^|/)(tests?|__tests__|node_modules|vendor|build|dist|scripts)/", f)
            and not re.search(r"\.(test|spec)\.", f)]
+    # Survey runs on repos that have no board yet; then nothing is declared.
+    try:
+        board = Board.load(root).data
+    except SystemExit:
+        board = {}
+    payload = board.get("payload") or []
     report: dict = {"markdown": [], "homeless": [], "oversized": [], "present": {},
-                    "src_count": len(src)}
+                    "src_count": len(src), "payload": payload,
+                    # "docs-src/" reads like a directory but matches nothing; say so, or
+                    # the files it meant to cover are back on the homeless list unexplained.
+                    "payload_unmatched": [g for g in payload
+                                          if not any(matches(f, [g]) for f in files)]}
 
     for f in md:
         raw = (root / f).read_text(errors="replace").splitlines() if (root / f).exists() else []
@@ -891,7 +902,7 @@ def cmd_survey(root: Path, args) -> int:
         entry = {"path": f, "lines": n, "last_commit": last, "inbound": inbound(root, f, files)}
         report["markdown"].append(entry)
         at_home = (f in HOMES or any(f.startswith(d) for d in HOME_DIRS)
-                   or f.startswith(TOOL_DIRS))
+                   or f.startswith(TOOL_DIRS) or matches(f, payload))
         if not at_home:
             report["homeless"].append(entry)
         if f in ("AGENTS.md", "CLAUDE.md") and n > 40:  # rule lines, not raw lines
@@ -905,10 +916,7 @@ def cmd_survey(root: Path, args) -> int:
     report["present"]["git hooks"] = hook.exists() and "jig hook" in hook.read_text()
 
     report["coordination"] = coordination_report(root)
-    try:
-        report["docmap_present"] = bool(Board.load(root).data.get("docmap"))
-    except SystemExit:
-        report["docmap_present"] = False
+    report["docmap_present"] = bool(board.get("docmap"))
     if args.json:
         print(json.dumps(report, indent=2))
         return 0
@@ -939,6 +947,12 @@ def cmd_survey(root: Path, args) -> int:
                   "\nGive each a job or let git keep it:")
             for e in cold:
                 print(f"  {e['path']:<44} {e['lines']:>5} lines  last {e['last_commit'] or '?'}")
+        print("\nIf a directory ships markdown as code, list it under `payload` on the board"
+              " as a glob such as `dir/**`.")
+    if report["payload_unmatched"]:
+        print("\n`payload` globs that match no tracked file (a directory needs `/**`):")
+        for g in report["payload_unmatched"]:
+            print(f"  {g}")
     if src and not report["docmap_present"]:
         print("\nNo docmap on the board: handoff cannot tell which docs page a change touches."
               "\nMap pages to globs in .jig/lanes.json (see docs/README.md).")

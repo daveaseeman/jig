@@ -37,6 +37,8 @@ identical; only the coordination disappears.
 | `reserved` | scarce numbers handed out centrally (migration steps, section numbers) |
 
 `common` and `append_files` are repo-wide. A file new to the repo belongs to whoever makes it.
+`payload` lists globs where markdown ships as code (skills, templates, fixtures); `survey`
+does not look for a home for those files.
 
 **Owns is narrow on purpose.** Before opening a lane, `jig open` diffs every open lane's
 branch against trunk and refuses an `owns` entry another live branch already touched. Those
