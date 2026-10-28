@@ -71,7 +71,8 @@ current prints "up to date" and exits 0.
 - Updating the plugin itself (that is `claude plugin update`).
 - Editing the repo's own files: `AGENTS.md`, `CLAUDE.md`, docs, specs, ledgers, code.
   `update` moves jig's files and reports stale references; the skill and the user fix them.
-- Adding template files a repo never had. A change that needs one adds a step.
+- Adding template files a repo never had. A change that needs one adds a step;
+  `jig/specs/worktree-setup.md` adds the first, for `jig/scripts/setup.sh`.
 - Fixing an unrecognized pattern from inside `update`. The fix is a change to jig, proposed
   to the plugin and made there.
 - Repos with open lanes: adopt carries lanes over, and `update` refuses.
@@ -114,7 +115,8 @@ current prints "up to date" and exits 0.
   - `STAMP = 3`, written to the board's `version` by `init` and `update`. Any spec that adds
     a row, a default or a step bumps it. Nothing branches on it except the "ahead" refusal.
   - `STEPS`: coded changes that aren't a move or a missing key. Each is keyed on a condition
-    it can see in the repo, not on a version. Empty today.
+    it can see in the repo, not on a version. Empty when `update` lands;
+    `worktree-setup.md` adds the first.
   - `cmd_update` runs in order:
     1. Find the board: the first existing path in its row. Finding none, or two, is a
        blocker.
@@ -265,4 +267,6 @@ current prints "up to date" and exits 0.
     All three name `.aidev/lanes.json`. `.claude/claude-lane/` is another tool's archive,
     and nothing touches it.
 - Order: jig-folder's docs correction lands first, because it changes the layout `update`
-  targets. Then `update`, then meta and para, which add no rows.
+  targets. Then `update`, then `worktree-setup` (its first step and `STAMP` 4), then meta
+  and para, which add no rows. If `worktree-setup` has landed by the real Daisy run, the
+  expected list also gains a TODO `jig/scripts/setup.sh` and a fifth hook, `post-merge`.
