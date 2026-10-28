@@ -99,7 +99,7 @@ database already past a number never runs a step of that number that merges late
 
 ## Documentation
 
-One page per system, with *Now*, numbered *Rules*, and *Checks* — `jig/docs/README.md` has the
+One page per system, with *Now*, numbered *Rules*, and *Checks* — `docs/README.md` has the
 shape. Rules written in a system's page bind as if they stood in `AGENTS.md`; that is how the
 always-loaded file stays under 40 lines. `jig reading-list <files>` prints which pages to
 read before touching those files.
@@ -114,7 +114,7 @@ ticked as updated, or says why no change was needed.
 Ownership comes from `docmap` in the board:
 
 ```json
-"docmap": {"jig/docs/systems/storage.md": ["server/storage.py", "server/migrations/**"]}
+"docmap": {"docs/systems/storage.md": ["server/storage.py", "server/migrations/**"]}
 ```
 
 A changed file nothing covers is listed as `UNOWNED` — add it to `docmap`, or answer why it

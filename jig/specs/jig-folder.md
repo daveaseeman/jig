@@ -13,10 +13,10 @@ notes jig seeds there. Worktrees are git state, not content, so they live in
 - [x] `tests/smoke.sh` passes with the new layout (it sets up a repo by copying templates, so it
       is the first thing to update).
 - [x] `claude plugin validate ./plugin` passes.
-- [ ] In a fresh scratch repo, `/jig:init` leaves exactly these at root: `AGENTS.md`,
+- [x] In a fresh scratch repo, `/jig:init` leaves exactly these at root: `AGENTS.md`,
       `CLAUDE.md`, `jig/`, `docs/` (its `README.md`, plus `HARDWARE.md` only if firmware), and
       `.claude/skills/` only if firmware. No `.gitignore` line is needed.
-- [ ] `grep -rn 'jig/docs' plugin tests` returns nothing, and the templates ship
+- [x] `grep -rn 'jig/docs' plugin tests` returns nothing, and the templates ship
       `templates/docs/` beside `templates/jig/`.
 - [x] `jig open` creates the worktree at `.git/jig/worktrees/<lane>`, and trunk's
       `git status` stays clean.
@@ -24,14 +24,14 @@ notes jig seeds there. Worktrees are git state, not content, so they live in
       prompt. If it can't, worktrees go to `jig/.worktrees/` instead (gitignored; the leading
       dot is what pytest, jest and most globbers skip) and this item is amended.
 - [x] `grep -rn '\.jig/' plugin tests README.md AGENTS.md` returns nothing.
-- [ ] `grep -rnE '(^|[^/])(ledgers|specs|scripts)/' plugin/templates/jig/jig.py plugin/skills plugin/templates/AGENTS.md plugin/templates/jig/RULES.md`
+- [x] `grep -rnE '(^|[^/])(ledgers|specs|scripts)/' plugin/templates/jig/jig.py plugin/skills plugin/templates/AGENTS.md plugin/templates/jig/RULES.md`
       returns only `jig/`-prefixed paths, or paths inside a `.claude/` or firmware context.
       `docs/` is the repo's and stays unprefixed.
 - [x] The plugin's `scripts/check.sh` and `format.sh` run `jig/scripts/<same>`, else the old
       `scripts/<same>`, so a repo initialized before this change keeps its checks. Both still
       exit 0 silently in a repo without the `.git/jig/enabled` marker.
 - [x] The git hook template reads `git show <trunk>:jig/jig.py`.
-- [ ] A survey on the scratch repo reports no homeless files, lists the `jig/` and `docs/`
+- [x] A survey on the scratch repo reports no homeless files, lists the `jig/` and `docs/`
       homes, and does not count `jig/jig.py` as source.
 - [x] A handoff on a branch that changed `jig/jig.py` lists no `UNOWNED jig/jig.py` line.
 
@@ -99,9 +99,10 @@ notes jig seeds there. Worktrees are git state, not content, so they live in
 - `gate`'s scratch checkout moves with the worktrees, to `.git/jig/worktrees/gate-<lane>`.
 - "Don't patch it; it's the tool's" (RULES.md, `/jig:feedback`) narrows from `.jig/` to
   `jig/jig.py` and `jig/RULES.md`: `jig/` now also holds the repo's own specs and ledgers.
-- Amended Oct 28: `docs/` comes back out of `jig/`. The boxes for root contents, the path
-  grep, survey homes and the new `jig/docs` grep are unchecked again until that pass lands.
-  Scripts, specs, ledgers, handoffs and the board stay under `jig/`.
+- Amended Oct 28: `docs/` comes back out of `jig/`. Scripts, specs, ledgers, handoffs and the
+  board stay under `jig/`. The four reopened boxes are checked again by that pass: smoke
+  asserts the root and `docs/` contents, `docs/**` in a new board's `common`, and both homes
+  in survey's output. Each of those three cases failed against a copy with the change undone.
 - The scratch-repo items are checked by `tests/smoke.sh`, which copies the templates the way
   the init skill says, not by running `/jig:init` itself. The permission-prompt item needs a
   real subnode session and is still open.

@@ -25,7 +25,7 @@ sources:
 
 ## Known failure modes
 - Transient inputs under ~5 ms missed → polling; fix: edge interrupt (`GPIO_INTR_NEGEDGE` / `POSEDGE`).
-- 5V module on a 3.3V GPIO → instability firmware can't fix. Check `jig/docs/HARDWARE.md` pre-flight.
+- 5V module on a 3.3V GPIO → instability firmware can't fix. Check `docs/HARDWARE.md` pre-flight.
 - TODO: add as discovered.
 
 ## Patterns that work

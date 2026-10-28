@@ -1,6 +1,6 @@
 ---
 name: init
-description: Set up the jig system in the current repo. Copies AGENTS.md and CLAUDE.md to root and everything else (scripts, specs, docs, the two ledgers, optional HARDWARE.md) into one jig/ folder, and fills what can be inferred.
+description: Set up the jig system in the current repo. Copies AGENTS.md and CLAUDE.md to root, the docs shape (and HARDWARE.md for firmware) to docs/, and everything jig manages (checker, scripts, specs, the two ledgers) into one jig/ folder, and fills what can be inferred.
 disable-model-invocation: true
 ---
 
@@ -20,12 +20,14 @@ so say that they run it, and offer to copy the files anyway if they'd rather.
 
 ## Copy
 
-Templates live in `${CLAUDE_PLUGIN_ROOT}/templates/`. Everything jig adds lives in one folder,
-`jig/`; only `AGENTS.md` and `CLAUDE.md` go at root, because tools look for them there. Copy,
+Templates live in `${CLAUDE_PLUGIN_ROOT}/templates/`. Everything jig manages lives in one folder,
+`jig/`. `AGENTS.md` and `CLAUDE.md` go at root, because tools look for them there, and the
+docs shape seeds the repo's own `docs/`, because that documents the repo, not jig. Copy,
 **never overwriting** a file that already exists:
 
 ```
-templates/jig/      → jig/        (checker, rulebook, docs, scripts, specs, ledgers)
+templates/jig/      → jig/        (checker, rulebook, scripts, specs, ledgers)
+templates/docs/     → docs/       (the docs shape; HARDWARE.md for firmware)
 templates/AGENTS.md → AGENTS.md
 templates/CLAUDE.md → CLAUDE.md
 ```
@@ -36,7 +38,7 @@ Lanes' worktrees go in `.git/jig/worktrees/`, so nothing needs gitignoring.
 
 Then:
 
-1. **Firmware?** If the repo has `sdkconfig`, `platformio.ini`, `idf_component.yml`, `west.yml`, `*.ino`, or a `main/` with C, keep `jig/docs/HARDWARE.md` and copy `templates/skill-template/` → `.claude/skills/_skill-template/`. Otherwise delete `jig/docs/HARDWARE.md` and the "Firmware" section from `AGENTS.md`. If unsure, ask one question.
+1. **Firmware?** If the repo has `sdkconfig`, `platformio.ini`, `idf_component.yml`, `west.yml`, `*.ino`, or a `main/` with C, keep `docs/HARDWARE.md` and copy `templates/skill-template/` → `.claude/skills/_skill-template/`. Otherwise delete `docs/HARDWARE.md` and the "Firmware" section from `AGENTS.md`. If unsure, ask one question.
 2. `chmod +x jig/scripts/*.sh`.
 3. **Fill what the code tells you.** In `AGENTS.md` Commands and `jig/scripts/check.sh`: detect the build system (`package.json`, `Cargo.toml`, `pyproject.toml`, `CMakeLists.txt`, `idf.py`, `platformio.ini`) and replace the matching `TODO` lines. Leave anything you can't infer as `TODO` — don't guess.
 4. Write one sentence for the Project line in `AGENTS.md` from the README or the code. Mark it `(inferred)` so the user corrects it.

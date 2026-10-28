@@ -29,11 +29,11 @@ Each one gets exactly one job and one home:
 | `AGENTS.md` | rules an agent needs on every task — and nothing else |
 | `CLAUDE.md` | one line importing AGENTS.md |
 | `README.md` | for people outside the repo |
-| `jig/docs/systems/` | what the code is now, one page per system |
+| `docs/systems/` | what the code is now, one page per system |
 | `jig/specs/` | a task in flight |
 | `jig/ledgers/WORKAROUNDS.md` | patches that are in the code |
 | `jig/ledgers/DEFERRED.md` | review findings that are not |
-| `jig/docs/HARDWARE.md` | board, wiring, voltages, flash |
+| `docs/HARDWARE.md` | board, wiring, voltages, flash |
 | `.claude/skills/` | reusable know-how, loaded on demand |
 | git history | everything else |
 
@@ -48,7 +48,7 @@ Judgment, in order:
    signature of a document written once and never consulted. Deleting it loses nothing —
    git still has it.
 2. **Is it rules, state, or history?** Rules go to AGENTS.md or a skill. State (what the code
-   does now) goes to `jig/docs/`. History — round contracts, changelogs of decisions already
+   does now) goes to `docs/`. History — round contracts, changelogs of decisions already
    made, "what we did in sprint 12" — is history. Git keeps history.
 3. **Is it duplicated?** Three files describing the architecture means one file and two
    deletions, not a merge of all three.
@@ -60,7 +60,7 @@ If `AGENTS.md` is over 40 lines, that is the highest-value item in the plan — 
 ignored wholesale, so every rule in it is weakened by the ones around it.
 
 Propose, line by line, what stays: commands an agent can't guess, style rules that differ
-from the language default, workflow, repo-specific gotchas. Everything else moves to `jig/docs/`
+from the language default, workflow, repo-specific gotchas. Everything else moves to `docs/`
 (if it's state), a skill (if it's situational know-how), or git (if it's history). Per-round
 or per-sprint sections are almost always history.
 

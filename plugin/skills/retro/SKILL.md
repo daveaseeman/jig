@@ -1,11 +1,11 @@
 ---
 name: retro
-description: Turn a repeated fix or discovery into a reusable skill or a jig/docs/HARDWARE.md line, and triage the two ledgers. Use at the end of a task, or when you notice "I've done this before."
+description: Turn a repeated fix or discovery into a reusable skill or a docs/HARDWARE.md line, and triage the two ledgers. Use at the end of a task, or when you notice "I've done this before."
 ---
 
 Ask: did anything in this task get solved that will need solving again?
 
-- Hardware quirk (init order, pull-up, timing, voltage) → one line in `jig/docs/HARDWARE.md` → Known failure modes.
+- Hardware quirk (init order, pull-up, timing, voltage) → one line in `docs/HARDWARE.md` → Known failure modes.
 - Framework/peripheral knowledge (how to make X work on Y) → `.claude/skills/<platform>-<peripheral>/SKILL.md` using `_skill-template`. Mark `verified: false` until it has produced working code on the board.
 - Process friction (the check was wrong, the spec template missed something) → edit the process file directly.
 

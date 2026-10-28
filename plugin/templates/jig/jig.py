@@ -315,7 +315,7 @@ def cmd_init(root: Path, args) -> int:
         path.write_text(json.dumps({
             "version": 1,
             "trunk": args.trunk,
-            "common": ["AGENTS.md", f"{DIR}/**"],
+            "common": ["AGENTS.md", "docs/**", f"{DIR}/**"],
             "append_files": ["AGENTS.md", f"{DIR}/ledgers/**", "CHANGELOG.md"],
             "reserve": {},
             "docmap": {},
@@ -798,7 +798,7 @@ HOMES = {
     "README.md": "for people outside",
 }
 HOME_DIRS = {
-    f"{DIR}/docs/": f"what the code is now; {DIR}/docs/HARDWARE.md the board",
+    "docs/": "what the code is now; docs/HARDWARE.md the board",
     f"{DIR}/specs/": "a task in flight",
     f"{DIR}/ledgers/": "WORKAROUNDS.md patches that are in the code; DEFERRED.md review findings that are not",
     f"{DIR}/": "the lane system: rulebook, board, handoffs",
@@ -960,7 +960,7 @@ def cmd_survey(root: Path, args) -> int:
             print(f"  {g}")
     if src and not report["docmap_present"]:
         print("\nNo docmap on the board: handoff cannot tell which docs page a change touches."
-              f"\nMap pages to globs in {BOARD} (see {DIR}/docs/README.md).")
+              f"\nMap pages to globs in {BOARD} (see docs/README.md).")
     co = report["coordination"]
     print("\nHow parallel work is coordinated today (and what each maps to in jig):")
     for f in co["found"]:

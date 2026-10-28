@@ -18,7 +18,7 @@ Report the output, then say what it means in a few lines:
 - **Oversized always-loaded file.** Over 40 rule lines and the whole file starts getting
   ignored, so every rule in it is weakened by the ones around it. Highest-value fix.
 - **No home in the taxonomy.** Each document gets one job and one home — AGENTS.md rules,
-  `jig/docs/` what the code is now, `jig/specs/` a task in flight, `jig/ledgers/WORKAROUNDS.md` patches in the code,
+  `docs/` what the code is now, `jig/specs/` a task in flight, `jig/ledgers/WORKAROUNDS.md` patches in the code,
   `jig/ledgers/DEFERRED.md` review findings not in it,
   `.claude/skills/` know-how, `README.md` outsiders, git for history. Zero inbound links plus
   a stale last-commit is a document written once and never read again; git keeps it either way.
