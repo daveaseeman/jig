@@ -24,7 +24,7 @@ identical; only the coordination disappears.
 
 ## The board
 
-`.jig/lanes.json`, on trunk, written only by the hubnode. Per lane:
+`jig/lanes.json`, on trunk, written only by the hubnode. Per lane:
 
 | Key | Meaning |
 |---|---|
@@ -48,7 +48,7 @@ go in `shares` from the start, or both lanes get blocked on every commit afterwa
 
 Checked before every commit by a git hook, and by `jig check`.
 
-- **R1** The trunk checkout stays on trunk. Work in `.jig/worktrees/<branch>`.
+- **R1** The trunk checkout stays on trunk. Work in `.git/jig/worktrees/<branch>`.
 - **R2** A lane is built in its own worktree.
 - **R3** A lane changes only its `owns`, its `shares`, `common`, or files new to the repo.
 - **R4** Another open lane's `owns` is refused even if this lane also lists it.
@@ -58,17 +58,17 @@ Checked before every commit by a git hook, and by `jig check`.
   trunk had none, and the branch doesn't hold it, is refused. Editing or moving an existing
   heading takes nothing. Two branches that each take migration step 17 corrupt the first
   database that runs both.
-- **R7** A change adding a `WORKAROUND:` comment to code must stage `ledgers/WORKAROUNDS.md` too.
+- **R7** A change adding a `WORKAROUND:` comment to code must stage `jig/ledgers/WORKAROUNDS.md` too.
   Prose may quote the marker.
 - **R8** A lane is gated only after the lanes in its `after` have merged.
 
-**The hooks run trunk's copy of `jig.py`** (`git show <trunk>:.jig/jig.py`). A branch
+**The hooks run trunk's copy of `jig.py`** (`git show <trunk>:jig/jig.py`). A branch
 cannot weaken the rules it is judged by, and a stale checkout is still judged by today's rules.
 While a merge of trunk is being finished, a change is judged against trunk, so what trunk
 brought in is not the lane's.
 
-**A bug in `.jig/` or a skill is the tool's, not this repo's.** Run `/jig:feedback`, then
-park the lane or ask the hubnode. Don't patch `.jig/`; don't ledger it.
+**A bug in `jig/jig.py`, `jig/RULES.md` or a skill is the tool's, not this repo's.** Run `/jig:feedback`, then
+park the lane or ask the hubnode. Don't patch them; don't ledger it.
 
 ## Keeping merges mechanical
 
@@ -99,7 +99,7 @@ database already past a number never runs a step of that number that merges late
 
 ## Documentation
 
-One page per system, with *Now*, numbered *Rules*, and *Checks* — `docs/README.md` has the
+One page per system, with *Now*, numbered *Rules*, and *Checks* — `jig/docs/README.md` has the
 shape. Rules written in a system's page bind as if they stood in `AGENTS.md`; that is how the
 always-loaded file stays under 40 lines. `jig reading-list <files>` prints which pages to
 read before touching those files.
@@ -114,7 +114,7 @@ ticked as updated, or says why no change was needed.
 Ownership comes from `docmap` in the board:
 
 ```json
-"docmap": {"docs/systems/storage.md": ["server/storage.py", "server/migrations/**"]}
+"docmap": {"jig/docs/systems/storage.md": ["server/storage.py", "server/migrations/**"]}
 ```
 
 A changed file nothing covers is listed as `UNOWNED` — add it to `docmap`, or answer why it
@@ -139,7 +139,7 @@ else stops with the files named, and a person resolves it.
 ## Commands
 
 ```
-jig init [--trunk main]     board, .gitignore, git hooks
+jig init [--trunk main]     board, git hooks
 jig survey [--json]         inventory the repo against the jig shape
 jig open ... --reserve K    allocate scarce counter K to this lane
 jig reading-list <paths>    what to read before touching these files
@@ -159,5 +159,5 @@ jig log [message] [-n N]    append to or read the log
 ## Hooks are opt-in per checkout
 
 `jig install-hooks` writes `.git/jig/enabled`. Anything outside this repo that hooks into
-your editor or agent runs this repo's `scripts/` only when that marker exists; `.git/` is never
+your editor or agent runs this repo's `jig/scripts/` only when that marker exists; `.git/` is never
 cloned, so a fetched repo cannot enable itself.

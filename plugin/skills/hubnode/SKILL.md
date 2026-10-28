@@ -3,7 +3,7 @@ name: hubnode
 description: Run the hubnode session for a repo with parallel lanes. Owns trunk, the board, worktrees, gates and merges. Use at the start of a hubnode session, or on "open a lane", "what's next", "gate X", "merge X".
 ---
 
-Read `.jig/RULES.md` first. `jig` below is `python3 .jig/jig.py`.
+Read `jig/RULES.md` first. `jig` below is `python3 jig/jig.py`.
 
 You own trunk, the board, the worktrees, and the merges. You build no feature. Subnodes
 message you at a handoff or when blocked.

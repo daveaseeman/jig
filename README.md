@@ -26,13 +26,13 @@ Built for prototyping software and firmware with Claude Code. Runs without it.
 
 | | What you get |
 |---|---|
-| **Brief** | `specs/<task>.md`: intent, observable done-when, out-of-scope, alternatives considered |
+| **Brief** | `jig/specs/<task>.md`: intent, observable done-when, out-of-scope, alternatives considered |
 | **Bug protocol** | `/jig:bug` — whys ≤3, givens tagged `[seen]`/`[assumed]`, one layer up, correction or patch |
 | **Verify** | tests for logic, emulator for graphics, hardware as early as confidence allows |
 | **Review** | fresh-context adversarial reader, once per handoff; `jig handoff` refuses an unreviewed commit |
 | **Lanes** | one branch + worktree + declared files per session; `hubnode` owns trunk, `subnode` works a lane |
 | **Rules R1–R8** | git hooks, run from trunk's copy: ownership, reserved numbers, board, ordering, ledger |
-| **Two ledgers** | `ledgers/WORKAROUNDS.md` for patches in the code, `ledgers/DEFERRED.md` for review findings not taken |
+| **Two ledgers** | `jig/ledgers/WORKAROUNDS.md` for patches in the code, `jig/ledgers/DEFERRED.md` for review findings not taken |
 | **Docs fold-in** | `docmap` ties pages to files; a handoff answers for every page a change touched |
 | **Survey / adopt** | read-only inventory in the repo's own terms, then a staged migration plan to approve |
 | **Retro** | same fix twice → a skill; two workarounds in one subsystem → refactor task |
@@ -63,7 +63,7 @@ jig is two things in one folder:
 - **A Claude Code plugin** (`plugin/`): skills for the loop — `brief`, `bug`, `verify`,
   `review`, `retro` — plus `init`, `survey` and `adopt` to set a repo up, `hubnode` and
   `subnode` for parallel sessions, and `feedback` for reporting a bug in jig itself.
-- **A repo-side checker** (`plugin/templates/jig/jig.py`) that `init` copies into `.jig/`.
+- **A repo-side checker** (`plugin/templates/jig/jig.py`) that `init` copies into `jig/`.
   It owns the board of lanes, runs the rules from git hooks, and drives sync, handoff and gate.
   The skills are thin wrappers around it.
 
@@ -97,20 +97,20 @@ In a repo with history and its own way of doing things — read-only, writes a p
 
 ```
 /jig:survey      # what's here, in the repo's own terms
-/jig:adopt       # a staged migration plan in specs/
+/jig:adopt       # a staged migration plan in jig/specs/
 ```
 
 Day to day:
 
 ```
-/jig:brief <task>        # specs/<task>.md before building
+/jig:brief <task>        # jig/specs/<task>.md before building
 /jig:bug <symptom>       # investigate before fixing
 /jig:review              # fresh-context adversarial review, once per handoff
 /jig:hubnode             # the session that owns trunk, the board and merges
 /jig:subnode             # a session that works one lane
 ```
 
-Everything the hooks enforce is in `.jig/RULES.md` after init — eight rules, one page.
+Everything the hooks enforce is in `jig/RULES.md` after init — eight rules, one page.
 
 ## 📦 Installation
 
@@ -125,7 +125,7 @@ Requires git, Python 3.10+ and Claude Code. The repo half needs only git and Pyt
 
 **On trust.** Claude Code warns about every plugin's hooks, because hooks run shell commands
 as you. jig's two hooks (`format` on edit, `check` on stop) run the repo's own
-`scripts/format.sh` and `scripts/check.sh` — and only in a repo that opted in by running
+`jig/scripts/format.sh` and `jig/scripts/check.sh` — and only in a repo that opted in by running
 `jig install-hooks`, which writes a marker inside `.git/`. `.git/` is never cloned, so a repo
 you fetched can't enable itself. `hooks/hooks.json` is four lines; read it.
 

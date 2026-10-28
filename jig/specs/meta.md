@@ -10,7 +10,7 @@ Three rules do the work: a pararepo writes the metarepo only by branch, via `par
 the metarepo holds no code and no copied pararepo content; only `meta-release` tags, so a
 pin can never point at something that didn't pass validation.
 
-This spec builds the metarepo side. `specs/para.md` builds the pararepo side on top of it;
+This spec builds the metarepo side. `jig/specs/para.md` builds the pararepo side on top of it;
 it can't be tested without a released metarepo, so it comes second.
 
 ## Done when
@@ -31,7 +31,7 @@ it can't be tested without a released metarepo, so it comes second.
 - [ ] `grep -rnE 'Maige|maige|"E-' plugin` returns nothing.
 
 ## Out of scope
-- The pararepo side: `para-init`, `para-sync`, `para-propose`, contract paths (`specs/para.md`).
+- The pararepo side: `para-init`, `para-sync`, `para-propose`, contract paths (`jig/specs/para.md`).
 - Rendering or hosting the metarepo. It is markdown in git.
 - Multi-metarepo. One per pararepo.
 - Migrating an existing docs repo into a metarepo (that is `adopt`'s job later).
@@ -43,7 +43,7 @@ it can't be tested without a released metarepo, so it comes second.
   does nothing without `jig/meta.json`) for the subject-prefix rule.
 - `plugin/templates/jig/`: `meta.json`, `CHANGELOG.md`, decision-row template.
 - `plugin/templates/jig/RULES.md`: a "Metarepo and pararepos" section — the three rules and
-  the metarepo gates. `specs/para.md` adds the pararepo gates.
+  the metarepo gates. `jig/specs/para.md` adds the pararepo gates.
 - `tests/smoke.sh`, `marketing/FEATURES.md` (one row per command and for the rule group).
 
 ## Alternatives considered
@@ -61,7 +61,7 @@ it can't be tested without a released metarepo, so it comes second.
   it — `[assumed]`, either works; the choice is which is simpler to check.
 
 ## Decisions
-- Config is `jig/meta.json`. Paths follow `specs/jig-folder.md`; do that spec first.
+- Config is `jig/meta.json`. Paths follow `jig/specs/jig-folder.md`; do that spec first.
 - `meta.json`: `{"name": ..., "entry_files": [...], "tag_pattern": "^v\\d+\\.\\d+$",
   "decision_prefix": "E-", "pararepos": ["..."]}`.
 - "No code" means no `SRC_EXT` file outside `jig/`: the metarepo's own checker and scripts
@@ -79,4 +79,4 @@ it can't be tested without a released metarepo, so it comes second.
 - "Copied pararepo content deeper than a pointer" is a warning, not a refusal: the reviewer
   decides. Everything else refuses (exit 2).
 - Our instance's names and prefix are configuration for those repos, not anything in
-  `plugin/` (see `specs/para.md`).
+  `plugin/` (see `jig/specs/para.md`).

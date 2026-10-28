@@ -4,7 +4,7 @@
 set -u
 T=$(mktemp -d "${TMPDIR:-/tmp}/jig-smoke.XXXXXX")
 P="$(cd "$(dirname "$0")/.." && pwd)/plugin/templates"
-J="python3 .jig/jig.py"
+J="python3 jig/jig.py"
 fail=0
 ok()   { echo "PASS  $1"; }
 bad()  { echo "FAIL  $1"; fail=1; }
@@ -13,39 +13,37 @@ expect_refuse() { if "$@" >/dev/null 2>&1; then bad "$msg (was accepted)"; else 
 undo() { git reset -q; git checkout -q -- .; git clean -fdq; }
 
 cd "$T" && git init -q -b main && git config user.email t@t && git config user.name t
-mkdir -p .jig docs/systems src
-cp "$P/jig/jig.py" "$P/jig/RULES.md" .jig/
-cp "$P/AGENTS.md" . && cp -r "$P/ledgers" .
-cp "$P/docs/README.md" docs/ && cp -r "$P/scripts" . && chmod +x scripts/*.sh
+cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && chmod +x jig/scripts/*.sh
+mkdir -p jig/docs/systems src
 printf 'x=1\n' > src/a.py
-printf '# A\n\n## 28 Alpha\ntext\n\n## 29 Beta\ntext\n' > docs/systems/a.md
+printf '# A\n\n## 28 Alpha\ntext\n\n## 29 Beta\ntext\n' > jig/docs/systems/a.md
 git add -A && git commit -qm init
 $J init >/dev/null
 python3 - <<'EOF'
-import json; b = json.load(open('.jig/lanes.json'))
-b['reserve'] = {'section': {'next': 29, 'pattern': r'^## (\d+) ', 'files': ['docs/systems/**']}}
-json.dump(b, open('.jig/lanes.json', 'w'), indent=2)
+import json; b = json.load(open('jig/lanes.json'))
+b['reserve'] = {'section': {'next': 29, 'pattern': r'^## (\d+) ', 'files': ['jig/docs/systems/**']}}
+json.dump(b, open('jig/lanes.json', 'w'), indent=2)
 EOF
 git add -A && git commit -qm board
-$J open L1 --brief t --owns 'src/**' 'docs/systems/**' --reserve section >/dev/null
+$J open L1 --brief t --owns 'src/**' 'jig/docs/systems/**' --reserve section >/dev/null
 git add -A && git commit -qm "open L1"
-cd .jig/worktrees/L1
+cd .git/jig/worktrees/L1
 
 msg="R6: editing an existing heading's text takes nothing"
-sed -i.bak 's/## 29 Beta/## 29 Beta renamed/' docs/systems/a.md && rm docs/systems/a.md.bak
+sed -i.bak 's/## 29 Beta/## 29 Beta renamed/' jig/docs/systems/a.md && rm jig/docs/systems/a.md.bak
 git add -A; expect_pass git commit -qm e1
 
 msg="R6: moving a page takes nothing"
-git mv docs/systems/a.md docs/systems/b.md; expect_pass git commit -qm mv
+git mv jig/docs/systems/a.md jig/docs/systems/b.md; expect_pass git commit -qm mv
 
 msg="R6: adding ## 31 while holding 30 is refused"
-printf '\n## 31 Gamma\n' >> docs/systems/b.md; git add -A; expect_refuse git commit -qm e2; undo
+printf '\n## 31 Gamma\n' >> jig/docs/systems/b.md; git add -A; expect_refuse git commit -qm e2; undo
 
 msg="R6: adding ## 30 (held) is accepted"
-printf '\n## 30 Delta\n' >> docs/systems/b.md; git add -A; expect_pass git commit -qm e3
+printf '\n## 30 Delta\n' >> jig/docs/systems/b.md; git add -A; expect_pass git commit -qm e3
 
 msg="R7: WORKAROUND: in Markdown is accepted"
-printf 'quote WORKAROUND: here\n' >> docs/systems/b.md; git add -A; expect_pass git commit -qm md
+printf 'quote WORKAROUND: here\n' >> jig/docs/systems/b.md; git add -A; expect_pass git commit -qm md
 
 msg="R7: WORKAROUND: in code without a ledger row is refused"
 printf '# WORKAROUND: x\n' >> src/a.py; git add -A; expect_refuse git commit -qm py; undo
@@ -77,26 +75,51 @@ msg="gate does not refuse a lane behind trunk"
 ( cd "$T" && printf 'r\n' > r.txt && git add -A && git commit -qm trunk5 )
 out=$(cd "$T" && $J gate L1 2>&1); if echo "$out" | grep -q behind; then bad "$msg"; else ok "$msg"; fi
 
+msg="fold-in: a change to jig/jig.py is the tool's, not unowned code"
+printf '# lane edit\n' >> jig/jig.py; printf 'x=7\n' > src/a.py; git add -A; git commit -qm tool
+$J reviewed >/dev/null; $J handoff >/dev/null 2>&1
+note=$(cat jig/handoffs/L1-*.md 2>/dev/null)
+if echo "$note" | grep -q 'UNOWNED src/a.py' && ! echo "$note" | grep -q 'UNOWNED jig/jig.py'
+then ok "$msg"; else bad "$msg"; fi
+
+I="$T/init"
+mkdir -p "$I" && cd "$I" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && rm jig/docs/HARDWARE.md
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+
+msg="init: root holds only AGENTS.md, CLAUDE.md and jig/"
+expect_pass test "$(ls -A | grep -v '^\.git$' | tr '\n' ' ')" = "AGENTS.md CLAUDE.md jig "
+
+msg="open: a lane's worktree lives in .git/jig/worktrees and trunk stays clean"
+$J open L2 --brief t --owns 'jig/docs/**' >/dev/null && git add -A && git commit -qm "open L2"
+expect_pass test -d .git/jig/worktrees/L2 -a -z "$(git status --porcelain)"
+
+msg="survey: a fresh init has no homeless files and no source counted from jig/"
+expect_pass python3 -c "
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', 'jig/jig.py', 'survey', '--json']))
+assert r['homeless'] == [] and r['src_count'] == 0, (r['homeless'], r['src_count'])"
+
 S="$T/survey"
 mkdir -p "$S" && cd "$S" && git init -q -b main && git config user.email t@t && git config user.name t
-mkdir -p .jig src/widgets plugin/skills/x
-cp "$P/jig/jig.py" .jig/
+mkdir -p jig src/widgets plugin/skills/x
+cp "$P/jig/jig.py" jig/
 printf '# W\n' > src/widgets/README.md && printf '# X\n' > plugin/skills/x/SKILL.md
 git add -A && git commit -qm init && $J init --no-hooks >/dev/null
 
 msg="init: a new board has an empty payload"
-expect_pass python3 -c "import json,sys; sys.exit(json.load(open('.jig/lanes.json'))['payload'] != [])"
+expect_pass python3 -c "import json,sys; sys.exit(json.load(open('jig/lanes.json'))['payload'] != [])"
 
 msg="payload: survey skips declared globs, still flags the stray README"
 python3 - <<'EOF'
-import json; b = json.load(open('.jig/lanes.json'))
+import json; b = json.load(open('jig/lanes.json'))
 b['payload'] = ['plugin/**']
-json.dump(b, open('.jig/lanes.json', 'w'), indent=2)
+json.dump(b, open('jig/lanes.json', 'w'), indent=2)
 EOF
 git add -A && git commit -qm board   # survey reads trunk's board, not the working tree
 expect_pass python3 -c "
 import json, subprocess
-r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+r = json.loads(subprocess.check_output(['python3', 'jig/jig.py', 'survey', '--json']))
 homeless = [e['path'] for e in r['homeless']]
 assert r['payload'] == ['plugin/**'], r['payload']
 assert 'src/widgets/README.md' in homeless and 'plugin/skills/x/SKILL.md' not in homeless, homeless
@@ -104,14 +127,14 @@ assert r['payload_unmatched'] == [], r['payload_unmatched']"
 
 msg="payload: a directory-style glob that matches nothing is named"
 python3 - <<'EOF'
-import json; b = json.load(open('.jig/lanes.json'))
+import json; b = json.load(open('jig/lanes.json'))
 b['payload'] = ['plugin/']
-json.dump(b, open('.jig/lanes.json', 'w'), indent=2)
+json.dump(b, open('jig/lanes.json', 'w'), indent=2)
 EOF
 git add -A && git commit -qm board2
 expect_pass python3 -c "
 import json, subprocess
-r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+r = json.loads(subprocess.check_output(['python3', 'jig/jig.py', 'survey', '--json']))
 assert r['payload_unmatched'] == ['plugin/'], r['payload_unmatched']"
 
 rm -rf "$T"

@@ -25,7 +25,7 @@ directory name is special-cased in `jig.py`.
   ways; a stray README in `src/` is exactly what survey exists to flag — `[seen]`, the
   Daisy survey's homeless list was useful because it was literal.
 - Changing `docmap`, fold-in, or `reading-list`. `payload` is read by survey only.
-- The `jig/` folder move (`specs/jig-folder.md`). Order: payload → jig-folder → meta → para.
+- The `jig/` folder move (`jig/specs/jig-folder.md`). Order: payload → jig-folder → meta → para.
 
 ## Touches
 - `plugin/templates/jig/jig.py`: `cmd_init` board skeleton; `cmd_survey` loads the board

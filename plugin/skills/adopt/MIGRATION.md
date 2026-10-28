@@ -6,7 +6,7 @@ husky or pre-commit hooks — or a homebrew system with its own board and hooks.
 goal is one system to manage, not a better one, and the path has to be safe for work that is
 mid-stream. Each stage is one commit on trunk and can be undone by reverting it.
 
-"Lane" below is jig's word; `.jig/RULES.md` defines it in standard terms. Your repo
+"Lane" below is jig's word; `jig/RULES.md` defines it in standard terms. Your repo
 need not have called anything a lane. What matters is whether it has the *parts*:
 
 | If the repo has… | it maps to jig's… |
@@ -16,7 +16,7 @@ need not have called anything a lane. What matters is whether it has the *parts*
 | branch protection, required reviews, a merge queue | the gate |
 | husky, pre-commit, lefthook, or hooks in `.git/hooks` | the hooks (to be replaced) |
 | `CLAUDE.md`, `.cursorrules`, copilot instructions | `AGENTS.md` |
-| ADRs | `specs/` decisions and `ledgers/WORKAROUNDS.md` |
+| ADRs | `jig/specs/` decisions and `jig/ledgers/WORKAROUNDS.md` |
 | branches not merged into trunk | lanes to adopt |
 | a homebrew board with owners and states | the board |
 
@@ -33,15 +33,15 @@ branches are the whole difficulty; everything else is files.
 
 ## 1. Install files, hooks off
 
-Copy `.jig/jig.py`, `.jig/RULES.md`, `ledgers/WORKAROUNDS.md`, `ledgers/DEFERRED.md`, `specs/_template.md`, and
-`scripts/check.sh` / `scripts/format.sh` (fast checks only — the Stop hook has a time limit).
+Copy `jig/jig.py`, `jig/RULES.md`, `jig/ledgers/WORKAROUNDS.md`, `jig/ledgers/DEFERRED.md`, `jig/specs/_template.md`, and
+`jig/scripts/check.sh` / `jig/scripts/format.sh` (fast checks only — the Stop hook has a time limit).
 Then:
 
 ```sh
-python3 .jig/jig.py init --no-hooks
+python3 jig/jig.py init --no-hooks
 ```
 
-That writes an empty board and the `.gitignore` line, and leaves the predecessor's hooks
+That writes an empty board and leaves the predecessor's hooks
 running. Now fill the board by hand, from the predecessor's:
 
 | jig board | from the predecessor |
@@ -53,7 +53,7 @@ running. Now fill the board by hand, from the predecessor's:
 | `docmap` | its file → documentation map, if it has one |
 
 A counter's `files` must name every file its numbers live in — if the rules moved from
-`AGENTS.md` to `docs/systems/**`, the pattern must cover both, or R6 enforces nothing.
+`AGENTS.md` to `jig/docs/systems/**`, the pattern must cover both, or R6 enforces nothing.
 
 Commit on trunk. The predecessor still enforces; jig enforces nothing yet.
 
@@ -68,7 +68,7 @@ For each lane the board shows as not merged — whether the repo called it a lan
 branch, a workstream, or nothing — in the trunk checkout:
 
 ```sh
-python3 .jig/jig.py open <name> --branch <its branch> --worktree <where it lives> \
+python3 jig/jig.py open <name> --branch <its branch> --worktree <where it lives> \
     --reserve schema=<held> section=<held> --owns <its owns> --shares <its shares> \
     --after <its after> --state <its state>
 ```
@@ -78,7 +78,7 @@ already holds recorded and fenced off from the counter. `--owns` and `--shares` 
 `CODEOWNERS` if there is one, or from the predecessor's board, or from `git diff --name-only
 trunk...branch` — the files it has already touched are at minimum its `shares`. Keep the worktree where it is —
 R2 checks the path the board records, so `.claude/worktrees/x` is as good as
-`.jig/worktrees/x`. Commit the board.
+`.git/jig/worktrees/x`. Commit the board.
 
 A lane with uncommitted work is fine; its next commit is judged by whichever hooks are
 installed at that moment, and its ownership and numbers are the same under both.
@@ -91,7 +91,7 @@ live checkouts.
 ## 3. Cut the hooks over
 
 ```sh
-python3 .jig/jig.py install-hooks --replace
+python3 jig/jig.py install-hooks --replace
 ```
 
 `--replace` removes the predecessor's hooks instead of chaining them as `.local`. Without it,
@@ -102,15 +102,15 @@ tools manage `.git/hooks` themselves, so uninstall them (`npx husky uninstall`,
 Confirm with `ls .git/hooks`.
 
 Worktrees share `.git`, so this one command switches every live session at once. Each subnode
-runs `python3 .jig/jig.py check` in its worktree; `ok` means its lane came across clean.
+runs `python3 jig/jig.py check` in its worktree; `ok` means its lane came across clean.
 
 ## 4. Switch the skills and the always-loaded file
 
 - Remove the predecessor's hubnode and subnode skills; `/jig:hubnode` and `/jig:subnode`
   take over. Subnodes check in again with the new skill.
-- In `AGENTS.md`, replace the predecessor's process section with a pointer to `.jig/RULES.md`.
+- In `AGENTS.md`, replace the predecessor's process section with a pointer to `jig/RULES.md`.
 - Leave its handoff records where they are. They are history; `jig survey` skips tooling
-  directories, and new notes go to `.jig/handoffs/`.
+  directories, and new notes go to `jig/handoffs/`.
 
 ## 5. Prove it, then delete the predecessor
 

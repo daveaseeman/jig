@@ -8,14 +8,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 from datetime import date
 from pathlib import Path
 
-DIR = ".jig"
+DIR = "jig"
 BOARD = f"{DIR}/lanes.json"
+WORKAROUNDS = f"{DIR}/ledgers/WORKAROUNDS.md"
 STATES = ["claimed", "building", "ready", "gated", "merged", "parked"]
 
 
@@ -44,6 +46,14 @@ def main_root() -> Path:
     """The primary checkout's root, even when called from a linked worktree."""
     common = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir"))
     return common.parent
+
+
+def worktrees_dir() -> str:
+    """Where lanes are checked out, relative to the primary checkout. Inside .git/ because
+    a worktree is git state, and tools that walk the repo (test runners, globbers) never
+    look there — a visible folder would hand them every lane's full copy of the repo."""
+    common = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir"))
+    return Path(os.path.relpath(common / "jig" / "worktrees", main_root())).as_posix()
 
 
 def is_main_worktree(root: Path) -> bool:
@@ -175,7 +185,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     if board.open_lanes() and is_main_worktree(root) and branch and branch != trunk:
         out.append(
             f"R1 the {trunk} checkout stays on {trunk}; it is on {branch}. "
-            f"Work in a worktree: {DIR}/worktrees/{branch}"
+            f"Work in a worktree: {worktrees_dir()}/{branch}"
         )
 
     # R5 the board is the hubnode's
@@ -185,8 +195,8 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     # R7 a workaround needs its ledger row — lane or not; code only, prose may quote it
     code = [p for p in paths if p.endswith(CODE_EXT) or Path(p).name == "Kconfig"]
     diff = git("diff", "-U0", base(trunk), *(["--cached"] if staged else []), "--", *code) if code else ""
-    if re.search(r"^\+.*WORKAROUND:", diff, re.M) and "ledgers/WORKAROUNDS.md" not in paths:
-        out.append("R7 the diff adds a WORKAROUND: comment but ledgers/WORKAROUNDS.md is not staged")
+    if re.search(r"^\+.*WORKAROUND:", diff, re.M) and WORKAROUNDS not in paths:
+        out.append(f"R7 the diff adds a WORKAROUND: comment but {WORKAROUNDS} is not staged")
 
     # R6 on a lane branch always; on trunk only while lanes are open, since solo
     # there is nobody to collide with and the numbers are yours
@@ -298,13 +308,6 @@ def reserved_refusals(root: Path, board: "Board", lane: dict | None,
 def cmd_init(root: Path, args) -> int:
     (root / DIR).mkdir(exist_ok=True)
     (root / DIR / "handoffs").mkdir(exist_ok=True)
-    ignore = root / ".gitignore"
-    have = ignore.read_text() if ignore.exists() else ""
-    for line in (f"{DIR}/worktrees/",):
-        if line not in have:
-            have = (have + "\n" if have and not have.endswith("\n") else have) + line + "\n"
-            print(f"added {line} to .gitignore")
-    ignore.write_text(have)
     path = root / BOARD
     if path.exists():
         print(f"{BOARD} already exists")
@@ -312,8 +315,8 @@ def cmd_init(root: Path, args) -> int:
         path.write_text(json.dumps({
             "version": 1,
             "trunk": args.trunk,
-            "common": ["AGENTS.md", "ledgers/**", "docs/**", "specs/**", f"{DIR}/**"],
-            "append_files": ["AGENTS.md", "ledgers/**", "CHANGELOG.md"],
+            "common": ["AGENTS.md", f"{DIR}/**"],
+            "append_files": ["AGENTS.md", f"{DIR}/ledgers/**", "CHANGELOG.md"],
             "reserve": {},
             "docmap": {},
             "payload": [],
@@ -379,7 +382,7 @@ def cmd_hook(root: Path, args) -> int:
             b = git("branch", "--show-current")
             if b and b != board.trunk:
                 print(f"jig: the {board.trunk} checkout is on {b}. "
-                      f"Work in {DIR}/worktrees/{b}.", file=sys.stderr)
+                      f"Work in {worktrees_dir()}/{b}.", file=sys.stderr)
         return 0
     if name == "pre-push":
         return 0 if gate_ok_for_push(root, board) else 1
@@ -468,7 +471,7 @@ def cmd_open(root: Path, args) -> int:
                   f"\"files\" to reserve.{k} in {BOARD} so the hook refuses a lane that takes "
                   f"a number it does not hold.")
 
-    worktree = args.worktree or f"{DIR}/worktrees/{branch}"
+    worktree = args.worktree or f"{worktrees_dir()}/{branch}"
     state = args.state or ("building" if existing else "claimed")
     board.lanes[args.name] = {
         "brief": args.brief or "",
@@ -658,7 +661,7 @@ def foldin_lines(root: Path, board: Board, branch: str) -> str:
     trunk = board.trunk
     rng = f"{trunk}...HEAD" if branch and branch != trunk else "HEAD~1..HEAD"
     changed = [f for f in git("diff", "--name-only", rng).splitlines()
-               if f and f.endswith(SRC_EXT) and not f.startswith(".")]
+               if f and f.endswith(SRC_EXT) and not f.startswith((".", f"{DIR}/"))]
     if not changed:
         return "- [ ] no code changed — nothing to fold in"
     pages, unowned = {}, []
@@ -775,9 +778,10 @@ def cmd_gate(root: Path, args) -> int:
     print(f"{label}: gate {commit[:12]} from {note} on {branch}")
     print("Run the project checks against that exact commit, in a scratch checkout —")
     print("not the working tree, which may already have moved on:\n")
-    print(f"  git worktree add --detach {DIR}/gate-{name} {commit}")
-    print(f"  cd {DIR}/gate-{name} && git merge {trunk} && ./scripts/check.sh")
-    print(f"  cd - && git worktree remove {DIR}/gate-{name}\n")
+    scratch = f"{worktrees_dir()}/gate-{name}"
+    print(f"  git worktree add --detach {scratch} {commit}")
+    print(f"  cd {scratch} && git merge {trunk} && ./{DIR}/scripts/check.sh")
+    print(f"  cd - && git worktree remove {scratch}\n")
     if lane is not None:
         print(f"Then: jig mark {name} gated")
     else:
@@ -794,15 +798,15 @@ HOMES = {
     "README.md": "for people outside",
 }
 HOME_DIRS = {
-    "docs/": "what the code is now; docs/HARDWARE.md the board",
-    "specs/": "a task in flight",
-    "ledgers/": "WORKAROUNDS.md patches that are in the code; DEFERRED.md review findings that are not",
-    ".jig/": "the lane system",
+    f"{DIR}/docs/": f"what the code is now; {DIR}/docs/HARDWARE.md the board",
+    f"{DIR}/specs/": "a task in flight",
+    f"{DIR}/ledgers/": "WORKAROUNDS.md patches that are in the code; DEFERRED.md review findings that are not",
+    f"{DIR}/": "the lane system: rulebook, board, handoffs",
     ".claude/skills/": "reusable know-how",
 }
 # Tooling directories. Their contents are a tool's own records, not documents
 # looking for a home, so the stray check skips them entirely.
-TOOL_DIRS = (".claude/", ".jig/", ".github/", ".gitlab/", ".vscode/", ".devcontainer/")
+TOOL_DIRS = (".claude/", ".github/", ".gitlab/", ".vscode/", ".devcontainer/")
 SRC_EXT = (".c", ".h", ".cpp", ".rs", ".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".swift")
 CODE_EXT = SRC_EXT + (".sh", ".cmake", ".ino", ".kconfig")
 
@@ -832,10 +836,10 @@ COORDINATION = [
     ("agent instructions", "AGENTS.md",
      ["CLAUDE.md", "AGENTS.md", ".cursorrules", ".cursor/rules", ".windsurfrules",
       ".github/copilot-instructions.md", "GEMINI.md", ".kiro/steering"]),
-    ("decision records (ADRs)", "specs/ decisions + ledgers/WORKAROUNDS.md",
+    ("decision records (ADRs)", f"{DIR}/specs/ decisions + {WORKAROUNDS}",
      ["docs/adr", "docs/decisions", "adr", "decisions"]),
     ("changelog", "the board log", ["CHANGELOG.md", "CHANGES.md", "HISTORY.md"]),
-    ("handoff / round records", ".jig/handoffs/",
+    ("handoff / round records", f"{DIR}/handoffs/",
      [".claude/handoffs", "handoffs", "docs/handoffs", "records", "docs/records"]),
     ("skills directory", ".claude/skills/ (kept as is)",
      [".claude/skills", "skills", ".cursor/skills"]),
@@ -877,7 +881,7 @@ def cmd_survey(root: Path, args) -> int:
     md = [f for f in files if f.endswith(".md")]
     src = [f for f in files
            if f.endswith(SRC_EXT)
-           and not f.startswith(".")
+           and not f.startswith((".", f"{DIR}/"))
            and not re.search(r"(^|/)\.", f)
            and not re.search(r"(^|/)(tests?|__tests__|node_modules|vendor|build|dist|scripts)/", f)
            and not re.search(r"\.(test|spec)\.", f)]
@@ -908,8 +912,9 @@ def cmd_survey(root: Path, args) -> int:
         if f in ("AGENTS.md", "CLAUDE.md") and n > 40:  # rule lines, not raw lines
             report["oversized"].append(entry)
 
-    for name in ("AGENTS.md", "CLAUDE.md", "ledgers/WORKAROUNDS.md", "ledgers/DEFERRED.md", "scripts/check.sh",
-                 "specs/_template.md", f"{DIR}/jig.py", f"{DIR}/RULES.md", BOARD):
+    for name in ("AGENTS.md", "CLAUDE.md", WORKAROUNDS, f"{DIR}/ledgers/DEFERRED.md",
+                 f"{DIR}/scripts/check.sh", f"{DIR}/specs/_template.md", f"{DIR}/jig.py",
+                 f"{DIR}/RULES.md", BOARD):
         report["present"][name] = (root / name).exists()
     common = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir"))
     hook = common / "hooks" / "pre-commit"
@@ -955,7 +960,7 @@ def cmd_survey(root: Path, args) -> int:
             print(f"  {g}")
     if src and not report["docmap_present"]:
         print("\nNo docmap on the board: handoff cannot tell which docs page a change touches."
-              "\nMap pages to globs in .jig/lanes.json (see docs/README.md).")
+              f"\nMap pages to globs in {BOARD} (see {DIR}/docs/README.md).")
     co = report["coordination"]
     print("\nHow parallel work is coordinated today (and what each maps to in jig):")
     for f in co["found"]:
@@ -988,7 +993,7 @@ def main(argv: list[str] | None = None) -> int:
     i.add_argument("--trunk", default="main")
     i.add_argument("--replace", action="store_true", help="see install-hooks --replace")
     i.add_argument("--no-hooks", action="store_true",
-                   help="write the board and .gitignore only; a predecessor's hooks keep running")
+                   help="write the board only; a predecessor's hooks keep running")
     ih = sub.add_parser("install-hooks", help="(re)write the git hooks")
     ih.add_argument("--replace", action="store_true",
                     help="remove a predecessor's hooks instead of chaining them as .local")

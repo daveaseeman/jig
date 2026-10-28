@@ -1,14 +1,14 @@
 # Metarepo (2 of 2): pararepos cite the metarepo at a tag
 
 ## Intent
-A pararepo (code, firmware, hardware) cites a released metarepo tag (`specs/meta.md`). A
+A pararepo (code, firmware, hardware) cites a released metarepo tag (`jig/specs/meta.md`). A
 pararepo that changes a shared contract proposes the metarepo change in the same piece of
 work, on a branch of the metarepo, and bumps its pin after release. Drift is visible, never
 silent. It writes the metarepo only by branch, via `para-propose`.
 
 ## Done when
 - [ ] `tests/smoke.sh` gains a para section: a throwaway metarepo released at `v0.1` (using
-      `specs/meta.md`'s commands) and one throwaway pararepo, every case PASS or the expected
+      `jig/specs/meta.md`'s commands) and one throwaway pararepo, every case PASS or the expected
       refusal:
   - [ ] `para-init` writes `jig/para.json`, generates the `AGENTS.md` header, fills
         `jig/meta-cache/` and adds it to `.gitignore`. Hand-editing the header → next commit
@@ -29,7 +29,7 @@ silent. It writes the metarepo only by branch, via `para-propose`.
 - [ ] `grep -rnE 'Maige|maige|"E-' plugin` returns nothing.
 
 ## Out of scope
-- The metarepo side (`specs/meta.md`).
+- The metarepo side (`jig/specs/meta.md`).
 - Cross-pararepo dependencies (A cites B's code). Pararepos cite the metarepo only.
 
 ## Touches
@@ -41,7 +41,7 @@ silent. It writes the metarepo only by branch, via `para-propose`.
   gets a sixth question (contract change without a proposal?); `retro` asks whether a
   repeated cross-repo confusion is a glossary entry; `hubnode` runs `para-sync` at session
   start and refuses to open a lane whose spec cites an unreleased proposal.
-- `plugin/templates/jig/RULES.md`: the pararepo gates, in `specs/meta.md`'s section.
+- `plugin/templates/jig/RULES.md`: the pararepo gates, in `jig/specs/meta.md`'s section.
 - `tests/smoke.sh`, `marketing/FEATURES.md` (one row per command and for the rule group).
 
 ## Alternatives considered

@@ -5,12 +5,12 @@ disable-model-invocation: true
 ---
 
 Produce a migration plan. **Change nothing in this pass.** The deliverable is
-`specs/adopt-<repo>.md`, which the user reads and approves before any of it happens.
+`jig/specs/adopt-<repo>.md`, which the user reads and approves before any of it happens.
 
 ## 1. Measure
 
 ```sh
-python3 .jig/jig.py survey                                     # repo already has jig
+python3 jig/jig.py survey                                     # repo already has jig
 python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" survey    # it doesn't — nothing to install
 ```
 
@@ -29,11 +29,11 @@ Each one gets exactly one job and one home:
 | `AGENTS.md` | rules an agent needs on every task — and nothing else |
 | `CLAUDE.md` | one line importing AGENTS.md |
 | `README.md` | for people outside the repo |
-| `docs/systems/` | what the code is now, one page per system |
-| `specs/` | a task in flight |
-| `ledgers/WORKAROUNDS.md` | patches that are in the code |
-| `ledgers/DEFERRED.md` | review findings that are not |
-| `docs/HARDWARE.md` | board, wiring, voltages, flash |
+| `jig/docs/systems/` | what the code is now, one page per system |
+| `jig/specs/` | a task in flight |
+| `jig/ledgers/WORKAROUNDS.md` | patches that are in the code |
+| `jig/ledgers/DEFERRED.md` | review findings that are not |
+| `jig/docs/HARDWARE.md` | board, wiring, voltages, flash |
 | `.claude/skills/` | reusable know-how, loaded on demand |
 | git history | everything else |
 
@@ -48,7 +48,7 @@ Judgment, in order:
    signature of a document written once and never consulted. Deleting it loses nothing —
    git still has it.
 2. **Is it rules, state, or history?** Rules go to AGENTS.md or a skill. State (what the code
-   does now) goes to `docs/`. History — round contracts, changelogs of decisions already
+   does now) goes to `jig/docs/`. History — round contracts, changelogs of decisions already
    made, "what we did in sprint 12" — is history. Git keeps history.
 3. **Is it duplicated?** Three files describing the architecture means one file and two
    deletions, not a merge of all three.
@@ -60,7 +60,7 @@ If `AGENTS.md` is over 40 lines, that is the highest-value item in the plan — 
 ignored wholesale, so every rule in it is weakened by the ones around it.
 
 Propose, line by line, what stays: commands an agent can't guess, style rules that differ
-from the language default, workflow, repo-specific gotchas. Everything else moves to `docs/`
+from the language default, workflow, repo-specific gotchas. Everything else moves to `jig/docs/`
 (if it's state), a skill (if it's situational know-how), or git (if it's history). Per-round
 or per-sprint sections are almost always history.
 
@@ -97,7 +97,7 @@ must say two more things, or the repo ends up stating one rule and living anothe
 
 ## 4. Write the plan
 
-`specs/adopt-<repo>.md`, using `specs/_template.md`, plus:
+`jig/specs/adopt-<repo>.md`, using `jig/specs/_template.md`, plus:
 
 - **Inventory** — a table: file, lines, inbound links, verdict, destination, why.
 - **AGENTS.md before/after** — the proposed 40-line version in full, and a list of what left

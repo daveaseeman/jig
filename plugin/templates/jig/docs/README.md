@@ -1,6 +1,6 @@
 # Documentation
 
-One page per system, under `docs/systems/`. The tree names the product's own parts, not its
+One page per system, under `jig/docs/systems/`. The tree names the product's own parts, not its
 files, so a rule that touches several files lives once. Every page has three headings:
 
 - **Now** — what is true on trunk today.
@@ -14,10 +14,10 @@ address behind — that is history, and git keeps it.
 A **seam** page covers what crosses between two systems: in `docmap`, a page whose globs name
 files from both sides.
 
-Map files to pages with `docmap` in `.jig/lanes.json`:
+Map files to pages with `docmap` in `jig/lanes.json`:
 
 ```json
-"docmap": {"docs/systems/storage.md": ["server/storage.py", "server/migrations/**"]}
+"docmap": {"jig/docs/systems/storage.md": ["server/storage.py", "server/migrations/**"]}
 ```
 
 `jig handoff` then asks for each page the change touched, and `jig reading-list <files>`

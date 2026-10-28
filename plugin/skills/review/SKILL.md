@@ -38,7 +38,7 @@ because the reviewer suggested them.
 
 Fix blocking items and re-run the checks. One round of should-fix is enough; if a third
 round is needed, the spec was wrong — fix the spec. Every should-fix or optional finding you
-don't take gets a row in `ledgers/DEFERRED.md` with its rank and one reason, tagged `[seen]` or
+don't take gets a row in `jig/ledgers/DEFERRED.md` with its rank and one reason, tagged `[seen]` or
 `[assumed]`.
 
 ## Record it
@@ -46,7 +46,7 @@ don't take gets a row in `ledgers/DEFERRED.md` with its rank and one reason, tag
 When no blocking findings remain, with everything committed:
 
 ```sh
-python3 .jig/jig.py reviewed
+python3 jig/jig.py reviewed
 ```
 
 `jig handoff` refuses without a record for that exact commit. Only record a review you
