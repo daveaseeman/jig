@@ -1,49 +1,52 @@
 # Everything jig puts in a repo lives under `jig/`
 
 ## Intent
-A repo's root holds only what is for that repo. After `/jig:init`, the only files jig adds
-at root are `AGENTS.md` and `CLAUDE.md` (tools look for them there). Everything else jig
-creates or manages — the checker, rulebook, board, handoffs, ledgers, specs, docs shape,
-check/format scripts, hardware notes — sits in one visible folder, `jig/`. Worktrees are git
-state, not content: they live in `.git/jig/worktrees/`. This applies to the jig repo itself
-once it runs `/jig:init`.
+A repo's root holds only what is for that repo. After `/jig:init`, jig adds `AGENTS.md` and
+`CLAUDE.md` at root, because tools look for them there. Everything jig manages sits in one
+visible folder, `jig/`: the checker, rulebook, board, handoffs, ledgers, specs (scopes,
+changes, decisions) and check/format scripts. The repo's own documentation of the system it
+builds stays in the repo's `docs/`. That includes the docs-shape README and the hardware
+notes jig seeds there. Worktrees are git state, not content, so they live in
+`.git/jig/worktrees/`. This applies to the jig repo itself once it runs `/jig:init`.
 
 ## Done when
 - [x] `tests/smoke.sh` passes with the new layout (it sets up a repo by copying templates, so it
       is the first thing to update).
 - [x] `claude plugin validate ./plugin` passes.
-- [x] In a fresh scratch repo, `/jig:init` leaves at root exactly: `AGENTS.md`, `CLAUDE.md`,
-      `jig/`, `.claude/skills/` only if firmware. No `.gitignore` line is needed.
+- [ ] In a fresh scratch repo, `/jig:init` leaves exactly these at root: `AGENTS.md`,
+      `CLAUDE.md`, `jig/`, `docs/` (its `README.md`, plus `HARDWARE.md` only if firmware), and
+      `.claude/skills/` only if firmware. No `.gitignore` line is needed.
+- [ ] `grep -rn 'jig/docs' plugin tests` returns nothing, and the templates ship
+      `templates/docs/` beside `templates/jig/`.
 - [x] `jig open` creates the worktree at `.git/jig/worktrees/<lane>`, and trunk's
       `git status` stays clean.
 - [ ] A Claude Code subnode session edits a file in that worktree without a permission
       prompt. If it can't, worktrees go to `jig/.worktrees/` instead (gitignored; the leading
       dot is what pytest, jest and most globbers skip) and this item is amended.
 - [x] `grep -rn '\.jig/' plugin tests README.md AGENTS.md` returns nothing.
-- [x] `grep -rnE '(^|[^/])(ledgers|specs|docs|scripts)/' plugin/templates/jig/jig.py plugin/skills plugin/templates/AGENTS.md plugin/templates/jig/RULES.md`
-      returns only `jig/`-prefixed paths (or paths inside a `.claude/` or firmware context, or
-      survey's list of other tools' layouts it looks for: `docs/adr`, `docs/CODEOWNERS`, …).
+- [ ] `grep -rnE '(^|[^/])(ledgers|specs|scripts)/' plugin/templates/jig/jig.py plugin/skills plugin/templates/AGENTS.md plugin/templates/jig/RULES.md`
+      returns only `jig/`-prefixed paths, or paths inside a `.claude/` or firmware context.
+      `docs/` is the repo's and stays unprefixed.
 - [x] The plugin's `scripts/check.sh` and `format.sh` run `jig/scripts/<same>`, else the old
       `scripts/<same>`, so a repo initialized before this change keeps its checks. Both still
       exit 0 silently in a repo without the `.git/jig/enabled` marker.
 - [x] The git hook template reads `git show <trunk>:jig/jig.py`.
-- [x] A survey on the scratch repo reports no homeless files, lists `jig/` homes, and does
-      not count `jig/jig.py` as source.
+- [ ] A survey on the scratch repo reports no homeless files, lists the `jig/` and `docs/`
+      homes, and does not count `jig/jig.py` as source.
 - [x] A handoff on a branch that changed `jig/jig.py` lists no `UNOWNED jig/jig.py` line.
 
 ## Out of scope
-- `AGENTS.md`, `CLAUDE.md`, `.claude/skills/` stay where they are.
+- `AGENTS.md`, `CLAUDE.md`, `docs/`, `.claude/skills/` stay where they are.
 - No rule changes. R1–R8 unchanged in meaning; only paths move.
-- Adopting an existing repo whose files are at the old paths (Daisy): a separate spec.
-  Note it under Decisions if `adopt` needs a mapping line. Until it lands, the plugin's
-  scripts fall back to the old path (Done when).
+- Moving a repo set up at the old paths (Daisy): `jig/specs/update.md`. Until it lands, the
+  plugin's scripts fall back to the old path (Done when).
 - Keeping this repo's installed `jig/jig.py` in step with its source
   `plugin/templates/jig/jig.py`. Its own spec, before this repo runs `/jig:init`: hooks run
   trunk's installed copy, so drift means the rules enforced here aren't the ones shipped.
 
 ## Touches
 - `plugin/templates/jig/jig.py`: `DIR = "jig"`; `BOARD`; `HOMES` / `HOME_DIRS` (every home
-  except `AGENTS.md`, `CLAUDE.md`, `README.md`, `.claude/skills/` moves under `jig/`);
+  except `AGENTS.md`, `CLAUDE.md`, `README.md`, `docs/`, `.claude/skills/` moves under `jig/`);
   `TOOL_DIRS` drops `.jig/` and does not gain `jig/` — `jig/` is a home now, not a tool dir;
   R7's ledger path; `init` drops its `.gitignore` line, updates `common`, `append_files`;
   worktree path → `.git/jig/worktrees/` (`cmd_open`, the R1/R2 messages); `HOOK` template;
@@ -51,23 +54,30 @@ once it runs `/jig:init`.
   core files; handoff note path; `cmd_handoff`/`cmd_gate` note lookup. Two source filters
   skip `.jig/` today by its leading dot and must skip `jig/` explicitly: survey's `src`
   list (`scripts/` → `jig/scripts/` too) and `foldin_lines`.
-- `plugin/templates/`: move `docs/`, `scripts/`, `specs/`, `ledgers/`, `jig/` under one
+- `plugin/templates/`: move `scripts/`, `specs/`, `ledgers/`, `jig/` under one
   `templates/jig/` tree so init copies a single folder: `templates/jig/{jig.py, RULES.md,
-  docs/, scripts/, specs/, ledgers/}`. `templates/AGENTS.md`, `templates/CLAUDE.md`,
-  `templates/skill-template/` stay beside it.
+  scripts/, specs/, ledgers/}`. `templates/docs/{README.md, HARDWARE.md}`,
+  `templates/AGENTS.md`, `templates/CLAUDE.md` and `templates/skill-template/` stay beside it.
 - `plugin/scripts/check.sh`, `format.sh`: delegate to `jig/scripts/<name>`, falling back to
   `scripts/<name>`.
-- `plugin/skills/*/SKILL.md`: every path. `init` copies `templates/jig/` → `jig/` then
-  `AGENTS.md`/`CLAUDE.md` to root. `survey`'s "homes" prose. `adopt`'s homes table and §4.
-  `hubnode`/`subnode` command paths (`python3 jig/jig.py`). `retro`, `verify`, `review`,
-  `bug`, `brief`, `feedback`, `esp-idf-esp32s3` (`jig/docs/HARDWARE.md`).
+- `plugin/skills/*/SKILL.md`: every path. `init` copies `templates/jig/` → `jig/`, then
+  `templates/docs/` → `docs/`, never overwriting, then `AGENTS.md`/`CLAUDE.md` to root.
+  `survey`'s "homes" prose. `adopt`'s homes table and §4. `hubnode`/`subnode` command paths
+  (`python3 jig/jig.py`). `retro`, `verify`, `review`, `bug`, `brief`, `feedback`,
+  `esp-idf-esp32s3` (`docs/HARDWARE.md`).
 - `plugin/templates/AGENTS.md`, `plugin/templates/jig/RULES.md`, `adopt/MIGRATION.md`.
 - `tests/smoke.sh`, `README.md`, `AGENTS.md` (this repo), `marketing/FEATURES.md` row.
 - This repo's `specs/` → `jig/specs/` (`git mv`), and `AGENTS.md`'s `specs/<task>.md` line.
 
 ## Alternatives considered
-- Keep `docs/` and `scripts/` at root as "the repo's own". Rejected by the owner: the root
-  should hold only what is for the repo, and these are jig-shaped — reason `[seen]`, stated.
+- Keep `scripts/` at root as "the repo's own". Rejected by the owner: the root should hold
+  only what is for the repo, and `check.sh`/`format.sh` exist because jig's hooks run them.
+  `[seen]`, stated.
+- Move the repo's `docs/` under `jig/docs/`. Built that way in `62c8d9f`, then reversed by
+  the owner on Oct 28. `jig/` holds what jig manages (scopes, changes, decisions, handoffs,
+  ledgers); a repo's documentation of its own system belongs to the repo. `[seen]`, stated.
+  The Daisy paper run showed the cost: moving `docs/` would have broken three of its own
+  code files, which hard-code `docs/` paths.
 - Hidden `.jig/` instead of visible `jig/`. Rejected: a folder holding the rulebook, specs
   and ledgers is read by people, not only tools — `[seen]`, stated in the same conversation.
 - `jig/worktrees/`. Rejected: tools that skip dot-folders by default (pytest's
@@ -79,14 +89,19 @@ once it runs `/jig:init`.
   Tested: `git worktree add .git/jig/worktrees/L1` works and trunk's status stays clean.
 - `jig/handoffs/` is committed, as before.
 - `payload` needs no entry for `jig/`: it is a home, so survey never looks for one.
-- `adopt` gets no old-path mapping line here. Moving a repo set up at the old paths is the
-  separate adopt spec; until then the plugin's scripts fall back to `scripts/`.
-- `HARDWARE.md` ships inside `templates/jig/docs/` so init copies one folder; init deletes it
-  for a repo that isn't firmware, as it already deletes the AGENTS.md Firmware section.
-- The board's `common` is `AGENTS.md` + `jig/**`: specs, ledgers and docs are all under `jig/`.
+- `adopt` gets no old-path mapping line here. Moving a repo set up at the old paths is
+  `update`'s job; until it lands, the plugin's scripts fall back to `scripts/`.
+- `HARDWARE.md` ships in `templates/docs/`, because it records the repo's hardware, not jig's
+  state. init deletes it for a repo that isn't firmware, just as it deletes the AGENTS.md
+  Firmware section.
+- The board's `common` is `AGENTS.md`, `docs/**` and `jig/**`. Specs and ledgers are under
+  `jig/`. `docs/**` stays common, as it was before this spec.
 - `gate`'s scratch checkout moves with the worktrees, to `.git/jig/worktrees/gate-<lane>`.
 - "Don't patch it; it's the tool's" (RULES.md, `/jig:feedback`) narrows from `.jig/` to
-  `jig/jig.py` and `jig/RULES.md`: `jig/` now also holds the repo's own specs, docs, ledgers.
+  `jig/jig.py` and `jig/RULES.md`: `jig/` now also holds the repo's own specs and ledgers.
+- Amended Oct 28: `docs/` comes back out of `jig/`. The boxes for root contents, the path
+  grep, survey homes and the new `jig/docs` grep are unchecked again until that pass lands.
+  Scripts, specs, ledgers, handoffs and the board stay under `jig/`.
 - The scratch-repo items are checked by `tests/smoke.sh`, which copies the templates the way
   the init skill says, not by running `/jig:init` itself. The permission-prompt item needs a
   real subnode session and is still open.
