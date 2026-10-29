@@ -40,6 +40,12 @@ Then:
 1. **Firmware?** If the repo has `sdkconfig`, `platformio.ini`, `idf_component.yml`, `west.yml`, `*.ino`, or a `main/` with C, keep the "Firmware" section of `AGENTS.md` and copy nothing else for it: when a board is ready to spec, `/jig:hardware` writes its page from a definition the user gives, and installs the skills it lists. Otherwise delete the "Firmware" section. If unsure, ask one question.
 2. `chmod +x jig/scripts/*.sh`.
 3. **Fill what the code tells you.** In `AGENTS.md` Commands and `jig/scripts/check.sh`: detect the build system (`package.json`, `Cargo.toml`, `pyproject.toml`, `CMakeLists.txt`, `idf.py`, `platformio.ini`) and replace the matching `TODO` lines. Leave anything you can't infer as `TODO` — don't guess.
+   In `jig/scripts/setup.sh`, install from what is there, and leave a TODO for anything else:
+   `uv.lock` → `uv sync`; `poetry.lock` → `poetry install`; `requirements*.txt` → a venv and
+   `pip install -r`; each `package-lock.json`, `pnpm-lock.yaml` or `yarn.lock` → that tool's
+   install in its directory; `.gitmodules` → `git submodule update --init --recursive`; a
+   gitignored `.env` in the main checkout → the copy line. Install, never link, unless the
+   user asks: a linked environment hides an undeclared dependency from the gate.
 4. Write one sentence for the Project line in `AGENTS.md` from the README or the code. Mark it `(inferred)` so the user corrects it.
 5. If the repo already has a `CLAUDE.md` with content, don't replace it; append `@AGENTS.md` and say so.
 6. Report: files created, TODOs remaining, the git hooks installed, and that lanes are available (`/jig:hubnode`, `/jig:subnode`) but need no setup until a second session starts.

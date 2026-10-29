@@ -14,21 +14,21 @@ This spec builds the metarepo side. `jig/specs/para.md` builds the pararepo side
 it can't be tested without a released metarepo, so it comes second.
 
 ## Done when
-- [ ] `tests/smoke.sh` gains a meta section in a throwaway metarepo, every case PASS or the
+- [x] `tests/smoke.sh` gains a meta section in a throwaway metarepo, every case PASS or the
       expected refusal:
-  - [ ] `meta-init` then `meta-release` tags `v0.1`; a second `meta-release` with no
+  - [x] `meta-init` then `meta-release` tags `v0.1`; a second `meta-release` with no
         entry-file change refuses ("nothing to release").
-  - [ ] Staging a `SRC_EXT` file outside `jig/` → refused. A change to `jig/jig.py` → accepted.
-  - [ ] A decision row without status + date → refused.
-  - [ ] Entry file changed without `CHANGELOG.md` staged → refused.
-  - [ ] A direct (non-merge) commit on `main` → refused. A `--no-ff` merge of an unreviewed
+  - [x] Staging a `SRC_EXT` file outside `jig/` → refused. A change to `jig/jig.py` → accepted.
+  - [x] A decision row without status + date → refused.
+  - [x] Entry file changed without `CHANGELOG.md` staged → refused.
+  - [x] A direct (non-merge) commit on `main` → refused. A `--no-ff` merge of an unreviewed
         branch → refused by `pre-merge-commit`.
-  - [ ] A fast-forward of an unreviewed branch onto `main` (no hook runs) → the next
+  - [x] A fast-forward of an unreviewed branch onto `main` (no hook runs) → the next
         `meta-release` and `pre-push` refuse, naming the commit.
-  - [ ] A commit subject without an id prefix (`E-022: …`, `GLOSSARY: …`) → refused.
-  - [ ] `git tag v0.2` by hand → the next `meta-release` and `pre-push` fail, naming the tag.
-- [ ] `claude plugin validate ./plugin` passes. `jig.py` is still one stdlib-only file.
-- [ ] `grep -rnE 'Maige|maige|"E-' plugin` returns nothing.
+  - [x] A commit subject without an id prefix (`E-022: …`, `GLOSSARY: …`) → refused.
+  - [x] `git tag v0.2` by hand → the next `meta-release` and `pre-push` fail, naming the tag.
+- [x] `claude plugin validate ./plugin` passes. `jig.py` is still one stdlib-only file.
+- [x] `grep -rnE 'Maige|maige|"E-' plugin` returns nothing.
 
 ## Out of scope
 - The pararepo side: `para-init`, `para-sync`, `para-propose`, contract paths (`jig/specs/para.md`).
@@ -80,3 +80,20 @@ it can't be tested without a released metarepo, so it comes second.
   decides. Everything else refuses (exit 2).
 - Our instance's names and prefix are configuration for those repos, not anything in
   `plugin/` (see `jig/specs/para.md`).
+
+- Build, Oct 29. Smoke covers every case above, and smoke and the validator pass.
+  - **The seeds are written by `jig.py meta-init`, not shipped in `templates/jig/`.** Init
+    copies that folder into every repo, and a `meta.json` there would switch the metarepo
+    gates on everywhere.
+  - **The default decision prefix is `D-`.** `"E-"` belongs to one instance and may not
+    appear in `plugin/`.
+  - **The release commit is written with plumbing** (`commit-tree`, `update-ref`, an
+    annotated tag), so no hook refuses it as a direct commit on trunk. History checks
+    recognize it as the tagged commit.
+  - **M4 exempts commits that only touch `jig/`.** The hubnode keeps the board and handoffs
+    on trunk. `[assumed]`: lanes in a metarepo are rare, but R5 needs this.
+  - **M5's record is `.git/jig/reviewed.log`**, which every `jig reviewed` appends to. It is
+    per clone. `[assumed]`, acceptable at R0 with one user.
+  - **`pre-merge-commit` learns what is being merged from `GIT_REFLOG_ACTION`.** Git hasn't
+    written `MERGE_HEAD` yet at that point. `[seen]`: git 2.53.
+- Review, Oct 29 (fresh context): `git pull` of a reviewed branch was refused as M4, because a pull names its merge in `FETCH_HEAD`, not in `GIT_REFLOG_ACTION`. Fixed and smoke-tested. `reviewed.log` stays per clone, `[assumed]` as above.

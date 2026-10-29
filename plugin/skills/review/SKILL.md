@@ -22,6 +22,8 @@ Its job is to find the reason this change is wrong. Five questions:
    tagged `[seen]`? An empty slot, or an `[assumed]` reason the fix depends on, is blocking.
 5. What would make this fail that the author didn't consider? One concrete scenario, or say
    there isn't one.
+6. In a pararepo: does it change a contract path without a metarepo proposal, or with a
+   `meta: none` reason that doesn't hold?
 
 ## What counts
 

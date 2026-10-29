@@ -10,30 +10,30 @@ files into a checkout: a new worktree, or a merge. jig decides when it runs, and
 decides what it does. That is the same split as `check.sh` and `format.sh`.
 
 ## Done when
-- [ ] `tests/smoke.sh`, in a repo whose `setup.sh` appends `$PWD` to a log outside the repo:
+- [x] `tests/smoke.sh`, in a repo whose `setup.sh` appends `$PWD` to a log outside the repo:
       - `jig open` and a plain `git worktree add --detach` each log the new worktree once.
       - `git switch` in an existing checkout logs nothing.
       - A merge that changes files logs the checkout that merged, once, for both a
         fast-forward and a true merge. "Already up to date" logs nothing.
       - `jig sync` that resolves an append conflict itself logs the lane's worktree once.
       - `jig open`'s stderr shows what `setup.sh` printed.
-- [ ] A `setup.sh` that exits 1 fails nothing. `jig open` exits 0, the lane is on the board
+- [x] A `setup.sh` that exits 1 fails nothing. `jig open` exits 0, the lane is on the board
       and the worktree exists. A plain `git worktree add` exits 0. Stderr names
       `jig/scripts/setup.sh`, its exit code and the checkout. (smoke)
-- [ ] A checkout with no `jig/scripts/setup.sh`, such as a branch from before this change,
+- [x] A checkout with no `jig/scripts/setup.sh`, such as a branch from before this change,
       runs nothing and prints nothing extra. (smoke)
-- [ ] After init, `jig/scripts/setup.sh` is executable and exits 0. Its body is TODOs, like
+- [x] After init, `jig/scripts/setup.sh` is executable and exits 0. Its body is TODOs, like
       `check.sh`'s. (smoke)
 - [ ] The template's link example, uncommented, can be run twice in a worktree and once in
       the main checkout. Each run leaves the same state, and the worktree's
       `git status --porcelain` stays empty. Checked by hand in a scratch repo.
-- [ ] With this and `update` both landed, `update --apply` on a repo without `setup.sh` copies
+- [x] With this and `update` both landed, `update --apply` on a repo without `setup.sh` copies
       the template's and installs the `post-merge` hook. A repo that has one keeps it
       byte-identical. (smoke, in update's cases)
 - [ ] A Claude Code worktree session in a jig repo starts with `setup.sh` already run.
       Checked once by hand. `[assumed]` until then: that Claude Code makes its worktrees with
       `git worktree add`.
-- [ ] `claude plugin validate ./plugin` passes.
+- [x] `claude plugin validate ./plugin` passes.
 
 ## Out of scope
 - A board list of paths to link from the main checkout (see Alternatives).
@@ -172,3 +172,13 @@ decides what it does. That is the same split as `check.sh` and `format.sh`.
   needs the same care. `[seen]`: a linked `.venv` shows as untracked under a `.venv/`
   ignore pattern, and a linked `node_modules` is ignored under `node_modules`. The template
   says so beside the link example, instead of jig editing `info/exclude`.
+- A merge runs the `setup.sh` it brought in, before anyone reads it. This is accepted: the
+  hooks are opt-in per clone, `check.sh` already runs the checkout's own copy, and the
+  script is reviewed like any code. `RULES.md` says so. `[seen]`, review Oct 29.
+- Build, Oct 29. Smoke passes 91/91 and the validator passes. The two by-hand items are still
+  open: the link example run twice, and a Claude Code worktree session.
+  - `run_setup` drops `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` and `GIT_PREFIX` from the
+    script's environment. That way the same script behaves the same from a hook as by hand.
+    `[assumed]`: a `git submodule update` run from a hook would otherwise act on the hook's
+    repository.
+- Review, Oct 29 (fresh context): the merge-runs-`setup.sh` point above came from it. The by-hand link check is still open.

@@ -133,6 +133,7 @@ the plan and never assume it calls anything a lane. What matters is whether it h
 | ADRs | `jig/specs/` decisions and `jig/ledgers/WORKAROUNDS.md` |
 | branches not merged into trunk | lanes to adopt |
 | a homebrew board with owners and states | the board |
+| a step that links or installs into each new worktree | `jig/scripts/setup.sh` |
 
 If any of those are present, the plan's first stages are the migration stages in step 6.
 
@@ -162,6 +163,8 @@ When the repo already coordinates parallel work (4b), these stages come first, i
 Copy `${CLAUDE_PLUGIN_ROOT}/templates/jig/` to `jig/` as `/jig:init` does, and
 `chmod +x jig/scripts/*.sh`. `AGENTS.md` and `CLAUDE.md` are the plan's diet, not this copy.
 Keep `jig/scripts/check.sh` and `format.sh` to fast checks — the Stop hook has a time limit.
+Fill `jig/scripts/setup.sh` the way `/jig:init` does. It replaces whatever the predecessor
+did to set up each new worktree, which goes with the predecessor in 6.5.
 Then:
 
 ```sh

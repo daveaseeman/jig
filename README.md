@@ -61,9 +61,10 @@ the places jig goes further. Full argument in [`marketing/DIFFERENCES.md`](marke
 jig is two things in one folder:
 
 - **A Claude Code plugin** (`plugin/`): skills for the loop — `brief`, `bug`, `verify`,
-  `review`, `retro` — plus `init`, `survey` and `adopt` to set a repo up, `hubnode` and
-  `subnode` for parallel sessions, `hardware` for speccing a board and installing the skills
-  it needs, and `feedback` for reporting a bug in jig itself.
+  `review`, `retro` — plus `init`, `survey` and `adopt` to set a repo up, `update` to bring
+  it to the current layout, `hubnode` and `subnode` for parallel sessions, `hardware` for
+  speccing a board and installing the skills it needs, and `feedback` for reporting a bug in
+  jig itself.
 - **A repo-side checker** (`plugin/templates/jig/jig.py`) that `init` copies into `jig/`.
   It owns the board of lanes, runs the rules from git hooks, and drives sync, handoff and gate.
   The skills are thin wrappers around it.
@@ -99,6 +100,13 @@ In a repo with history and its own way of doing things — read-only, writes a p
 ```
 /jig:survey      # what's here, in the repo's own terms
 /jig:adopt       # a staged migration plan in jig/specs/
+```
+
+In a repo already running jig, after the plugin moves where it keeps things — a dry run first,
+then it asks:
+
+```
+/jig:update      # jig's files to their current paths; your own files only on a yes
 ```
 
 Day to day:

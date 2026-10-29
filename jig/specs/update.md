@@ -16,7 +16,7 @@ Dry-run by default; nothing moves without `--apply`. It commits nothing. A repo 
 current prints "up to date" and exits 0.
 
 ## Done when
-- [ ] `tests/smoke.sh`: four old layouts are set up, each with a `reserve` counter on
+- [x] `tests/smoke.sh`: four old layouts are set up, each with a `reserve` counter on
       `docs/**` and a `docmap` page:
       - the three in this repo's history (`eaec973`, `66a044c`, `62c8d9f`), each as that
         commit's init skill says;
@@ -29,16 +29,16 @@ current prints "up to date" and exits 0.
       - `.git/jig/enabled`, and no `.git/aidev/`
 
       After a commit, survey reports no homeless files.
-- [ ] Every board glob that matched a tracked file before the update matches one after it:
+- [x] Every board glob that matched a tracked file before the update matches one after it:
       `common`, `append_files`, `payload`, `reserve.*.files`, `docmap` keys and values, each
       lane's `owns` and `shares`. None silently matches nothing, and `scripts/**` is left
       alone.
-- [ ] The repo's own files are renamed, not edited: each one that moved shows as `R100` in
+- [x] The repo's own files are renamed, not edited: each one that moved shows as `R100` in
       `git diff --cached -M --name-status`. The only other entries are the board, `jig.py`,
       `RULES.md`, and `.gitignore` losing exactly the old worktrees line (`.jig/worktrees/`
       or `.aidev/worktrees/`).
-- [ ] A second `update --apply` prints "up to date" and leaves `git status --porcelain` as it was.
-- [ ] Without `--apply`, nothing changes: `git status --porcelain` and `.git/` are the same
+- [x] A second `update --apply` prints "up to date" and leaves `git status --porcelain` as it was.
+- [x] Without `--apply`, nothing changes: `git status --porcelain` and `.git/` are the same
       before and after. The plan prints:
       - each move and each board edit
       - each warning and blocker
@@ -46,7 +46,7 @@ current prints "up to date" and exits 0.
         that aren't Markdown
       - the repo files to review, each with its proposed edit
       - the `AGENTS.md` diff against the template
-- [ ] Unrecognized patterns, one smoke case each:
+- [x] Unrecognized patterns, one smoke case each:
       - Blocked: two boards, at `jig/lanes.json` and `.jig/lanes.json`. `update` names both,
         and `--apply` changes nothing.
       - Blocked: no board at any path in the table. `update` names any board-like JSON in a
@@ -54,19 +54,19 @@ current prints "up to date" and exits 0.
       - Warning: an extra file in `.jig/`. `--apply` proceeds, and the file and `.jig/` stay.
       - Warning: a board key jig doesn't know. It is kept and named.
       - Warning: a `.py` file that names `.jig/lanes.json`.
-- [ ] After `--apply`, `update` runs `jig/scripts/check.sh` and prints whether it passed. A
+- [x] After `--apply`, `update` runs `jig/scripts/check.sh` and prints whether it passed. A
       failing check undoes nothing.
-- [ ] Exit codes: 0 when up to date, applied, or the plan is clean; 1 when the plan has
+- [x] Exit codes: 0 when up to date, applied, or the plan is clean; 1 when the plan has
       warnings; 2 when it is blocked or refused.
-- [ ] A board stamped above the plugin's `STAMP` refuses: "repo is ahead; update the plugin".
-- [ ] With any lane open, or any worktree besides the main checkout, `update` refuses and names
+- [x] A board stamped above the plugin's `STAMP` refuses: "repo is ahead; update the plugin".
+- [x] With any lane open, or any worktree besides the main checkout, `update` refuses and names
       them. These checks read the board `update` found, and there is no `--force`.
-- [ ] Same stamp, different `jig.py` or `RULES.md`: `--apply` replaces both and reinstalls
+- [x] Same stamp, different `jig.py` or `RULES.md`: `--apply` replaces both and reinstalls
       the hooks, and nothing moves.
-- [ ] Daisy, for real. Once `update` is built, run its dry run on the scratch copy. It must
+- [x] Daisy, for real. Once `update` is built, run its dry run on the scratch copy. It must
       match the hand-written list under Decisions: no blocker, and three code warnings. The
       real repo is not touched.
-- [ ] `claude plugin validate ./plugin` passes.
+- [x] `claude plugin validate ./plugin` passes.
 
 ## Out of scope
 - Updating the plugin itself (that is `claude plugin update`).
@@ -275,3 +275,47 @@ current prints "up to date" and exits 0.
   targets. Then `hardware` (it adds the review list), then `update`, then `worktree-setup`
   (its first step and `STAMP` 4), then meta and para, which add no rows. If `worktree-setup` has landed by the real Daisy run, the
   expected list also gains a TODO `jig/scripts/setup.sh` and a fifth hook, `post-merge`.
+- Build, Oct 29. Smoke passes 73/73 and the validator passes. Every done-when item has a
+  smoke case, except the Daisy run, which was done by hand on the scratch copy.
+  - Five deliberate breaks were each caught by a failing case:
+    - no coverage rule
+    - no `# aidev hook` marker
+    - no old-folder rewrite
+    - no guard on the layout
+    - no check that both paths exist
+  - Daisy dry run on the scratch copy at `88560bd`: no blocker. The moves, board edits,
+    `.gitignore` line and four hooks match the hand-written list above. Exactly three code
+    warnings: `test_docs.py`, `gen_reference.py`, `reading_list.py`. The copy is unchanged
+    afterwards.
+- Refinements the build made, each tested in smoke:
+  - **A moved folder stays covered.** When a folder row moves files out from under a
+    broader glob, the list gains the new folder's `**`: at `62c8d9f`, `common`'s `jig/**`
+    held `jig/docs/`, so `docs/**` is added. A file row adds nothing, so `scripts/**` still
+    means only the repo's own scripts. `[seen]`: without the rule, smoke's coverage case fails
+    on `62c8d9f`.
+  - **Old root paths count only on an old layout.** A row whose old path is outside jig's
+    folders (`specs/`, `ledgers/`, the root ledgers, `scripts/check.sh`) applies only while
+    the board sits in `.jig/` or `.aidev/`. Once the board is in `jig/`, a root `specs/` is
+    the repo's own: JS projects use that name for tests. It is not moved, and nothing warns.
+  - **A warning needs a stale path outside a comment.** A reference inside a comment is still
+    listed with its lines. `[seen]` on Daisy: three files carry `# See WORKAROUNDS.md`
+    comments, which no check runs. The paper run's three were the code lines.
+  - **Handoff notes are skipped anywhere**, not only in `jig/handoffs/`. They record what was
+    true then. On Daisy, `.claude/claude-lane/manifests/handoffs/` is another tool's archive.
+  - **A failing check after `--apply` exits 1.** The exit-code list said "applied" is 0. A red
+    check is the one thing a script calling `--apply` must not miss, and nothing is undone.
+- Review, Oct 29 (fresh context): one blocking finding and five more, all taken.
+  - **Blocking: an interrupted `--apply` left jig half-moved.** The board moved first, so a
+    re-run read the half-moved repo as already current. Now the board moves last, and
+    `--apply` refuses while there are tracked changes.
+  - **"Up to date" exits 0**, even while a kept warning stands.
+  - **Open lanes and extra worktrees refuse only when there is something to apply.** Before,
+    the hubnode's session-start dry run refused in every repo that had a merged lane's
+    worktree left behind, so it could never report "behind".
+  - **A root `specs/` or `ledgers/` moves only its Markdown.** Anything else is the repo's own
+    (`specs/app.spec.js`) and stays, with a warning.
+  - **The `.gitignore` edit removes exactly the old line** and keeps the line endings.
+  - **Hooks are read with `errors="replace"`.**
+- With worktree-setup built, `STAMP` is 4. Its step adds a TODO `setup.sh`, and `post-merge`
+  makes the hooks five. Daisy's run gains both.
+

@@ -58,7 +58,7 @@ hardware definition, never to a chip name.
       missing. `/jig:retro` installs it.
 - [ ] By hand: asked to "install the ESP-IDF skill", `/jig:hardware` installs it without
       writing a page.
-- [ ] With `update` built: its dry run lists `docs/HARDWARE.md` and
+- [x] With `update` built: its dry run lists `docs/HARDWARE.md` and
       `.claude/skills/_skill-template/` under "repo files to review", each with a proposed
       edit. `--apply` touches neither. The update skill asks about each one. (smoke, in
       update's cases)

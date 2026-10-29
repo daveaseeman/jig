@@ -161,13 +161,49 @@ else stops with the files named, and a person resolves it.
    A lane may hand off several times.
 2. **The hubnode gates.** `jig gate <lane>` refuses on R8 and on a missing note. Then it runs the checks **against the commit the note names, in a detached
    scratch checkout** — never the lane's live worktree, which the subnode may still be building in.
+   The hooks set that checkout up with `jig/scripts/setup.sh`, when it is added and again
+   after its merge of trunk, so the checks run in an environment built from the lane's own
+   manifests.
+   That means a merge runs the merged-in `setup.sh`: review a change to it like any other
+   code, because the next merge executes it.
 3. **The hubnode merges**, marks the lane, logs it, and syncs the clean lanes.
+
+## Metarepo and pararepos
+
+A set of repos can share one **metarepo**: docs only — definitions, decisions, conventions.
+Each **pararepo** (code, firmware, hardware) cites it at a released tag. The metarepo points;
+nothing copies it. Three rules do the work:
+
+1. A pararepo writes the metarepo only by branch, via `jig para-propose`.
+2. The metarepo holds no code and no copied pararepo content.
+3. Only `jig meta-release` tags, so a pin never names something that failed validation.
+
+Each side's gates are on only when its file is on trunk: `jig/meta.json` or `jig/para.json`.
+
+| Gate | Refuses |
+|---|---|
+| M1 | a source file outside `jig/` in the metarepo |
+| M2 | a decision row (`| D-001 | … |`) without a status and a `YYYY-MM-DD` date |
+| M3 | an entry file changed without a line in `CHANGELOG.md` |
+| M4 | a commit on trunk that isn't a merge (jig's own files under `jig/` excepted) |
+| M5 | a merge of a commit `jig reviewed` never recorded |
+| M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`) |
+| P1 | an `AGENTS.md` header that differs from what `jig/para.json` generates |
+| P2 | a contract-path change with no spec saying `meta: <name> proposal <branch>` or `meta: none — <reason>` |
+| P3 | the metarepo's cache (`jig/meta-cache/`) or its checkout committed into the pararepo |
+
+A fast-forward runs no hook, so `meta-release` and the metarepo's pre-push re-check every
+first-parent commit since the last release, and refuse any tag `meta-release` didn't make.
+Tags are `v<major>.<minor>`: minor for additions and clarifications, major for a rename or a
+reversed decision. A pararepo pins a minor, never `main`, and bumps it in a commit of its
+own, `meta: <name> v0.3 → v0.4`, with `para-sync`'s report as the body.
 
 ## Commands
 
 ```
 jig init [--trunk main]     board, git hooks
 jig survey [--json]         inventory the repo against the jig shape
+jig update [--apply]        bring the repo to the current jig layout (dry run without --apply)
 jig open ... --reserve K    allocate scarce counter K to this lane
 jig reading-list <paths>    what to read before touching these files
 jig install-hooks           rewrite the hooks
@@ -181,6 +217,8 @@ jig reviewed                record that HEAD has been reviewed
 jig handoff [--spec path]   write the note for HEAD
 jig gate <name>             hubnode: verify, then print the gate commands
 jig log [message] [-n N]    append to or read the log
+jig meta-init / meta-release [--major]     metarepo: set up / validate, then tag
+jig para-init / para-sync / para-propose   pararepo: cite / refresh and report / propose
 ```
 
 ## Hooks are opt-in per checkout

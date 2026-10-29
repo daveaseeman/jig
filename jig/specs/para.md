@@ -7,26 +7,26 @@ work, on a branch of the metarepo, and bumps its pin after release. Drift is vis
 silent. It writes the metarepo only by branch, via `para-propose`.
 
 ## Done when
-- [ ] `tests/smoke.sh` gains a para section: a throwaway metarepo released at `v0.1` (using
+- [x] `tests/smoke.sh` gains a para section: a throwaway metarepo released at `v0.1` (using
       `jig/specs/meta.md`'s commands) and one throwaway pararepo, every case PASS or the expected
       refusal:
-  - [ ] `para-init` writes `jig/para.json`, generates the `AGENTS.md` header, fills
+  - [x] `para-init` writes `jig/para.json`, generates the `AGENTS.md` header, fills
         `jig/meta-cache/` and adds it to `.gitignore`. Hand-editing the header → next commit
         refused.
-  - [ ] Staging a change under a `contract_path` when no spec in the change carries a proposal
+  - [x] Staging a change under a `contract_path` when no spec in the change carries a proposal
         id or `meta: none — <reason>` → refused. With either → accepted.
-  - [ ] `git add -f` of anything under `jig/meta-cache/` → refused. Staging a path inside the
+  - [x] `git add -f` of anything under `jig/meta-cache/` → refused. Staging a path inside the
         metarepo checkout → refused.
-  - [ ] `para-propose` creates a branch on the metarepo, writes the proposal id into the
+  - [x] `para-propose` creates a branch on the metarepo, writes the proposal id into the
         spec's Decisions, and never touches the metarepo's `main`.
-  - [ ] `para-sync` after a metarepo release reports the diff in the pararepo's terms and
+  - [x] `para-sync` after a metarepo release reports the diff in the pararepo's terms and
         proposes a bump; the pin is unchanged until the user commits `meta: <name> v0.1 → v0.2`.
-  - [ ] `para-sync` offline (metarepo path unreachable) reads the cache and says so.
-  - [ ] With `defer_until` in the future, `para-sync` prints nothing; on or after it, the full
+  - [x] `para-sync` offline (metarepo path unreachable) reads the cache and says so.
+  - [x] With `defer_until` in the future, `para-sync` prints nothing; on or after it, the full
         report.
-- [ ] The generated `AGENTS.md` header is at most 6 lines, counted in the 40-line budget.
-- [ ] `claude plugin validate ./plugin` passes. `jig.py` is still one stdlib-only file.
-- [ ] `grep -rnE 'Maige|maige|"E-' plugin` returns nothing.
+- [x] The generated `AGENTS.md` header is at most 6 lines, counted in the 40-line budget.
+- [x] `claude plugin validate ./plugin` passes. `jig.py` is still one stdlib-only file.
+- [x] `grep -rnE 'Maige|maige|"E-' plugin` returns nothing.
 
 ## Out of scope
 - The metarepo side (`jig/specs/meta.md`).
@@ -35,8 +35,7 @@ silent. It writes the metarepo only by branch, via `para-propose`.
 ## Touches
 - `plugin/templates/jig/jig.py`: `para-init`, `para-sync`, `para-propose`; a pararepo rule
   group in `check_rules`, gated on `jig/para.json` (absent → nothing changes).
-- `plugin/templates/jig/`: `para.json`, the generated `AGENTS.md` header, a `PENDING.md`
-  section for a deferring pararepo.
+- `plugin/templates/jig/`: `para.json` and the generated `AGENTS.md` header.
 - Skills, one line each: `brief` asks whether the task touches a contract path; `review`
   gets a sixth question (contract change without a proposal?); `retro` asks whether a
   repeated cross-repo confusion is a glossary entry; `hubnode` runs `para-sync` at session
@@ -73,3 +72,33 @@ silent. It writes the metarepo only by branch, via `para-propose`.
   `maige-lite` (protocol header, hardware spec); later `familiar`, `towyr`; prefix `E-`; first
   tag `v0.1` — is configuration for those repos, not anything in `plugin/`. `maige-os` was
   `defer_until = "demo-gate"`; it needs a date.
+
+- Build, Oct 29. Smoke covers every case above, and smoke and the validator pass.
+  - **`location` must be a local clone.** `para-sync` fetches its tags. A URL has no way to
+    read a tag's files with stdlib git alone, so the cache stands in. `[assumed]`
+  - **A proposal id is the metarepo branch `propose/<pararepo>-<slug>`.** It is written into
+    the spec's Decisions as `meta: <name> proposal <branch>`. `para-sync` reports whether
+    each one has reached a release, and the hubnode refuses a lane that cites an unreleased
+    one.
+  - **`para-init` gitignores `jig/meta-cache/`**, and also the clone when it sits inside the
+    repo.
+  - **Not built: the `PENDING.md` section** for a deferring pararepo. `defer_until` alone
+    silences `para-sync` until its date, and nothing else needed the section yet.
+- Amended Oct 29, with the owner: **`para.json` names its metarepo and no longer holds a
+  path.** A committed path only works on the machine that wrote it, and repos needn't share
+  a folder.
+  - `para-init`, `para-sync` and `para-propose` find the checkout by that name in the user's
+    `repos.json` (`jig repos`, from `jig/specs/staging.md`). None of the three is a gate, so
+    reading user config there is allowed. `para-init --location` records the path there.
+  - P3 stays stateless. It refuses a staged gitlink whose checkout's `jig/meta.json` names
+    this metarepo, and `para-init` gitignores a checkout that sits inside the repo.
+  - The config line in Decisions above is now
+    `{"meta", "pin", "defer_until", "contract_paths"}`. An older `para.json`'s `location` is
+    dropped on the next `para-init`.
+  - Smoke passes 119/119.
+- Review, Oct 29 (fresh context), all taken and smoke-tested:
+  - A new worktree had no `jig/meta-cache/`. `run_setup` now copies the main checkout's cache into it.
+  - `para-propose` named its branch after a lane's folder. It now uses the repo's own name.
+  - `jig repos` failed outside a git repo. It now works anywhere.
+  - A mistyped pin wiped the cache. `fill_cache` now checks the tag first.
+  - Malformed JSON raised a traceback in the hook. It is now a refusal.

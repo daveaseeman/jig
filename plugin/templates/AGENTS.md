@@ -13,6 +13,7 @@ Risk: R0 — personal prototype, single user, nothing shipped. Optimize for spee
 - lint:   `TODO`
 - run:    `TODO`
 - check:  `jig/scripts/check.sh` (runs on every stop; must pass before you're done)
+- setup:  `jig/scripts/setup.sh` (runs itself in new worktrees and after merges; run it after changing dependencies)
 
 ## Workflow
 - Task bigger than a one-sentence diff → write `jig/specs/<task>.md` first (see /jig:brief). Plan before editing.

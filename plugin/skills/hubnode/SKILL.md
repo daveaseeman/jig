@@ -14,11 +14,17 @@ message you at a handoff or when blocked.
    branch here, say which and stop — do not move their work.
 2. `jig status`. Report as a numbered list: each lane, its state, distance from trunk,
    whether its worktree is dirty, whether a handoff waits.
-3. Work in this order: open the lanes asked for, gate the handoffs waiting, sync the rest.
+3. `python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" update`, the dry run. Up to date:
+   say nothing. A plan: one line, "the repo is behind the plugin's layout: run /jig:update".
+   Refused or blocked: one line with its first reason.
+4. In a pararepo (`jig/para.json`), `jig para-sync`; report a newer release in one line.
+5. Work in this order: open the lanes asked for, gate the handoffs waiting, sync the rest.
 
 ## Opening a lane
 
-1. Read the brief. Decide: name, branch, what it builds after, which existing files it
+1. Read the brief. In a pararepo, refuse a lane whose spec cites a proposal `para-sync`
+   reports as not released: it would build on a decision the metarepo hasn't made.
+   Decide: name, branch, what it builds after, which existing files it
    `owns` (only this lane may touch) and which it `shares`, and whether it needs a reserved
    number.
 2. `jig open <name> --brief "..." --owns <paths> --shares <paths> --after <lanes> --reserve schema`.

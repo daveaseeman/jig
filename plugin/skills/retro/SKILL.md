@@ -19,4 +19,6 @@ Then read `jig/ledgers/DEFERRED.md`:
 - Deferred rows for a scope that has closed → re-rank together; take, or reject with a reason.
 - Rejected with `[assumed]` → can it be converted now? A wrong assumption puts the finding back.
 
+In a pararepo: the same cross-repo confusion twice is a glossary entry, proposed to the metarepo with `jig para-propose`.
+
 Don't file one-offs. Twice is the bar.
