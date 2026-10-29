@@ -115,10 +115,18 @@ A **seam** page covers what crosses between two systems: in `docmap`, a page who
 files from both sides. `jig reading-list <files>` prints which pages to read before touching
 those files.
 
+A repo that builds for boards has one page per board, `docs/hardware/<board>.md`, made from
+jig's board template (`/jig:hardware`) out of a hardware definition and checked against the
+code. A `docmap` entry ties each page to the code that targets its board, so every handoff
+that changes that code asks whether the page still matches. Code that runs on a board does
+not pass the gate without a page that matches it; for that code, "no page needed" is not an
+answer.
+
 ## Fold-in
 
 Code and the page that documents it move together, or the page starts lying. `jig handoff`
-works out which documentation page covers each source file the branch changed and writes a
+works out every documentation page that covers a file the branch changed — a file can have
+several, such as its system page and the page of the board it runs on — and writes a
 checklist into the note. `jig gate` refuses while a line is unanswered — each is either
 ticked as updated, or says why no change was needed.
 
@@ -128,8 +136,9 @@ Ownership comes from `docmap` in the board:
 "docmap": {"docs/systems/storage.md": ["server/storage.py", "server/migrations/**"]}
 ```
 
-A changed file nothing covers is listed as `UNOWNED` — add it to `docmap`, or answer why it
-needs no page.
+`docmap` can name any file, config such as `sdkconfig` included; a page is asked about
+whenever a file it names changes. A changed source file nothing covers is listed as
+`UNOWNED` — add it to `docmap`, or answer why it needs no page.
 
 ## Sync
 

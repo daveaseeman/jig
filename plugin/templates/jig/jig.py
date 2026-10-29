@@ -244,12 +244,11 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
 
 # ------------------------------------------------------------------- commands
 
-def doc_owner(board: "Board", path: str) -> str | None:
-    """The docmap page that covers this source file, or None if nothing owns it."""
-    for page, globs in (board.data.get("docmap") or {}).items():
-        if matches(path, globs):
-            return page
-    return None
+def doc_owners(board: "Board", path: str) -> list[str]:
+    """Every docmap page that covers this file. A file can have several — its system page,
+    a seam page, the page of the board it runs on — and each must be asked about."""
+    return [page for page, globs in (board.data.get("docmap") or {}).items()
+            if matches(path, globs)]
 
 
 def highest_on_trunk(board: "Board", counter: str, spec: dict) -> int:
@@ -661,21 +660,23 @@ def foldin_lines(root: Path, board: Board, branch: str) -> str:
     trunk = board.trunk
     rng = f"{trunk}...HEAD" if branch and branch != trunk else "HEAD~1..HEAD"
     changed = [f for f in git("diff", "--name-only", rng).splitlines()
-               if f and f.endswith(SRC_EXT) and not f.startswith((".", f"{DIR}/"))]
-    if not changed:
-        return "- [ ] no code changed — nothing to fold in"
+               if f and not f.startswith((".", f"{DIR}/"))]
+    # A file docmap names is asked about whatever its type (sdkconfig, a devicetree
+    # overlay); only source files are flagged when no page covers them.
     pages, unowned = {}, []
     for f in changed:
-        page = doc_owner(board, f)
-        if page:
+        owners = doc_owners(board, f)
+        for page in owners:
             pages.setdefault(page, []).append(f)
-        else:
+        if not owners and f.endswith(SRC_EXT):
             unowned.append(f)
+    if not pages and not unowned:
+        return "- [ ] no code changed — nothing to fold in"
     out = [f"- [ ] {page} — updated / no change because ___   ({len(fs)} file"
            f"{'s' if len(fs) > 1 else ''})" for page, fs in sorted(pages.items())]
     out += [f"- [ ] UNOWNED {f} — add to docmap, or no page needed because ___"
             for f in sorted(unowned)]
-    return "\n".join(out) or "- [ ] no documented code changed"
+    return "\n".join(out)
 
 
 def cmd_handoff(root: Path, args) -> int:
@@ -716,11 +717,9 @@ def cmd_reading_list(root: Path, args) -> int:
     for pattern in args.paths:
         hits = [f for f in tracked(root) if matches(f, [pattern])] or [pattern]
         for f in hits:
-            page = doc_owner(board, f)
-            if page and (root / page).exists():
-                if page not in want:
-                    want.append(page)
-            elif f.endswith(SRC_EXT):
+            owners = [p for p in doc_owners(board, f) if (root / p).exists()]
+            want += [p for p in owners if p not in want]
+            if not owners and f.endswith(SRC_EXT):
                 unowned.append(f)
     print("Read first:")
     for core in ("AGENTS.md", f"{DIR}/RULES.md"):
@@ -797,8 +796,9 @@ HOMES = {
     "CLAUDE.md": "pointer to AGENTS.md",
     "README.md": "for people outside",
 }
+BOARD_PAGES = "docs/hardware/"
 HOME_DIRS = {
-    "docs/": "what the code is now; docs/HARDWARE.md the board",
+    "docs/": f"what the code is now; {BOARD_PAGES}<board>.md each board",
     f"{DIR}/specs/": "a task in flight",
     f"{DIR}/ledgers/": "WORKAROUNDS.md patches that are in the code; DEFERRED.md review findings that are not",
     f"{DIR}/": "the lane system: rulebook, board, handoffs",
@@ -807,8 +807,8 @@ HOME_DIRS = {
 # Tooling directories. Their contents are a tool's own records, not documents
 # looking for a home, so the stray check skips them entirely.
 TOOL_DIRS = (".claude/", ".github/", ".gitlab/", ".vscode/", ".devcontainer/")
-SRC_EXT = (".c", ".h", ".cpp", ".rs", ".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".swift")
-CODE_EXT = SRC_EXT + (".sh", ".cmake", ".ino", ".kconfig")
+SRC_EXT = (".c", ".h", ".cpp", ".ino", ".rs", ".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".swift")
+CODE_EXT = SRC_EXT + (".sh", ".cmake", ".kconfig")
 
 
 def tracked(root: Path) -> list[str]:
@@ -922,6 +922,10 @@ def cmd_survey(root: Path, args) -> int:
 
     report["coordination"] = coordination_report(root)
     report["docmap_present"] = bool(board.get("docmap"))
+    # The fold-in asks about a page only when docmap names it, so a board page left out
+    # of docmap is never checked against the code that targets that board.
+    report["boards_unmapped"] = [f for f in md if f.startswith(BOARD_PAGES)
+                                 and f not in (board.get("docmap") or {})]
     if args.json:
         print(json.dumps(report, indent=2))
         return 0
@@ -961,6 +965,11 @@ def cmd_survey(root: Path, args) -> int:
     if src and not report["docmap_present"]:
         print("\nNo docmap on the board: handoff cannot tell which docs page a change touches."
               f"\nMap pages to globs in {BOARD} (see Fold-in in {DIR}/RULES.md).")
+    if report["boards_unmapped"]:
+        print("\nBoard pages no docmap entry names: no handoff will ask whether they still"
+              "\nmatch the code. Map each to the code that targets its board:")
+        for f in report["boards_unmapped"]:
+            print(f"  {f}")
     co = report["coordination"]
     print("\nHow parallel work is coordinated today (and what each maps to in jig):")
     for f in co["found"]:

@@ -44,6 +44,7 @@ current prints "up to date" and exits 0.
       - each warning and blocker
       - the stale references, grouped by file with a count, with the lines shown for files
         that aren't Markdown
+      - the repo files to review, each with its proposed edit
       - the `AGENTS.md` diff against the template
 - [ ] Unrecognized patterns, one smoke case each:
       - Blocked: two boards, at `jig/lanes.json` and `.jig/lanes.json`. `update` names both,
@@ -139,6 +140,9 @@ current prints "up to date" and exits 0.
         `<name>.local`.
       - A stale reference in a file that isn't Markdown. It's code or config the repo's
         checks may run.
+    - Repo files to review: the repo's own files that an old convention left behind, each
+      with a proposed edit. `--apply` never touches them. The entries come from
+      `jig/specs/hardware.md`: `docs/HARDWARE.md` and `.claude/skills/_skill-template/`.
   - Stale references are worked out against the tree after the moves, so moved handoffs
     land in `jig/handoffs/` and are skipped with the board. They are matched at a path
     boundary, so `example.com/specs/` is not one, and grouped by file.
@@ -150,6 +154,7 @@ current prints "up to date" and exits 0.
   the repo's own is older and may have no `update`. Then:
   - Clean plan: show it, ask, apply.
   - Warnings: show each one, and ask whether to proceed.
+  - Repo files to review: show each one's proposed edit, ask, and make it on a yes.
   - Blocked: say why the update would fail, and draft the change to jig that would recognize
     the pattern: which row, default or step to add, with a done-when the plugin owner can
     test. It is written the way `/jig:feedback` writes its report, to the same temporary
@@ -267,6 +272,6 @@ current prints "up to date" and exits 0.
     All three name `.aidev/lanes.json`. `.claude/claude-lane/` is another tool's archive,
     and nothing touches it.
 - Order: jig-folder's docs correction lands first, because it changes the layout `update`
-  targets. Then `update`, then `worktree-setup` (its first step and `STAMP` 4), then meta
-  and para, which add no rows. If `worktree-setup` has landed by the real Daisy run, the
+  targets. Then `hardware` (it adds the review list), then `update`, then `worktree-setup`
+  (its first step and `STAMP` 4), then meta and para, which add no rows. If `worktree-setup` has landed by the real Daisy run, the
   expected list also gains a TODO `jig/scripts/setup.sh` and a fifth hook, `post-merge`.

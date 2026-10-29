@@ -5,8 +5,8 @@ A repo's root holds only what is for that repo. After `/jig:init`, jig adds `AGE
 `CLAUDE.md` at root, because tools look for them there. Everything jig manages sits in one
 visible folder, `jig/`: the checker, rulebook, board, handoffs, ledgers, specs (scopes,
 changes, decisions) and check/format scripts. The repo's own documentation of the system it
-builds stays in the repo's `docs/`; jig seeds only `docs/HARDWARE.md`, and only for
-firmware. How those pages are shaped is jig's convention, so it is written in
+builds stays in the repo's `docs/`, and jig seeds nothing there (board pages come later;
+see `jig/specs/hardware.md`). How those pages are shaped is jig's convention, so it is written in
 `jig/RULES.md`. Worktrees are git state, not content, so they live in
 `.git/jig/worktrees/`. This applies to the jig repo itself once it runs `/jig:init`.
 
@@ -122,6 +122,9 @@ firmware. How those pages are shaped is jig's convention, so it is written in
     `AGENTS.md`, which wins over the template. jig has one shape on purpose (FEATURES).
   - A `docs/README.md` that an earlier init seeded stays. It is the repo's file now, and
     `update` never edits those.
+- `jig/specs/hardware.md` supersedes this spec's `HARDWARE.md` and `skill-template` lines:
+  init seeds nothing in `docs/` or `.claude/`, and `templates/docs/` goes away. The boxes
+  above record what held when this spec landed.
 - The scratch-repo items are checked by `tests/smoke.sh`, which copies the templates the way
   the init skill says, not by running `/jig:init` itself. The permission-prompt item needs a
   real subnode session and is still open.

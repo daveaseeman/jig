@@ -38,7 +38,7 @@ Risk: R0 — personal prototype, single user, nothing shipped. Optimize for spee
 - One job, one home per document: AGENTS.md rules · the docs tree what the code is now · jig/specs/ a task in flight · jig/ledgers/WORKAROUNDS.md patches in the code · jig/ledgers/DEFERRED.md findings not in it · .claude/skills/ know-how · README.md outsiders · git history. A new `.md` elsewhere means its home wasn't found. `jig survey` lists the strays.
 
 ## Firmware (delete if not applicable)
-- Read `docs/HARDWARE.md` before touching anything that talks to a pin, bus, or peripheral.
+- Each board this repo builds for gets a page in `docs/hardware/<board>.md` (/jig:hardware) before code for it passes the gate. Where one exists, read it before touching a pin, bus, or peripheral, and load the skills it lists.
 - Logic gets unit tests. Driver code gets run on hardware. Don't mock a bus to make a driver "testable."
 - Graphics: emulate first. Everything else: flash as soon as confident it won't brick.
 

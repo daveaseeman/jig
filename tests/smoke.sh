@@ -84,7 +84,7 @@ then ok "$msg"; else bad "$msg"; fi
 
 I="$T/init"
 mkdir -p "$I" && cd "$I" && git init -q -b main && git config user.email t@t && git config user.name t
-cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" .   # not firmware: no docs/HARDWARE.md
+cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" .
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 
 msg="init: root holds only AGENTS.md, CLAUDE.md and jig/"
@@ -106,6 +106,57 @@ assert r['homeless'] == [] and r['src_count'] == 0, (r['homeless'], r['src_count
 msg="survey: lists docs/ and jig/ as homes"
 homes=$(python3 jig/jig.py survey | grep '^Homes: ')
 expect_pass test -n "$(echo "$homes" | grep -F '; docs/ = ')" -a -n "$(echo "$homes" | grep -F '; jig/ = ')"
+
+H="$T/hardware"
+mkdir -p "$H" && cd "$H" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs/hardware docs/systems main
+printf '# Devkit\n' > docs/hardware/devkit.md && printf '# GPIO\n' > docs/systems/gpio.md
+printf 'int led = 48;\n' > main/app.c && printf 'CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y\n' > sdkconfig
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+
+msg="survey: names a board page no docmap entry covers"
+expect_pass python3 -c "
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', 'jig/jig.py', 'survey', '--json']))
+assert r['boards_unmapped'] == ['docs/hardware/devkit.md'], r['boards_unmapped']"
+
+# The system page comes first, so a docmap that stops at the first match hides the board page.
+python3 - <<'EOF'
+import json; b = json.load(open('jig/lanes.json'))
+b['docmap'] = {'docs/systems/gpio.md': ['main/**'],
+               'docs/hardware/devkit.md': ['main/**', 'sdkconfig*']}
+json.dump(b, open('jig/lanes.json', 'w'), indent=2)
+EOF
+git add -A && git commit -qm docmap
+msg="survey: a board page docmap names is not listed"
+expect_pass python3 -c "
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', 'jig/jig.py', 'survey', '--json']))
+assert r['boards_unmapped'] == [], r['boards_unmapped']"
+
+msg="reading-list: a file covered by a system page and a board page lists both"
+out=$($J reading-list main/app.c)
+expect_pass test -n "$(echo "$out" | grep -F docs/systems/gpio.md)" -a -n "$(echo "$out" | grep -F docs/hardware/devkit.md)"
+
+$J open H1 --brief t --owns 'main/**' >/dev/null && $J open H2 --brief t --owns 'sdkconfig*' >/dev/null
+git add -A && git commit -qm "open H1 H2"
+cd .git/jig/worktrees/H1 && printf 'int led = 2;\n' > main/app.c && git add -A && git commit -qm led
+$J reviewed >/dev/null; $J handoff >/dev/null 2>&1; git add -A && git commit -qm note
+msg="fold-in: changing a board's code asks about its board page and its system page"
+expect_pass sh -c "grep -q -- '- \[ \] docs/hardware/devkit.md' jig/handoffs/H1-*.md && grep -q -- '- \[ \] docs/systems/gpio.md' jig/handoffs/H1-*.md"
+sed -i.bak 's|- \[ \] docs/systems/gpio.md — updated / no change because ___|- [x] docs/systems/gpio.md — no change because the pin is board wiring|' jig/handoffs/H1-*.md
+rm -f jig/handoffs/*.bak && git add -A && git commit -qm "answer gpio"
+msg="gate: refuses while the board page's fold-in line is unanswered"
+expect_refuse sh -c "cd '$H' && $J gate H1"
+sed -i.bak 's|- \[ \] docs/hardware/devkit.md — updated / no change because ___|- [x] docs/hardware/devkit.md — updated: LED on GPIO 2|' jig/handoffs/H1-*.md
+rm -f jig/handoffs/*.bak && git add -A && git commit -qm "answer devkit"
+msg="gate: passes once the board page's line is answered"
+expect_pass sh -c "cd '$H' && $J gate H1"
+
+cd "$H/.git/jig/worktrees/H2" && printf 'CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y\n' > sdkconfig && git add -A && git commit -qm flash
+$J reviewed >/dev/null; $J handoff >/dev/null 2>&1
+msg="fold-in: changing only a board's config file asks about its board page"
+expect_pass grep -q -- '- \[ \] docs/hardware/devkit.md' jig/handoffs/H2-*.md
 
 S="$T/survey"
 mkdir -p "$S" && cd "$S" && git init -q -b main && git config user.email t@t && git config user.name t

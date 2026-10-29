@@ -9,7 +9,7 @@ Pick the cheapest check that is actually evidence:
 |---|---|
 | Pure logic (parsing, hashing, state machines) | Unit test. Write it first if the behavior is non-obvious. |
 | Display / UI rendering | Emulator screenshot, then hardware when it looks right. |
-| Driver, bus, peripheral, timing | Hardware. Serial log the agent can read. Emulation only if `docs/HARDWARE.md` says that peripheral is modeled. |
+| Driver, bus, peripheral, timing | Hardware. Serial log the agent can read. Emulation only if the board's page (`docs/hardware/<board>.md`) says that peripheral is modeled. |
 | Build config, linker, partitions | Build + flash + boot log. |
 
 Rules:

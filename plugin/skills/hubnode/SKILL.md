@@ -35,7 +35,8 @@ message you at a handoff or when blocked.
 2. Run the printed commands: the checks against the commit the note names, in a detached
    scratch checkout. Not the lane's worktree — the subnode may still be building there.
 3. Read the note against the diff: every done-when item has evidence, shared files are
-   explained, the review section is filled. A miss goes back to the subnode as a note, never
+   explained, the review section is filled, and no fold-in line for code that runs on a
+   board says "no page needed". A miss goes back to the subnode as a note, never
    as your own fix.
 4. **Do not re-review the diff.** The subnode's adversarial review is the review. You are
    checking that it happened and that the result matches the spec.

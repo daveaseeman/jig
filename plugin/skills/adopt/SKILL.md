@@ -33,7 +33,7 @@ Each one gets exactly one job and one home:
 | `jig/specs/` | a task in flight |
 | `jig/ledgers/WORKAROUNDS.md` | patches that are in the code |
 | `jig/ledgers/DEFERRED.md` | review findings that are not |
-| `docs/HARDWARE.md` | board, wiring, voltages, flash |
+| `docs/hardware/<board>.md` | one per board: components, wiring, toolchain, flash |
 | `.claude/skills/` | reusable know-how, loaded on demand |
 | git history | everything else |
 
