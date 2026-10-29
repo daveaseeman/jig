@@ -296,7 +296,7 @@ for layout in "eaec973 dot" "66a044c dot" "62c8d9f jig" "eaec973 aidev"; do
   expect_pass python3 -c "
 import subprocess
 allowed = {'$board', 'jig/lanes.json', '.jig/jig.py', '.aidev/aidev.py', 'jig/jig.py',
-           '.jig/RULES.md', '.aidev/RULES.md', 'jig/RULES.md', '.gitignore', 'jig/scripts/setup.sh'}
+           '.jig/RULES.md', '.aidev/RULES.md', 'jig/RULES.md', '.gitignore', 'jig/scripts/setup.sh', 'jig/staging/.gitignore'}
 for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
     status, *paths = line.split('\t')
     assert status == 'R100' or set(paths) <= allowed, line"
@@ -595,6 +595,17 @@ $J para-propose jig/specs/x.md fmt >/dev/null
 expect_pass sh -c "git -C mrclone rev-parse -q --verify refs/heads/propose/pr-fmt && grep -q 'meta: docs proposal propose/pr-fmt' jig/specs/x.md && test \"\$(git -C mrclone rev-parse main)\" = '$mainbefore' && test \"\$(git -C mrclone branch --show-current)\" = main"
 git add -A && git commit -qm "specs: proposal"
 
+stage() {  # stage <file> <target> <kind> <change> <destination> [body]
+  printf -- '---\nstaged: true\ntarget: %s\nkind: %s\nchange: %s\ndestination: %s\nsource: chat %s\nstatus: staged\n---\n%b' \
+    "$2" "$3" "$4" "$5" "$1" "${6:-# Title\n\nbody\n}" > "jig/staging/$1"; }
+msg="para P4: a contract change waits while a file for the metarepo is staged"
+stage meta-note.md docs decisions new DECISIONS.md '| D-009 | x | proposed | 2026-10-29 |\n'
+printf 'z=3\n' >> api/a.py && printf -- '- meta: none — still internal\n' >> jig/specs/x.md && git add api/a.py jig/specs/x.md
+expect_refuse git commit -qm "api: more"
+python3 jig/jig.py staging resolve meta-note.md --drop "superseded in chat" >/dev/null
+msg="para P4: once it is resolved, the same commit is accepted"
+expect_pass git commit -qm "api: more"
+
 msg="para: a new worktree gets the main checkout's cache; para-propose there names the repo, not the folder"
 git worktree add -q --detach "$T/pr-lane" HEAD 2>/dev/null
 (cd "$T/pr-lane" && $J para-propose jig/specs/x.md lanefix >/dev/null)
@@ -629,6 +640,104 @@ expect_pass sh -c "test -z \"\$0\" && echo \"\$1\" | grep -q 'v0.2 is out'" "$qu
 
 msg="plugin: no instance names or the instance's decision prefix"
 expect_refuse grep -rnE 'Maige|maige|"E-' "$P/.."
+
+# ---------------------------------------------------------------- staging
+ST="$T/st"; mkdir -p "$ST" && cd "$ST" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+stage() {
+  printf -- '---\nstaged: true\ntarget: %s\nkind: %s\nchange: %s\ndestination: %s\nsource: chat %s\nstatus: staged\n---\n%b' \
+    "$2" "$3" "$4" "$5" "$1" "${6:-# Title\n\nbody\n}" > "jig/staging/$1"; }
+
+msg="staging: init leaves jig/staging/ with only its .gitignore, and a dropped file is untracked"
+stage a.md this spec new a.md
+expect_pass sh -c "test \"\$(ls -A jig/staging)\" = \"\$(printf '.gitignore\na.md')\" && test -z \"\$(git status --porcelain)\""
+
+msg="staging: the list names a bad header and exits 1"
+printf -- '---\nstaged: true\nkind: memo\n---\nx\n' > jig/staging/bad.md
+out=$($J staging); rc=$?
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q 'no target' && echo \"\$0\" | grep -q \"kind 'memo'\"" "$out"
+rm jig/staging/bad.md
+
+msg="staging: a new spec lands in jig/specs/ with its Source line, and leaves staging"
+$J staging resolve a.md >/dev/null
+expect_pass sh -c "grep -q '^Source: chat a.md (staged as a.md)' jig/specs/a.md && test ! -e jig/staging/a.md"
+msg="staging: a new spec whose path exists is refused"
+stage a.md this spec new a.md; expect_refuse $J staging resolve a.md; rm jig/staging/a.md
+
+msg="staging: an update to a doc waits until the page carries the source"
+mkdir -p docs/x && printf '# X\n' > docs/x/x.md && stage d.md this doc update docs/x/x.md
+expect_refuse $J staging resolve d.md
+printf '\nnew text (chat d.md)\n' >> docs/x/x.md
+msg="staging: the session's name alone isn't provenance; the file's own mark is"
+expect_refuse $J staging resolve d.md
+printf 'Source: chat d.md (staged as d.md)\n' >> docs/x/x.md
+msg="staging: once it does, the update resolves"
+expect_pass sh -c "$J staging resolve d.md && test ! -e jig/staging/d.md"
+
+msg="staging: a new doc is written with a Source footer"
+stage n.md this doc new docs/n/n.md; $J staging resolve n.md >/dev/null
+expect_pass grep -q '^Source: chat n.md (staged as n.md)' docs/n/n.md
+
+msg="staging: a destination outside the repo is refused"
+stage e.md this doc new /tmp/jig-escape.md; expect_refuse $J staging resolve e.md
+stage e.md this doc new ../escape.md; expect_refuse $J staging resolve e.md; rm jig/staging/e.md
+
+msg="staging: a .DS_Store is not a staged file"
+: > jig/staging/.DS_Store; expect_pass test "$($J staging)" = "nothing staged in jig/staging"; rm jig/staging/.DS_Store
+
+msg="staging: a CRLF header parses"
+printf -- '---\r\nstaged: true\r\ntarget: this\r\nkind: doc\r\nchange: new\r\ndestination: docs/c.md\r\nsource: chat c\r\nstatus: staged\r\n---\r\nbody\r\n' > jig/staging/c.md
+expect_pass $J staging; rm jig/staging/c.md
+
+msg="staging: a story waits for a spec that carries it"
+stage s.md this user-story new 'a login flow'
+expect_refuse $J staging resolve s.md
+printf '# Login\n\nSource: chat s.md (staged as s.md)\n' > jig/specs/login.md
+msg="staging: with that spec, the story resolves"
+expect_pass $J staging resolve s.md
+
+msg="staging: decision rows append; other body lines refuse until handled"
+stage r.md this decisions new docs/decisions.md '| D-001 | one | accepted | 2026-10-29 |\nand edit the glossary\n'
+expect_refuse $J staging resolve r.md
+stage r.md this decisions new docs/decisions.md '| D-001 | one | accepted | 2026-10-29 |\n'
+expect_pass sh -c "$J staging resolve r.md && grep -q 'D-001 | one | accepted' docs/decisions.md"
+msg="staging: a decision id already in the register is refused as new"
+stage r.md this decisions new docs/decisions.md '| D-001 | again | accepted | 2026-10-29 |\n'
+expect_refuse $J staging resolve r.md; rm jig/staging/r.md
+
+msg="staging: --drop needs a reason, and logs it"
+stage q.md this doc new docs/q.md
+expect_refuse $J staging resolve q.md --drop ""
+expect_pass sh -c "$J staging resolve q.md --drop 'said elsewhere' && grep -q 'said elsewhere' jig/lanes.json && test ! -e jig/staging/q.md"
+git add -A && git commit -qm landed
+
+stage w.md this doc new docs/w.md
+msg="staging: the gate refuses while anything is staged; --force proceeds"
+out=$($J gate 2>&1); out2=$($J gate --force 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'merge waits while 1 file' && ! echo \"\$1\" | grep -q 'waits while'" "$out" "$out2"
+git checkout -q -- jig/lanes.json
+msg="staging: pushing trunk is refused while anything is staged"
+git init -q --bare "$T/st-remote.git" && git remote add origin "$T/st-remote.git"
+expect_refuse git push -q origin main
+msg="staging: pushing another branch onto trunk is refused too"
+git switch -q -c feat && expect_refuse git push -q origin feat:main; git switch -q main
+
+msg="staging: a target that isn't this repo or in repos.json is refused"
+stage f.md other doc new docs/f.md
+expect_refuse $J staging resolve f.md
+msg="staging: a repos.json path that isn't a jig repo is refused, and nothing is written there"
+mkdir -p "$T/plain" && python3 "$P/jig/jig.py" repos add other "$T/plain" >/dev/null
+expect_pass sh -c "! $J staging resolve f.md 2>/dev/null && test ! -e '$T/plain/jig'"
+O="$T/other"; mkdir -p "$O/jig" && git -C "$O" init -q -b main && python3 "$P/jig/jig.py" repos add other "$O" >/dev/null
+msg="staging: listed in repos.json, it is forwarded into that repo's jig/staging/"
+expect_pass sh -c "$J staging resolve f.md && test -f '$O/jig/staging/f.md' && test ! -e jig/staging/f.md"
+rm jig/staging/w.md
+
+msg="staging: meta-release refuses while anything is staged; --force gets past it"
+cd "$M" && stage m.md this doc new GUIDE.md
+out=$($J meta-release 2>&1); out2=$($J meta-release --force 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'release waits while' && ! echo \"\$1\" | grep -q 'waits while'" "$out" "$out2"
+rm jig/staging/m.md
 
 rm -rf "$T"
 exit $fail

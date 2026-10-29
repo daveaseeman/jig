@@ -48,6 +48,7 @@ Then:
    user asks: a linked environment hides an undeclared dependency from the gate.
 4. Write one sentence for the Project line in `AGENTS.md` from the README or the code. Mark it `(inferred)` so the user corrects it.
 5. If the repo already has a `CLAUDE.md` with content, don't replace it; append `@AGENTS.md` and say so.
-6. Report: files created, TODOs remaining, the git hooks installed, and that lanes are available (`/jig:hubnode`, `/jig:subnode`) but need no setup until a second session starts.
+6. Offer to register the repo: `python3 jig/jig.py repos add <name> <path>`, so a chat can find its `jig/staging/`.
+7. Report: files created, TODOs remaining, the git hooks installed, and that lanes are available (`/jig:hubnode`, `/jig:subnode`) but need no setup until a second session starts.
 
 Keep `AGENTS.md` under 40 lines. If it's longer after filling, cut.

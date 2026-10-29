@@ -63,7 +63,7 @@ jig is two things in one folder:
 - **A Claude Code plugin** (`plugin/`): skills for the loop — `brief`, `bug`, `verify`,
   `review`, `retro` — plus `init`, `survey` and `adopt` to set a repo up, `update` to bring
   it to the current layout, `hubnode` and `subnode` for parallel sessions, `hardware` for
-  speccing a board and installing the skills it needs, and `feedback` for reporting a bug in
+  speccing a board and installing the skills it needs, `stage` for landing chat-born files, and `feedback` for reporting a bug in
   jig itself.
 - **A repo-side checker** (`plugin/templates/jig/jig.py`) that `init` copies into `jig/`.
   It owns the board of lanes, runs the rules from git hooks, and drives sync, handoff and gate.

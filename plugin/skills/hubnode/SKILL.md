@@ -17,8 +17,9 @@ message you at a handoff or when blocked.
 3. `python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" update`, the dry run. Up to date:
    say nothing. A plan: one line, "the repo is behind the plugin's layout: run /jig:update".
    Refused or blocked: one line with its first reason.
-4. In a pararepo (`jig/para.json`), `jig para-sync`; report a newer release in one line.
-5. Work in this order: open the lanes asked for, gate the handoffs waiting, sync the rest.
+4. `jig staging`: if anything is staged, one line with the count and kinds (`/jig:stage` resolves them).
+5. In a pararepo (`jig/para.json`), `jig para-sync`; report a newer release in one line.
+6. Work in this order: open the lanes asked for, gate the handoffs waiting, sync the rest.
 
 ## Opening a lane
 

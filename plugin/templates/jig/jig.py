@@ -25,9 +25,10 @@ STATES = ["claimed", "building", "ready", "gated", "merged", "parked"]
 # The layout this copy of jig writes into the board's "version". Any change that adds a
 # LAYOUT row, a board default or an update STEP bumps it. Nothing branches on it except
 # update's refusal to take a newer repo back to an older jig.
-STAMP = 4
+STAMP = 5
 BOARD_DEFAULTS = {
     "version": STAMP,
+    "name": "",            # init and update fill it with the folder name; staging's targets match it
     "trunk": "main",
     "common": ["AGENTS.md", "docs/**", f"{DIR}/**"],
     "append_files": ["AGENTS.md", f"{DIR}/ledgers/**", "CHANGELOG.md"],
@@ -331,12 +332,14 @@ def reserved_refusals(root: Path, board: "Board", lane: dict | None,
 def cmd_init(root: Path, args) -> int:
     (root / DIR).mkdir(exist_ok=True)
     (root / DIR / "handoffs").mkdir(exist_ok=True)
+    ensure_staging(root)
     path = root / BOARD
     if path.exists():
         print(f"{BOARD} already exists")
     else:
         data = json.loads(json.dumps(BOARD_DEFAULTS))
         data["trunk"] = args.trunk
+        data["name"] = main_root().name
         path.write_text(json.dumps(data, indent=2) + "\n")
         print(f"wrote {BOARD}")
     if getattr(args, "no_hooks", False):
@@ -456,6 +459,11 @@ def cmd_hook(root: Path, args) -> int:
         return 1 if refusals else 0
     if name == "pre-push":
         problems = meta_problems(root, meta, board.trunk) if meta else []
+        # The refs git is pushing arrive on stdin; trunk is refused by where it lands, not by
+        # which branch happens to be checked out (`git push origin feat:main`).
+        pushed = [l.split()[2] for l in sys.stdin.read().splitlines() if len(l.split()) == 4]
+        if f"refs/heads/{board.trunk}" in pushed:
+            problems += staged_refusal(f"pushing {board.trunk}")
         for p in problems:
             print(f"jig: refused: {p}", file=sys.stderr)
         return 1 if problems else 0
@@ -819,6 +827,11 @@ def cmd_gate(root: Path, args) -> int:
     if args.name and lane is None:
         die(f"no lane {args.name}")
     bad = []
+    if not args.force:
+        bad += staged_refusal("the merge")
+    elif staged_files(main_root()) and lane is not None:
+        board.log(f"gate {name} forced with {len(staged_files(main_root()))} staged files")
+        board.save()
     for dep in (lane or {}).get("after", []):
         if board.lanes.get(dep, {}).get("state") != "merged":
             bad.append(f"R8 lane {name} builds after {dep}, which has not merged")
@@ -875,6 +888,7 @@ HOME_DIRS = {
     "docs/": f"what the code is now; docs/<system>/<system>.md each system, {BOARD_PAGES}<board>.md each board",
     f"{DIR}/specs/": "a task in flight",
     f"{DIR}/ledgers/": "WORKAROUNDS.md patches that are in the code; DEFERRED.md review findings that are not",
+    f"{DIR}/staging/": "chat-born files waiting to be resolved (untracked)",
     f"{DIR}/": "the lane system: rulebook, board, handoffs",
     ".claude/skills/": "reusable know-how",
 }
@@ -1264,6 +1278,9 @@ def cmd_meta_release(root: Path, args) -> int:
     if git("status", "--porcelain"):
         die("commit or stash first: a release names one commit", 2)
     problems = meta_problems(root, meta, trunk)
+    left = staged_files(main_root())
+    if not args.force:
+        problems += staged_refusal("the release")
     if problems:
         for p in problems:
             print(f"refused: {p}", file=sys.stderr)
@@ -1276,6 +1293,9 @@ def cmd_meta_release(root: Path, args) -> int:
         die(f"nothing to release: no entry file changed since {last}", 2)
     major, minor = (version_key(last) + (0, 0))[:2] if last else (0, 0)
     tag = f"v{major + 1}.0" if args.major else f"v{major}.{minor + 1}"
+    if left:
+        changelog_line(root, f"- released with {len(left)} staged file{'s' if len(left) > 1 else ''} "
+                             f"left unresolved: {', '.join(f.name for f in left)}")
     log = root / CHANGELOG
     text = log.read_text() if log.exists() else "# Changelog\n"
     heading = f"## {tag} — {date.today().isoformat()}"
@@ -1443,6 +1463,11 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
             out.append(f"P2 {', '.join(touched)} is a contract path: a spec in this change "
                        "needs `meta: <name> proposal <branch>` (`jig para-propose`) or "
                        "`meta: none — <reason>`")
+    # P4 no contract change while a file for the metarepo waits unresolved
+    waiting = [f.name for f in staged_files(main_root()) if read_staged(f)[0].get("target") == para.get("meta")]
+    if touched and waiting:
+        out.append(f"P4 {', '.join(touched)} is a contract path, and {', '.join(waiting)} for "
+                   f"{para.get('meta')} is still staged: resolve it first")
     # P3 nothing of the metarepo is committed here: not the cache, not a checkout of it.
     # A nested checkout can only be staged as a gitlink, and it says whose it is itself.
     for p in paths:
@@ -1562,6 +1587,253 @@ def cmd_para_propose(root: Path, args) -> int:
     return 0
 
 
+# -------------------------------------------------------------------- staging
+
+# Where a chat drops a file meant for this repo, or another. Untracked: nothing in it is
+# authoritative, and it can reach a contract only through `jig staging resolve`.
+STAGING = f"{DIR}/staging"
+KINDS = ("spec", "doc", "decisions", "user-story")
+HEADER_KEYS = ("staged", "target", "kind", "change", "destination", "source", "status")
+
+
+def staged_files(root: Path) -> list[Path]:
+    d = root / STAGING
+    # Markdown only: a .DS_Store or an editor's swap file is not a staged file.
+    return sorted(f for f in d.iterdir() if f.is_file() and f.suffix == ".md") if d.exists() else []
+
+
+def read_staged(path: Path) -> tuple[dict, str, list[str]]:
+    """The header (a `key: value` block between --- lines), the body, and what's wrong."""
+    text = path.read_text(errors="replace").replace("\r\n", "\n")
+    m = re.match(r"---\n(.*?)\n---\n?(.*)", text, re.S)
+    if not m:
+        return {}, text, ["no header"]
+    head = {}
+    for line in m.group(1).splitlines():
+        k, sep, v = line.partition(":")
+        if sep:
+            head[k.strip()] = v.strip()
+    bad = [f"no {k}" for k in HEADER_KEYS if not head.get(k)]
+    if head.get("kind") and head["kind"] not in KINDS:
+        bad.append(f"kind {head['kind']!r} is not one of {', '.join(KINDS)}")
+    if head.get("change") and head["change"] not in ("new", "update"):
+        bad.append(f"change {head['change']!r} is not new or update")
+    if head.get("staged") and head["staged"] != "true":
+        bad.append("staged is not true")
+    return head, m.group(2), bad
+
+
+def provenance(head: dict, path: Path) -> str:
+    """What a landed file carries to say where it came from. The staged file's name makes it
+    one file's mark: two files from the same session can't stand in for each other."""
+    return f"Source: {head.get('source', '')} (staged as {path.name})"
+
+
+def staged_summary(root: Path) -> str:
+    files = staged_files(root)
+    if not files:
+        return ""
+    kinds = [read_staged(f)[0].get("kind", "?") for f in files]
+    return f"{len(files)} staged in {STAGING}: " + ", ".join(
+        f"{kinds.count(k)} {k}" for k in dict.fromkeys(kinds))
+
+
+def staged_refusal(what: str) -> list[str]:
+    """Release waits while anything is staged: the main checkout's folder, since staged files
+    are never committed. Reading it only refuses more, so a branch can't weaken it."""
+    files = staged_files(main_root())
+    return [f"{what} waits while {len(files)} file{'s' if len(files) > 1 else ''} sit in "
+            f"{STAGING}: {', '.join(f.name for f in files)}. Resolve or drop each "
+            f"(`jig staging resolve`), or force it"] if files else []
+
+
+def this_repo_names(root: Path) -> set[str]:
+    names = {"this", Board.load(root, working_tree=True).data.get("name") or main_root().name}
+    meta = root / META
+    if meta.exists():
+        names.add(json.loads(meta.read_text() or "{}").get("name", ""))
+    return names - {""}
+
+
+def cmd_staging(root: Path, args) -> int:
+    if args.action != "resolve":
+        files = staged_files(root)
+        if not files:
+            print(f"nothing staged in {STAGING}")
+            return 0
+        print(staged_summary(root))
+        bad = False
+        for f in files:
+            head, _, problems = read_staged(f)
+            print(f"  {f.name}: {head.get('change', '?')} {head.get('kind', '?')} for "
+                  f"{head.get('target', '?')} → {head.get('destination', '?')}")
+            for p in problems:
+                print(f"      {p}")
+                bad = True
+        return 1 if bad else 0
+
+    if not args.file:
+        die("which file? jig staging resolve <file>", 2)
+    # Staged files live in the main checkout only: they are never committed into a lane.
+    path = main_root() / STAGING / Path(args.file).name
+    if not path.exists():
+        die(f"no {args.file} in {STAGING}", 2)
+    head, body, problems = read_staged(path)
+    if problems and not args.drop:
+        die(f"{path.name}: {'; '.join(problems)}", 2)
+    board = Board.load(root, working_tree=True)
+    kind, change, dest = (head.get(k, "") for k in ("kind", "change", "destination"))
+    source = head.get("source", "")
+    mark = provenance(head, path)
+    meta_here = (root / META).exists()
+
+    if args.drop is not None:
+        if not args.drop.strip():
+            die("say why: --drop \"<reason>\"", 2)
+        board.log(f"dropped staged {kind} for {head.get('target')} ({source}): {args.drop}")
+        board.save()
+        if meta_here:
+            changelog_line(root, f"- dropped a staged {kind} from {source}: {args.drop}")
+        path.unlink()
+        print(f"dropped {path.name}; the reason is in the board log")
+        return 0
+
+    target = head["target"]
+    if target not in this_repo_names(root):
+        return forward(root, path, head)
+
+    def done(msg: str) -> int:
+        path.unlink()
+        print(f"resolved {path.name}: {msg}")
+        return 0
+
+    def inside(rel: str) -> Path:
+        """A destination stays inside the repo: no absolute path, no climbing out with .."""
+        out = (root / rel).resolve()
+        if Path(rel).is_absolute() or not out.is_relative_to(root.resolve()):
+            die(f"destination {rel!r} is outside this repo: give a path relative to its root", 2)
+        return out
+
+    def landed(rel: str) -> bool:
+        f = inside(rel)
+        return f.exists() and mark in f.read_text(errors="replace")
+
+    if kind == "user-story":
+        specs = [s for s in (root / DIR / "specs").glob("*.md") if mark in s.read_text()]
+        if not specs:
+            how = "write a new spec" if change == "new" else "amend the spec it extends"
+            die(f"a story resolves into a spec: {how} under {DIR}/specs/ from it, carrying "
+                f"`{mark}`, then resolve again", 1)
+        return done(f"carried by {specs[0].relative_to(root)}")
+    if kind in ("spec", "doc") and not dest.endswith(".md"):
+        die(f"destination {dest!r} isn't a path yet: find the page, put its path in the header, "
+            "then resolve again", 1)
+    if kind == "spec" and not dest.startswith(f"{DIR}/specs/"):
+        dest = f"{DIR}/specs/{Path(dest).name}"
+    if change == "update":
+        if kind == "decisions":
+            reg = inside(dest if dest.endswith(".md") else "DECISIONS.md")
+            rows = decision_rows(body, root)
+            text = reg.read_text() if reg.exists() else ""
+            missing = [r for r in rows if r not in text]
+            if missing or mark not in text:
+                die(f"edit {reg.relative_to(root.resolve())} so it shows these rows and carries "
+                    f"`{mark}`, then resolve again", 1)
+            return done(f"rows confirmed in {reg.relative_to(root)}")
+        if not landed(dest):
+            die(f"needs judgment: edit {dest} with this file's content, keeping `{mark}` in it "
+                "as provenance, then resolve again", 1)
+        return done(f"{dest} carries it")
+    if kind == "decisions":
+        reg = inside(dest if dest.endswith(".md") else "DECISIONS.md")
+        rows = decision_rows(body, root)
+        rest = [l for l in body.splitlines() if l.strip() and l.rstrip() not in rows
+                and not l.lstrip().startswith(("|---", "| Id", "#", "<!--"))]
+        if rest:
+            die(f"{len(rest)} line{'s' if len(rest) > 1 else ''} in {path.name} aren't decision "
+                "rows: apply them with the user, delete them from the staged file, then resolve "
+                "again", 1)
+        if not rows:
+            die(f"no decision rows in {path.name}", 1)
+        text = reg.read_text() if reg.exists() else "| Id | Decision | Status | Date |\n|---|---|---|---|\n"
+        have = {l.split("|")[1].strip() for l in text.splitlines() if l.startswith("|") and l.count("|") > 2}
+        dupes = [r.split("|")[1].strip() for r in rows if r.split("|")[1].strip() in have]
+        if dupes:
+            die(f"{', '.join(dupes)} already in {reg.name}: stage it as `change: update`", 1)
+        reg.write_text(text.rstrip("\n") + "\n" + "\n".join(rows) + "\n")
+        ids = ", ".join(r.split("|")[1].strip() for r in rows)
+        if meta_here:
+            changelog_line(root, f"- {ids}. {mark}")
+        else:
+            board.log(f"decisions {ids} into {reg.relative_to(root.resolve())}. {mark}")
+            board.save()
+        return done(f"{len(rows)} row{'s' if len(rows) > 1 else ''} appended to {reg.name}")
+    out = inside(dest)
+    if out.exists():
+        die(f"{dest} exists: stage it as `change: update`, or pick another path", 1)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if kind == "spec":
+        first, _, rest = body.lstrip("\n").partition("\n")
+        out.write_text(f"{first}\n\n{mark}\n{rest}" if first.startswith("#")
+                       else f"{mark}\n\n{body}")
+    else:
+        out.write_text(body.rstrip("\n") + f"\n\n---\n{mark}\n")
+    return done(f"written to {dest}")
+
+
+def decision_rows(body: str, root: Path) -> list[str]:
+    meta = root / META
+    known = json.loads(meta.read_text() or "{}").get("decision_prefix") if meta.exists() else None
+    prefix = re.escape(known) if known else r"[A-Z][A-Z0-9]*-"
+    rx = re.compile(rf"^\s*\|\s*{prefix}\d+\s*\|")
+    return [l.rstrip() for l in body.splitlines() if rx.match(l)]
+
+
+def changelog_line(root: Path, line: str) -> None:
+    log = root / CHANGELOG
+    text = log.read_text() if log.exists() else "# Changelog\n\n## Unreleased\n"
+    if not re.search(r"^## Unreleased\s*$", text, re.M):
+        text = text.rstrip("\n") + "\n\n## Unreleased\n"
+    log.write_text(re.sub(r"^(## Unreleased\s*\n)", lambda m: m.group(1) + line + "\n", text,
+                          count=1, flags=re.M))
+
+
+def forward(root: Path, path: Path, head: dict) -> int:
+    """A staged file is resolved in its target. From here it moves into the target's own
+    staging, the one place jig writes in another repo, after checking both sides agree."""
+    target = head["target"]
+    there = load_repos().get(target)
+    if not there:
+        die(f"{target} isn't this repo and isn't in {repos_file()}: "
+            f"jig repos add {target} <path>", 2)
+    there = Path(there)
+    if not (there / DIR).is_dir():
+        die(f"{target} is listed at {there}, but that isn't a jig repo (no {DIR}/): fix it with "
+            f"`jig repos add {target} <path>`", 2)
+    me = Board.load(root, working_tree=True).data.get("name") or main_root().name
+    para = json.loads((root / PARA).read_text()) if (root / PARA).exists() else None
+    meta = json.loads((root / META).read_text()) if (root / META).exists() else None
+    if para and target == para.get("meta"):
+        theirs = json.loads(git("show", f"HEAD:{META}", cwd=str(there)) or "{}")
+        if me not in theirs.get("pararepos", []):
+            die(f"{target}'s {META} doesn't list {me} as a pararepo: add it there "
+                "first", 2)
+    if meta and target in meta.get("pararepos", []):
+        theirs = json.loads((there / PARA).read_text()) if (there / PARA).exists() else {}
+        if theirs.get("meta") != meta.get("name"):
+            die(f"{target}'s {PARA} doesn't cite {meta.get('name')}: run `jig para-init` there "
+                "first", 2)
+    dest = there / STAGING / path.name
+    if dest.exists():
+        die(f"{target} already has {STAGING}/{path.name}", 2)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(path), dest)
+    print(f"forwarded {path.name} to {target}'s {STAGING}/; resolve it in a session there.")
+    if para and target == para.get("meta"):
+        print(f"If a spec here depends on it: jig para-propose <spec> <slug>.")
+    return 0
+
+
 # --------------------------------------------------------------------- update
 
 # Where each of jig's own files lives now, and every path it has lived at. A row ending in
@@ -1607,7 +1879,19 @@ def add_setup(root: Path, here: Path) -> None:
     git("add", "--", SETUP, check=True)
 
 
+def ensure_staging(root: Path) -> None:
+    """jig/staging/ always exists, so a chat has one folder to be granted; it holds only its
+    .gitignore when empty."""
+    ignore = root / STAGING / ".gitignore"
+    if not ignore.exists():
+        ignore.parent.mkdir(parents=True, exist_ok=True)
+        ignore.write_text("# Staged files are never committed: see Staging in jig/RULES.md.\n*\n!.gitignore\n")
+
+
 STEPS: list = [
+    (f"add {STAGING}/ (its .gitignore), where chats drop files for this repo",
+     lambda root: not (root / STAGING / ".gitignore").exists(),
+     lambda root, here: (ensure_staging(root), git("add", "-f", "--", f"{STAGING}/.gitignore"))),
     (f"add {SETUP} from the template, TODOs to fill: it runs in every new worktree and after "
      "every merge", lambda root: not (root / SETUP).exists()
      and (Path(__file__).resolve().parent / "scripts" / "setup.sh").exists(), add_setup),
@@ -1715,7 +1999,7 @@ def rewrite_board(data: dict, files: list[str], plan: dict) -> tuple[dict, list[
                 lane[key] = many(f"lanes.{name}.{key}", lane[key])
     for key, default in BOARD_DEFAULTS.items():
         if key not in new:
-            new[key] = json.loads(json.dumps(default))
+            new[key] = main_root().name if key == "name" else json.loads(json.dumps(default))
             if key != "version":
                 edits.append(f"{key}: added, {json.dumps(default)}")
     if new.get("version") != STAMP:
@@ -2026,6 +2310,7 @@ def main(argv: list[str] | None = None) -> int:
     rl.add_argument("paths", nargs="+")
     g = sub.add_parser("gate", help="verify a lane (or this branch) is mergeable")
     g.add_argument("name", nargs="?")
+    g.add_argument("--force", action="store_true", help="gate though files are staged")
     sv = sub.add_parser("survey", help="inventory the repo against the jig shape")
     sv.add_argument("--json", action="store_true")
     mi = sub.add_parser("meta-init", help="make this repo a metarepo: docs only, released by tag")
@@ -2033,6 +2318,7 @@ def main(argv: list[str] | None = None) -> int:
     mi.add_argument("--prefix", help="decision id prefix (default D-)")
     mr = sub.add_parser("meta-release", help="metarepo: validate, then tag the next version")
     mr.add_argument("--major", action="store_true", help="a rename or a reversed decision")
+    mr.add_argument("--force", action="store_true", help="release though files are staged")
     pi = sub.add_parser("para-init", help="cite a metarepo at a released tag")
     pi.add_argument("--meta", help="the metarepo's name")
     pi.add_argument("--location", help="its checkout; recorded in repos.json, not the repo")
@@ -2042,6 +2328,10 @@ def main(argv: list[str] | None = None) -> int:
     pp = sub.add_parser("para-propose", help="open a proposal branch on the metarepo for a spec")
     pp.add_argument("spec")
     pp.add_argument("slug")
+    st = sub.add_parser("staging", help="list staged files, or resolve one")
+    st.add_argument("action", nargs="?", choices=["resolve"])
+    st.add_argument("file", nargs="?")
+    st.add_argument("--drop", metavar="WHY", help="with resolve: drop it, recording why")
     rp = sub.add_parser("repos", help="list, or add to, where your repos live (user config)")
     rp.add_argument("action", nargs="?", choices=["add"])
     rp.add_argument("name", nargs="?")
@@ -2061,7 +2351,7 @@ def main(argv: list[str] | None = None) -> int:
         "open": cmd_open, "mark": cmd_mark, "log": cmd_log, "check": cmd_check,
         "lane": cmd_lane, "sync": cmd_sync, "reviewed": cmd_reviewed,
         "handoff": cmd_handoff, "gate": cmd_gate, "hook": cmd_hook,
-        "survey": cmd_survey, "reading-list": cmd_reading_list, "update": cmd_update, "repos": cmd_repos,
+        "survey": cmd_survey, "reading-list": cmd_reading_list, "update": cmd_update, "repos": cmd_repos, "staging": cmd_staging,
         "meta-init": cmd_meta_init, "meta-release": cmd_meta_release,
         "para-init": cmd_para_init, "para-sync": cmd_para_sync, "para-propose": cmd_para_propose,
     }[args.cmd]

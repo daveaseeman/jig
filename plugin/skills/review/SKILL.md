@@ -25,6 +25,8 @@ Its job is to find the reason this change is wrong. Five questions:
 6. In a pararepo: does it change a contract path without a metarepo proposal, or with a
    `meta: none` reason that doesn't hold?
 
+A file in `jig/staging/` is not decided; a finding that rests on one says so.
+
 ## What counts
 
 Rank findings: **blocking** (wrong, or misses the spec) / **should-fix** / **optional**.

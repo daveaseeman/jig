@@ -32,7 +32,7 @@ that writes it fills `destination` as precisely as it can — a path relative to
 root, a filename, or a description — never an absolute path, which is one machine's layout.
 
 ## Done when
-- [ ] Plain repo (smoke):
+- [x] Plain repo (smoke):
   - `init` creates `jig/staging/` holding only a `.gitignore`, and `update` creates it in
     older repos. A dropped file shows in no `git status`.
   - `jig staging` lists each file with its kind, target and destination. It names every
@@ -56,31 +56,33 @@ root, a filename, or a description — never an absolute path, which is one mach
   - Release is refused while anything is staged, naming each file, unless forced:
     - `jig gate` (the merge to trunk) refuses; `jig gate --force` proceeds and logs it.
     - The pre-push hook refuses a push of trunk; `git push --no-verify` is the force.
-  - Session start (`hubnode`, `subnode`) prints one line: the count and kinds.
-- [ ] Metarepo (smoke): `meta-release` refuses while anything is staged; `--force` proceeds
+  - Session start (`hubnode`) prints one line: the count and kinds. (Amended at build: a
+    subnode's worktree never holds staged files.)
+- [x] Metarepo (smoke): `meta-release` refuses while anything is staged; `--force` proceeds
       and adds a `CHANGELOG.md` line saying what was left staged.
-- [ ] Cross-repo (smoke): a file is always resolved in its target. `resolve` run elsewhere
+- [x] Cross-repo (smoke): a file is always resolved in its target. `resolve` run elsewhere
       forwards it:
   - It looks up the target's path in `repos.json` and moves the file into that repo's
     `jig/staging/`, which is the only place it writes in another repo.
   - From a pararepo to its metarepo, it also checks both sides: the target is `para.json`'s
     `meta`, and the metarepo's `meta.json` lists this pararepo. When the file touches a
-    contract, it runs `para-propose` so the pararepo's spec records the proposal and P2 holds.
+    contract, it prints the `para-propose` line to run for the spec that depends on it (amended
+    at build: only the user knows which spec).
   - From a metarepo to a pararepo, it checks that `meta.json` lists the pararepo and that the
     pararepo's `para.json` names this metarepo.
   - A target with no `repos.json` entry is refused, with the `jig repos add` line to run.
-- [ ] Pararepo (smoke): P4 refuses a contract-path commit while the main checkout's
+- [x] Pararepo (smoke): P4 refuses a contract-path commit while the main checkout's
       `jig/staging/` holds a file targeting the metarepo.
-- [ ] `jig repos add <name> <path>` writes `~/.config/jig/repos.json` (or
+- [x] `jig repos add <name> <path>` writes `~/.config/jig/repos.json` (or
       `$XDG_CONFIG_HOME/jig/`, or `$JIG_CONFIG`); `jig repos` lists entries and flags paths
       that no longer exist. Only `jig repos` and cross-repo `resolve` read it; no hook or gate
       does. Smoke sets `JIG_CONFIG` to a temp file.
-- [ ] `/jig:stage` skill: lists staged files and resolves or drops each with the user.
-- [ ] `init` offers `jig repos add` for the repo it set up, and the board gets a `name` key
+- [x] `/jig:stage` skill: lists staged files and resolves or drops each with the user.
+- [x] `init` offers `jig repos add` for the repo it set up, and the board gets a `name` key
       (the folder name; an `update` step adds it to older boards; `STAMP` 5).
 - [ ] By hand: the owner runs real files through `/jig:stage`; what happens goes under
       Decisions.
-- [ ] `claude plugin validate ./plugin` passes; `grep -rnE 'Maige|maige|"E-' plugin` is empty.
+- [x] `claude plugin validate ./plugin` passes; `grep -rnE 'Maige|maige|"E-' plugin` is empty.
 
 ## Out of scope
 - A command to drop a file into staging. A chat writes the file itself.
@@ -134,3 +136,28 @@ root, a filename, or a description — never an absolute path, which is one mach
   merges), `jig/ledgers/WORKAROUNDS.md` (patches in the code), `jig/ledgers/DEFERRED.md`
   (review findings not taken), `jig/handoffs/` (one note per handoff), each spec's Decisions,
   and in a metarepo `CHANGELOG.md` and the `DECISIONS.md` register. Staging adds none.
+- Build, Oct 29. Smoke passes 142/142 and the validator passes. The by-hand run is the
+  owner's, through `/jig:stage`.
+  - **Not built: the session-start line in `subnode`.** A subnode works in a lane worktree,
+    and staged files live only in the main checkout, so the line belongs to `hubnode`.
+  - **A decision row is any table row whose first cell is `<PREFIX>-<n>`.** In a metarepo
+    the prefix comes from `meta.json`. A plain repo has no register, so the header's
+    `destination` names one, and the board log records where the rows went.
+  - **Forwarding doesn't run `para-propose` itself.** Proposing needs the spec here that
+    depends on the change, and only the user knows which one. It prints the command instead.
+  - **The board gains `name`** (`STAMP` 5). Init fills it from the folder name, and update
+    adds it the same way. The update step also creates `jig/staging/.gitignore`.
+- Review, Oct 29 (fresh context). All findings were taken, and each has a smoke case.
+  - **A forward to a path that isn't a jig repo** crashed, or made a stray `jig/staging/`.
+    Now it's refused.
+  - **A destination outside the repo** (absolute, or `..`) is now refused.
+  - **Provenance is now a per-file mark**, `Source: <source> (staged as <file>)`. Before, a
+    source substring let two files from the same session stand in for each other.
+  - **Only `.md` files count as staged**, so a `.DS_Store` no longer blocks a release.
+  - **CRLF headers parse.**
+  - **A spec destination always lands under `jig/specs/`.**
+  - **A duplicate decision id** is refused as `new`.
+  - **`resolve` reads the main checkout's staging**, so it works from a lane.
+  - **pre-push refuses by the ref being pushed to trunk**, so `feat:main` is caught too.
+  - **`resolve` with no file is a clean refusal.**
+

@@ -168,6 +168,22 @@ else stops with the files named, and a person resolves it.
    code, because the next merge executes it.
 3. **The hubnode merges**, marks the lane, logs it, and syncs the clean lanes.
 
+## Staging
+
+`jig/staging/` is where a chat drops a file meant for a repo: a spec, a doc, decision rows, a
+user story. It is never committed, and nothing in it is decided — read it for context, never
+cite it. Each file's header names its `target` (a repo name, or `this`), `kind`, `change`
+(`new` or `update`), `destination` inside the target, and `source`.
+
+`jig staging resolve <file>` lands it: a new spec or doc is written with its source; an
+update, a story's spec, or decisions with other content wait until the work is done and the
+source is in it; a file for another repo moves into that repo's staging, found through
+`jig repos`. `--drop "<why>"` removes it with the reason in the board log.
+
+While anything is staged, `jig gate`, a push of trunk and `meta-release` refuse. `--force`
+(or `git push --no-verify`) gets past it. A chat needs access to `~/.config/jig/` (where
+`jig repos` keeps paths) and then to one repo's `jig/staging/`, nothing more.
+
 ## Metarepo and pararepos
 
 A set of repos can share one **metarepo**: docs only — definitions, decisions, conventions.
@@ -190,6 +206,7 @@ Each side's gates are on only when its file is on trunk: `jig/meta.json` or `jig
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`) |
 | P1 | an `AGENTS.md` header that differs from what `jig/para.json` generates |
 | P2 | a contract-path change with no spec saying `meta: <name> proposal <branch>` or `meta: none — <reason>` |
+| P4 | a contract-path change while a file targeting the metarepo is staged |
 | P3 | the metarepo's cache (`jig/meta-cache/`) or its checkout committed into the pararepo |
 
 A fast-forward runs no hook, so `meta-release` and the metarepo's pre-push re-check every
@@ -204,6 +221,8 @@ own, `meta: <name> v0.3 → v0.4`, with `para-sync`'s report as the body.
 jig init [--trunk main]     board, git hooks
 jig survey [--json]         inventory the repo against the jig shape
 jig update [--apply]        bring the repo to the current jig layout (dry run without --apply)
+jig staging [resolve <file> [--drop why]]   list staged files, or land / drop one
+jig repos [add <name> <path>]               where your repos live (user config)
 jig open ... --reserve K    allocate scarce counter K to this lane
 jig reading-list <paths>    what to read before touching these files
 jig install-hooks           rewrite the hooks
