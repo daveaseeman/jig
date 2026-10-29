@@ -739,5 +739,8 @@ out=$($J meta-release 2>&1); out2=$($J meta-release --force 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'release waits while' && ! echo \"\$1\" | grep -q 'waits while'" "$out" "$out2"
 rm jig/staging/m.md
 
+msg="plugin: no skill description holds angle brackets (the desktop app reads them as XML tags)"
+expect_refuse grep -lE '^description:.*[<>]' $P/../skills/*/SKILL.md $P/skills/*/SKILL.md
+
 rm -rf "$T"
 exit $fail

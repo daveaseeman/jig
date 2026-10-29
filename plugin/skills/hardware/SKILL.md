@@ -1,6 +1,6 @@
 ---
 name: hardware
-description: Spec a board into docs/hardware/<board>.md from a hardware definition the user supplies, check it against the code, and install the skills the page lists. Use when a board is ready to spec, when a handoff's fold-in asks for a board page, or when asked to install hardware skills.
+description: Spec a board from a hardware definition the user supplies, as its own page under docs/hardware/, check it against the code, and install the skills the page lists. Use when a board is ready to spec, when a handoff's fold-in asks for a board page, or when asked to install hardware skills.
 ---
 
 A board page records what a board is, so the code can be checked against it. It is written
