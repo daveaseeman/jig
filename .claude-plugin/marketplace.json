@@ -8,7 +8,11 @@
     {
       "name": "jig",
       "source": "./plugin",
-      "description": "Minimal scaffolding for prototyping software and firmware with AI agents: specs, bug protocol, adversarial review, parallel lanes enforced by git hooks."
+      "description": "Minimal scaffolding for prototyping software and firmware with AI agents: specs, bug protocol, adversarial review, parallel lanes enforced by git hooks.",
+      "version": "0.2.0"
     }
-  ]
+  ],
+  "metadata": {
+    "description": "Dave Seeman's plugins: jig, scaffolding for prototyping software and firmware with AI agents."
+  }
 }
