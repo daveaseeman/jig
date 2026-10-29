@@ -53,7 +53,7 @@ running. Now fill the board by hand, from the predecessor's:
 | `docmap` | its file → documentation map, if it has one |
 
 A counter's `files` must name every file its numbers live in — if the rules moved from
-`AGENTS.md` to `docs/systems/**`, the pattern must cover both, or R6 enforces nothing.
+`AGENTS.md` to `docs/**`, the pattern must cover both, or R6 enforces nothing.
 
 Commit on trunk. The predecessor still enforces; jig enforces nothing yet.
 

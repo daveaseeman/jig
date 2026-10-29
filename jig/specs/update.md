@@ -17,7 +17,7 @@ current prints "up to date" and exits 0.
 
 ## Done when
 - [ ] `tests/smoke.sh`: four old layouts are set up, each with a `reserve` counter on
-      `docs/systems/**` and a `docmap` page:
+      `docs/**` and a `docmap` page:
       - the three in this repo's history (`eaec973`, `66a044c`, `62c8d9f`), each as that
         commit's init skill says;
       - an ai-dev layout built from `eaec973` the way ai-dev named things: `.aidev/aidev.py`,

@@ -99,8 +99,11 @@ database already past a number never runs a step of that number that merges late
 
 ## Documentation
 
-One page per system, under `docs/systems/`. The tree names the product's own parts, not its
-files, so a rule that touches several files lives once. Every page has three headings:
+One page per system, `docs/<system>/<system>.md`. A subsystem's page sits in a folder of its
+own inside its system's, `docs/<system>/<subsystem>/<subsystem>.md`, and its parts nest the
+same way. Every page is named for its folder, so the path alone says what it covers. The tree
+names the product's own parts, not its files, so a rule that touches several files lives
+once. Every page has three headings:
 
 - **Now** — what is true on trunk today.
 - **Rules** — what binds, as if the text stood in `AGENTS.md`; that is how the always-loaded
@@ -110,6 +113,10 @@ files, so a rule that touches several files lives once. Every page has three hea
 
 When Now and Rules disagree, Rules wins and Now gets fixed. A moved rule leaves no forwarding
 address behind — that is history, and git keeps it.
+
+In `docmap`, a subsystem's page names its own files and its system's page names the rest:
+fold-in asks every page that covers a changed file, so a system page whose globs reach into
+its subsystems is asked about every change made in them.
 
 A **seam** page covers what crosses between two systems: in `docmap`, a page whose globs name
 files from both sides. `jig reading-list <files>` prints which pages to read before touching
@@ -133,7 +140,7 @@ ticked as updated, or says why no change was needed.
 Ownership comes from `docmap` in the board:
 
 ```json
-"docmap": {"docs/systems/storage.md": ["server/storage.py", "server/migrations/**"]}
+"docmap": {"docs/storage/storage.md": ["server/storage.py", "server/migrations/**"]}
 ```
 
 `docmap` can name any file, config such as `sdkconfig` included; a page is asked about

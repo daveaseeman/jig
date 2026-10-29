@@ -125,6 +125,11 @@ see `jig/specs/hardware.md`). How those pages are shaped is jig's convention, so
 - `jig/specs/hardware.md` supersedes this spec's `HARDWARE.md` and `skill-template` lines:
   init seeds nothing in `docs/` or `.claude/`, and `templates/docs/` goes away. The boxes
   above record what held when this spec landed.
+- Amended Oct 29: no `docs/systems/`. A system's page is `docs/<system>/<system>.md`, a
+  subsystem's `docs/<system>/<subsystem>/<subsystem>.md`, each named for its folder. A
+  subsystem's page names its own files in `docmap` and its system's page the rest, since
+  fold-in asks every covering page. Board pages stay `docs/hardware/<board>.md`: boards are
+  not one of the product's systems. `grep -rn 'docs/systems' plugin tests` returns nothing.
 - The scratch-repo items are checked by `tests/smoke.sh`, which copies the templates the way
   the init skill says, not by running `/jig:init` itself. The permission-prompt item needs a
   real subnode session and is still open.

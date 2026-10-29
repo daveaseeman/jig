@@ -29,7 +29,7 @@ Each one gets exactly one job and one home:
 | `AGENTS.md` | rules an agent needs on every task — and nothing else |
 | `CLAUDE.md` | one line importing AGENTS.md |
 | `README.md` | for people outside the repo |
-| `docs/systems/` | what the code is now, one page per system |
+| `docs/<system>/<system>.md` | what the code is now, one page per system; subsystems nest inside |
 | `jig/specs/` | a task in flight |
 | `jig/ledgers/WORKAROUNDS.md` | patches that are in the code |
 | `jig/ledgers/DEFERRED.md` | review findings that are not |

@@ -14,36 +14,36 @@ undo() { git reset -q; git checkout -q -- .; git clean -fdq; }
 
 cd "$T" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && chmod +x jig/scripts/*.sh
-mkdir -p docs/systems src
+mkdir -p docs/alpha src
 printf 'x=1\n' > src/a.py
-printf '# A\n\n## 28 Alpha\ntext\n\n## 29 Beta\ntext\n' > docs/systems/a.md
+printf '# A\n\n## 28 Alpha\ntext\n\n## 29 Beta\ntext\n' > docs/alpha/alpha.md
 git add -A && git commit -qm init
 $J init >/dev/null
 python3 - <<'EOF'
 import json; b = json.load(open('jig/lanes.json'))
-b['reserve'] = {'section': {'next': 29, 'pattern': r'^## (\d+) ', 'files': ['docs/systems/**']}}
+b['reserve'] = {'section': {'next': 29, 'pattern': r'^## (\d+) ', 'files': ['docs/**']}}
 json.dump(b, open('jig/lanes.json', 'w'), indent=2)
 EOF
 git add -A && git commit -qm board
-$J open L1 --brief t --owns 'src/**' 'docs/systems/**' --reserve section >/dev/null
+$J open L1 --brief t --owns 'src/**' 'docs/**' --reserve section >/dev/null
 git add -A && git commit -qm "open L1"
 cd .git/jig/worktrees/L1
 
 msg="R6: editing an existing heading's text takes nothing"
-sed -i.bak 's/## 29 Beta/## 29 Beta renamed/' docs/systems/a.md && rm docs/systems/a.md.bak
+sed -i.bak 's/## 29 Beta/## 29 Beta renamed/' docs/alpha/alpha.md && rm docs/alpha/alpha.md.bak
 git add -A; expect_pass git commit -qm e1
 
 msg="R6: moving a page takes nothing"
-git mv docs/systems/a.md docs/systems/b.md; expect_pass git commit -qm mv
+mkdir -p docs/beta && git mv docs/alpha/alpha.md docs/beta/beta.md; expect_pass git commit -qm mv
 
 msg="R6: adding ## 31 while holding 30 is refused"
-printf '\n## 31 Gamma\n' >> docs/systems/b.md; git add -A; expect_refuse git commit -qm e2; undo
+printf '\n## 31 Gamma\n' >> docs/beta/beta.md; git add -A; expect_refuse git commit -qm e2; undo
 
 msg="R6: adding ## 30 (held) is accepted"
-printf '\n## 30 Delta\n' >> docs/systems/b.md; git add -A; expect_pass git commit -qm e3
+printf '\n## 30 Delta\n' >> docs/beta/beta.md; git add -A; expect_pass git commit -qm e3
 
 msg="R7: WORKAROUND: in Markdown is accepted"
-printf 'quote WORKAROUND: here\n' >> docs/systems/b.md; git add -A; expect_pass git commit -qm md
+printf 'quote WORKAROUND: here\n' >> docs/beta/beta.md; git add -A; expect_pass git commit -qm md
 
 msg="R7: WORKAROUND: in code without a ledger row is refused"
 printf '# WORKAROUND: x\n' >> src/a.py; git add -A; expect_refuse git commit -qm py; undo
@@ -109,8 +109,8 @@ expect_pass test -n "$(echo "$homes" | grep -F '; docs/ = ')" -a -n "$(echo "$ho
 
 H="$T/hardware"
 mkdir -p "$H" && cd "$H" && git init -q -b main && git config user.email t@t && git config user.name t
-cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs/hardware docs/systems main
-printf '# Devkit\n' > docs/hardware/devkit.md && printf '# GPIO\n' > docs/systems/gpio.md
+cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs/hardware docs/gpio main
+printf '# Devkit\n' > docs/hardware/devkit.md && printf '# GPIO\n' > docs/gpio/gpio.md
 printf 'int led = 48;\n' > main/app.c && printf 'CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y\n' > sdkconfig
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 
@@ -123,7 +123,7 @@ assert r['boards_unmapped'] == ['docs/hardware/devkit.md'], r['boards_unmapped']
 # The system page comes first, so a docmap that stops at the first match hides the board page.
 python3 - <<'EOF'
 import json; b = json.load(open('jig/lanes.json'))
-b['docmap'] = {'docs/systems/gpio.md': ['main/**'],
+b['docmap'] = {'docs/gpio/gpio.md': ['main/**'],
                'docs/hardware/devkit.md': ['main/**', 'sdkconfig*']}
 json.dump(b, open('jig/lanes.json', 'w'), indent=2)
 EOF
@@ -136,15 +136,15 @@ assert r['boards_unmapped'] == [], r['boards_unmapped']"
 
 msg="reading-list: a file covered by a system page and a board page lists both"
 out=$($J reading-list main/app.c)
-expect_pass test -n "$(echo "$out" | grep -F docs/systems/gpio.md)" -a -n "$(echo "$out" | grep -F docs/hardware/devkit.md)"
+expect_pass test -n "$(echo "$out" | grep -F docs/gpio/gpio.md)" -a -n "$(echo "$out" | grep -F docs/hardware/devkit.md)"
 
 $J open H1 --brief t --owns 'main/**' >/dev/null && $J open H2 --brief t --owns 'sdkconfig*' >/dev/null
 git add -A && git commit -qm "open H1 H2"
 cd .git/jig/worktrees/H1 && printf 'int led = 2;\n' > main/app.c && git add -A && git commit -qm led
 $J reviewed >/dev/null; $J handoff >/dev/null 2>&1; git add -A && git commit -qm note
 msg="fold-in: changing a board's code asks about its board page and its system page"
-expect_pass sh -c "grep -q -- '- \[ \] docs/hardware/devkit.md' jig/handoffs/H1-*.md && grep -q -- '- \[ \] docs/systems/gpio.md' jig/handoffs/H1-*.md"
-sed -i.bak 's|- \[ \] docs/systems/gpio.md — updated / no change because ___|- [x] docs/systems/gpio.md — no change because the pin is board wiring|' jig/handoffs/H1-*.md
+expect_pass sh -c "grep -q -- '- \[ \] docs/hardware/devkit.md' jig/handoffs/H1-*.md && grep -q -- '- \[ \] docs/gpio/gpio.md' jig/handoffs/H1-*.md"
+sed -i.bak 's|- \[ \] docs/gpio/gpio.md — updated / no change because ___|- [x] docs/gpio/gpio.md — no change because the pin is board wiring|' jig/handoffs/H1-*.md
 rm -f jig/handoffs/*.bak && git add -A && git commit -qm "answer gpio"
 msg="gate: refuses while the board page's fold-in line is unanswered"
 expect_refuse sh -c "cd '$H' && $J gate H1"

@@ -34,7 +34,7 @@ Risk: R0 — personal prototype, single user, nothing shipped. Optimize for spee
 - A workaround is allowed when it's the right fix. It gets a `WORKAROUND:` comment and a row in `jig/ledgers/WORKAROUNDS.md`. Never silently.
 - A review finding you defer or reject gets a row in `jig/ledgers/DEFERRED.md` at handoff.
 - No new dependencies without saying so in the spec.
-- Documentation is one page per system under `docs/systems/`, shaped as `jig/RULES.md` (Documentation) says; a change isn't done until its page is current. Rules written in a documentation page bind as if they stood in this file.
+- Documentation is one page per system, `docs/<system>/<system>.md`, shaped as `jig/RULES.md` (Documentation) says; a change isn't done until its page is current. Rules written in a documentation page bind as if they stood in this file.
 - One job, one home per document: AGENTS.md rules · the docs tree what the code is now · jig/specs/ a task in flight · jig/ledgers/WORKAROUNDS.md patches in the code · jig/ledgers/DEFERRED.md findings not in it · .claude/skills/ know-how · README.md outsiders · git history. A new `.md` elsewhere means its home wasn't found. `jig survey` lists the strays.
 
 ## Firmware (delete if not applicable)

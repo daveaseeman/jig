@@ -798,7 +798,7 @@ HOMES = {
 }
 BOARD_PAGES = "docs/hardware/"
 HOME_DIRS = {
-    "docs/": f"what the code is now; {BOARD_PAGES}<board>.md each board",
+    "docs/": f"what the code is now; docs/<system>/<system>.md each system, {BOARD_PAGES}<board>.md each board",
     f"{DIR}/specs/": "a task in flight",
     f"{DIR}/ledgers/": "WORKAROUNDS.md patches that are in the code; DEFERRED.md review findings that are not",
     f"{DIR}/": "the lane system: rulebook, board, handoffs",
