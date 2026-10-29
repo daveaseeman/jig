@@ -960,7 +960,7 @@ def cmd_survey(root: Path, args) -> int:
             print(f"  {g}")
     if src and not report["docmap_present"]:
         print("\nNo docmap on the board: handoff cannot tell which docs page a change touches."
-              f"\nMap pages to globs in {BOARD} (see docs/README.md).")
+              f"\nMap pages to globs in {BOARD} (see Fold-in in {DIR}/RULES.md).")
     co = report["coordination"]
     print("\nHow parallel work is coordinated today (and what each maps to in jig):")
     for f in co["found"]:

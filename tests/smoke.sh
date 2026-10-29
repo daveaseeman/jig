@@ -84,11 +84,11 @@ then ok "$msg"; else bad "$msg"; fi
 
 I="$T/init"
 mkdir -p "$I" && cd "$I" && git init -q -b main && git config user.email t@t && git config user.name t
-cp -r "$P/jig" jig && cp -r "$P/docs" docs && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && rm docs/HARDWARE.md
+cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" .   # not firmware: no docs/HARDWARE.md
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 
-msg="init: root holds only AGENTS.md, CLAUDE.md, docs/ and jig/; docs/ holds only its README"
-expect_pass test "$(ls -A | grep -v '^\.git$' | tr '\n' ' ')$(ls -A docs)" = "AGENTS.md CLAUDE.md docs jig README.md"
+msg="init: root holds only AGENTS.md, CLAUDE.md and jig/"
+expect_pass test "$(ls -A | grep -v '^\.git$' | tr '\n' ' ')" = "AGENTS.md CLAUDE.md jig "
 
 msg="init: the repo's docs/ is common on a new board"
 expect_pass python3 -c "import json,sys; sys.exit('docs/**' not in json.load(open('jig/lanes.json'))['common'])"

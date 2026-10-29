@@ -5,8 +5,9 @@ A repo's root holds only what is for that repo. After `/jig:init`, jig adds `AGE
 `CLAUDE.md` at root, because tools look for them there. Everything jig manages sits in one
 visible folder, `jig/`: the checker, rulebook, board, handoffs, ledgers, specs (scopes,
 changes, decisions) and check/format scripts. The repo's own documentation of the system it
-builds stays in the repo's `docs/`. That includes the docs-shape README and the hardware
-notes jig seeds there. Worktrees are git state, not content, so they live in
+builds stays in the repo's `docs/`; jig seeds only `docs/HARDWARE.md`, and only for
+firmware. How those pages are shaped is jig's convention, so it is written in
+`jig/RULES.md`. Worktrees are git state, not content, so they live in
 `.git/jig/worktrees/`. This applies to the jig repo itself once it runs `/jig:init`.
 
 ## Done when
@@ -14,10 +15,14 @@ notes jig seeds there. Worktrees are git state, not content, so they live in
       is the first thing to update).
 - [x] `claude plugin validate ./plugin` passes.
 - [x] In a fresh scratch repo, `/jig:init` leaves exactly these at root: `AGENTS.md`,
-      `CLAUDE.md`, `jig/`, `docs/` (its `README.md`, plus `HARDWARE.md` only if firmware), and
-      `.claude/skills/` only if firmware. No `.gitignore` line is needed.
+      `CLAUDE.md`, `jig/`, and only if firmware `docs/HARDWARE.md` and `.claude/skills/`.
+      No `.gitignore` line is needed.
 - [x] `grep -rn 'jig/docs' plugin tests` returns nothing, and the templates ship
       `templates/docs/` beside `templates/jig/`.
+- [x] `grep -rn 'docs/README' plugin tests` returns nothing, and `templates/docs/` holds only
+      `HARDWARE.md`. `RULES.md` § Documentation holds the whole shape: pages under
+      `docs/systems/` named for the product's parts, *Now* / *Rules* / *Checks*, numbered
+      rule headings, *Rules* beating *Now*, no forwarding addresses, seams.
 - [x] `jig open` creates the worktree at `.git/jig/worktrees/<lane>`, and trunk's
       `git status` stays clean.
 - [ ] A Claude Code subnode session edits a file in that worktree without a permission
@@ -56,12 +61,13 @@ notes jig seeds there. Worktrees are git state, not content, so they live in
   list (`scripts/` → `jig/scripts/` too) and `foldin_lines`.
 - `plugin/templates/`: move `scripts/`, `specs/`, `ledgers/`, `jig/` under one
   `templates/jig/` tree so init copies a single folder: `templates/jig/{jig.py, RULES.md,
-  scripts/, specs/, ledgers/}`. `templates/docs/{README.md, HARDWARE.md}`,
+  scripts/, specs/, ledgers/}`. `templates/docs/HARDWARE.md`,
   `templates/AGENTS.md`, `templates/CLAUDE.md` and `templates/skill-template/` stay beside it.
 - `plugin/scripts/check.sh`, `format.sh`: delegate to `jig/scripts/<name>`, falling back to
   `scripts/<name>`.
-- `plugin/skills/*/SKILL.md`: every path. `init` copies `templates/jig/` → `jig/`, then
-  `templates/docs/` → `docs/`, never overwriting, then `AGENTS.md`/`CLAUDE.md` to root.
+- `plugin/skills/*/SKILL.md`: every path. `init` copies `templates/jig/` → `jig/` and
+  `AGENTS.md`/`CLAUDE.md` to root, never overwriting; for firmware it also copies
+  `templates/docs/HARDWARE.md` → `docs/HARDWARE.md`.
   `survey`'s "homes" prose. `adopt`'s homes table and §4. `hubnode`/`subnode` command paths
   (`python3 jig/jig.py`). `retro`, `verify`, `review`, `bug`, `brief`, `feedback`,
   `esp-idf-esp32s3` (`docs/HARDWARE.md`).
@@ -73,6 +79,10 @@ notes jig seeds there. Worktrees are git state, not content, so they live in
 - Keep `scripts/` at root as "the repo's own". Rejected by the owner: the root should hold
   only what is for the repo, and `check.sh`/`format.sh` exist because jig's hooks run them.
   `[seen]`, stated.
+- Seed the repo's `docs/` with a `README.md` holding the docs shape. Built in `7bad67f`,
+  then reversed by the owner on Oct 28: the pages are always written by an agent working
+  through jig, so the shape belongs with jig's rules, which every lane's kickoff says to
+  read. `AGENTS.md` was the only pointer to the README. `[seen]`, stated.
 - Move the repo's `docs/` under `jig/docs/`. Built that way in `62c8d9f`, then reversed by
   the owner on Oct 28. `jig/` holds what jig manages (scopes, changes, decisions, handoffs,
   ledgers); a repo's documentation of its own system belongs to the repo. `[seen]`, stated.
@@ -92,8 +102,8 @@ notes jig seeds there. Worktrees are git state, not content, so they live in
 - `adopt` gets no old-path mapping line here. Moving a repo set up at the old paths is
   `update`'s job; until it lands, the plugin's scripts fall back to `scripts/`.
 - `HARDWARE.md` ships in `templates/docs/`, because it records the repo's hardware, not jig's
-  state. init deletes it for a repo that isn't firmware, just as it deletes the AGENTS.md
-  Firmware section.
+  state. init copies it only for firmware, and deletes the AGENTS.md Firmware section
+  otherwise.
 - The board's `common` is `AGENTS.md`, `docs/**` and `jig/**`. Specs and ledgers are under
   `jig/`. `docs/**` stays common, as it was before this spec.
 - `gate`'s scratch checkout moves with the worktrees, to `.git/jig/worktrees/gate-<lane>`.
@@ -103,6 +113,15 @@ notes jig seeds there. Worktrees are git state, not content, so they live in
   board stay under `jig/`. The four reopened boxes are checked again by that pass: smoke
   asserts the root and `docs/` contents, `docs/**` in a new board's `common`, and both homes
   in survey's output. Each of those three cases failed against a copy with the change undone.
+- Amended again Oct 28: the docs shape moves from `docs/README.md` into `jig/RULES.md`
+  § Documentation, so init leaves no `docs/` in a repo that isn't firmware. Smoke checks the
+  root after the init skill's copy steps, so it can't see a README template coming back; the
+  `docs/README` grep and `templates/docs/` holding only `HARDWARE.md` cover that.
+  - `docs/` is still the home for system pages, and `docs/**` is still common.
+  - `update` replaces `RULES.md`, so a repo that wants another shape says so in its own
+    `AGENTS.md`, which wins over the template. jig has one shape on purpose (FEATURES).
+  - A `docs/README.md` that an earlier init seeded stays. It is the repo's file now, and
+    `update` never edits those.
 - The scratch-repo items are checked by `tests/smoke.sh`, which copies the templates the way
   the init skill says, not by running `/jig:init` itself. The permission-prompt item needs a
   real subnode session and is still open.
