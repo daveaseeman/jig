@@ -98,9 +98,10 @@ decides what it does. That is the same split as `check.sh` and `format.sh`.
   the way init's skill does. Then name anything in the repo that already does the job by
   hand, like a check script that borrows the main checkout's environment, or `ln -s` steps in
   a skill, and offer to remove each once `setup.sh` covers it.
-- `plugin/skills/adopt/MIGRATION.md`:
-  - A mapping row: "a step that links or installs into each new worktree" → `setup.sh`.
-  - Stage 1's copy list gains `jig/scripts/setup.sh`.
+- `plugin/skills/adopt/SKILL.md`:
+  - A mapping row in 4b: "a step that links or installs into each new worktree" → `setup.sh`.
+  - Stage 6.1 copies `templates/jig/`, so `setup.sh` comes along; it says to fill it the way
+    init's skill does.
 - `jig/specs/update.md`: once update is built, its done-when list of changed entries gains
   `jig/scripts/setup.sh` when the repo lacked it. Its expected Daisy run gains the TODO
   `setup.sh` and a fifth hook.

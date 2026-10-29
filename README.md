@@ -144,6 +144,6 @@ throwaway repo; `claude plugin validate ./plugin` checks the plugin's shape.
 ## 📚 Further reading
 
 - `plugin/templates/jig/RULES.md` — the rulebook a repo gets
-- `plugin/skills/adopt/MIGRATION.md` — moving a repo with an existing coordination system onto jig
+- `plugin/skills/adopt/SKILL.md` — bringing an existing repo onto jig, including one that already coordinates parallel work
 - `marketing/DIFFERENCES.md` — what jig does that the frameworks it came from don't
 - `marketing/FEATURES.md` — every piece, its origin, and why it exists
