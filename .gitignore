@@ -1,4 +1,3 @@
-.jig/worktrees/
 __pycache__/
 .DS_Store
 *.plugin
