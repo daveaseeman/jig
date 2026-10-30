@@ -7,7 +7,7 @@ disable-model-invocation: true
 Run it. Nothing is written, and nothing needs to be installed first:
 
 ```sh
-python3 jig/jig.py survey            # if the repo has jig
+python3 .jig/jig.py survey            # if the repo has jig
 python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" survey   # if it doesn't
 ```
 
@@ -18,8 +18,8 @@ Report the output, then say what it means in a few lines:
 - **Oversized always-loaded file.** Over 40 rule lines and the whole file starts getting
   ignored, so every rule in it is weakened by the ones around it. Highest-value fix.
 - **No home in the taxonomy.** Each document gets one job and one home — AGENTS.md rules,
-  `docs/` what the code is now, `jig/specs/` a task in flight, `jig/ledgers/WORKAROUNDS.md` patches in the code,
-  `jig/ledgers/DEFERRED.md` review findings not in it,
+  `docs/` what the code is now, `.jig/specs/` a task in flight, `.jig/ledgers/WORKAROUNDS.md` patches in the code,
+  `.jig/ledgers/DEFERRED.md` review findings not in it,
   `.claude/skills/` know-how, `README.md` outsiders, git for history. Zero inbound links plus
   a stale last-commit is a document written once and never read again; git keeps it either way.
   If a directory ships markdown as code, list it under `payload` on the board as a glob such

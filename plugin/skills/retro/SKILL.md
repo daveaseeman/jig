@@ -10,12 +10,12 @@ Ask: did anything in this task get solved that will need solving again?
 - A board page lists a skill under Skills that jig ships and `.claude/skills/` lacks → install it from `${CLAUDE_PLUGIN_ROOT}/templates/skills/<name>/`, never overwriting.
 - Process friction (the check was wrong, the spec template missed something) → edit the process file directly.
 
-Then read `jig/ledgers/WORKAROUNDS.md`:
+Then read `.jig/ledgers/WORKAROUNDS.md` (no file means no rows yet):
 - Two rows in the same subsystem → propose a refactor task; the correction they both avoided is its intent.
 - "Proof it fires" empty → it's a wish, not a fix. Flag it.
 - Reason tagged `[assumed]` → can it be converted now? If the assumption was wrong, the correction goes back on the table.
 
-Then read `jig/ledgers/DEFERRED.md`:
+Then read `.jig/ledgers/DEFERRED.md` (likewise):
 - Deferred rows for a scope that has closed → re-rank together; take, or reject with a reason.
 - Rejected with `[assumed]` → can it be converted now? A wrong assumption puts the finding back.
 

@@ -25,7 +25,7 @@ Its job is to find the reason this change is wrong. Five questions:
 6. In a pararepo: does it change a contract path without a metarepo proposal, or with a
    `meta: none` reason that doesn't hold?
 
-A file in `jig/staging/` is not decided; a finding that rests on one says so.
+A file in `.jig/staging/` is not decided; a finding that rests on one says so.
 
 ## What counts
 
@@ -42,15 +42,15 @@ because the reviewer suggested them.
 
 Fix blocking items and re-run the checks. One round of should-fix is enough; if a third
 round is needed, the spec was wrong — fix the spec. Every should-fix or optional finding you
-don't take gets a row in `jig/ledgers/DEFERRED.md` with its rank and one reason, tagged `[seen]` or
-`[assumed]`.
+don't take gets a row in `.jig/ledgers/DEFERRED.md` with its rank and one reason, tagged `[seen]` or
+`[assumed]`. The first row creates the file from `${CLAUDE_PLUGIN_ROOT}/templates/ledgers/DEFERRED.md`.
 
 ## Record it
 
 When no blocking findings remain, with everything committed:
 
 ```sh
-python3 jig/jig.py reviewed
+python3 .jig/jig.py reviewed
 ```
 
 `jig handoff` refuses without a record for that exact commit. Only record a review you

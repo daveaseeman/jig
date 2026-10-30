@@ -31,14 +31,18 @@ one's proposed edit and ask about each; make it only on a yes. `--apply` never t
 
 ## After `--apply`
 
-`update` stages its changes, commits nothing, and runs `jig/scripts/check.sh`. Then:
+`update` stages its changes, commits nothing, and runs `.jig/scripts/check.sh`. Then:
 
 1. Fix the stale references in code with the user, in the same uncommitted change, until the
    check passes. Those are the repo's files: you edit them with the user; `jig.py` never does.
    Stale references in Markdown are worth fixing too — offer the list, don't sweep it unasked.
-2. If `update` added `jig/scripts/setup.sh`, fill it the way `/jig:init` does. Then name
+2. If `update` added `.jig/scripts/setup.sh`, fill it the way `/jig:init` does. Then name
    anything in the repo that already does its job by hand — a check script that borrows the
    main checkout's environment, `ln -s` steps in a skill — and offer to remove each once
    `setup.sh` covers it.
-3. Commit on trunk. The new hooks read trunk's `jig/jig.py`, which exists only once this
-   commit lands, so this one commit goes unchecked and the next is checked by the new copy.
+3. Commit on trunk. The hooks read trunk's `.jig/jig.py`. Coming from `jig/` or `.aidev/`,
+   it exists only once this commit lands, so this one commit goes unchecked. Coming from the
+   first `.jig/` layout (root `specs/` and `ledgers/`), trunk's old checker judges it and
+   refuses the new `jig.py` under R7, because that copy checks jig's own file: if R7 on
+   `.jig/jig.py` is its only refusal, commit this one with `--no-verify` and say why. The
+   next commit is checked by the new copy.

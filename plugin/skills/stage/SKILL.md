@@ -1,9 +1,9 @@
 ---
 name: stage
-description: Stage a chat-born file (spec, doc, decisions, user story) for a jig repo, or resolve what sits in jig/staging/ - land each in its target or drop it with a reason. Use when a chat produced something meant for a repo, at session start when files are staged, or on "resolve staging".
+description: Stage a chat-born file (spec, doc, decisions, user story) for a jig repo, or resolve what sits in .jig/staging/ - land each in its target or drop it with a reason. Use when a chat produced something meant for a repo, at session start when files are staged, or on "resolve staging".
 ---
 
-A staged file is a Markdown file in `jig/staging/` with this header. Nothing in it is
+A staged file is a Markdown file in `.jig/staging/` with this header. Nothing in it is
 decided until it is resolved: read it for context, never cite it as decided.
 
 ```yaml
@@ -20,13 +20,13 @@ status: staged
 
 ## Staging a file
 
-Write it into the target's `jig/staging/`, found with `jig repos` (needs only
-`~/.config/jig/` — then ask for access to exactly `<repo>/jig/staging/`). Say `new` or
+Write it into the target's `.jig/staging/`, found with `jig repos` (needs only
+`~/.config/jig/` — then ask for access to exactly `<repo>/.jig/staging/`). Say `new` or
 `update`, and make `destination` as precise as you can, never an absolute path.
 
 ## Resolving
 
-`python3 jig/jig.py staging` lists what's there. For each file, with the user:
+`python3 .jig/jig.py staging` lists what's there. For each file, with the user:
 
 - **spec / doc, new**: `jig staging resolve <file>` writes it, with its source.
 - **spec / doc, update**: find the page — the path, else search for the filename, else ask
@@ -37,7 +37,7 @@ Write it into the target's `jig/staging/`, found with `jig repos` (needs only
   resolve again. An `update` changes existing rows; edit them, then `resolve`.
 - **user-story**: run `/jig:brief` with the story as input — a new spec, or an amendment to
   the spec it extends — carrying `Source: <source> (staged as <file name>)`. Then `resolve`.
-- **another repo's**: `resolve` forwards it into that repo's `jig/staging/`; it is resolved
+- **another repo's**: `resolve` forwards it into that repo's `.jig/staging/`; it is resolved
   in a session there.
 - **not wanted**: `jig staging resolve <file> --drop "<why>"`.
 

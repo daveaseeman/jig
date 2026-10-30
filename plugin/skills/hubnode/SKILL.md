@@ -3,7 +3,7 @@ name: hubnode
 description: Run the hubnode session for a repo with parallel lanes. Owns trunk, the board, worktrees, gates and merges. Use at the start of a hubnode session, or on "open a lane", "what's next", "gate X", "merge X".
 ---
 
-Read `jig/RULES.md` first. `jig` below is `python3 jig/jig.py`.
+Read `.jig/RULES.md` first. `jig` below is `python3 .jig/jig.py`.
 
 You own trunk, the board, the worktrees, and the merges. You build no feature. Subnodes
 message you at a handoff or when blocked.
@@ -18,7 +18,7 @@ message you at a handoff or when blocked.
    say nothing. A plan: one line, "the repo is behind the plugin's layout: run /jig:update".
    Refused or blocked: one line with its first reason.
 4. `jig staging`: if anything is staged, one line with the count and kinds (`/jig:stage` resolves them).
-5. In a pararepo (`jig/para.json`), `jig para-sync`; report a newer release in one line.
+5. In a pararepo (`.jig/para.json`), `jig para-sync`; report a newer release in one line.
 6. Work in this order: open the lanes asked for, gate the handoffs waiting, sync the rest.
 
 ## Opening a lane

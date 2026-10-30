@@ -3,7 +3,7 @@ name: bug
 description: Investigate a reported bug or symptom before fixing it. Use when the user reports something broken, or invoke with /bug followed by the symptom.
 ---
 
-Run this in order. Write it to `jig/specs/bug-<name>.md`. Nothing gets edited until step 5 is done.
+Run this in order. Write it to `.jig/specs/bug-<name>.md`. Nothing gets edited until step 5 is done.
 
 ## 1. Why — up to 3 loops
 Why did this happen? Answer. Why that? Answer. Stop at a root or at 3.
@@ -31,4 +31,4 @@ Prefer the correction. A workaround is fine when it is the right fix — say why
 
 If the fix is a workaround:
 - one-line code comment, ≤120 chars, starting `WORKAROUND:` — what it patches and why a patch was right
-- an entry in `jig/ledgers/WORKAROUNDS.md` (the commit hook checks for it)
+- an entry in `.jig/ledgers/WORKAROUNDS.md` (the commit hook checks for it); the first creates the file from `${CLAUDE_PLUGIN_ROOT}/templates/ledgers/WORKAROUNDS.md`

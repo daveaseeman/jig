@@ -5,13 +5,13 @@ disable-model-invocation: true
 ---
 
 Produce a migration plan. Steps 1–5 **change nothing**: the deliverable is
-`jig/specs/adopt-<repo>.md`, which the user reads and approves before step 6 carries out any
+`.jig/specs/adopt-<repo>.md`, which the user reads and approves before step 6 carries out any
 of it.
 
 ## 1. Measure
 
 ```sh
-python3 jig/jig.py survey                                     # repo already has jig
+python3 .jig/jig.py survey                                     # repo already has jig
 python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" survey    # it doesn't — nothing to install
 ```
 
@@ -34,9 +34,9 @@ Each one gets exactly one job and one home:
 | `CLAUDE.md` | one line importing AGENTS.md |
 | `README.md` | for people outside the repo |
 | `docs/<system>/<system>.md` | what the code is now, one page per system; subsystems nest inside |
-| `jig/specs/` | a task in flight |
-| `jig/ledgers/WORKAROUNDS.md` | patches that are in the code |
-| `jig/ledgers/DEFERRED.md` | review findings that are not |
+| `.jig/specs/` | a task in flight |
+| `.jig/ledgers/WORKAROUNDS.md` | patches that are in the code |
+| `.jig/ledgers/DEFERRED.md` | review findings that are not |
 | `docs/hardware/<board>.md` | one per board: components, wiring, toolchain, flash |
 | `.claude/skills/` | reusable know-how, loaded on demand |
 | git history | everything else |
@@ -101,7 +101,7 @@ must say two more things, or the repo ends up stating one rule and living anothe
 
 ## 4. Write the plan
 
-`jig/specs/adopt-<repo>.md`, using `jig/specs/_template.md`, plus:
+`.jig/specs/adopt-<repo>.md`, using the spec template as `/jig:brief` finds it, plus:
 
 - **Inventory** — a table: file, lines, inbound links, verdict, destination, why.
 - **AGENTS.md before/after** — the proposed 40-line version in full, and a list of what left
@@ -119,7 +119,7 @@ worktrees, `CODEOWNERS`, a PR template, branch protection, husky or pre-commit h
 homebrew system with its own board and hooks. The goal is one system to manage, not a better
 one, and the path has to be safe for work that is mid-stream.
 
-"Lane" is jig's word; `jig/RULES.md` defines it in standard terms. Use the repo's own words in
+"Lane" is jig's word; `.jig/RULES.md` defines it in standard terms. Use the repo's own words in
 the plan and never assume it calls anything a lane. What matters is whether it has the
 *parts*:
 
@@ -130,10 +130,10 @@ the plan and never assume it calls anything a lane. What matters is whether it h
 | branch protection, required reviews, a merge queue | the gate |
 | husky, pre-commit, lefthook, or hooks in `.git/hooks` | the hooks (to be replaced) |
 | `CLAUDE.md`, `.cursorrules`, copilot instructions | `AGENTS.md` |
-| ADRs | `jig/specs/` decisions and `jig/ledgers/WORKAROUNDS.md` |
+| ADRs | `.jig/specs/` decisions and `.jig/ledgers/WORKAROUNDS.md` |
 | branches not merged into trunk | lanes to adopt |
 | a homebrew board with owners and states | the board |
-| a step that links or installs into each new worktree | `jig/scripts/setup.sh` |
+| a step that links or installs into each new worktree | `.jig/scripts/setup.sh` |
 
 If any of those are present, the plan's first stages are the migration stages in step 6.
 
@@ -160,15 +160,15 @@ When the repo already coordinates parallel work (4b), these stages come first, i
 
 ### 6.1 Install files, hooks off
 
-Copy `${CLAUDE_PLUGIN_ROOT}/templates/jig/` to `jig/` as `/jig:init` does, and
-`chmod +x jig/scripts/*.sh`. `AGENTS.md` and `CLAUDE.md` are the plan's diet, not this copy.
-Keep `jig/scripts/check.sh` and `format.sh` to fast checks — the Stop hook has a time limit.
-Fill `jig/scripts/setup.sh` the way `/jig:init` does. It replaces whatever the predecessor
+Copy `${CLAUDE_PLUGIN_ROOT}/templates/jig/` to `.jig/` as `/jig:init` does, and
+`chmod +x .jig/scripts/*.sh`. `AGENTS.md` and `CLAUDE.md` are the plan's diet, not this copy.
+Keep `.jig/scripts/check.sh` and `format.sh` to fast checks — the Stop hook has a time limit.
+Fill `.jig/scripts/setup.sh` the way `/jig:init` does. It replaces whatever the predecessor
 did to set up each new worktree, which goes with the predecessor in 6.5.
 Then:
 
 ```sh
-python3 jig/jig.py init --no-hooks
+python3 .jig/jig.py init --no-hooks
 ```
 
 That writes an empty board and leaves the predecessor's hooks running. Now fill the board by
@@ -193,7 +193,7 @@ For each lane on the plan's list (4b) — whether the repo called it a lane, a f
 workstream, or nothing — in the trunk checkout:
 
 ```sh
-python3 jig/jig.py open <name> --branch <its branch> --worktree <where it lives> \
+python3 .jig/jig.py open <name> --branch <its branch> --worktree <where it lives> \
     --reserve schema=<held> section=<held> --owns <its owns> --shares <its shares> \
     --after <its after> --state <its state>
 ```
@@ -216,7 +216,7 @@ live checkouts.
 ### 6.3 Cut the hooks over
 
 ```sh
-python3 jig/jig.py install-hooks --replace
+python3 .jig/jig.py install-hooks --replace
 ```
 
 `--replace` removes the predecessor's hooks instead of chaining them as `.local`. Without it,
@@ -227,15 +227,15 @@ tools manage `.git/hooks` themselves, so uninstall them (`npx husky uninstall`,
 Confirm with `ls .git/hooks`.
 
 Worktrees share `.git`, so this one command switches every live session at once. Each subnode
-runs `python3 jig/jig.py check` in its worktree; `ok` means its lane came across clean.
+runs `python3 .jig/jig.py check` in its worktree; `ok` means its lane came across clean.
 
 ### 6.4 Switch the skills and the always-loaded file
 
 - Remove the predecessor's hubnode and subnode skills; `/jig:hubnode` and `/jig:subnode`
   take over. Subnodes check in again with the new skill.
-- In `AGENTS.md`, replace the predecessor's process section with a pointer to `jig/RULES.md`.
+- In `AGENTS.md`, replace the predecessor's process section with a pointer to `.jig/RULES.md`.
 - Leave its handoff records where they are. They are history; `jig survey` skips tooling
-  directories, and new notes go to `jig/handoffs/`.
+  directories, and new notes go to `.jig/handoffs/`.
 
 ### 6.5 Prove it, then delete the predecessor
 

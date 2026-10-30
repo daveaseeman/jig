@@ -24,7 +24,7 @@ identical; only the coordination disappears.
 
 ## The board
 
-`jig/lanes.json`, on trunk, written only by the hubnode. Per lane:
+`.jig/lanes.json`, on trunk, written only by the hubnode. Per lane:
 
 | Key | Meaning |
 |---|---|
@@ -58,16 +58,17 @@ Checked before every commit by a git hook, and by `jig check`.
   trunk had none, and the branch doesn't hold it, is refused. Editing or moving an existing
   heading takes nothing. Two branches that each take migration step 17 corrupt the first
   database that runs both.
-- **R7** A change adding a `WORKAROUND:` comment to code must stage `jig/ledgers/WORKAROUNDS.md` too.
+- **R7** A change adding a `WORKAROUND:` comment to code must stage `.jig/ledgers/WORKAROUNDS.md` too;
+  its first row creates the file. jig's own `jig.py` quotes the marker and is not checked.
   Prose may quote the marker.
 - **R8** A lane is gated only after the lanes in its `after` have merged.
 
-**The hooks run trunk's copy of `jig.py`** (`git show <trunk>:jig/jig.py`). A branch
+**The hooks run trunk's copy of `jig.py`** (`git show <trunk>:.jig/jig.py`). A branch
 cannot weaken the rules it is judged by, and a stale checkout is still judged by today's rules.
 While a merge of trunk is being finished, a change is judged against trunk, so what trunk
 brought in is not the lane's.
 
-**A bug in `jig/jig.py`, `jig/RULES.md` or a skill is the tool's, not this repo's.** Run `/jig:feedback`, then
+**A bug in `.jig/jig.py`, `.jig/RULES.md` or a skill is the tool's, not this repo's.** Run `/jig:feedback`, then
 park the lane or ask the hubnode. Don't patch them; don't ledger it.
 
 ## Keeping merges mechanical
@@ -161,7 +162,7 @@ else stops with the files named, and a person resolves it.
    A lane may hand off several times.
 2. **The hubnode gates.** `jig gate <lane>` refuses on R8 and on a missing note. Then it runs the checks **against the commit the note names, in a detached
    scratch checkout** — never the lane's live worktree, which the subnode may still be building in.
-   The hooks set that checkout up with `jig/scripts/setup.sh`, when it is added and again
+   The hooks set that checkout up with `.jig/scripts/setup.sh`, when it is added and again
    after its merge of trunk, so the checks run in an environment built from the lane's own
    manifests.
    That means a merge runs the merged-in `setup.sh`: review a change to it like any other
@@ -170,7 +171,7 @@ else stops with the files named, and a person resolves it.
 
 ## Staging
 
-`jig/staging/` is where a chat drops a file meant for a repo: a spec, a doc, decision rows, a
+`.jig/staging/` is where a chat drops a file meant for a repo: a spec, a doc, decision rows, a
 user story. It is never committed, and nothing in it is decided — read it for context, never
 cite it. Each file's header names its `target` (a repo name, or `this`), `kind`, `change`
 (`new` or `update`), `destination` inside the target, and `source`.
@@ -182,7 +183,7 @@ source is in it; a file for another repo moves into that repo's staging, found t
 
 While anything is staged, `jig gate`, a push of trunk and `meta-release` refuse. `--force`
 (or `git push --no-verify`) gets past it. A chat needs access to `~/.config/jig/` (where
-`jig repos` keeps paths) and then to one repo's `jig/staging/`, nothing more.
+`jig repos` keeps paths) and then to one repo's `.jig/staging/`, nothing more.
 
 ## Metarepo and pararepos
 
@@ -194,20 +195,20 @@ nothing copies it. Three rules do the work:
 2. The metarepo holds no code and no copied pararepo content.
 3. Only `jig meta-release` tags, so a pin never names something that failed validation.
 
-Each side's gates are on only when its file is on trunk: `jig/meta.json` or `jig/para.json`.
+Each side's gates are on only when its file is on trunk: `.jig/meta.json` or `.jig/para.json`.
 
 | Gate | Refuses |
 |---|---|
-| M1 | a source file outside `jig/` in the metarepo |
+| M1 | a source file outside `.jig/` in the metarepo |
 | M2 | a decision row (`| D-001 | … |`) without a status and a `YYYY-MM-DD` date |
 | M3 | an entry file changed without a line in `CHANGELOG.md` |
-| M4 | a commit on trunk that isn't a merge (jig's own files under `jig/` excepted) |
+| M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted) |
 | M5 | a merge of a commit `jig reviewed` never recorded |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`) |
-| P1 | an `AGENTS.md` header that differs from what `jig/para.json` generates |
+| P1 | an `AGENTS.md` header that differs from what `.jig/para.json` generates |
 | P2 | a contract-path change with no spec saying `meta: <name> proposal <branch>` or `meta: none — <reason>` |
 | P4 | a contract-path change while a file targeting the metarepo is staged |
-| P3 | the metarepo's cache (`jig/meta-cache/`) or its checkout committed into the pararepo |
+| P3 | the metarepo's cache (`.jig/meta-cache/`) or its checkout committed into the pararepo |
 
 A fast-forward runs no hook, so `meta-release` and the metarepo's pre-push re-check every
 first-parent commit since the last release, and refuse any tag `meta-release` didn't make.
@@ -222,7 +223,7 @@ jig init [--trunk main]     board, git hooks
 jig survey [--json]         inventory the repo against the jig shape
 jig update [--apply]        bring the repo to the current jig layout (dry run without --apply)
 jig staging [resolve <file> [--drop why]]   list staged files, or land / drop one
-jig repos [add <name> <path>]               where your repos live (user config)
+jig repos [add repo|meta|para | rename <new>]  where your repos live (user config)
 jig open ... --reserve K    allocate scarce counter K to this lane
 jig reading-list <paths>    what to read before touching these files
 jig install-hooks           rewrite the hooks
@@ -243,5 +244,5 @@ jig para-init / para-sync / para-propose   pararepo: cite / refresh and report /
 ## Hooks are opt-in per checkout
 
 `jig install-hooks` writes `.git/jig/enabled`. Anything outside this repo that hooks into
-your editor or agent runs this repo's `jig/scripts/` only when that marker exists; `.git/` is never
+your editor or agent runs this repo's `.jig/scripts/` only when that marker exists; `.git/` is never
 cloned, so a fetched repo cannot enable itself.

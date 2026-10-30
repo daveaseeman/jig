@@ -18,14 +18,15 @@ import sys
 from datetime import date
 from pathlib import Path
 
-DIR = "jig"
+DIR = ".jig"
 BOARD = f"{DIR}/lanes.json"
 WORKAROUNDS = f"{DIR}/ledgers/WORKAROUNDS.md"
+DEFERRED = f"{DIR}/ledgers/DEFERRED.md"
 STATES = ["claimed", "building", "ready", "gated", "merged", "parked"]
 # The layout this copy of jig writes into the board's "version". Any change that adds a
 # LAYOUT row, a board default or an update STEP bumps it. Nothing branches on it except
 # update's refusal to take a newer repo back to an older jig.
-STAMP = 5
+STAMP = 6
 BOARD_DEFAULTS = {
     "version": STAMP,
     "name": "",            # init and update fill it with the folder name; staging's targets match it
@@ -217,11 +218,18 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     if BOARD in paths and branch != trunk:
         out.append(f"R5 the board is the hubnode's: {BOARD} is edited on {trunk} only")
 
-    # R7 a workaround needs its ledger row — lane or not; code only, prose may quote it
-    code = [p for p in paths if p.endswith(CODE_EXT) or Path(p).name == "Kconfig"]
+    # R7 a workaround needs its ledger row — lane or not; code only, prose may quote it. Only
+    # the marker right after a comment opener is the comment the rule names: a string or regex
+    # that mentions it isn't. jig's own checker is skipped too, since the previous checker,
+    # which may match the marker anywhere, judges every update of it.
+    code = [p for p in paths if (p.endswith(CODE_EXT) or Path(p).name == "Kconfig")
+            and p != f"{DIR}/jig.py"]
     diff = git("diff", "-U0", base(trunk), *(["--cached"] if staged else []), "--", *code) if code else ""
-    if re.search(r"^\+.*WORKAROUND:", diff, re.M) and WORKAROUNDS not in paths:
-        out.append(f"R7 the diff adds a WORKAROUND: comment but {WORKAROUNDS} is not staged")
+    if re.search(r"^\+(?:.*(?:#|//|/\*)|\s*\*)\s*WORKAROUND:", diff, re.M) and WORKAROUNDS not in paths:
+        # The ledger is made by its first row, so the refusal says where that row goes.
+        out.append(f"R7 the diff adds a WORKAROUND: comment but {WORKAROUNDS} is not staged: "
+                   f"add its row there in this commit (the first row creates the file from "
+                   f"jig's ledger template)")
 
     # R6 on a lane branch always; on trunk only while lanes are open, since solo
     # there is nobody to collide with and the numbers are yours
@@ -331,7 +339,6 @@ def reserved_refusals(root: Path, board: "Board", lane: dict | None,
 
 def cmd_init(root: Path, args) -> int:
     (root / DIR).mkdir(exist_ok=True)
-    (root / DIR / "handoffs").mkdir(exist_ok=True)
     ensure_staging(root)
     path = root / BOARD
     if path.exists():
@@ -409,7 +416,7 @@ def cmd_install_hooks(root: Path, args) -> int:
 
 
 def run_setup(root: Path) -> None:
-    """Make this checkout runnable with its own jig/scripts/setup.sh — the checkout's copy, not
+    """Make this checkout runnable with its own .jig/scripts/setup.sh — the checkout's copy, not
     trunk's: it judges nothing, and must match the files checked out. Its output goes to
     stderr so whoever made the checkout sees it. A failure is reported and fails nothing,
     because the checkout exists either way."""
@@ -889,7 +896,7 @@ HOME_DIRS = {
     f"{DIR}/specs/": "a task in flight",
     f"{DIR}/ledgers/": "WORKAROUNDS.md patches that are in the code; DEFERRED.md review findings that are not",
     f"{DIR}/staging/": "chat-born files waiting to be resolved (untracked)",
-    f"{DIR}/": "the lane system: rulebook, board, handoffs",
+    f"{DIR}/": "everything jig makes: checker, rulebook, board, scripts, handoffs",
     ".claude/skills/": "reusable know-how",
 }
 # Tooling directories. Their contents are a tool's own records, not documents
@@ -1003,10 +1010,9 @@ def cmd_survey(root: Path, args) -> int:
         if f in ("AGENTS.md", "CLAUDE.md") and n > 40:  # rule lines, not raw lines
             report["oversized"].append(entry)
 
-    for name in ("AGENTS.md", "CLAUDE.md", WORKAROUNDS, f"{DIR}/ledgers/DEFERRED.md",
-                 f"{DIR}/scripts/check.sh", f"{DIR}/scripts/setup.sh",
-                 f"{DIR}/specs/_template.md", f"{DIR}/jig.py",
-                 f"{DIR}/RULES.md", BOARD):
+    # The spec template and the ledgers are made on first use, so their absence is no gap.
+    for name in ("AGENTS.md", "CLAUDE.md", f"{DIR}/scripts/check.sh", f"{DIR}/scripts/setup.sh",
+                 f"{DIR}/jig.py", f"{DIR}/RULES.md", BOARD):
         report["present"][name] = (root / name).exists()
     common = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir"))
     hook = common / "hooks" / "pre-commit"
@@ -1087,7 +1093,7 @@ def cmd_survey(root: Path, args) -> int:
 # ------------------------------------------------------------------- metarepo
 
 # A metarepo holds a set of repos' shared definitions, decisions and conventions: docs only.
-# Pararepos cite it at a released tag. Everything here is off unless jig/meta.json exists.
+# Pararepos cite it at a released tag. Everything here is off unless .jig/meta.json exists.
 META = f"{DIR}/meta.json"
 META_DEFAULTS = {
     "name": "",
@@ -1145,7 +1151,7 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
     branch = git("branch", "--show-current")
     paths = changed_paths(trunk, staged)
     merging = merging_commits()
-    # M1 docs only: the checker and its scripts live in jig/, like any jig repo's
+    # M1 docs only: the checker and its scripts live in .jig/, like any jig repo's
     for p in paths:
         if p.endswith(SRC_EXT) and not p.startswith(f"{DIR}/"):
             out.append(f"M1 a metarepo holds no code: {p}")
@@ -1364,36 +1370,111 @@ def repos_file() -> Path:
     return Path(base) / "jig" / "repos.json"
 
 
+REPO_KINDS = ("repo", "meta", "para")
+
+
 def load_repos() -> dict:
+    """{name: {"path": ..., "kind": repo|meta|para}}. An entry that is a bare path is the
+    first format, read as a plain repo."""
     f = repos_file()
     try:
-        return json.loads(f.read_text()) if f.exists() else {}
+        raw = json.loads(f.read_text()) if f.exists() else {}
     except ValueError:
         die(f"{f} is not valid JSON", 2)
+    if not isinstance(raw, dict):
+        die(f"{f} should map names to repos", 2)
+    out = {}
+    for n, e in raw.items():
+        e = e if isinstance(e, dict) else {"path": e}
+        if isinstance(e.get("path"), str):
+            out[n] = {"path": e["path"], "kind": e.get("kind", "repo")}
+    return out
+
+
+def save_repos(repos: dict) -> None:
+    repos_file().parent.mkdir(parents=True, exist_ok=True)
+    repos_file().write_text(json.dumps(repos, indent=2) + "\n")
+
+
+def repo_identity(path: Path) -> set[str]:
+    """The names a checkout answers to by itself: its board's name, its metarepo name."""
+    names = set()
+    for f, key in ((path / BOARD, "name"), (path / META, "name")):
+        try:
+            names.add(json.loads(f.read_text()).get(key, "")) if f.exists() else None
+        except ValueError:
+            pass
+    return names - {""}
+
+
+def repo_path(name: str) -> Path | None:
+    """Where a repo lives, by the name you gave it or the name it gives itself, so an alias
+    never breaks a lookup that uses the real one (a pararepo naming its metarepo)."""
+    repos = load_repos()
+    if name in repos:
+        return Path(repos[name]["path"])
+    for e in repos.values():
+        if name in repo_identity(Path(e["path"])):
+            return Path(e["path"])
+    return None
 
 
 def cmd_repos(root: Path, args) -> int:
     repos = load_repos()
+    here = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir") or ".").parent \
+        if git("rev-parse", "--git-dir") else Path.cwd()
+    here = here.resolve()
+    mine = [n for n, e in repos.items() if Path(e["path"]).resolve() == here]
     if args.action == "add":
-        if not args.name or not args.path:
-            die("usage: jig repos add <name> <path>", 2)
-        repos[args.name] = str(Path(args.path).expanduser().resolve())
-        repos_file().parent.mkdir(parents=True, exist_ok=True)
-        repos_file().write_text(json.dumps(repos, indent=2) + "\n")
-        print(f"{args.name} → {repos[args.name]} in {repos_file()}")
+        kind = args.kind if args.kind in REPO_KINDS else None
+        kind_form = kind is not None
+        if kind is None and args.kind and args.path:      # the first form: add <name> <path>
+            name, path, kind = args.kind, Path(args.path).expanduser().resolve(), "repo"
+        elif kind:
+            path = Path(args.path).expanduser().resolve() if args.path else here
+            name = args.name or (sorted(repo_identity(path)) or [path.name])[0]
+        else:
+            die("usage: jig repos add repo|meta|para [--name N] [--path P]", 2)
+        for old in [n for n, e in repos.items() if Path(e["path"]).resolve() == path and n != name]:
+            del repos[old]                          # one entry per checkout; re-adding replaces
+        # add <name> <path> re-points a name on purpose; add repo|meta|para must not take one
+        if kind_form and name in repos and Path(repos[name]["path"]).resolve() != path:
+            die(f"{name} already names {repos[name]['path']}: pick another --name, or rename that one", 2)
+        repos[name] = {"path": str(path), "kind": kind}
+        save_repos(repos)
+        print(f"{name} ({kind}) → {path}")
+        if kind == "meta" and not (path / META).exists():
+            print(f"  not a metarepo yet: run `jig meta-init` there")
+        if kind == "para" and not (path / PARA).exists():
+            print(f"  not a pararepo yet: run `jig para-init --meta <metarepo name>` there")
         return 0
-    for name, path in sorted(repos.items()):
-        print(f"  {name:<24} {path}{'' if Path(path).is_dir() else '   (missing)'}")
+    if args.action == "rename":
+        # rename <new> renames this folder's entry; rename <old> <new> any entry
+        if not args.kind:
+            die("usage: jig repos rename <new>  (this folder), or rename <old> <new>", 2)
+        old, new = (args.kind, args.path) if args.path else (mine[0] if mine else None, args.kind)
+        if not new or not old or old not in repos:
+            die("this folder isn't registered: jig repos add repo|meta|para" if not old
+                else f"no repo named {old}", 2)
+        if new in repos and new != old:
+            die(f"{new} already names {repos[new]['path']}", 2)
+        repos[new] = repos.pop(old)
+        save_repos(repos)
+        print(f"{old} is now {new} → {repos[new]['path']}")
+        return 0
+    for name, e in sorted(repos.items()):
+        missing = "" if Path(e["path"]).is_dir() else "   (missing)"
+        print(f"  {name:<24} {e['kind']:<5} {e['path']}{missing}{'   ← here' if name in mine else ''}")
     if not repos:
-        print(f"no repos in {repos_file()}: jig repos add <name> <path>")
+        print(f"no repos in {repos_file()}: jig repos add repo|meta|para")
     return 0
 
 
 def meta_checkout(root: Path, para: dict) -> Path | None:
     """The metarepo's checkout, found by name in repos.json, or None when it isn't listed or
     can't be reached (offline, moved)."""
-    p = Path(load_repos().get(para.get("meta", ""), "")).expanduser()
-    if not str(p) or str(p) == ".":
+    p = repo_path(para.get("meta", ""))
+    if p is None:
         return None
     # The clone's own top level: a plain folder inside this repo would answer with ours.
     top = git("rev-parse", "--show-toplevel", cwd=str(p)) if p.is_dir() else ""
@@ -1488,10 +1569,11 @@ def cmd_para_init(root: Path, args) -> int:
     if not para.get("meta"):
         die("first run needs --meta <name>", 2)
     if args.location:
-        cmd_repos(root, argparse.Namespace(action="add", name=para["meta"], path=args.location))
+        cmd_repos(root, argparse.Namespace(action="add", kind="meta", name=para["meta"],
+                                           path=args.location))
     loc = meta_checkout(root, para)
     if loc is None:
-        die(f"can't find {para['meta']}: run `jig repos add {para['meta']} <path to its checkout>`", 2)
+        die(f"can't find {para['meta']}: run `jig repos add meta` in its checkout", 2)
     if not para.get("pin"):
         tags = released_tags(str(loc))
         if not tags:
@@ -1550,8 +1632,9 @@ def cmd_para_sync(root: Path, args) -> int:
     print(f"{name} {latest} is out; this repo pins {pin}{' (a major release)' if major else ''}.\n")
     print("Changed, in this repo's terms:")
     for term in terms_changed(loc, pin, latest):
+        # jig's own files (the rulebook's examples, the cache) are not the repo's use of a term.
         users = [f for f in git("grep", "-l", "-F", "--", term).splitlines()
-                 if not f.startswith(f"{CACHE}/")]
+                 if not f.startswith(f"{DIR}/")]
         print(f"  {term}: " + (f"used in {', '.join(users)}" if users else "not used here"))
     print(f"\nTo take it: set \"pin\" to \"{latest}\" in {PARA}, run `jig para-init`, and commit "
           f"those alone as `meta: {name} {pin} → {latest}` with this report as the body.")
@@ -1564,7 +1647,7 @@ def cmd_para_propose(root: Path, args) -> int:
         die(f"no {PARA}: run `jig para-init`", 2)
     loc = meta_checkout(root, para)
     if loc is None:
-        die(f"can't find {para['meta']}: run `jig repos add {para['meta']} <path>`", 2)
+        die(f"can't find {para['meta']}: run `jig repos add meta` in its checkout", 2)
     spec = root / args.spec
     if not spec.exists():
         die(f"no spec at {args.spec}", 2)
@@ -1649,6 +1732,8 @@ def staged_refusal(what: str) -> list[str]:
 
 def this_repo_names(root: Path) -> set[str]:
     names = {"this", Board.load(root, working_tree=True).data.get("name") or main_root().name}
+    # and any alias you gave this checkout in repos.json
+    names |= {n for n, e in load_repos().items() if Path(e["path"]).resolve() == main_root().resolve()}
     meta = root / META
     if meta.exists():
         names.add(json.loads(meta.read_text() or "{}").get("name", ""))
@@ -1802,14 +1887,15 @@ def forward(root: Path, path: Path, head: dict) -> int:
     """A staged file is resolved in its target. From here it moves into the target's own
     staging, the one place jig writes in another repo, after checking both sides agree."""
     target = head["target"]
-    there = load_repos().get(target)
+    there = repo_path(target)
     if not there:
         die(f"{target} isn't this repo and isn't in {repos_file()}: "
             f"jig repos add {target} <path>", 2)
     there = Path(there)
     if not (there / DIR).is_dir():
-        die(f"{target} is listed at {there}, but that isn't a jig repo (no {DIR}/): fix it with "
-            f"`jig repos add {target} <path>`", 2)
+        older = " (it has jig/: run `jig update` there first)" if (there / "jig" / "lanes.json").exists() else ""
+        die(f"{target} is listed at {there}, but that isn't a jig repo (no {DIR}/){older}: fix it "
+            f"with `jig repos add {target} <path>`", 2)
     me = Board.load(root, working_tree=True).data.get("name") or main_root().name
     para = json.loads((root / PARA).read_text()) if (root / PARA).exists() else None
     meta = json.loads((root / META).read_text()) if (root / META).exists() else None
@@ -1840,32 +1926,42 @@ def forward(root: Path, path: Path, head: dict) -> int:
 # "/" is a folder: every tracked file under an old folder moves, and board globs under it
 # are rewritten. Any other row is one file, so after jig's two scripts leave `scripts/`,
 # `scripts/**` on the board still means the repo's own scripts.
+# Layouts, oldest first: eaec973's .jig/ with specs/, ledgers/ and scripts/ at root; ai-dev's
+# .aidev/, the same with root ledgers; 62c8d9f's visible jig/ (every 0.2.x repo); .jig/ now.
 LAYOUT = [
-    (BOARD, [".jig/lanes.json", ".aidev/lanes.json"]),
-    (f"{DIR}/jig.py", [".jig/jig.py", ".aidev/aidev.py"]),
-    (f"{DIR}/RULES.md", [".jig/RULES.md", ".aidev/RULES.md"]),
-    (f"{DIR}/handoffs/", [".jig/handoffs/", ".aidev/handoffs/"]),
-    (f"{DIR}/specs/", ["specs/"]),
-    (f"{DIR}/ledgers/", ["ledgers/"]),
+    (BOARD, ["jig/lanes.json", ".aidev/lanes.json"]),
+    (f"{DIR}/jig.py", ["jig/jig.py", ".aidev/aidev.py"]),
+    (f"{DIR}/RULES.md", ["jig/RULES.md", ".aidev/RULES.md"]),
+    (f"{DIR}/handoffs/", ["jig/handoffs/", ".aidev/handoffs/"]),
+    (f"{DIR}/specs/", ["jig/specs/", "specs/"]),
+    (f"{DIR}/ledgers/", ["jig/ledgers/", "ledgers/"]),
     (WORKAROUNDS, ["WORKAROUNDS.md"]),
-    (f"{DIR}/ledgers/DEFERRED.md", ["DEFERRED.md"]),
+    (DEFERRED, ["DEFERRED.md"]),
+    (f"{DIR}/scripts/", ["jig/scripts/"]),
     (f"{DIR}/scripts/check.sh", ["scripts/check.sh"]),
     (f"{DIR}/scripts/format.sh", ["scripts/format.sh"]),
-    ("docs/", [f"{DIR}/docs/"]),
+    (f"{DIR}/staging/", ["jig/staging/"]),
+    (META, ["jig/meta.json"]),
+    (PARA, ["jig/para.json"]),
+    ("docs/", ["jig/docs/"]),
 ]
 # Written from the running copy, never renamed: their content is jig's, not the repo's.
 TOOL_FILES = (f"{DIR}/jig.py", f"{DIR}/RULES.md")
 # jig's folder under its old names. Nothing moves by this alone — a file there that no row
 # names stays and is flagged — but a board glob over the whole folder meant jig's folder.
-OLD_DIRS = (".jig/", ".aidev/")
+OLD_DIRS = ("jig/", ".aidev/")
 OLD_IGNORES = (".jig/worktrees/", ".aidev/worktrees/")
+# Untracked folders a jig/ repo kept: files waiting in staging, a pararepo's cache. No git mv
+# moves them, and staged work left behind would be lost to every refusal that counts it.
+OLD_UNTRACKED = (("jig/staging/", f"{DIR}/staging/"), ("jig/meta-cache/", f"{DIR}/meta-cache/"))
 # A stale path in a comment misleads a reader; one in code can break the repo's checks.
 COMMENT = ("#", "//", "/*", "*", "--", ";", "<!--")
 # The skill template an old init copied into .claude/skills/_skill-template/. It never changed.
 OLD_SKILL_TEMPLATE = "f8518f049c4a1552a5e3c55a94b59c1b904b8525b3c0aeb761cd8d9c0efe69a2"
 # Coded changes that are neither a move nor a missing board key: (what it does,
-# needed(root) -> bool, apply(root, here) -> None), where `here` is the folder holding the
-# running jig.py. Each is keyed on something it can see in the repo, never on a version.
+# needed(root, after) -> bool, apply(root, here) -> None), where `after` is the tracked paths
+# once the moves are made and `here` is the folder holding the running jig.py. Each is keyed
+# on something it can see in the repo, never on a version.
 SETUP = f"{DIR}/scripts/setup.sh"
 
 
@@ -1880,35 +1976,46 @@ def add_setup(root: Path, here: Path) -> None:
 
 
 def ensure_staging(root: Path) -> None:
-    """jig/staging/ always exists, so a chat has one folder to be granted; it holds only its
+    """.jig/staging/ always exists, so a chat has one folder to be granted; it holds only its
     .gitignore when empty."""
     ignore = root / STAGING / ".gitignore"
     if not ignore.exists():
         ignore.parent.mkdir(parents=True, exist_ok=True)
-        ignore.write_text("# Staged files are never committed: see Staging in jig/RULES.md.\n*\n!.gitignore\n")
+        ignore.write_text(f"# Staged files are never committed: see Staging in {DIR}/RULES.md.\n*\n!.gitignore\n")
 
 
 STEPS: list = [
     (f"add {STAGING}/ (its .gitignore), where chats drop files for this repo",
-     lambda root: not (root / STAGING / ".gitignore").exists(),
+     lambda root, after: f"{STAGING}/.gitignore" not in after
+     and not (root / STAGING / ".gitignore").exists(),
      lambda root, here: (ensure_staging(root), git("add", "-f", "--", f"{STAGING}/.gitignore"))),
     (f"add {SETUP} from the template, TODOs to fill: it runs in every new worktree and after "
-     "every merge", lambda root: not (root / SETUP).exists()
+     "every merge", lambda root, after: SETUP not in after and not (root / SETUP).exists()
      and (Path(__file__).resolve().parent / "scripts" / "setup.sh").exists(), add_setup),
 ]
 
 
-def plan_moves(files: list[str], board_at: str) -> dict:
+def root_is_jigs(board_at: str, version: int) -> bool:
+    """Whether a root specs/, ledgers/ or scripts/check.sh is jig's. Only eaec973's layout
+    and ai-dev's put them there, and once jig's files left root, those paths are the repo's.
+    eaec973's board is at .jig/ like today's, and with the spec template made on first use a
+    new repo has no .jig/specs/ either; only the board's version tells them apart. The one
+    place update reads it for anything but the ahead refusal."""
+    return board_at.startswith(".aidev/") or (board_at == BOARD and version < 3)
+
+
+def plan_moves(files: list[str], board_at: str, version: int) -> dict:
     """Which tracked files LAYOUT moves, which tool files it retires, and the (old, new)
     rows that apply. A row moves only when its new path is free: with both there, update
     can't tell which is current, so it leaves both and says so."""
-    # Outside jig's folder, an old path is jig's only while the board still sits in an old
-    # folder. Once the board is in jig/, a root specs/ or scripts/check.sh is the repo's own.
-    old_layout = board_at.startswith(OLD_DIRS)
+    # A path under an old folder is jig's only while the board is in that folder: beside a
+    # board at .jig/, a jig/ folder is the repo's own (a Python package, say).
+    at_root = root_is_jigs(board_at, version)
     taken, moves, retire, rows, warn = set(files), {}, [], [], []
     for new, olds in LAYOUT:
         for old in olds:
-            if not (old_layout or old.startswith(OLD_DIRS + (f"{DIR}/",))):
+            home = next((d for d in OLD_DIRS if old.startswith(d)), None)
+            if not (board_at.startswith(home) if home else at_root):
                 continue
             under = [f for f in files if f not in moves and f not in retire
                      and (f.startswith(old) if old.endswith("/") else f == old)]
@@ -1925,7 +2032,7 @@ def plan_moves(files: list[str], board_at: str) -> dict:
                 continue
             # specs/ and ledgers/ at root may hold the repo's own files too (JS spec tests):
             # jig only ever put Markdown there.
-            if old.endswith("/") and not old.startswith(OLD_DIRS + (f"{DIR}/",)):
+            if old.endswith("/") and not old.startswith(OLD_DIRS):
                 for f in [f for f in under if not f.endswith(".md")]:
                     warn.append(f"{f} is in {old} but isn't Markdown, so it isn't jig's: left there")
                 under = [f for f in under if f.endswith(".md")]
@@ -1935,7 +2042,8 @@ def plan_moves(files: list[str], board_at: str) -> dict:
             rows.append((old, new))
     after = sorted((set(files) - set(moves) - set(retire)) | set(moves.values()) | set(TOOL_FILES))
     for f in files:
-        if f.startswith(OLD_DIRS) and f not in moves and f not in retire:
+        if f.startswith(board_at.split("/")[0] + "/") and board_at != BOARD \
+                and f not in moves and f not in retire:
             warn.append(f"{f} is at an old path no row names: left there, and its folder stays")
     return {"moves": moves, "retire": retire, "rows": rows, "warn": warn, "after": after}
 
@@ -2107,7 +2215,7 @@ def cmd_update(root: Path, args) -> int:
     # A tracked change mid-move would leave jig half-moved; a re-run must still see the old layout.
     dirty = git("status", "--porcelain", "--untracked-files=no")
 
-    plan = plan_moves(files, board_at)
+    plan = plan_moves(files, board_at, version)
     new_board, edits, board_warn = rewrite_board(data, files, plan)
     warnings = plan["warn"] + board_warn
     sources = {f"{DIR}/jig.py": Path(__file__).resolve(), f"{DIR}/RULES.md": here / "RULES.md"}
@@ -2117,10 +2225,16 @@ def cmd_update(root: Path, args) -> int:
             warnings.append(f"no {src.name} beside this jig.py: {dest} is left as it is")
         elif plan["retire"] or not (root / dest).exists() or (root / dest).read_bytes() != src.read_bytes():
             replace.append(dest)
-    steps = [s for s in STEPS if s[1](root)]
+    steps = [s for s in STEPS if s[1](root, set(plan["after"]))]
     ignore = root / ".gitignore"
-    ignore_lines = ([l for l in ignore.read_text().splitlines() if l.strip() in OLD_IGNORES]
+    # Today's board is at .jig/ too, so .jig/worktrees/ is old only beside an older board.
+    old_ignores = OLD_IGNORES if board_at != BOARD or version < STAMP else OLD_IGNORES[1:]
+    ignore_lines = ([l for l in ignore.read_text().splitlines() if l.strip() in old_ignores]
                     if ignore.exists() else [])
+    untracked = [(o, n) for o, n in OLD_UNTRACKED if board_at.startswith("jig/")
+                 and (root / o).is_dir() and any(f.is_file() for f in (root / o).rglob("*"))]
+    cache_line = [l for l in ignore.read_text().splitlines() if l.strip() == "jig/meta-cache/"] \
+        if ignore.exists() and board_at.startswith("jig/") else []
     hooks_dir = git_common() / "hooks"
     trunk = new_board.get("trunk", "main")
     stale_hooks = [n for n in HOOKS if not (hooks_dir / n).exists()
@@ -2140,7 +2254,7 @@ def cmd_update(root: Path, args) -> int:
 
     moved_board = board_at != BOARD
     actions = bool(plan["moves"] or replace or edits or moved_board or steps or ignore_lines
-                   or stale_hooks or aidev_state)
+                   or stale_hooks or aidev_state or untracked or cache_line)
     if not actions:
         print("up to date")
         for w in warnings:
@@ -2176,10 +2290,14 @@ def cmd_update(root: Path, args) -> int:
         print("\nSteps:")
         for s in steps:
             print(f"  {s[0]}")
-    if ignore_lines or stale_hooks or aidev_state:
+    if ignore_lines or stale_hooks or aidev_state or untracked or cache_line:
         print("\nGit state:")
         for l in ignore_lines:
             print(f"  .gitignore: remove `{l.strip()}` (worktrees live in .git/jig/worktrees/ now)")
+        for l in cache_line:
+            print(f"  .gitignore: `{l.strip()}` → `{CACHE}/`")
+        for o, n in untracked:
+            print(f"  move the untracked files in {o} to {n}")
         if stale_hooks:
             print(f"  hooks: rewrite {', '.join(stale_hooks)} to run {trunk}:{DIR}/jig.py")
         if aidev_state:
@@ -2228,12 +2346,21 @@ def cmd_update(root: Path, args) -> int:
         (root / dest).write_bytes(blob)
     for s in steps:
         s[2](root, here)
-    if ignore_lines:
+    for o, n in untracked:
+        for f in sorted(p for p in (root / o).rglob("*") if p.is_file()):
+            dest = root / n / f.relative_to(root / o)
+            if not dest.exists():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(f), dest)
+    if ignore_lines or cache_line:
         raw = ignore.read_bytes().decode()
-        ignore.write_bytes(re.sub(r"(?m)^[ \t]*(?:\.jig|\.aidev)/worktrees/[ \t]*(?:\r?\n|\Z)",
-                                  "", raw).encode())
-    git("add", "--", BOARD, *replace, *([".gitignore"] if ignore_lines else []), check=True)
-    for folder in {o for o, _ in plan["rows"] if o.endswith("/")} | set(OLD_DIRS):
+        gone = "|".join(re.escape(l) for l in old_ignores)
+        raw = re.sub(rf"(?m)^[ \t]*(?:{gone})[ \t]*(?:\r?\n|\Z)", "", raw)
+        ignore.write_bytes(re.sub(r"(?m)^[ \t]*jig/meta-cache/[ \t]*$", f"{CACHE}/", raw).encode())
+    git("add", "--", BOARD, *replace, *([".gitignore"] if ignore_lines or cache_line else []),
+        check=True)
+    for folder in ({o for o, _ in plan["rows"] if o.endswith("/")}
+                   | {o for o, _ in untracked} | {d for d in OLD_DIRS if board_at.startswith(d)}):
         for d, _, _ in sorted(os.walk(root / folder), key=lambda w: -len(w[0])):
             try:
                 Path(d).rmdir()
@@ -2333,9 +2460,10 @@ def main(argv: list[str] | None = None) -> int:
     st.add_argument("file", nargs="?")
     st.add_argument("--drop", metavar="WHY", help="with resolve: drop it, recording why")
     rp = sub.add_parser("repos", help="list, or add to, where your repos live (user config)")
-    rp.add_argument("action", nargs="?", choices=["add"])
-    rp.add_argument("name", nargs="?")
-    rp.add_argument("path", nargs="?")
+    rp.add_argument("action", nargs="?", choices=["add", "rename"])
+    rp.add_argument("kind", nargs="?", help="add: repo, meta or para; rename: the new name")
+    rp.add_argument("path", nargs="?", help="add: the checkout (default: this one)")
+    rp.add_argument("--name", help="add: the name to call it by (default: its own)")
     up = sub.add_parser("update", help="bring this repo to the current jig layout (dry run)")
     up.add_argument("--apply", action="store_true", help="make the changes the dry run lists")
     hk = sub.add_parser("hook")

@@ -16,4 +16,4 @@ Rules:
 - Compiled is not verified. A green build earns the right to flash, nothing more.
 - Show the output: the command, the result, the log line that proves it. Don't summarize it away.
 - If the check can't be run (no board attached, no emulator), say so explicitly and stop. Don't infer success.
-- Prefer a check the next agent can re-run from `jig/scripts/check.sh` over one that lived only in this session.
+- Prefer a check the next agent can re-run from `.jig/scripts/check.sh` over one that lived only in this session.

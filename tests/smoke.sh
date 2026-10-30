@@ -4,7 +4,7 @@
 set -u
 T=$(mktemp -d "${TMPDIR:-/tmp}/jig-smoke.XXXXXX")
 P="$(cd "$(dirname "$0")/.." && pwd)/plugin/templates"
-J="python3 jig/jig.py"
+J="python3 .jig/jig.py"
 fail=0
 ok()   { echo "PASS  $1"; }
 bad()  { echo "FAIL  $1"; fail=1; }
@@ -13,16 +13,16 @@ expect_refuse() { if "$@" >/dev/null 2>&1; then bad "$msg (was accepted)"; else 
 undo() { git reset -q; git checkout -q -- .; git clean -fdq; }
 
 cd "$T" && git init -q -b main && git config user.email t@t && git config user.name t
-cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && chmod +x jig/scripts/*.sh
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && chmod +x .jig/scripts/*.sh
 mkdir -p docs/alpha src
 printf 'x=1\n' > src/a.py
 printf '# A\n\n## 28 Alpha\ntext\n\n## 29 Beta\ntext\n' > docs/alpha/alpha.md
 git add -A && git commit -qm init
 $J init >/dev/null
 python3 - <<'EOF'
-import json; b = json.load(open('jig/lanes.json'))
+import json; b = json.load(open('.jig/lanes.json'))
 b['reserve'] = {'section': {'next': 29, 'pattern': r'^## (\d+) ', 'files': ['docs/**']}}
-json.dump(b, open('jig/lanes.json', 'w'), indent=2)
+json.dump(b, open('.jig/lanes.json', 'w'), indent=2)
 EOF
 git add -A && git commit -qm board
 $J open L1 --brief t --owns 'src/**' 'docs/**' --reserve section >/dev/null
@@ -45,8 +45,33 @@ printf '\n## 30 Delta\n' >> docs/beta/beta.md; git add -A; expect_pass git commi
 msg="R7: WORKAROUND: in Markdown is accepted"
 printf 'quote WORKAROUND: here\n' >> docs/beta/beta.md; git add -A; expect_pass git commit -qm md
 
+# The marker is built from a variable, so this file carries no workaround comment of its own.
+W="WORK""AROUND:"
+msg="R7: a trailing # comment with the marker is refused"
+printf 'x = 1  # %s y\n' "$W" >> src/a.py; git add -A; expect_refuse git commit -qm t; undo
+msg="R7: a /* comment with the marker is refused"
+printf '/* %s y */\n' "$W" > src/b.c; git add -A; expect_refuse git commit -qm t; undo
+msg="R7: a block comment's continuation line with the marker is refused"
+printf '/*\n * %s y\n */\n' "$W" > src/b.c; git add -A; expect_refuse git commit -qm t; undo
+msg="R7: the marker in a string is accepted"
+printf 'msg = "adds a WORKAROUND: comment"\n' > src/s.py; git add -A; expect_pass git commit -qm t
+msg="R7: ; before a string with the marker is accepted"
+printf 'a(); log("WORKAROUND: x")\n' > src/s.js; git add -A; expect_pass git commit -qm t
+msg="R7: // in a URL before a string with the marker is accepted"
+printf 'u = "http://h"; s = "WORKAROUND: y"\n' > src/u.py; git add -A; expect_pass git commit -qm t
+msg="R7: jig's own R7 message line, outside the exempt checker, is accepted"
+grep 'R7 the diff adds' "$P/jig/jig.py" > src/check.py; git add -A; expect_pass git commit -qm t
+
 msg="R7: WORKAROUND: in code without a ledger row is refused"
-printf '# WORKAROUND: x\n' >> src/a.py; git add -A; expect_refuse git commit -qm py; undo
+printf '# %s x\n' "$W" >> src/a.py; git add -A; expect_refuse git commit -qm py
+msg="R7: the refusal says where the row goes, and that the first row creates the ledger"
+out=$(git commit -qm py 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'R7 .*\.jig/ledgers/WORKAROUNDS.md is not staged: add its row there in this commit (the first row creates'" "$out"
+
+msg="R7: the first row creates the ledger from the plugin's template, and the commit is accepted"
+mkdir -p .jig/ledgers && cp "$P/ledgers/WORKAROUNDS.md" .jig/ledgers/ && printf '| 2026-10-29 | src/a.py | x | t | t | t [seen] | t |\n' >> .jig/ledgers/WORKAROUNDS.md
+git add -A; expect_pass git commit -qm py
+git reset -q --hard HEAD~1
 
 msg="sync: a conflicted merge of trunk can be committed"
 ( cd "$T" && printf 'x=2\n' > src/a.py && git add -A && git commit -qm trunk1 )
@@ -75,41 +100,62 @@ msg="gate does not refuse a lane behind trunk"
 ( cd "$T" && printf 'r\n' > r.txt && git add -A && git commit -qm trunk5 )
 out=$(cd "$T" && $J gate L1 2>&1); if echo "$out" | grep -q behind; then bad "$msg"; else ok "$msg"; fi
 
-msg="fold-in: a change to jig/jig.py is the tool's, not unowned code"
-printf '# lane edit\n' >> jig/jig.py; printf 'x=7\n' > src/a.py; git add -A; git commit -qm tool
+msg="fold-in: a change to .jig/jig.py is the tool's, not unowned code"
+printf '# lane edit\n' >> .jig/jig.py; printf 'x=7\n' > src/a.py; git add -A; git commit -qm tool
 $J reviewed >/dev/null; $J handoff >/dev/null 2>&1
-note=$(cat jig/handoffs/L1-*.md 2>/dev/null)
-if echo "$note" | grep -q 'UNOWNED src/a.py' && ! echo "$note" | grep -q 'UNOWNED jig/jig.py'
+note=$(cat .jig/handoffs/L1-*.md 2>/dev/null)
+if echo "$note" | grep -q 'UNOWNED src/a.py' && ! echo "$note" | grep -q 'UNOWNED .jig/jig.py'
 then ok "$msg"; else bad "$msg"; fi
 
 I="$T/init"
 mkdir -p "$I" && cd "$I" && git init -q -b main && git config user.email t@t && git config user.name t
-cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" .
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" .
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 
-msg="init: root holds only AGENTS.md, CLAUDE.md and jig/"
-expect_pass test "$(ls -A | grep -v '^\.git$' | tr '\n' ' ')" = "AGENTS.md CLAUDE.md jig "
+msg="init: root holds only AGENTS.md, CLAUDE.md and .jig/"
+expect_pass test "$(ls -A | grep -v '^\.git$' | LC_ALL=C sort | tr '\n' ' ')" = ".jig AGENTS.md CLAUDE.md "
+
+msg="init: .jig/ holds jig.py, RULES.md, the board, the three scripts and staging/.gitignore, nothing else"
+expect_pass test "$(find .jig -type f | LC_ALL=C sort | tr '\n' ' ')" = ".jig/RULES.md .jig/jig.py .jig/lanes.json .jig/scripts/check.sh .jig/scripts/format.sh .jig/scripts/setup.sh .jig/staging/.gitignore "
+
+msg="init: the spec template and both ledgers stay in the plugin until first use"
+expect_pass sh -c "test ! -e .jig/specs -a ! -e .jig/ledgers -a ! -e '$P/jig/specs' -a ! -e '$P/jig/ledgers' && test -f '$P/specs/_template.md' -a -f '$P/ledgers/WORKAROUNDS.md' -a -f '$P/ledgers/DEFERRED.md'"
+
+msg="init: the hooks run trunk's .jig/jig.py"
+expect_pass grep -q 'git show main:.jig/jig.py' .git/hooks/pre-commit
+
+msg="plugin hook: the Stop hook runs .jig/scripts/check.sh before an older layout's"
+mkdir -p jig/scripts scripts && printf '#!/bin/sh\necho old\n' > jig/scripts/check.sh && printf '#!/bin/sh\necho root\n' > scripts/check.sh
+cp .jig/scripts/check.sh "$T/check.keep" && printf '#!/bin/sh\necho dot\n' > .jig/scripts/check.sh && chmod +x jig/scripts/check.sh scripts/check.sh .jig/scripts/check.sh
+expect_pass test "$(CLAUDE_PROJECT_DIR="$I" bash "$P/../scripts/check.sh")" = dot
+cp "$T/check.keep" .jig/scripts/check.sh && rm -r jig scripts
+
+msg="survey: a fresh init is missing no piece, and doesn't ask for the lazy files"
+expect_pass python3 -c "
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))['present']
+assert all(r.values()) and not any('_template' in k or 'ledgers' in k for k in r), r"
 
 msg="init: the repo's docs/ is common on a new board"
-expect_pass python3 -c "import json,sys; sys.exit('docs/**' not in json.load(open('jig/lanes.json'))['common'])"
+expect_pass python3 -c "import json,sys; sys.exit('docs/**' not in json.load(open('.jig/lanes.json'))['common'])"
 
 msg="open: a lane's worktree lives in .git/jig/worktrees and trunk stays clean"
 $J open L2 --brief t --owns 'docs/**' >/dev/null && git add -A && git commit -qm "open L2"
 expect_pass test -d .git/jig/worktrees/L2 -a -z "$(git status --porcelain)"
 
-msg="survey: a fresh init has no homeless files and no source counted from jig/"
+msg="survey: a fresh init has no homeless files and no source counted from .jig/"
 expect_pass python3 -c "
 import json, subprocess
-r = json.loads(subprocess.check_output(['python3', 'jig/jig.py', 'survey', '--json']))
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 assert r['homeless'] == [] and r['src_count'] == 0, (r['homeless'], r['src_count'])"
 
-msg="survey: lists docs/ and jig/ as homes"
-homes=$(python3 jig/jig.py survey | grep '^Homes: ')
-expect_pass test -n "$(echo "$homes" | grep -F '; docs/ = ')" -a -n "$(echo "$homes" | grep -F '; jig/ = ')"
+msg="survey: lists docs/ and .jig/ as homes"
+homes=$(python3 .jig/jig.py survey | grep '^Homes: ')
+expect_pass test -n "$(echo "$homes" | grep -F '; docs/ = ')" -a -n "$(echo "$homes" | grep -F '; .jig/ = ')"
 
 H="$T/hardware"
 mkdir -p "$H" && cd "$H" && git init -q -b main && git config user.email t@t && git config user.name t
-cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs/hardware docs/gpio main
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs/hardware docs/gpio main
 printf '# Devkit\n' > docs/hardware/devkit.md && printf '# GPIO\n' > docs/gpio/gpio.md
 printf 'int led = 48;\n' > main/app.c && printf 'CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y\n' > sdkconfig
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
@@ -117,21 +163,21 @@ git add -A && git commit -qm init && $J init >/dev/null && git add -A && git com
 msg="survey: names a board page no docmap entry covers"
 expect_pass python3 -c "
 import json, subprocess
-r = json.loads(subprocess.check_output(['python3', 'jig/jig.py', 'survey', '--json']))
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 assert r['boards_unmapped'] == ['docs/hardware/devkit.md'], r['boards_unmapped']"
 
 # The system page comes first, so a docmap that stops at the first match hides the board page.
 python3 - <<'EOF'
-import json; b = json.load(open('jig/lanes.json'))
+import json; b = json.load(open('.jig/lanes.json'))
 b['docmap'] = {'docs/gpio/gpio.md': ['main/**'],
                'docs/hardware/devkit.md': ['main/**', 'sdkconfig*']}
-json.dump(b, open('jig/lanes.json', 'w'), indent=2)
+json.dump(b, open('.jig/lanes.json', 'w'), indent=2)
 EOF
 git add -A && git commit -qm docmap
 msg="survey: a board page docmap names is not listed"
 expect_pass python3 -c "
 import json, subprocess
-r = json.loads(subprocess.check_output(['python3', 'jig/jig.py', 'survey', '--json']))
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 assert r['boards_unmapped'] == [], r['boards_unmapped']"
 
 msg="reading-list: a file covered by a system page and a board page lists both"
@@ -143,41 +189,41 @@ git add -A && git commit -qm "open H1 H2"
 cd .git/jig/worktrees/H1 && printf 'int led = 2;\n' > main/app.c && git add -A && git commit -qm led
 $J reviewed >/dev/null; $J handoff >/dev/null 2>&1; git add -A && git commit -qm note
 msg="fold-in: changing a board's code asks about its board page and its system page"
-expect_pass sh -c "grep -q -- '- \[ \] docs/hardware/devkit.md' jig/handoffs/H1-*.md && grep -q -- '- \[ \] docs/gpio/gpio.md' jig/handoffs/H1-*.md"
-sed -i.bak 's|- \[ \] docs/gpio/gpio.md — updated / no change because ___|- [x] docs/gpio/gpio.md — no change because the pin is board wiring|' jig/handoffs/H1-*.md
-rm -f jig/handoffs/*.bak && git add -A && git commit -qm "answer gpio"
+expect_pass sh -c "grep -q -- '- \[ \] docs/hardware/devkit.md' .jig/handoffs/H1-*.md && grep -q -- '- \[ \] docs/gpio/gpio.md' .jig/handoffs/H1-*.md"
+sed -i.bak 's|- \[ \] docs/gpio/gpio.md — updated / no change because ___|- [x] docs/gpio/gpio.md — no change because the pin is board wiring|' .jig/handoffs/H1-*.md
+rm -f .jig/handoffs/*.bak && git add -A && git commit -qm "answer gpio"
 msg="gate: refuses while the board page's fold-in line is unanswered"
 expect_refuse sh -c "cd '$H' && $J gate H1"
-sed -i.bak 's|- \[ \] docs/hardware/devkit.md — updated / no change because ___|- [x] docs/hardware/devkit.md — updated: LED on GPIO 2|' jig/handoffs/H1-*.md
-rm -f jig/handoffs/*.bak && git add -A && git commit -qm "answer devkit"
+sed -i.bak 's|- \[ \] docs/hardware/devkit.md — updated / no change because ___|- [x] docs/hardware/devkit.md — updated: LED on GPIO 2|' .jig/handoffs/H1-*.md
+rm -f .jig/handoffs/*.bak && git add -A && git commit -qm "answer devkit"
 msg="gate: passes once the board page's line is answered"
 expect_pass sh -c "cd '$H' && $J gate H1"
 
 cd "$H/.git/jig/worktrees/H2" && printf 'CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y\n' > sdkconfig && git add -A && git commit -qm flash
 $J reviewed >/dev/null; $J handoff >/dev/null 2>&1
 msg="fold-in: changing only a board's config file asks about its board page"
-expect_pass grep -q -- '- \[ \] docs/hardware/devkit.md' jig/handoffs/H2-*.md
+expect_pass grep -q -- '- \[ \] docs/hardware/devkit.md' .jig/handoffs/H2-*.md
 
 S="$T/survey"
 mkdir -p "$S" && cd "$S" && git init -q -b main && git config user.email t@t && git config user.name t
-mkdir -p jig src/widgets plugin/skills/x
-cp "$P/jig/jig.py" jig/
+mkdir -p .jig src/widgets plugin/skills/x
+cp "$P/jig/jig.py" .jig/
 printf '# W\n' > src/widgets/README.md && printf '# X\n' > plugin/skills/x/SKILL.md
 git add -A && git commit -qm init && $J init --no-hooks >/dev/null
 
 msg="init: a new board has an empty payload"
-expect_pass python3 -c "import json,sys; sys.exit(json.load(open('jig/lanes.json'))['payload'] != [])"
+expect_pass python3 -c "import json,sys; sys.exit(json.load(open('.jig/lanes.json'))['payload'] != [])"
 
 msg="payload: survey skips declared globs, still flags the stray README"
 python3 - <<'EOF'
-import json; b = json.load(open('jig/lanes.json'))
+import json; b = json.load(open('.jig/lanes.json'))
 b['payload'] = ['plugin/**']
-json.dump(b, open('jig/lanes.json', 'w'), indent=2)
+json.dump(b, open('.jig/lanes.json', 'w'), indent=2)
 EOF
 git add -A && git commit -qm board   # survey reads trunk's board, not the working tree
 expect_pass python3 -c "
 import json, subprocess
-r = json.loads(subprocess.check_output(['python3', 'jig/jig.py', 'survey', '--json']))
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 homeless = [e['path'] for e in r['homeless']]
 assert r['payload'] == ['plugin/**'], r['payload']
 assert 'src/widgets/README.md' in homeless and 'plugin/skills/x/SKILL.md' not in homeless, homeless
@@ -185,14 +231,14 @@ assert r['payload_unmatched'] == [], r['payload_unmatched']"
 
 msg="payload: a directory-style glob that matches nothing is named"
 python3 - <<'EOF'
-import json; b = json.load(open('jig/lanes.json'))
+import json; b = json.load(open('.jig/lanes.json'))
 b['payload'] = ['plugin/']
-json.dump(b, open('jig/lanes.json', 'w'), indent=2)
+json.dump(b, open('.jig/lanes.json', 'w'), indent=2)
 EOF
 git add -A && git commit -qm board2
 expect_pass python3 -c "
 import json, subprocess
-r = json.loads(subprocess.check_output(['python3', 'jig/jig.py', 'survey', '--json']))
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 assert r['payload_unmatched'] == ['plugin/'], r['payload_unmatched']"
 
 
@@ -205,6 +251,8 @@ snap() { git status --porcelain; find .git -type f | sort | xargs shasum 2>/dev/
 
 # old <dir> <commit> <style>: a repo set up the way that commit's init skill says, with a
 # reserve counter on docs/**, a docmap page, a merged lane, and a script of the repo's own.
+# Styles: dot = eaec973's .jig/ with specs/, ledgers/, scripts/ at root; aidev = the same as
+# ai-dev renamed it; jig = 62c8d9f's jig/ holding docs too; jig2 = 0.2.x's jig/, docs at root.
 old() {
   d=$1; c=$2; style=$3
   mkdir -p "$d/.t" && git -C "$R" archive "$c" plugin/templates | tar -x -C "$d/.t"
@@ -215,6 +263,9 @@ old() {
   if [ "$style" = jig ]; then
     cp $t/AGENTS.md $t/CLAUDE.md . && cp -r $t/jig jig && rm jig/docs/HARDWARE.md
     tool=jig; docs=jig/docs; specs=jig/specs
+  elif [ "$style" = jig2 ]; then
+    cp $t/AGENTS.md $t/CLAUDE.md . && cp -r $t/jig jig && mkdir -p docs && printf '# Docs\n' > docs/README.md
+    tool=jig; docs=docs; specs=jig/specs
   else
     cp $t/AGENTS.md $t/CLAUDE.md . && cp -r $t/ledgers . && mkdir -p docs specs .jig
     cp $t/docs/README.md docs/ && cp $t/specs/_template.md specs/
@@ -255,7 +306,7 @@ GLOBS='
 import importlib.util, json, subprocess, sys
 spec = importlib.util.spec_from_file_location("j", sys.argv[1]); j = importlib.util.module_from_spec(spec); spec.loader.exec_module(j)
 old = json.loads(subprocess.check_output(["git", "show", "HEAD:" + sys.argv[2]]))
-new = json.load(open("jig/lanes.json"))
+new = json.load(open(".jig/lanes.json"))
 before = subprocess.check_output(["git", "ls-tree", "-r", "--name-only", "HEAD"], text=True).split()
 after = subprocess.check_output(["git", "ls-files"], text=True).split()
 def lists(b):
@@ -271,17 +322,18 @@ for l in lists(new):
 # A folder that moved out from under a broad glob is still covered (jig/** held jig/docs/).
 moved = [l.split("\t")[1:] for l in subprocess.check_output(["git", "diff", "--cached", "-M", "--name-status"], text=True).splitlines() if l.startswith("R100")]
 for o, n in moved:
-    if o.startswith(("jig/docs/", "specs/", "ledgers/", ".jig/handoffs/", ".aidev/handoffs/")):
+    if o.startswith(("jig/", "specs/", "ledgers/", ".aidev/")):
         for lo, ln in zip(lists(old), lists(new)):
             assert not j.matches(o, lo) or j.matches(n, ln), (o, n, ln)
 lane = new["lanes"]["old"]
 assert "scripts/**" in lane["owns"] and lane["worktree"] == old["lanes"]["old"]["worktree"], lane
 '
 
-for layout in "eaec973 dot" "66a044c dot" "62c8d9f jig" "eaec973 aidev"; do
+for layout in "eaec973 dot" "66a044c dot" "62c8d9f jig" "eaec973 aidev" "5d955a2 jig2"; do
   set -- $layout; c=$1; style=$2; name="$c-$style"
   old "$T/up-$name" $c $style
   board=$(git ls-files | grep 'lanes.json$')
+  had_setup=$(git ls-files | grep 'scripts/setup.sh$')
 
   msg="update $name: the dry run changes nothing and exits 0"
   before=$(snap); rc=$(code $UP); after=$(snap)
@@ -295,8 +347,8 @@ for layout in "eaec973 dot" "66a044c dot" "62c8d9f jig" "eaec973 aidev"; do
   $UP --apply >/dev/null 2>&1
   expect_pass python3 -c "
 import subprocess
-allowed = {'$board', 'jig/lanes.json', '.jig/jig.py', '.aidev/aidev.py', 'jig/jig.py',
-           '.jig/RULES.md', '.aidev/RULES.md', 'jig/RULES.md', '.gitignore', 'jig/scripts/setup.sh', 'jig/staging/.gitignore'}
+allowed = {'$board', '.jig/lanes.json', '.aidev/aidev.py', 'jig/jig.py', '.jig/jig.py',
+           '.aidev/RULES.md', 'jig/RULES.md', '.jig/RULES.md', '.gitignore', '.jig/scripts/setup.sh', '.jig/staging/.gitignore'}
 for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
     status, *paths = line.split('\t')
     assert status == 'R100' or set(paths) <= allowed, line"
@@ -304,47 +356,72 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
   msg="update $name: every board glob that matched before still matches"
   expect_pass python3 -c "$GLOBS" "$P/jig/jig.py" "$board"
 
-  msg="update $name: hooks read trunk's jig/jig.py and none was kept as .local; .git/jig/enabled, no .git/aidev, no old ignore line"
-  expect_pass sh -c "grep -q 'git show main:jig/jig.py' .git/hooks/pre-commit && ! ls .git/hooks/*.local && test -f .git/jig/enabled && test ! -e .git/aidev && ! grep -q worktrees .gitignore"
+  msg="update $name: hooks read trunk's .jig/jig.py and none was kept as .local; .git/jig/enabled, no .git/aidev, no old ignore line"
+  expect_pass sh -c "grep -q 'git show main:.jig/jig.py' .git/hooks/pre-commit && ! ls .git/hooks/*.local && test -f .git/jig/enabled && test ! -e .git/aidev && ! grep -q worktrees .gitignore"
 
-  msg="update $name: a repo without setup.sh gets the template's, staged, and the post-merge hook"
-  expect_pass sh -c "cmp -s jig/scripts/setup.sh '$P/jig/scripts/setup.sh' && test -x jig/scripts/setup.sh && git diff --cached --name-status | grep -q '^A.jig/scripts/setup.sh' && grep -q 'hook post-merge' .git/hooks/post-merge"
+  msg="update $name: nothing tracked is left in jig/, .aidev/, specs/ or ledgers/; the board is stamped 6"
+  expect_pass sh -c "test -z \"\$(git ls-files jig .aidev specs ledgers)\" && grep -q '\"version\": 6' .jig/lanes.json"
+
+  if [ -n "$had_setup" ]; then
+    msg="update $name: its setup.sh moves to .jig/scripts/ untouched"
+    expect_pass sh -c "git diff --cached --name-status | grep -q '^R100.jig/scripts/setup.sh.\.jig/scripts/setup.sh'"
+  else
+    msg="update $name: a repo without setup.sh gets the template's, staged, and the post-merge hook"
+    expect_pass sh -c "cmp -s .jig/scripts/setup.sh '$P/jig/scripts/setup.sh' && test -x .jig/scripts/setup.sh && git diff --cached --name-status | grep -q '^A.\.jig/scripts/setup.sh' && grep -q 'hook post-merge' .git/hooks/post-merge"
+  fi
 
   git ls-files > "$T/$name.paths"
-  python3 -c "import json; print(sorted(json.load(open('jig/lanes.json'))))" > "$T/$name.keys"
+  python3 -c "import json; print(sorted(json.load(open('.jig/lanes.json'))))" > "$T/$name.keys"
 
   msg="update $name: a second --apply is up to date and changes nothing"
   before=$(git status --porcelain); out=$($UP --apply 2>&1); after=$(git status --porcelain)
   expect_pass test "$out" = "up to date" -a "$before" = "$after"
 
+  if [ "$style" = dot ]; then          # see the update skill, step 3
+    msg="update $name: trunk's old checker refuses the update commit on R7 alone"
+    err=$(git commit -qm update 2>&1)
+    expect_pass sh -c "echo \"\$0\" | grep -q '^jig: R7 ' && ! echo \"\$0\" | grep -v '^jig: R7 ' | grep -q ." "$err"
+    git commit -q --no-verify -m update
+  else
+    msg="update $name: the update commits with the hooks on"
+    expect_pass git commit -qm update
+  fi
+
   msg="update $name: after the commit, survey finds no homeless files"
-  git commit -qm update
   expect_pass python3 -c "
 import json, subprocess
-r = json.loads(subprocess.check_output(['python3', 'jig/jig.py', 'survey', '--json']))
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 assert r['homeless'] == [], r['homeless']"
 done
 
-msg="update: all four old layouts end with the same tracked paths and board keys"
-expect_pass sh -c "cd '$T' && for n in 66a044c-dot 62c8d9f-jig eaec973-aidev; do cmp -s eaec973-dot.paths \$n.paths && cmp -s eaec973-dot.keys \$n.keys || exit 1; done"
+msg="update: all five old layouts end with the same tracked paths and board keys"
+expect_pass sh -c "cd '$T' && for n in 66a044c-dot 62c8d9f-jig eaec973-aidev 5d955a2-jig2; do cmp -s eaec973-dot.paths \$n.paths && cmp -s eaec973-dot.keys \$n.keys || exit 1; done"
+
+msg="update: a 0.2.x repo's untracked staged files and meta-cache move to .jig/, and the cache's ignore line follows"
+old "$T/up-staged" 5d955a2 jig2
+printf 'jig/meta-cache/\n' >> .gitignore && git commit -qam ignore
+printf -- '---\nstaged: true\n---\nx\n' > jig/staging/pending.md && mkdir -p jig/meta-cache && printf 'v0.1\n' > jig/meta-cache/PIN
+out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+expect_pass sh -c "echo \"\$0\" | grep -q 'move the untracked files in jig/staging/ to .jig/staging/' && test -f .jig/staging/pending.md -a -f .jig/meta-cache/PIN -a ! -e jig && grep -qx '.jig/meta-cache/' .gitignore && ! grep -qx 'jig/meta-cache/' .gitignore && test -z \"\$(git status --porcelain --untracked-files=all | grep -v '^[RAM] ')\"" "$out"
 
 msg="update: same stamp, different jig.py and RULES.md: both replaced, hooks rewritten, nothing moves, the repo's setup.sh kept byte for byte"
 cd "$T/up-eaec973-dot"
-printf '# local edit\n' >> jig/jig.py && printf 'local edit\n' >> jig/RULES.md && printf 'uv sync\n' >> jig/scripts/setup.sh
-git commit -qam edit && cp jig/scripts/setup.sh "$T/setup.mine"
+printf '# local edit\n' >> .jig/jig.py && printf 'local edit\n' >> .jig/RULES.md && printf 'uv sync\n' >> .jig/scripts/setup.sh
+git commit -qam edit && cp .jig/scripts/setup.sh "$T/setup.mine"
 rm .git/hooks/pre-push
 $UP --apply >/dev/null 2>&1
-expect_pass sh -c "test \"\$(git diff --cached --name-status | sort)\" = \"\$(printf 'M\tjig/RULES.md\nM\tjig/jig.py')\" && test -f .git/hooks/pre-push && cmp -s jig/scripts/setup.sh '$T/setup.mine'"
+expect_pass sh -c "test \"\$(git diff --cached --name-status | sort)\" = \"\$(printf 'M\t.jig/RULES.md\nM\t.jig/jig.py')\" && test -f .git/hooks/pre-push && cmp -s .jig/scripts/setup.sh '$T/setup.mine'"
 git commit -qm tools
 
-msg="update: once the board is in jig/, a root specs/ and scripts/check.sh are the repo's own"
-mkdir -p specs && printf '# spec\n' > specs/api.md && printf 'echo mine\n' > scripts/check.sh
+msg="update: once the board is current at .jig/, a root specs/, scripts/check.sh and a jig/ folder are the repo's own"
+mkdir -p specs jig/specs && printf '# spec\n' > specs/api.md && printf 'echo mine\n' > scripts/check.sh
+printf '# mine\n' > jig/specs/x.md && printf '{"lanes": {}}\n' > jig/lanes.json.example
 git add -A && git commit -qm own
 expect_pass test "$($UP 2>&1)" = "up to date"
 git reset -q --hard HEAD~1
 
 msg="update: a board stamped above this jig refuses"
-python3 -c "import json; b = json.load(open('jig/lanes.json')); b['version'] = 99; json.dump(b, open('jig/lanes.json', 'w'))"
+python3 -c "import json; b = json.load(open('.jig/lanes.json')); b['version'] = 99; json.dump(b, open('.jig/lanes.json', 'w'))"
 git commit -qam ahead
 out=$($UP 2>&1); rc=$?
 expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'repo is ahead; update the plugin'" "$out"
@@ -354,10 +431,10 @@ msg="update: an up-to-date repo says so even with a worktree open"
 git worktree add -q --detach "$T/up-extra0" HEAD 2>/dev/null
 expect_pass test "$($UP 2>&1)" = "up to date"
 git worktree remove --force "$T/up-extra0"
-printf '# behind\n' >> jig/jig.py && git commit -qam behind   # the refusals below need a plan
+printf '# behind\n' >> .jig/jig.py && git commit -qam behind   # the refusals below need a plan
 
 msg="update: an open lane refuses, naming it"
-python3 -c "import json; b = json.load(open('jig/lanes.json')); b['lanes']['live'] = {'state': 'building'}; json.dump(b, open('jig/lanes.json', 'w'))"
+python3 -c "import json; b = json.load(open('.jig/lanes.json')); b['lanes']['live'] = {'state': 'building'}; json.dump(b, open('.jig/lanes.json', 'w'))"
 git commit -qam live
 out=$($UP 2>&1); rc=$?
 expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'lanes are open: live'" "$out"
@@ -376,9 +453,9 @@ expect_pass test "$rc" = 2 -a "$before" = "$after"
 git checkout -q -- AGENTS.md
 
 msg="update blocked: two boards are both named, and --apply changes nothing"
-mkdir -p .jig && cp jig/lanes.json .jig/lanes.json && git add -A && git commit -qm two
+mkdir -p jig && cp .jig/lanes.json jig/lanes.json && git add -A && git commit -qm two
 before=$(snap); out=$($UP --apply 2>&1); rc=$?; after=$(snap)
-expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'two boards, jig/lanes.json and .jig/lanes.json' && test \"\$1\" = \"\$2\"" "$out" "$before" "$after"
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'two boards, .jig/lanes.json and jig/lanes.json' && test \"\$1\" = \"\$2\"" "$out" "$before" "$after"
 
 msg="update blocked: no board names the board-like JSON and the foreign hooks"
 N="$T/up-none"; mkdir -p "$N/.other" && cd "$N" && git init -q -b main
@@ -387,23 +464,23 @@ printf '#!/bin/sh\nexit 0\n' > .git/hooks/pre-commit && chmod +x .git/hooks/pre-
 out=$($UP 2>&1); rc=$?
 expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'board-like JSON: .other/lanes.json' && echo \"\$0\" | grep -q \"a hook jig didn't write: pre-commit\"" "$out"
 
-old "$T/up-warn" eaec973 dot
-printf 'notes\n' > .jig/notes.txt && mkdir -p tools && printf 'BOARD = ".jig/lanes.json"\n' > tools/paths.py
-mkdir -p jig/specs && printf '# new\n' > jig/specs/new.md
-python3 -c "import json; b = json.load(open('.jig/lanes.json')); b['extra'] = 1; json.dump(b, open('.jig/lanes.json', 'w'))"
+old "$T/up-warn" 62c8d9f jig
+printf 'notes\n' > jig/notes.txt && mkdir -p tools && printf 'BOARD = "jig/lanes.json"\n' > tools/paths.py
+mkdir -p .jig/specs && printf '# new\n' > .jig/specs/new.md
+python3 -c "import json; b = json.load(open('jig/lanes.json')); b['extra'] = 1; json.dump(b, open('jig/lanes.json', 'w'))"
 git add -A && git commit -qm warn
 out=$($UP 2>&1); rc=$?
-msg="update warning: an extra file in .jig/ is named, and the dry run exits 1"
-expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q '.jig/notes.txt is at an old path'" "$out"
+msg="update warning: an extra file in jig/ is named, and the dry run exits 1"
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q 'jig/notes.txt is at an old path'" "$out"
 msg="update warning: a board key jig doesn't know is named"
 expect_pass sh -c "echo \"\$0\" | grep -q 'board key .extra. is not one jig knows'" "$out"
-msg="update warning: a .py file that names .jig/lanes.json is named, with its line"
-expect_pass sh -c "echo \"\$0\" | grep -q 'tools/paths.py names a path jig moved' && echo \"\$0\" | grep -q '1: BOARD = \".jig/lanes.json\"'" "$out"
-msg="update warning: specs/ and jig/specs/ both exist, so neither moves"
-expect_pass sh -c "echo \"\$0\" | grep -q 'specs/ and jig/specs/ both exist'" "$out"
-msg="update warning: --apply proceeds; the extra file, .jig/, both specs folders and the unknown key stay"
+msg="update warning: a .py file that names jig/lanes.json is named, with its line"
+expect_pass sh -c "echo \"\$0\" | grep -q 'tools/paths.py names a path jig moved' && echo \"\$0\" | grep -q '1: BOARD = \"jig/lanes.json\"'" "$out"
+msg="update warning: jig/specs/ and .jig/specs/ both exist, so neither moves"
+expect_pass sh -c "echo \"\$0\" | grep -q 'jig/specs/ and .jig/specs/ both exist'" "$out"
+msg="update warning: --apply proceeds; the extra file, both specs folders and the unknown key stay"
 rc=$(code $UP --apply)
-expect_pass sh -c "test $rc = 0 && test -f .jig/notes.txt && test -f specs/_template.md && test -f jig/specs/new.md && grep -q '\"extra\"' jig/lanes.json"
+expect_pass sh -c "test $rc = 0 && test -f jig/notes.txt && test -f jig/specs/_template.md && test -f .jig/specs/new.md && grep -q '\"extra\"' .jig/lanes.json"
 
 
 # Firmware, as eaec973's init set it up: docs/HARDWARE.md and the blank skill template.
@@ -423,7 +500,7 @@ git commit -qam board-page
 expect_pass sh -c "$UP 2>&1 | grep -q 'rename it to docs/hardware/esp32-s3-devkitc-1.md'"
 msg="update: --apply leaves the files to review alone; a failing check is reported, exits 1, undoes nothing"
 out=$($UP --apply 2>&1); rc=$?
-expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q 'jig/scripts/check.sh FAILED (exit 2)' && test -f docs/HARDWARE.md && test -f .claude/skills/_skill-template/SKILL.md && git diff --cached --name-status | grep -q 'R100.*jig/specs/_template.md'" "$out"
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q '.jig/scripts/check.sh FAILED (exit 2)' && test -f docs/HARDWARE.md && test -f .claude/skills/_skill-template/SKILL.md && git diff --cached --name-status | grep -q 'R100.*\.jig/specs/_template.md'" "$out"
 
 cd "$T/up-warn" && git commit -qm applied
 msg="update: after --apply, a kept warning still reads up to date, exit 0"
@@ -439,13 +516,13 @@ expect_pass sh -c "echo \"\$0\" | grep -q 'specs/app.spec.js is in specs/ but is
 # ---------------------------------------------------------------- worktree setup
 W="$T/setup"; LOG="$T/setup.log"
 mkdir -p "$W" && cd "$W" && git init -q -b main && git config user.email t@t && git config user.name t
-cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p src && printf 'x=1\n' > src/a.py
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p src && printf 'x=1\n' > src/a.py
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 
-msg="setup: after init, jig/scripts/setup.sh is executable, all TODOs, and exits 0"
-expect_pass sh -c "test -x jig/scripts/setup.sh && grep -q TODO jig/scripts/setup.sh && jig/scripts/setup.sh"
+msg="setup: after init, .jig/scripts/setup.sh is executable, all TODOs, and exits 0"
+expect_pass sh -c "test -x .jig/scripts/setup.sh && grep -q TODO .jig/scripts/setup.sh && .jig/scripts/setup.sh"
 
-printf '#!/bin/sh\necho "set up $(pwd -P)"\npwd -P >> "%s"\n' "$LOG" > jig/scripts/setup.sh
+printf '#!/bin/sh\necho "set up $(pwd -P)"\npwd -P >> "%s"\n' "$LOG" > .jig/scripts/setup.sh
 git commit -qam "setup logs" && : > "$LOG"
 lines() { wc -l < "$LOG" | tr -d ' '; }
 
@@ -479,10 +556,10 @@ printf '\n- trunk line\n' >> AGENTS.md && git commit -qam trunk-append
 (cd .git/jig/worktrees/S1 && printf '\n- lane line\n' >> AGENTS.md && git commit -qam lane-append && $J sync >/dev/null 2>&1)
 expect_pass test "$(lines)" = 5 -a "$(tail -1 "$LOG")" = "$(cd .git/jig/worktrees/S1 && pwd -P)"
 
-printf '#!/bin/sh\necho broken >&2\nexit 1\n' > jig/scripts/setup.sh && git commit -qam "setup fails"
+printf '#!/bin/sh\necho broken >&2\nexit 1\n' > .jig/scripts/setup.sh && git commit -qam "setup fails"
 msg="setup: a failing setup.sh fails nothing; jig open exits 0 and stderr names the script, code and checkout"
 err=$($J open S2 --owns 'docs/**' 2>&1 >/dev/null); rc=$?
-expect_pass sh -c "test $rc = 0 && test -d .git/jig/worktrees/S2 && grep -q '\"S2\"' jig/lanes.json && echo \"\$0\" | grep -q 'jig/scripts/setup.sh exited 1 in .*S2'" "$err"
+expect_pass sh -c "test $rc = 0 && test -d .git/jig/worktrees/S2 && grep -q '\"S2\"' .jig/lanes.json && echo \"\$0\" | grep -q '.jig/scripts/setup.sh exited 1 in .*S2'" "$err"
 git add -A && git commit -qm "open S2"
 
 msg="setup: a failing setup.sh fails nothing for a plain git worktree add either"
@@ -490,13 +567,13 @@ expect_pass git worktree add -q --detach "$T/setup-fail" HEAD
 
 msg="setup: a checkout with no setup.sh (a commit from before it) runs nothing and prints nothing extra"
 git worktree add -q --detach "$T/setup-mk" HEAD 2>/dev/null
-before_none=$(cd "$T/setup-mk" && git rm -q jig/scripts/setup.sh && git commit -qm "no setup" && git rev-parse HEAD)
+before_none=$(cd "$T/setup-mk" && git rm -q .jig/scripts/setup.sh && git commit -qm "no setup" && git rev-parse HEAD)
 n=$(lines); err=$(git worktree add -q --detach "$T/setup-none" "$before_none" 2>&1)
-expect_pass sh -c "test -z \"\$0\" && test $n = \$(wc -l < '$LOG' | tr -d ' ') && test ! -e '$T/setup-none/jig/scripts/setup.sh'" "$err"
+expect_pass sh -c "test -z \"\$0\" && test $n = \$(wc -l < '$LOG' | tr -d ' ') && test ! -e '$T/setup-none/.jig/scripts/setup.sh'" "$err"
 
 # ---------------------------------------------------------------- metarepo
 M="$T/meta"; mkdir -p "$M" && cd "$M" && git init -q -b main && git config user.email t@t && git config user.name t
-cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
 $J init >/dev/null && $J meta-init --name docs >/dev/null && git add -A && git commit -qm "meta-init"
 mrel() { $J meta-release 2>&1; }
 branch_commit() {  # branch_commit <branch> <subject>: commit what's staged on a new branch
@@ -508,10 +585,10 @@ msg="meta: a second meta-release with no entry-file change says nothing to relea
 out=$(mrel); expect_pass sh -c "echo \"\$0\" | grep -q 'nothing to release'" "$out"
 
 git switch -q -c b1
-msg="meta M1: a source file outside jig/ is refused"
+msg="meta M1: a source file outside .jig/ is refused"
 printf 'x=1\n' > tool.py && git add tool.py; expect_refuse git commit -qm "D-001: tool"; git rm -q --cached tool.py; rm tool.py
-msg="meta: a change to jig/jig.py is accepted"
-printf '\n' >> jig/jig.py && git add jig/jig.py; expect_pass git commit -qm "TOOL: jig"
+msg="meta: a change to .jig/jig.py is accepted"
+printf '\n' >> .jig/jig.py && git add .jig/jig.py; expect_pass git commit -qm "TOOL: jig"
 msg="meta M2: a decision row without status and date is refused"
 printf '| D-001 | use JSON |\n' >> DECISIONS.md && printf -- '- D-001\n' >> CHANGELOG.md && git add -A
 expect_refuse git commit -qm "D-001: JSON"; git reset -q; git checkout -q -- DECISIONS.md CHANGELOG.md
@@ -560,16 +637,16 @@ git tag -d v0.3 >/dev/null
 # ---------------------------------------------------------------- pararepo
 export JIG_CONFIG="$T/repos.json"     # never the user's real list
 MR="$T/mr"; mkdir -p "$MR" && cd "$MR" && git init -q -b main && git config user.email t@t && git config user.name t
-cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
 $J init >/dev/null && $J meta-init --name docs >/dev/null && git add -A && git commit -qm meta-init && $J meta-release >/dev/null
 PR="$T/pr"; mkdir -p "$PR" && cd "$PR" && git init -q -b main && git config user.email t@t && git config user.name t
-cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p api && printf 'x=1\n' > api/a.py
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p api && printf 'x=1\n' > api/a.py
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 git clone -q "$MR" mrclone
 
 msg="para: para-init writes para.json, the AGENTS.md header, the cache, and ignores the cache"
 $J para-init --meta docs --location mrclone --contract 'api/**' >/dev/null
-expect_pass sh -c "grep -q '\"pin\": \"v0.1\"' jig/para.json && ! grep -q location jig/para.json && grep -q '\"docs\"' '$T/repos.json' && grep -q 'jig:meta' AGENTS.md && test -f jig/meta-cache/DECISIONS.md && grep -qx 'jig/meta-cache/' .gitignore && grep -qx 'mrclone/' .gitignore"
+expect_pass sh -c "grep -q '\"pin\": \"v0.1\"' .jig/para.json && ! grep -q location .jig/para.json && grep -q '\"docs\"' '$T/repos.json' && grep -q 'jig:meta' AGENTS.md && test -f .jig/meta-cache/DECISIONS.md && grep -qx '.jig/meta-cache/' .gitignore && grep -qx 'mrclone/' .gitignore"
 msg="para: the generated header is at most 6 lines"
 expect_pass test "$(sed -n '/jig:meta —/,/jig:meta end/p' AGENTS.md | wc -l | tr -d ' ')" -le 6
 git add -A && git commit -qm "para-init"
@@ -581,35 +658,35 @@ git add -A; expect_refuse git commit -qm header; git reset -q --hard
 msg="para P2: a contract-path change with no proposal or reason in a spec is refused"
 printf 'y=2\n' >> api/a.py && git add -A; expect_refuse git commit -qm api
 msg="para P2: with meta: none — <reason> in a staged spec it is accepted"
-printf '# x\n\n## Decisions\n- meta: none — internal refactor, no contract change\n' > jig/specs/x.md
+mkdir -p .jig/specs && printf '# x\n\n## Decisions\n- meta: none — internal refactor, no contract change\n' > .jig/specs/x.md
 git add -A; expect_pass git commit -qm api
 
 msg="para P3: git add -f of the cache is refused"
-git add -f jig/meta-cache/DECISIONS.md; expect_refuse git commit -qm cache; git reset -q
+git add -f .jig/meta-cache/DECISIONS.md; expect_refuse git commit -qm cache; git reset -q
 msg="para P3: staging the metarepo checkout is refused"
 git add -f mrclone 2>/dev/null; expect_refuse git commit -qm clone; git reset -q
 
 msg="para-propose: a branch on the metarepo, the id in the spec, the metarepo's main untouched"
 mainbefore=$(git -C mrclone rev-parse main)
-$J para-propose jig/specs/x.md fmt >/dev/null
-expect_pass sh -c "git -C mrclone rev-parse -q --verify refs/heads/propose/pr-fmt && grep -q 'meta: docs proposal propose/pr-fmt' jig/specs/x.md && test \"\$(git -C mrclone rev-parse main)\" = '$mainbefore' && test \"\$(git -C mrclone branch --show-current)\" = main"
+$J para-propose .jig/specs/x.md fmt >/dev/null
+expect_pass sh -c "git -C mrclone rev-parse -q --verify refs/heads/propose/pr-fmt && grep -q 'meta: docs proposal propose/pr-fmt' .jig/specs/x.md && test \"\$(git -C mrclone rev-parse main)\" = '$mainbefore' && test \"\$(git -C mrclone branch --show-current)\" = main"
 git add -A && git commit -qm "specs: proposal"
 
 stage() {  # stage <file> <target> <kind> <change> <destination> [body]
   printf -- '---\nstaged: true\ntarget: %s\nkind: %s\nchange: %s\ndestination: %s\nsource: chat %s\nstatus: staged\n---\n%b' \
-    "$2" "$3" "$4" "$5" "$1" "${6:-# Title\n\nbody\n}" > "jig/staging/$1"; }
+    "$2" "$3" "$4" "$5" "$1" "${6:-# Title\n\nbody\n}" > ".jig/staging/$1"; }
 msg="para P4: a contract change waits while a file for the metarepo is staged"
 stage meta-note.md docs decisions new DECISIONS.md '| D-009 | x | proposed | 2026-10-29 |\n'
-printf 'z=3\n' >> api/a.py && printf -- '- meta: none — still internal\n' >> jig/specs/x.md && git add api/a.py jig/specs/x.md
+printf 'z=3\n' >> api/a.py && printf -- '- meta: none — still internal\n' >> .jig/specs/x.md && git add api/a.py .jig/specs/x.md
 expect_refuse git commit -qm "api: more"
-python3 jig/jig.py staging resolve meta-note.md --drop "superseded in chat" >/dev/null
+python3 .jig/jig.py staging resolve meta-note.md --drop "superseded in chat" >/dev/null
 msg="para P4: once it is resolved, the same commit is accepted"
 expect_pass git commit -qm "api: more"
 
 msg="para: a new worktree gets the main checkout's cache; para-propose there names the repo, not the folder"
 git worktree add -q --detach "$T/pr-lane" HEAD 2>/dev/null
-(cd "$T/pr-lane" && $J para-propose jig/specs/x.md lanefix >/dev/null)
-expect_pass sh -c "test -f '$T/pr-lane/jig/meta-cache/DECISIONS.md' && git -C mrclone rev-parse -q --verify refs/heads/propose/pr-lanefix"
+(cd "$T/pr-lane" && $J para-propose .jig/specs/x.md lanefix >/dev/null)
+expect_pass sh -c "test -f '$T/pr-lane/.jig/meta-cache/DECISIONS.md' && git -C mrclone rev-parse -q --verify refs/heads/propose/pr-lanefix"
 git worktree remove --force "$T/pr-lane"
 
 msg="repos: works outside any git repo"
@@ -621,7 +698,7 @@ git switch -q main && git merge -q --no-ff --no-edit d1 2>/dev/null && $J meta-r
 cd "$PR" && printf 'D-001 is how ids work\n' > api/ids.md && git add api/ids.md && git commit -qm "api: ids" >/dev/null 2>&1
 msg="para-sync: after a release it reports the change in this repo's terms and proposes the bump; the pin stays"
 out=$($J para-sync 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -q 'docs v0.2 is out' && echo \"\$0\" | grep -q 'D-001: used in api/ids.md' && echo \"\$0\" | grep -q 'meta: docs v0.1 → v0.2' && grep -q '\"pin\": \"v0.1\"' jig/para.json" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -q 'docs v0.2 is out' && echo \"\$0\" | grep -q 'D-001: used in api/ids.md' && echo \"\$0\" | grep -q 'meta: docs v0.1 → v0.2' && grep -q '\"pin\": \"v0.1\"' .jig/para.json" "$out"
 
 msg="repos: lists each repo and flags a path that no longer exists"
 mv mrclone ../mrclone-away; out=$($J repos 2>&1); mv ../mrclone-away mrclone
@@ -632,9 +709,9 @@ mv mrclone ../mrclone-away; out=$($J para-sync 2>&1); mv ../mrclone-away mrclone
 expect_pass sh -c "echo \"\$0\" | grep -q \"can't reach docs\" && echo \"\$0\" | grep -q 'reading the cache (v0.1'" "$out"
 
 msg="para-sync: with defer_until in the future it prints nothing; on or after it, the full report"
-python3 -c "import json; p = json.load(open('jig/para.json')); p['defer_until'] = '2999-01-01'; json.dump(p, open('jig/para.json', 'w'), indent=2)"
+python3 -c "import json; p = json.load(open('.jig/para.json')); p['defer_until'] = '2999-01-01'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
 quiet=$($J para-sync 2>&1)
-python3 -c "import json; p = json.load(open('jig/para.json')); p['defer_until'] = '2000-01-01'; json.dump(p, open('jig/para.json', 'w'), indent=2)"
+python3 -c "import json; p = json.load(open('.jig/para.json')); p['defer_until'] = '2000-01-01'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
 loud=$($J para-sync 2>&1)
 expect_pass sh -c "test -z \"\$0\" && echo \"\$1\" | grep -q 'v0.2 is out'" "$quiet" "$loud"
 
@@ -643,26 +720,26 @@ expect_refuse grep -rnE 'Maige|maige|"E-' "$P/.."
 
 # ---------------------------------------------------------------- staging
 ST="$T/st"; mkdir -p "$ST" && cd "$ST" && git init -q -b main && git config user.email t@t && git config user.name t
-cp -r "$P/jig" jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 stage() {
   printf -- '---\nstaged: true\ntarget: %s\nkind: %s\nchange: %s\ndestination: %s\nsource: chat %s\nstatus: staged\n---\n%b' \
-    "$2" "$3" "$4" "$5" "$1" "${6:-# Title\n\nbody\n}" > "jig/staging/$1"; }
+    "$2" "$3" "$4" "$5" "$1" "${6:-# Title\n\nbody\n}" > ".jig/staging/$1"; }
 
-msg="staging: init leaves jig/staging/ with only its .gitignore, and a dropped file is untracked"
+msg="staging: init leaves .jig/staging/ with only its .gitignore, and a dropped file is untracked"
 stage a.md this spec new a.md
-expect_pass sh -c "test \"\$(ls -A jig/staging)\" = \"\$(printf '.gitignore\na.md')\" && test -z \"\$(git status --porcelain)\""
+expect_pass sh -c "test \"\$(ls -A .jig/staging)\" = \"\$(printf '.gitignore\na.md')\" && test -z \"\$(git status --porcelain)\""
 
 msg="staging: the list names a bad header and exits 1"
-printf -- '---\nstaged: true\nkind: memo\n---\nx\n' > jig/staging/bad.md
+printf -- '---\nstaged: true\nkind: memo\n---\nx\n' > .jig/staging/bad.md
 out=$($J staging); rc=$?
 expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q 'no target' && echo \"\$0\" | grep -q \"kind 'memo'\"" "$out"
-rm jig/staging/bad.md
+rm .jig/staging/bad.md
 
-msg="staging: a new spec lands in jig/specs/ with its Source line, and leaves staging"
+msg="staging: a new spec lands in .jig/specs/ with its Source line, and leaves staging"
 $J staging resolve a.md >/dev/null
-expect_pass sh -c "grep -q '^Source: chat a.md (staged as a.md)' jig/specs/a.md && test ! -e jig/staging/a.md"
+expect_pass sh -c "grep -q '^Source: chat a.md (staged as a.md)' .jig/specs/a.md && test ! -e .jig/staging/a.md"
 msg="staging: a new spec whose path exists is refused"
-stage a.md this spec new a.md; expect_refuse $J staging resolve a.md; rm jig/staging/a.md
+stage a.md this spec new a.md; expect_refuse $J staging resolve a.md; rm .jig/staging/a.md
 
 msg="staging: an update to a doc waits until the page carries the source"
 mkdir -p docs/x && printf '# X\n' > docs/x/x.md && stage d.md this doc update docs/x/x.md
@@ -672,7 +749,7 @@ msg="staging: the session's name alone isn't provenance; the file's own mark is"
 expect_refuse $J staging resolve d.md
 printf 'Source: chat d.md (staged as d.md)\n' >> docs/x/x.md
 msg="staging: once it does, the update resolves"
-expect_pass sh -c "$J staging resolve d.md && test ! -e jig/staging/d.md"
+expect_pass sh -c "$J staging resolve d.md && test ! -e .jig/staging/d.md"
 
 msg="staging: a new doc is written with a Source footer"
 stage n.md this doc new docs/n/n.md; $J staging resolve n.md >/dev/null
@@ -680,19 +757,19 @@ expect_pass grep -q '^Source: chat n.md (staged as n.md)' docs/n/n.md
 
 msg="staging: a destination outside the repo is refused"
 stage e.md this doc new /tmp/jig-escape.md; expect_refuse $J staging resolve e.md
-stage e.md this doc new ../escape.md; expect_refuse $J staging resolve e.md; rm jig/staging/e.md
+stage e.md this doc new ../escape.md; expect_refuse $J staging resolve e.md; rm .jig/staging/e.md
 
 msg="staging: a .DS_Store is not a staged file"
-: > jig/staging/.DS_Store; expect_pass test "$($J staging)" = "nothing staged in jig/staging"; rm jig/staging/.DS_Store
+: > .jig/staging/.DS_Store; expect_pass test "$($J staging)" = "nothing staged in .jig/staging"; rm .jig/staging/.DS_Store
 
 msg="staging: a CRLF header parses"
-printf -- '---\r\nstaged: true\r\ntarget: this\r\nkind: doc\r\nchange: new\r\ndestination: docs/c.md\r\nsource: chat c\r\nstatus: staged\r\n---\r\nbody\r\n' > jig/staging/c.md
-expect_pass $J staging; rm jig/staging/c.md
+printf -- '---\r\nstaged: true\r\ntarget: this\r\nkind: doc\r\nchange: new\r\ndestination: docs/c.md\r\nsource: chat c\r\nstatus: staged\r\n---\r\nbody\r\n' > .jig/staging/c.md
+expect_pass $J staging; rm .jig/staging/c.md
 
 msg="staging: a story waits for a spec that carries it"
 stage s.md this user-story new 'a login flow'
 expect_refuse $J staging resolve s.md
-printf '# Login\n\nSource: chat s.md (staged as s.md)\n' > jig/specs/login.md
+printf '# Login\n\nSource: chat s.md (staged as s.md)\n' > .jig/specs/login.md
 msg="staging: with that spec, the story resolves"
 expect_pass $J staging resolve s.md
 
@@ -703,19 +780,19 @@ stage r.md this decisions new docs/decisions.md '| D-001 | one | accepted | 2026
 expect_pass sh -c "$J staging resolve r.md && grep -q 'D-001 | one | accepted' docs/decisions.md"
 msg="staging: a decision id already in the register is refused as new"
 stage r.md this decisions new docs/decisions.md '| D-001 | again | accepted | 2026-10-29 |\n'
-expect_refuse $J staging resolve r.md; rm jig/staging/r.md
+expect_refuse $J staging resolve r.md; rm .jig/staging/r.md
 
 msg="staging: --drop needs a reason, and logs it"
 stage q.md this doc new docs/q.md
 expect_refuse $J staging resolve q.md --drop ""
-expect_pass sh -c "$J staging resolve q.md --drop 'said elsewhere' && grep -q 'said elsewhere' jig/lanes.json && test ! -e jig/staging/q.md"
+expect_pass sh -c "$J staging resolve q.md --drop 'said elsewhere' && grep -q 'said elsewhere' .jig/lanes.json && test ! -e .jig/staging/q.md"
 git add -A && git commit -qm landed
 
 stage w.md this doc new docs/w.md
 msg="staging: the gate refuses while anything is staged; --force proceeds"
 out=$($J gate 2>&1); out2=$($J gate --force 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'merge waits while 1 file' && ! echo \"\$1\" | grep -q 'waits while'" "$out" "$out2"
-git checkout -q -- jig/lanes.json
+git checkout -q -- .jig/lanes.json
 msg="staging: pushing trunk is refused while anything is staged"
 git init -q --bare "$T/st-remote.git" && git remote add origin "$T/st-remote.git"
 expect_refuse git push -q origin main
@@ -727,20 +804,39 @@ stage f.md other doc new docs/f.md
 expect_refuse $J staging resolve f.md
 msg="staging: a repos.json path that isn't a jig repo is refused, and nothing is written there"
 mkdir -p "$T/plain" && python3 "$P/jig/jig.py" repos add other "$T/plain" >/dev/null
-expect_pass sh -c "! $J staging resolve f.md 2>/dev/null && test ! -e '$T/plain/jig'"
-O="$T/other"; mkdir -p "$O/jig" && git -C "$O" init -q -b main && python3 "$P/jig/jig.py" repos add other "$O" >/dev/null
-msg="staging: listed in repos.json, it is forwarded into that repo's jig/staging/"
-expect_pass sh -c "$J staging resolve f.md && test -f '$O/jig/staging/f.md' && test ! -e jig/staging/f.md"
-rm jig/staging/w.md
+expect_pass sh -c "! $J staging resolve f.md 2>/dev/null && test ! -e '$T/plain/.jig'"
+O="$T/other"; mkdir -p "$O/.jig" && git -C "$O" init -q -b main && python3 "$P/jig/jig.py" repos add other "$O" >/dev/null
+msg="staging: listed in repos.json, it is forwarded into that repo's .jig/staging/"
+expect_pass sh -c "$J staging resolve f.md && test -f '$O/.jig/staging/f.md' && test ! -e .jig/staging/f.md"
+rm .jig/staging/w.md
 
 msg="staging: meta-release refuses while anything is staged; --force gets past it"
 cd "$M" && stage m.md this doc new GUIDE.md
 out=$($J meta-release 2>&1); out2=$($J meta-release --force 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'release waits while' && ! echo \"\$1\" | grep -q 'waits while'" "$out" "$out2"
-rm jig/staging/m.md
+rm .jig/staging/m.md
 
 msg="plugin: no skill description holds angle brackets (the desktop app reads them as XML tags)"
 expect_refuse grep -lE '^description:.*[<>]' $P/../skills/*/SKILL.md $P/skills/*/SKILL.md
+
+# ---------------------------------------------------------------- repos
+export JIG_CONFIG="$T/repos-cmd.json"
+RP="$T/rp"; mkdir -p "$RP" && cd "$RP" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && git add -A && git commit -qm init && $J init >/dev/null
+msg="repos add repo: this folder, under its own name and path"
+$J repos add repo >/dev/null
+expect_pass python3 -c "import json; e = json.load(open('$JIG_CONFIG'))['rp']; assert e['kind'] == 'repo' and e['path'].endswith('/rp'), e"
+msg="repos add meta: the kind is recorded, and it says meta-init hasn't run"
+expect_pass sh -c "$J repos add meta | grep -q 'not a metarepo yet' && python3 -c \"import json; assert json.load(open('$JIG_CONFIG'))['rp']['kind'] == 'meta'\""
+msg="repos rename: this folder's entry gets the new name; the old one is gone"
+$J repos rename tools >/dev/null
+expect_pass python3 -c "import json; r = json.load(open('$JIG_CONFIG')); assert 'tools' in r and 'rp' not in r, r"
+msg="repos rename: the repo's own name still finds it"
+expect_pass python3 -c "
+import importlib.util, sys; s = importlib.util.spec_from_file_location('j', '.jig/jig.py'); j = importlib.util.module_from_spec(s); s.loader.exec_module(j)
+assert j.repo_path('rp') is not None and j.repo_path('tools') is not None"
+msg="repos: the list marks this folder"
+expect_pass sh -c "$J repos | grep -q 'tools .*← here'"
 
 rm -rf "$T"
 exit $fail

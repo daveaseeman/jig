@@ -3,7 +3,7 @@ name: subnode
 description: Work one lane in a repo with parallel lanes. Use at the start of a feature session, on a kickoff message, or on "work on lane X", "hand off", "sync my lane".
 ---
 
-Read `jig/RULES.md` first. `jig` below is `python3 jig/jig.py`.
+Read `.jig/RULES.md` first. `jig` below is `python3 .jig/jig.py`.
 
 One lane, one branch, one worktree. You never commit on trunk, never push trunk, never merge.
 
@@ -30,9 +30,9 @@ One lane, one branch, one worktree. You never commit on trunk, never push trunk,
 A handoff is a mergeable chunk, not the whole lane — hand off as often as a coherent piece
 is done.
 
-1. Run the project's checks (`jig/scripts/check.sh`, plus whatever `/jig:verify` calls for).
+1. Run the project's checks (`.jig/scripts/check.sh`, plus whatever `/jig:verify` calls for).
 2. Have the diff adversarially reviewed: `/jig:review`. Fix anything blocking.
-3. `jig reviewed` to record it, then `jig handoff --spec jig/specs/<task>.md`.
+3. `jig reviewed` to record it, then `jig handoff --spec .jig/specs/<task>.md`.
 4. Fill every heading in the note. Commit it with the work.
 5. Message the hubnode: the lane, the commit, the note's path. Then keep building, or wait.
 
