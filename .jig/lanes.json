@@ -22,7 +22,7 @@
       "brief": ".jig/specs/names.md",
       "branch": "names",
       "worktree": ".git/jig/worktrees/names",
-      "state": "gated",
+      "state": "merged",
       "after": [],
       "owns": [
         "plugin/**",
@@ -38,7 +38,7 @@
       "brief": "spec: fold para-sync/para-propose into standard commands, plus open meta/para topics",
       "branch": "para-spec",
       "worktree": ".git/jig/worktrees/para-spec",
-      "state": "gated",
+      "state": "merged",
       "after": [],
       "owns": [
         ".jig/specs/para-commands.md"
@@ -68,6 +68,8 @@
     "2026-10-30: opened para-spec (branch para-spec)",
     "2026-10-30: opened update-spec (branch update-spec)",
     "2026-10-30: names -> gated",
-    "2026-10-30: para-spec -> gated"
+    "2026-10-30: para-spec -> gated",
+    "2026-10-30: names -> merged",
+    "2026-10-30: para-spec -> merged"
   ]
 }
