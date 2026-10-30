@@ -8,14 +8,14 @@ ships — and never runs as the repo's checker. The installed copy moves forward
 `/jig:update` after a release, like any other repo's.
 
 ## Done when
-- [ ] `.jig/` holds `jig.py`, `RULES.md`, `lanes.json`, `scripts/` and `staging/.gitignore`,
+- [x] `.jig/` holds `jig.py`, `RULES.md`, `lanes.json`, `scripts/` and `staging/.gitignore`,
       copied from the installed plugin. The hooks are installed, and `python3 .jig/jig.py check`
       prints `ok`.
-- [ ] Every spec in `jig/specs/` is at `.jig/specs/`, renamed (`R100`), and `jig/` is gone.
-- [ ] `python3 .jig/jig.py survey` lists no homeless files: `plugin/**` is payload.
-- [ ] `AGENTS.md` matches the "after" below and is under 40 lines.
-- [ ] `/jig:stage` can find this repo: `jig repos` lists `jig` here, and `.jig/staging/` exists.
-- [ ] `bash tests/smoke.sh` and `claude plugin validate ./plugin` still pass.
+- [x] Every spec in `jig/specs/` is at `.jig/specs/`, renamed (`R100`), and `jig/` is gone.
+- [x] `python3 .jig/jig.py survey` lists no homeless files: `plugin/**` is payload.
+- [x] `AGENTS.md` matches the "after" below and is under 40 lines.
+- [x] `/jig:stage` can find this repo: `jig repos` lists `jig` here, and `.jig/staging/` exists.
+- [x] `bash tests/smoke.sh` and `claude plugin validate ./plugin` still pass.
 
 ## Inventory
 Tracked Markdown: 34 files. 25 are under `plugin/` and ship as code. 9 are specs, all in
@@ -91,3 +91,13 @@ the migration stages (6.1–6.5) apply.
   is checked by the old copy in `.jig/` until it's released and `/jig:update` runs. That is the
   intended split, but it is easy to forget mid-change.
 - **Smoke builds its fixtures from this repo's git history.** Nothing here changes that history.
+
+## Done, Oct 29
+- Stage 0 is 59f574f, which also carries the R7 fix (`bug-r7-literal.md`). That replaces the
+  split-literal risk above: R7 now matches the marker only right after a comment opener.
+- `.jig/` was copied from this repo's `plugin/templates/jig/` at 59f574f, not the installed
+  plugin, whose only difference was the R7 fix.
+- `AGENTS.md` also drops the stale `jig/jig.py` and names `plugin/templates/jig/` where it said
+  `jig/`. 31 lines.
+- Survey lists no homeless files; `jig check` prints `ok`; `jig repos` marks this checkout.
+  Smoke 189 PASS and the validator passed at 59f574f; nothing in `plugin/` or `tests/` changed after.
