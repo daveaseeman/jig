@@ -1106,5 +1106,63 @@ assert j.repo_path('rp') is not None and j.repo_path('tools') is not None"
 msg="repos: the list marks this folder"
 expect_pass sh -c "$J repos | grep -q 'tools .*← here'"
 
+
+# ---------------------------------------------------------------- init beside an old board
+# init must refuse in a repo whose board is at an older path: a second board blocks update,
+# and its hooks would run a trunk .jig/jig.py that isn't there yet.
+export JIG_CONFIG="$T/repos.json"     # the pararepo section's list, which names metarepo docs
+IJ="python3 $P/jig/jig.py"            # the plugin's copy: an old repo has no .jig/jig.py
+hooksnap() { find .git/hooks -type f | sort | xargs shasum 2>/dev/null; }
+for gen in ai-dev jig-0.2; do
+  d="$T/ib-$gen"; mkdir -p "$d" && cp -R "$FX/$gen/repo/." "$d/" && cd "$d"
+  git init -q -b main && git config user.email t@t && git config user.name t
+  git add -A && git commit -qm init && cp -R "$FX/$gen/git/." .git/
+  for form in "--para docs" "--meta" ""; do
+    msg="init ${form:-(plain)} beside $gen's board refuses, names jig update, and changes nothing"
+    had_jig=$(test -e .jig && echo y); before=$(hooksnap)
+    out=$($IJ init $form 2>&1); rc=$?
+    expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig update' && test -z \"\$(git status --porcelain)\" && test \"\$1\" = \"\$(find .git/hooks -type f | sort | xargs shasum 2>/dev/null)\" && test -z '$had_jig' -a ! -e .jig" "$out" "$before"
+  done
+  msg="init --para beside $gen's board gives the order: update, commit, then init --para"
+  out=$($IJ init --para docs 2>&1)
+  expect_pass sh -c "echo \"\$0\" | grep -q 'jig update.*commit, then .jig init --para docs.'" "$out"
+  msg="repos add para beside $gen's board says to run jig update, then jig init --para"
+  out=$($IJ repos add para --name ib-$gen 2>&1)
+  expect_pass sh -c "echo \"\$0\" | grep -q 'run .jig update. there, commit, then .jig init --para' && ! echo \"\$0\" | grep -q 'not a pararepo yet'" "$out"
+done
+msg="init --para after update and a commit succeeds, and the next update is up to date"
+$UP --apply >/dev/null 2>&1; git add -A && git commit -qm update >/dev/null 2>&1
+out=$($J init --para docs --contract 'src/**' 2>&1); rc=$?     # docs: the pararepo section's clone
+expect_pass sh -c "test $rc = 0 && test -f .jig/para.json && test \"\$($UP 2>&1)\" = 'up to date'" "$out"
+
+# ---------------------------------------------------------------- ledger rows of the wrong shape
+# A ledger row is cut on the pipes GitHub cuts on: \| is a literal pipe, a pipe in backticks
+# is not. A row whose cell count isn't its header's is kept and named, never guessed at.
+d="$T/lg"; mkdir -p "$d" && cp -R "$FX/ai-dev/repo/." "$d/" && cd "$d"
+git init -q -b main && git config user.email t@t && git config user.name t
+cat > docs/REVIEW_LEDGER.md <<'EOF'
+# Review ledger
+
+| id | review | finding | rank | what happened | reason |
+| --- | --- | --- | --- | --- | --- |
+| L-1 | a · own | name the loop | optional | taken | — |
+| L-2 | a · own | split on `a|b` | optional | taken | — |
+| L-3 | a · own | read a\|b as one | optional | taken | — |
+| L-4 | a · own | cache it | optional | deferred | later |
+EOF
+git add -A && git commit -qm init && cp -R "$FX/ai-dev/git/." .git/
+out=$($UP 2>&1)
+msg="ledger: the dry run names the 7-cell row in Warnings, kept"
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Warnings:/,/^\$/p' | grep -qF 'row \`L-2\` has 7 cells, its header 6: kept, check it'" "$out"
+msg="ledger: the step line counts what carries over, what is dropped, and the malformed row kept"
+expect_pass sh -c "echo \"\$0\" | grep -q 'its 1 untaken row .* carry over, its 2 taken rows are dropped, 1 malformed kept'" "$out"
+msg="ledger: the fold drops L-1 and L-3 (escaped pipe), and keeps L-2 and L-4"
+$UP --apply >/dev/null 2>&1
+expect_pass sh -c "f=.jig/ledgers/DEFERRED.md; grep -q '| L-2 ' \$f && grep -q '| L-4 ' \$f && ! grep -q '| L-1 ' \$f && ! grep -q '| L-3 ' \$f"
+msg="table_cells: \\| is one cell's literal pipe; a backtick pipe splits; outer pipes go"
+expect_pass python3 -c "
+import importlib.util; s = importlib.util.spec_from_file_location('j', '$P/jig/jig.py'); j = importlib.util.module_from_spec(s); s.loader.exec_module(j)
+assert j.table_cells(r'| a | b \| c | \`x|y\` |') == ['a', 'b | c', '\`x', 'y\`'], j.table_cells(r'| a | b \| c | \`x|y\` |')"
+
 rm -rf "$T"
 exit $fail
