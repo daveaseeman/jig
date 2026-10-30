@@ -648,6 +648,18 @@ printf 'x=2\n' > src/a.py && git commit -qam "after the note"
 msg="merge: a job whose branch moved past the commit its note names is refused"
 expect_refuse sh -c "cd '$B' && $J merge A"
 git reset -q --hard HEAD~1
+first=$(git rev-parse HEAD)   # past the first note's commit: a merge checked against that note refuses
+printf 'x=3\n' > src/a.py && git commit -qam three
+$J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && git add -A && git commit -qm note2
+printf 'x=4\n' > src/a.py && git commit -qam four
+$J reviewed >/dev/null && $J handoff >/dev/null 2>&1
+sed -i.bak 's/^- \[ \] \(.*\)___/- [x] \1smoke/' ".jig/handoffs/A-$(date +%F)-3.md" && rm .jig/handoffs/*.bak
+printf '# Handoff: A-x\n\nCommit: %s\n' "$first" > ".jig/handoffs/A-x-$(date +%F).md"   # job A-x's note, on A's branch
+git add -A && git commit -qm note3
+msg="gate: of three notes filed on one day, the gate takes the -3 note"
+expect_pass sh -c "cd '$B' && $J gate A | grep -q \"from .jig/handoffs/A-$(date +%F)-3.md \""
+msg="status: job A counts its own three notes, not job A-x's"
+expect_pass sh -c "cd '$B' && $J status | grep -q '^  A .*handoffs:3 '"
 cd "$B"
 msg="open: --after naming no open job is refused, since a missing name reads as merged"
 expect_refuse $J open X --after B3
@@ -659,7 +671,7 @@ $J open E --after B2 >/dev/null && git add -A && git commit -qm "open E"
 expect_refuse $J merge E
 msg="mark: merged is not a state; jig merge is how a job merges"
 expect_refuse $J mark B2 merged
-msg="merge: the job's entry is deleted in the merge commit itself, and trunk takes the number it held"
+msg="merge: the job's entry is deleted in the merge commit itself, and trunk takes the number it held (checked against the -3 note; the first names an older commit)"
 $J merge A -m "shared: none" >/dev/null 2>&1
 expect_pass sh -c "test \"\$(git rev-list --parents -n1 HEAD | wc -w | tr -d ' ')\" = 3 && git show --format= --name-only HEAD | grep -qx .jig/jobs.json && ! git show HEAD:.jig/jobs.json | grep -q '\"A\"' && git log -1 --format=%B | grep -q 'shared: none' && test -z \"\$(git status --porcelain --untracked-files=no)\""
 msg="open: after A merged, the next section is above trunk's 2 and B2's 3"
