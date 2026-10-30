@@ -96,7 +96,9 @@ The plugin, Claude-specific and outside `templates/jig/`:
 - [ ] Subnode and review skills: the first line of a session's first reply is
       `running <model> at <effort>`. The review skill passes `--tier`, `--effort` and `--ran` to
       `jig reviewed`.
-- [ ] `grep -rniE 'opus|sonnet|haiku|fable|claude-' plugin/templates/jig/` finds nothing.
+- [ ] `grep -rniE 'claude-(fable|opus|sonnet|haiku)|\b(fable|opus|sonnet|haiku)\b' plugin/templates/jig/`
+      finds nothing. (`claude-` alone matches jig's predecessor, `claude-lane`, in the old-layout
+      migration.)
 - [ ] Smoke passes, and the validator passes.
 
 ## Out of scope
@@ -119,8 +121,10 @@ The plugin, Claude-specific and outside `templates/jig/`:
   names change with every model release. `[seen]`: the story.
 - The spec chooses its own tiers. Rejected by the owner: a model would pick its own budget.
   `[seen]`: the story.
-- Review as a spawned session, like execute. Rejected: a session's effort can't exceed the
-  hubnode's, and review must run higher. `[seen]`: the session tool's "at or below yours".
+- Review as a spawned session, like execute. Rejected: review needs a fresh context, and it
+  ends in a report the hubnode reads, not a branch; a subagent is both. `[seen]`: the review
+  skill already dispatches a fresh-context subagent, and the Givens show a raised session
+  works, so effort isn't the reason.
 - The gate refuses a weak review. Deferred by the owner: a warning first. `[seen]`: the story.
 
 ## Decisions

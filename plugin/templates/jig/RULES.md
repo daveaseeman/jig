@@ -202,9 +202,11 @@ is refused by `jig workflow` and by the commit hook. There is no per-task overri
 that needs other settings means the owner changes the config.
 
 A spec's `## Workflow` section is `jig workflow`'s output when it was written. The review
-records what it ran at (`jig reviewed --tier N --effort N --ran "..."`), the handoff note
-carries it, and `jig gate` warns when it ran at a worse tier or a lower effort than the spec
-asks. A fix goes back to the session that executed. A third round that doesn't converge is a
+records the review step's configured settings (`jig reviewed --tier N --effort N --ran
+"..."`), the handoff note carries them, and `jig gate` warns when they are a worse tier or a
+lower effort than the spec asks. So the warning catches a review recorded without them, or a
+config changed after the spec was written; it can't see a review that actually ran weaker
+than it was set to. A fix goes back to the session that executed. A third round that doesn't converge is a
 bug in the spec or the approach: investigate it, don't start a fourth.
 
 ## Staging

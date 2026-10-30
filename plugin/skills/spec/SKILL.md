@@ -9,7 +9,8 @@ Before writing code:
 2. Copy the spec template to `.jig/specs/<kebab-task-name>.md` (create `.jig/specs/` if it isn't there yet) and fill it: the repo's `.jig/specs/_template.md` if it has one, else `${CLAUDE_PLUGIN_ROOT}/templates/specs/_template.md`. "Done when" must be checkable by running something.
 3. List the files you expect to touch. If the list is long or you're unsure, inspect first and revise. In a pararepo, say whether any is a contract path (`.jig/para.json`): then the spec needs a metarepo proposal (`jig para-propose`) or `meta: none — <reason>`.
 4. Fill `## Workflow` with `python3 .jig/jig.py workflow`'s output, as printed (add the
-   heading if the template has none). It's the repo's settings at writing time: never change a
+   heading if the template has none). If it exits non-zero, the config breaks a rule: stop
+   and give the owner its refusal; write no Workflow lines. It's the repo's settings at writing time: never change a
    step for one task. A task that needs others is the owner's change to `.jig/config.json`.
 5. Show the spec. Proceed unless told otherwise.
 

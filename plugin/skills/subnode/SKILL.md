@@ -38,7 +38,9 @@ is done.
 2. Have the diff adversarially reviewed. If a hubnode started you, report the commit and
    wait: it runs the review at the review step's settings and sends blocking findings back
    here as fixes. Working alone, `/jig:review`. Fix anything blocking.
-3. `jig reviewed` to record it, then `jig handoff --spec .jig/specs/<task>.md`.
+3. `jig handoff --spec .jig/specs/<task>.md`. The review is already recorded: by the hubnode
+   when it ran it, by `/jig:review` when you did. Never run a bare `jig reviewed` after the
+   hubnode's review — it overwrites the tier and effort the hubnode recorded.
 4. Fill every heading in the note. Commit it with the work.
 5. Message the hubnode: the job, the commit, the note's path. Then keep building, or wait.
 

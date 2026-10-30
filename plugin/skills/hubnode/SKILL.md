@@ -49,6 +49,10 @@ its own settings. A mismatch stops it: tell the owner, don't brief it.
   conversation. Where there is no subagent, start a raised session with no history instead.
   Then record it in the job's worktree:
   `jig reviewed --tier N --effort N --ran "<model> at <effort>"`.
+- **Release and survey** are `check` steps too. When you release (`/jig:release`'s run:
+  check, `release.sh`, smoke) or survey, start a session at the `check` step's settings to
+  run it and report the output; you read the report. The push and publish stay yours, on the
+  owner's word.
 - **Decide.** Read the review. Blocking findings go back to the session that executed, as
   a fix, at execute's settings — a new one only when that session is gone. Count the
   rounds. After a third fix that leaves a blocking finding, don't start a fourth: run

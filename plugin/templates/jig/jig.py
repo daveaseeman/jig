@@ -219,11 +219,14 @@ def cmd_workflow(root: Path, args) -> int:
     """Print the steps in effect; refuse an override that breaks a rule."""
     # The working tree's config, so the hubnode sees a refusal before committing the edit.
     steps, bad = workflow_steps(Board.load(root, working_tree=True).data)
-    for step, v in steps.items():
-        print(f"{step}: tier {v['tier']}, effort {v['effort']}")
+    # Refused, nothing goes to stdout: a skill copying the steps into a spec must get none.
     for b in bad:
         print(b, file=sys.stderr)
-    return 1 if bad else 0
+    if bad:
+        return 1
+    for step, v in steps.items():
+        print(f"{step}: tier {v['tier']}, effort {v['effort']}")
+    return 0
 
 
 # ---------------------------------------------------------------------- rules
@@ -994,11 +997,20 @@ def cmd_reading_list(root: Path, args) -> int:
     return 0
 
 
-def review_shortfall(branch: str, note: str) -> str:
+def review_shortfall(root: Path, branch: str, name: str, note: str) -> str:
     """What the note's review fell short of in the spec's Workflow section, or "". A warning
     for now: it becomes a refusal only if weak reviews keep reaching the gate."""
-    spec = re.search(r"^Spec: (\S+)", note, re.M)
-    text = git("show", f"{branch}:{spec.group(1)}") if spec else ""
+    # The board's spec before the note's, and trunk's copy before the branch's, so a branch
+    # can't edit what it is judged by. Only a spec trunk lacks (solo work) is read from the
+    # branch.
+    trunk_board = Board.load(root)
+    m = re.search(r"^Spec: (\S+)", note, re.M)
+    paths = [(trunk_board.jobs.get(name) or {}).get("spec") or "", m.group(1) if m else ""]
+    text = ""
+    for path in filter(None, paths):
+        text = git("show", f"{trunk_board.trunk}:{path}") or git("show", f"{branch}:{path}")
+        if text:
+            break
     sec = re.search(r"^## Workflow\n(.*?)(?=^## |\Z)", text, re.S | re.M)
     asked = re.search(r"\breview: tier (\d+), effort (\d+)", sec.group(1)) if sec else None
     if not asked:
@@ -1049,7 +1061,7 @@ def cmd_gate(root: Path, args) -> int:
     commit = m.group(1) if m else branch
     label = f"job {name}" if job is not None else name
     print(f"{label}: gate {commit[:12]} from {note} on {branch}")
-    weak = review_shortfall(branch, body)
+    weak = review_shortfall(root, branch, name, body)
     if weak:
         print(f"warning: {weak}", file=sys.stderr)
     print("Run the project checks against that exact commit, in a scratch checkout —")
