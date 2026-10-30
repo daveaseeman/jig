@@ -52,7 +52,7 @@
       "brief": "spec: what jig update should do about a root specs/ holding non-Markdown, scripts moved a level down, stranded worktrees",
       "branch": "update-spec",
       "worktree": ".git/jig/worktrees/update-spec",
-      "state": "claimed",
+      "state": "gated",
       "after": [],
       "owns": [
         ".jig/specs/update-root-specs.md"
@@ -66,7 +66,7 @@
       "brief": ".jig/specs/gate-order.md",
       "branch": "claude/jolly-archimedes-6394e8",
       "worktree": ".claude/worktrees/jolly-archimedes-6394e8",
-      "state": "building",
+      "state": "gated",
       "after": [],
       "owns": [
         "plugin/**",
@@ -86,6 +86,8 @@
     "2026-10-30: para-spec -> gated",
     "2026-10-30: names -> merged",
     "2026-10-30: para-spec -> merged",
-    "2026-10-30: adopted gate-order (branch claude/jolly-archimedes-6394e8)"
+    "2026-10-30: adopted gate-order (branch claude/jolly-archimedes-6394e8)",
+    "2026-10-30: gate-order -> gated",
+    "2026-10-30: update-spec -> gated"
   ]
 }
