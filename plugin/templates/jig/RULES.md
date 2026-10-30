@@ -195,12 +195,16 @@ nothing copies it. Three rules do the work:
 2. The metarepo holds no code and no copied pararepo content.
 3. Only `jig meta-release` tags, so a pin never names something that failed validation.
 
+A question that binds the pararepos gets its decision row when it is asked, with status
+`open`, so it can be cited before it is answered. The same row then moves to `proposed`, then
+`accepted` or `rejected`; a reversed decision is marked `superseded` and released as a major.
+
 Each side's gates are on only when its file is on trunk: `.jig/meta.json` or `.jig/para.json`.
 
 | Gate | Refuses |
 |---|---|
 | M1 | a source file outside `.jig/` in the metarepo |
-| M2 | a decision row (`| D-001 | … |`) without a status and a `YYYY-MM-DD` date |
+| M2 | a decision row (`| D-001 | … |`) without a status cell (open, proposed, accepted, superseded or rejected, optionally with a note in parentheses or `by D-…`) and a `YYYY-MM-DD` date |
 | M3 | an entry file changed without a line in `CHANGELOG.md` |
 | M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted) |
 | M5 | a merge of a commit `jig reviewed` never recorded |

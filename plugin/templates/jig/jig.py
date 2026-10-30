@@ -1102,7 +1102,10 @@ META_DEFAULTS = {
     "decision_prefix": "D-",
     "pararepos": [],
 }
-DECISION_STATUSES = ("proposed", "accepted", "superseded", "rejected")
+DECISION_STATUSES = ("open", "proposed", "accepted", "superseded", "rejected")
+# The Status cell, whole: a word alone, with a note in parentheses, or "superseded by D-12".
+# Whole-cell, because a Decision cell often starts with a status word ("Open question: …").
+STATUS_CELL = re.compile(rf"(?:{'|'.join(DECISION_STATUSES)})(?:\s*\(.*\)|\s+by\s+\S+)?")
 # A commit's subject starts with the ids it touches (D-022: …, GLOSSARY: …), so git log is
 # the decision index.
 SUBJECT_IDS = re.compile(r"^[A-Z][A-Z0-9_-]*(?:, ?[A-Z][A-Z0-9_-]*)*: \S")
@@ -1170,7 +1173,7 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
     diff = git("diff", "-U0", base(trunk), *(["--cached"] if staged else []), "--", *md) if md else ""
     for m in rx.finditer(diff):
         cells = [c.strip().lower() for c in m.group(1).split("|")]
-        if not (any(c.startswith(DECISION_STATUSES) for c in cells)
+        if not (any(STATUS_CELL.fullmatch(c) for c in cells)
                 and any(re.fullmatch(r"\d{4}-\d{2}-\d{2}", c) for c in cells)):
             out.append(f"M2 a decision row needs a status ({'/'.join(DECISION_STATUSES)}) and a "
                        f"date (YYYY-MM-DD): {m.group(0)[1:].strip()}")

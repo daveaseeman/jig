@@ -592,6 +592,22 @@ printf '\n' >> .jig/jig.py && git add .jig/jig.py; expect_pass git commit -qm "T
 msg="meta M2: a decision row without status and date is refused"
 printf '| D-001 | use JSON |\n' >> DECISIONS.md && printf -- '- D-001\n' >> CHANGELOG.md && git add -A
 expect_refuse git commit -qm "D-001: JSON"; git reset -q; git checkout -q -- DECISIONS.md CHANGELOG.md
+m2() { printf '%s\n' "$1" >> DECISIONS.md && printf -- '- D-001\n' >> CHANGELOG.md && git add -A
+  $J check --staged; local rc=$?; git reset -q; git checkout -q -- DECISIONS.md CHANGELOG.md; return $rc; }
+msg="meta M2: an open question is a decision row"
+expect_pass m2 '| D-001 | which wire format? | open | 2026-10-29 |'
+msg="meta M2: a status with a note, and superseded by an id, are accepted"
+expect_pass m2 '| D-001 | x | accepted (owner) | 2026-10-29 |'
+expect_pass m2 '| D-001 | x | superseded by D-002 | 2026-10-29 |'
+msg="meta M2: a Decision cell starting with a status word is not the status"
+expect_refuse m2 '| D-001 | Accepted practice: radios off |  | 2026-10-29 |'
+expect_refuse m2 '| D-001 | Open question: which copy? |  | 2026-10-29 |'
+msg="meta M2: a status word with more letters is refused"
+expect_refuse m2 '| D-001 | x | acceptedly | 2026-10-29 |'
+msg="meta M2: the refusal lists all five statuses"
+out=$(m2 '| D-001 | x |  | 2026-10-29 |' 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'open/proposed/accepted/superseded/rejected'" "$out"
+msg="meta: meta-init's DECISIONS.md lists all five statuses"
+expect_pass grep -q 'open, proposed, accepted, superseded, rejected' DECISIONS.md
 msg="meta M3: an entry file changed without CHANGELOG.md is refused"
 printf '| D-001 | use JSON | accepted | 2026-10-29 |\n' >> DECISIONS.md && git add -A
 expect_refuse git commit -qm "D-001: JSON"
