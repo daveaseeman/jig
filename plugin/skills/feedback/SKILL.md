@@ -1,7 +1,6 @@
 ---
 name: feedback
 description: Report a bug in the jig tool itself (.jig/jig.py, .jig/RULES.md, its hooks, or a skill) for the plugin owner. Use when the tool, not the repo's code, misbehaved. Changes nothing in the repo.
-disable-model-invocation: true
 ---
 
 This is `/jig:bug` pointed at the tool. The user decides which one applies; don't guess.

@@ -10,7 +10,10 @@ repo="${CLAUDE_PROJECT_DIR:-$PWD}"
 cd "$repo" 2>/dev/null || exit 0
 gitdir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0
 [ -f "$gitdir/jig/enabled" ] || exit 0
-for s in "$repo/.jig/scripts/format.sh" "$repo/jig/scripts/format.sh" "$repo/scripts/format.sh"; do
+# jig's own copy runs through bash, so a lost executable bit can't switch it off. The older
+# paths must still be executable: a root scripts/format.sh may be the repo's own, not jig's.
+[ -f "$repo/.jig/scripts/format.sh" ] && exec bash "$repo/.jig/scripts/format.sh"
+for s in "$repo/jig/scripts/format.sh" "$repo/scripts/format.sh"; do
   [ -x "$s" ] && exec "$s"
 done
 exit 0

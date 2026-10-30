@@ -129,6 +129,13 @@ mkdir -p jig/scripts scripts && printf '#!/bin/sh\necho old\n' > jig/scripts/che
 cp .jig/scripts/check.sh "$T/check.keep" && printf '#!/bin/sh\necho dot\n' > .jig/scripts/check.sh && chmod +x jig/scripts/check.sh scripts/check.sh .jig/scripts/check.sh
 expect_pass test "$(CLAUDE_PROJECT_DIR="$I" bash "$P/../scripts/check.sh")" = dot
 cp "$T/check.keep" .jig/scripts/check.sh && rm -r jig scripts
+msg="plugin hook: every .sh in the plugin is tracked executable, and every hook command runs through bash"
+expect_pass sh -c "test -z \"\$(git -C '$P/..' ls-files -s -- '*.sh' | grep '^100644')\" && ! grep '\"command\"' '$P/../hooks/hooks.json' | grep -vq '\"command\": \"bash '"
+msg="plugin hook: a failing .jig/scripts/check.sh blocks the stop (exit 2), even with its executable bit lost"
+cp .jig/scripts/check.sh "$T/check.keep" && printf '#!/bin/sh\necho failed >&2; exit 2\n' > .jig/scripts/check.sh && chmod -x .jig/scripts/check.sh
+CLAUDE_PROJECT_DIR="$I" bash "$P/../scripts/check.sh" 2>/dev/null; rc=$?
+expect_pass test "$rc" = 2
+cp "$T/check.keep" .jig/scripts/check.sh && chmod +x .jig/scripts/check.sh
 
 msg="survey: a fresh init is missing no piece, and doesn't ask for the lazy files"
 expect_pass python3 -c "
