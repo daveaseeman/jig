@@ -507,6 +507,67 @@ msg="update: after --apply, a kept warning still reads up to date, exit 0"
 out=$($UP 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | head -1 | grep -qx 'up to date'" "$out"
 
+# Every generation, from the made-up repos in tests/fixtures/: each ends with the same jig
+# paths and board keys, and every file it doesn't remove moves byte for byte.
+FX="$R/tests/fixtures"
+fixture() {  # fixture <generation>: a fresh repo from tests/fixtures/<generation>, committed
+  mkdir -p "$T/fx-$1" && cp -R "$FX/$1/repo/." "$T/fx-$1/" && cd "$T/fx-$1"
+  git init -q -b main && git config user.email t@t && git config user.name t
+  git add -A && git commit -qm init && cp -R "$FX/$1/git/." .git/
+}
+for gen in claude-lane ai-dev jig-0.2 dot-jig-v7; do
+  fixture $gen
+
+  msg="update $gen: the dry run changes nothing, and lists every removal before applying"
+  before=$(snap); out=$($UP 2>&1); after=$(snap)
+  removed=$(echo "$out" | sed -n '/^Removed:/,/^$/p' | sed -n 's/^  \([^ ]*\) .*/\1/p')
+  case $gen in
+    claude-lane) want=".claude/claude-lane/LANES.md .claude/claude-lane/claude-lane.py .claude/claude-lane/README.md .claude/claude-lane/install-hooks.sh board: board:";;
+    ai-dev) want=".aidev/aidev.py .aidev/RULES.md docs/REVIEW_LEDGER.md";;
+    *) want="";;
+  esac
+  expect_pass sh -c "test \"\$1\" = \"\$2\" && for w in \$3; do echo \"\$0\" | grep -qF \"  \$w\" || exit 1; done" "$out" "$before" "$after" "$want"
+  if [ $gen = claude-lane ]; then
+    msg="update $gen: the dry run names the merged board entry and claude-lane's own key it drops"
+    expect_pass sh -c "echo \"\$0\" | grep -q 'board: lanes.old (merged)' && echo \"\$0\" | grep -q 'board: .seen.'" "$out"
+  fi
+
+  msg="update $gen: --apply moves every file it keeps byte for byte, and removes only what the dry run listed"
+  board=$(git ls-files | grep -E '(lanes|board)\.json$'); $UP --apply >/dev/null 2>&1
+  expect_pass python3 -c "
+import subprocess, sys
+removed = set(sys.argv[1].split())
+jig = {'.jig/lanes.json', '.jig/jig.py', '.jig/RULES.md', '.jig/scripts/setup.sh', '.jig/scripts/release.sh',
+       '.jig/ledgers/DEFERRED.md', '.jig/staging/.gitignore', '.gitignore'}
+for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
+    status, *paths = line.split('\t')
+    assert status == 'R100' or (status == 'D' and paths[0] in removed) or paths[-1] in jig, line" "$removed $board"
+
+  case $gen in
+    ai-dev)
+      msg="update $gen: REVIEW_LEDGER.md's untaken rows are DEFERRED.md; its taken rows are gone"
+      expect_pass sh -c "grep -q L-001 .jig/ledgers/DEFERRED.md && grep -q L-003 .jig/ledgers/DEFERRED.md && grep -q L-005 .jig/ledgers/DEFERRED.md && ! grep -q 'L-00[24]' .jig/ledgers/DEFERRED.md && test ! -e docs/REVIEW_LEDGER.md"
+      msg="update $gen: a root HARDWARE.md naming a board moves to its board page, byte for byte"
+      expect_pass sh -c "git diff --cached -M --name-status | grep -q '^R100.HARDWARE.md.docs/hardware/devkit-s3.md'";;
+    claude-lane)
+      msg="update $gen: board.json is the board, merged entries and claude-lane's own keys gone; the folder is gone"
+      expect_pass sh -c "python3 -c \"import json; b = json.load(open('.jig/lanes.json')); assert b['trunk'] == 'main' and b['lanes'] == {} and 'seen' not in b and 'main' not in b, b\" && test ! -e .claude/claude-lane && git diff --cached -M --name-status | grep -q '^R100.*old-2026-01-01.md'";;
+  esac
+
+  msg="update $gen: a second update is up to date"
+  expect_pass test "$($UP 2>&1)" = "up to date"
+
+  msg="update $gen: the update commits with the hooks on, and survey then finds no homeless files"
+  expect_pass sh -c "git commit -qm update && python3 -c \"
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+assert r['homeless'] == [], r['homeless']\""
+  git ls-files .jig > "$T/fx-$gen.paths"
+  python3 -c "import json; print(sorted(json.load(open('.jig/lanes.json'))))" > "$T/fx-$gen.keys"
+done
+msg="update: every generation ends with the same jig paths and board keys"
+expect_pass sh -c "cd '$T' && for n in ai-dev jig-0.2 dot-jig-v7; do cmp -s fx-claude-lane.paths fx-\$n.paths && cmp -s fx-claude-lane.keys fx-\$n.keys || exit 1; done"
+
 msg="update: a root specs/ file that isn't Markdown stays, with a warning"
 old "$T/up-js" eaec973 dot
 printf 'it()\n' > specs/app.spec.js && git add -A && git commit -qm js

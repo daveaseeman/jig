@@ -13,8 +13,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" update
 That is a dry run. It changes nothing, and its exit code says what you have:
 
 - **0, "up to date".** Say so and stop.
-- **0, a plan.** Show the plan: moves, files written from jig, board edits, git state. Ask.
-  On a yes, run it again with `--apply`.
+- **0, a plan.** Show the plan: moves, files written from jig, removals, board edits, git
+  state. Say each removal out loud — an old tool's script or rendered board, a merged entry,
+  a review ledger's taken rows — since the diff is the only other place it shows. Ask. On a
+  yes, run it again with `--apply`.
 - **1, warnings.** Show each warning and what it means for the repo, and ask whether to go
   ahead. A warning is something `update` can leave as it is and still produce a working
   repo: a file at an old path, an unknown board key, a hook jig didn't write, code that names
@@ -42,8 +44,9 @@ one's proposed edit and ask about each; make it only on a yes. `--apply` never t
    `setup.sh` covers it.
    If it added `.jig/scripts/release.sh`, leave the TODO: `/jig:release` fills it on the first
    release.
-3. Commit on trunk. The hooks read trunk's `.jig/jig.py`. Coming from `jig/` or `.aidev/`,
-   it exists only once this commit lands, so this one commit goes unchecked. Coming from the
+3. Commit on trunk. The hooks read trunk's `.jig/jig.py`. Coming from `jig/`, `.aidev/` or
+   claude-lane's `.claude/claude-lane/`, it exists only once this commit lands, so this one
+   commit goes unchecked. Coming from the
    first `.jig/` layout (root `specs/` and `ledgers/`), trunk's old checker judges it and
    refuses the new `jig.py` under R7, because that copy checks jig's own file: if R7 on
    `.jig/jig.py` is its only refusal, commit this one with `--no-verify` and say why. The

@@ -1,0 +1,48 @@
+{
+  "version": 5,
+  "name": "fixture",
+  "trunk": "main",
+  "common": [
+    "AGENTS.md",
+    "docs/**",
+    "jig/**"
+  ],
+  "append_files": [
+    "AGENTS.md",
+    "jig/ledgers/**"
+  ],
+  "reserve": {
+    "section": {
+      "next": 1,
+      "pattern": "^## (\\d+) ",
+      "files": [
+        "docs/**"
+      ]
+    }
+  },
+  "docmap": {
+    "docs/alpha/alpha.md": [
+      "src/**"
+    ]
+  },
+  "payload": [],
+  "lanes": {
+    "old": {
+      "brief": "the first thing",
+      "branch": "old",
+      "worktree": ".git/jig/worktrees/old",
+      "state": "merged",
+      "after": [],
+      "owns": [
+        "src/**"
+      ],
+      "shares": [],
+      "reserved": {
+        "section": 1
+      },
+      "opened": "2026-01-01",
+      "handoffs": []
+    }
+  },
+  "log": []
+}

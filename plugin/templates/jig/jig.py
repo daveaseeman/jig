@@ -379,8 +379,9 @@ exit $status
 
 HOOKS = ("pre-commit", "pre-merge-commit", "pre-push", "post-checkout", "post-merge",
          "commit-msg")
-# ai-dev was jig under its old name; its hooks are ours to rewrite, not a predecessor's to keep.
-HOOK_MARKERS = ("# jig hook", "# aidev hook")
+# ai-dev was jig under its old name, and claude-lane the tool jig grew from: their hooks are
+# ours to rewrite, not a predecessor's to keep.
+HOOK_MARKERS = ("# jig hook", "# aidev hook", "claude-lane.py")
 
 
 def git_common() -> Path:
@@ -2014,13 +2015,15 @@ def forward(root: Path, path: Path, head: dict) -> int:
 # "/" is a folder: every tracked file under an old folder moves, and board globs under it
 # are rewritten. Any other row is one file, so after jig's two scripts leave `scripts/`,
 # `scripts/**` on the board still means the repo's own scripts.
-# Layouts, oldest first: eaec973's .jig/ with specs/, ledgers/ and scripts/ at root; ai-dev's
-# .aidev/, the same with root ledgers; 62c8d9f's visible jig/ (every 0.2.x repo); .jig/ now.
+# Layouts, oldest first: claude-lane's .claude/claude-lane/, the tool jig grew from; eaec973's
+# .jig/ with specs/, ledgers/ and scripts/ at root; ai-dev's .aidev/, the same with root
+# ledgers; 62c8d9f's visible jig/ (every 0.2.x repo); .jig/ now.
+CLAUDE_LANE = ".claude/claude-lane/"
 LAYOUT = [
-    (BOARD, ["jig/lanes.json", ".aidev/lanes.json"]),
-    (f"{DIR}/jig.py", ["jig/jig.py", ".aidev/aidev.py"]),
-    (f"{DIR}/RULES.md", ["jig/RULES.md", ".aidev/RULES.md"]),
-    (f"{DIR}/handoffs/", ["jig/handoffs/", ".aidev/handoffs/"]),
+    (BOARD, ["jig/lanes.json", ".aidev/lanes.json", f"{CLAUDE_LANE}manifests/board.json"]),
+    (f"{DIR}/jig.py", ["jig/jig.py", ".aidev/aidev.py", f"{CLAUDE_LANE}claude-lane.py"]),
+    (f"{DIR}/RULES.md", ["jig/RULES.md", ".aidev/RULES.md", f"{CLAUDE_LANE}README.md"]),
+    (f"{DIR}/handoffs/", ["jig/handoffs/", ".aidev/handoffs/", f"{CLAUDE_LANE}manifests/handoffs/"]),
     (f"{DIR}/specs/", ["jig/specs/", "specs/"]),
     (f"{DIR}/ledgers/", ["jig/ledgers/", "ledgers/"]),
     (WORKAROUNDS, ["WORKAROUNDS.md"]),
@@ -2037,7 +2040,10 @@ LAYOUT = [
 TOOL_FILES = (f"{DIR}/jig.py", f"{DIR}/RULES.md")
 # jig's folder under its old names. Nothing moves by this alone — a file there that no row
 # names stays and is flagged — but a board glob over the whole folder meant jig's folder.
-OLD_DIRS = ("jig/", ".aidev/")
+OLD_DIRS = ("jig/", ".aidev/", CLAUDE_LANE)
+# An old tool's files that nothing of jig's replaces: claude-lane's rendered board and log, and
+# its hook installer. They are removed, and the dry run says so first.
+GONE = (f"{CLAUDE_LANE}LANES.md", f"{CLAUDE_LANE}install-hooks.sh")
 OLD_IGNORES = (".jig/worktrees/", ".aidev/worktrees/")
 # Untracked folders a jig/ repo kept: files waiting in staging, a pararepo's cache. No git mv
 # moves them, and staged work left behind would be lost to every refusal that counts it.
@@ -2093,6 +2099,79 @@ def widen_meta_pattern(root: Path, here: Path) -> None:
     git("add", "--", META, check=True)
 
 
+REVIEW_LEDGER = "docs/REVIEW_LEDGER.md"
+# A review ledger's row is taken when its last word on the finding is "taken" ("taken by …",
+# "deferred then taken"); "not taken" is not. Only taken rows are in the code, so only they go.
+TAKEN = re.compile(r"(?:.*\bthen\s+)?taken\b")
+STATUS_COLUMNS = ("what happened", "status")
+
+
+def split_ledger(text: str) -> tuple[list[str], list[list[str]], int]:
+    """A review ledger without its taken rows: the whole text kept, the tables that have a
+    status column (header, separator, untaken rows), and how many rows were dropped."""
+    lines, out, tables, dropped = text.splitlines(), [], [], 0
+    col = None
+    for i, line in enumerate(lines):
+        cells = [c.strip().lower() for c in line.strip().strip("|").split("|")]
+        if line.startswith("|") and i + 1 < len(lines) and lines[i + 1].startswith("|-"):
+            # A findings table names the finding before what happened to it; a status in the
+            # first column is a tally of the statuses, not a finding.
+            col = next((n for n, c in enumerate(cells) if c in STATUS_COLUMNS and n > 0), None)
+            if col is not None:
+                tables.append([line, lines[i + 1]])
+        elif not line.startswith("|"):
+            col = None
+        elif col is not None and not line.startswith("|-"):
+            if col < len(cells) and TAKEN.match(cells[col]):
+                dropped += 1
+                continue
+            tables[-1].append(line)
+        out.append(line)
+    return out, tables, dropped
+
+
+def ledger_step(root: Path) -> str:
+    _, tables, dropped = split_ledger((root / REVIEW_LEDGER).read_text(errors="replace"))
+    kept = sum(len(t) - 2 for t in tables)
+    return (f"{REVIEW_LEDGER} → {DEFERRED}: its {kept} untaken row{'s' if kept != 1 else ''} "
+            f"(deferred, rejected, open) carry over, its {dropped} taken row"
+            f"{'s' if dropped != 1 else ''} are dropped, and the file is removed")
+
+
+def fold_ledger(root: Path, here: Path) -> None:
+    text, tables, _ = split_ledger((root / REVIEW_LEDGER).read_text(errors="replace"))
+    dest = root / DEFERRED
+    if dest.exists():
+        body = dest.read_text().rstrip("\n") + f"\n\n## From {REVIEW_LEDGER}\n"
+        for table in tables:
+            body += "\n" + "\n".join(table) + "\n"
+    else:
+        body = "\n".join(text) + "\n"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(body)
+    git("rm", "-q", "--", REVIEW_LEDGER, check=True)
+    git("add", "--", DEFERRED, check=True)
+
+
+def board_slug(text: str) -> str:
+    """The board a hardware page names on its `- MCU / board:` line, as a file name; empty
+    while that line is still the template's TODO."""
+    m = re.search(r"^- MCU / board:\s*(.+)$", text, re.M)
+    board = m.group(1).strip() if m else ""
+    if not board or board.startswith("TODO"):
+        return ""
+    return re.sub(r"[^a-z0-9]+", "-", board.split("(")[0].lower()).strip("-")
+
+
+def hardware_rows(root: Path, files: list[str]) -> list[tuple[str, list[str]]]:
+    """A root HARDWARE.md, an older init's single page, moves to its board's page. Only one
+    that names a board: a page of TODOs is listed for review instead."""
+    if "HARDWARE.md" not in files:
+        return []
+    slug = board_slug((root / "HARDWARE.md").read_text(errors="replace"))
+    return [(f"{BOARD_PAGES}{slug}.md", ["HARDWARE.md"])] if slug else []
+
+
 STEPS: list = [
     (f"add {STAGING}/ (its .gitignore), where chats drop files for this repo",
      lambda root, after: f"{STAGING}/.gitignore" not in after
@@ -2107,6 +2186,7 @@ STEPS: list = [
      and (Path(__file__).resolve().parent / "scripts" / "release.sh").exists(), add_release),
     (f"widen {META}'s tag_pattern to accept vX.Y.Z: every repo now releases with three parts",
      lambda root, after: meta_pattern_old(root), widen_meta_pattern),
+    (ledger_step, lambda root, after: REVIEW_LEDGER in after, fold_ledger),
 ]
 
 
@@ -2116,22 +2196,24 @@ def root_is_jigs(board_at: str, version: int) -> bool:
     and ai-dev's put them there, and once jig's files left root, those paths are the repo's.
     eaec973's board is at .jig/ like today's, and with the spec template made on first use a
     new repo has no .jig/specs/ either; only the board's version tells them apart. The one
-    place update reads it for anything but the ahead refusal."""
-    return board_at.startswith(".aidev/") or (board_at == BOARD and version < 3)
+    place update reads it for anything but the ahead refusal. eaec973 took its root folders
+    from claude-lane, so they are jig's beside its board too."""
+    return board_at.startswith((".aidev/", CLAUDE_LANE)) or (board_at == BOARD and version < 3)
 
 
-def plan_moves(files: list[str], board_at: str, version: int) -> dict:
+def plan_moves(files: list[str], board_at: str, version: int, extra: list | None = None) -> dict:
     """Which tracked files LAYOUT moves, which tool files it retires, and the (old, new)
     rows that apply. A row moves only when its new path is free: with both there, update
-    can't tell which is current, so it leaves both and says so."""
+    can't tell which is current, so it leaves both and says so. `extra` rows apply on any
+    layout: they come from what a file says, not where jig's folder is."""
     # A path under an old folder is jig's only while the board is in that folder: beside a
     # board at .jig/, a jig/ folder is the repo's own (a Python package, say).
     at_root = root_is_jigs(board_at, version)
     taken, moves, retire, rows, warn = set(files), {}, [], [], []
-    for new, olds in LAYOUT:
+    for new, olds, always in [(n, o, False) for n, o in LAYOUT] + [(n, o, True) for n, o in extra or []]:
         for old in olds:
             home = next((d for d in OLD_DIRS if old.startswith(d)), None)
-            if not (board_at.startswith(home) if home else at_root):
+            if not always and not (board_at.startswith(home) if home else at_root):
                 continue
             under = [f for f in files if f not in moves and f not in retire
                      and (f.startswith(old) if old.endswith("/") else f == old)]
@@ -2156,12 +2238,47 @@ def plan_moves(files: list[str], board_at: str, version: int) -> dict:
                 moves[f] = new + f[len(old):] if old.endswith("/") else new
             taken |= set(moves.values())
             rows.append((old, new))
-    after = sorted((set(files) - set(moves) - set(retire)) | set(moves.values()) | set(TOOL_FILES))
+    home = next((d for d in OLD_DIRS if board_at.startswith(d)), None)
+    gone = [f for f in files if home and f in GONE]
+    after = sorted((set(files) - set(moves) - set(retire) - set(gone)) | set(moves.values())
+                   | set(TOOL_FILES))
     for f in files:
-        if f.startswith(board_at.split("/")[0] + "/") and board_at != BOARD \
-                and f not in moves and f not in retire:
+        if home and f.startswith(home) and f not in moves and f not in retire and f not in gone:
             warn.append(f"{f} is at an old path no row names: left there, and its folder stays")
-    return {"moves": moves, "retire": retire, "rows": rows, "warn": warn, "after": after}
+    return {"moves": moves, "retire": retire, "gone": gone, "rows": rows, "warn": warn,
+            "after": after}
+
+
+def from_claude_lane(data: dict) -> tuple[dict, list[str]]:
+    """claude-lane's board.json in a jig board's keys, and what has no place in one. Its
+    `main` is the trunk and its `baseline` the reserve counters; merged lanes are history,
+    which git keeps."""
+    out: dict = {}
+    gone: list[str] = []
+    for key, value in data.items():
+        if key == "main":
+            out["trunk"] = value
+        elif key == "baseline" and isinstance(value, dict):
+            reserve = out.setdefault("reserve", {})
+            for counter, n in value.items():
+                if isinstance(n, int):
+                    reserve.setdefault(counter, {"next": n})
+                else:
+                    gone.append(f"board: baseline.{counter} (not a counter)")
+        elif key == "reserve" and isinstance(value, dict):
+            out.setdefault("reserve", {}).update(value)
+        elif key == "lanes" and isinstance(value, dict):
+            out["lanes"] = {}
+            for name, lane in value.items():
+                if isinstance(lane, dict) and lane.get("state") == "merged":
+                    gone.append(f"board: lanes.{name} (merged)")
+                else:
+                    out["lanes"][name] = lane
+        elif key in BOARD_DEFAULTS:
+            out[key] = value
+        else:
+            gone.append(f"board: `{key}` (claude-lane's own; nothing in jig reads it)")
+    return out, gone
 
 
 def rewrite_board(data: dict, files: list[str], plan: dict) -> tuple[dict, list[str], list[str]]:
@@ -2269,15 +2386,15 @@ def files_to_review(root: Path, plan: dict) -> list[tuple[str, str]]:
     out = []
     hw = root / back.get("docs/HARDWARE.md", "docs/HARDWARE.md")
     if hw.exists():
-        m = re.search(r"^- MCU / board:\s*(.+)$", hw.read_text(errors="replace"), re.M)
-        board = (m.group(1).strip() if m else "")
-        if not board or board.startswith("TODO"):
+        slug = board_slug(hw.read_text(errors="replace"))
+        if not slug:
             out.append(("docs/HARDWARE.md", "still the template's TODOs: remove it"))
         else:
-            slug = re.sub(r"[^a-z0-9]+", "-", board.split("(")[0].lower()).strip("-")
-            out.append(("docs/HARDWARE.md", f"holds a board ({board}): rename it to "
+            out.append(("docs/HARDWARE.md", f"holds a board: rename it to "
                         f"{BOARD_PAGES}{slug}.md, one page per board as {DIR}/RULES.md "
                         "(Documentation) says, then check it against the code"))
+    if "HARDWARE.md" in plan["after"] and (root / "HARDWARE.md").exists():
+        out.append(("HARDWARE.md", "still the template's TODOs: remove it"))
     tpl = root / ".claude/skills/_skill-template/SKILL.md"
     if tpl.exists():
         if hashlib.sha256(tpl.read_bytes()).hexdigest() == OLD_SKILL_TEMPLATE:
@@ -2309,6 +2426,9 @@ def cmd_update(root: Path, args) -> int:
             raise ValueError("not a JSON object")
     except ValueError as e:
         return update_blocked([f"{board_at} is not a valid board: {e}"])
+    board_gone: list[str] = []
+    if board_at.startswith(CLAUDE_LANE):
+        data, board_gone = from_claude_lane(data)
 
     refused = []
     version = data.get("version") if isinstance(data.get("version"), int) else 0
@@ -2331,7 +2451,7 @@ def cmd_update(root: Path, args) -> int:
     # A tracked change mid-move would leave jig half-moved; a re-run must still see the old layout.
     dirty = git("status", "--porcelain", "--untracked-files=no")
 
-    plan = plan_moves(files, board_at, version)
+    plan = plan_moves(files, board_at, version, hardware_rows(root, files))
     new_board, edits, board_warn = rewrite_board(data, files, plan)
     warnings = plan["warn"] + board_warn
     sources = {f"{DIR}/jig.py": Path(__file__).resolve(), f"{DIR}/RULES.md": here / "RULES.md"}
@@ -2341,14 +2461,24 @@ def cmd_update(root: Path, args) -> int:
             warnings.append(f"no {src.name} beside this jig.py: {dest} is left as it is")
         elif plan["retire"] or not (root / dest).exists() or (root / dest).read_bytes() != src.read_bytes():
             replace.append(dest)
-    steps = [s for s in STEPS if s[1](root, set(plan["after"]))]
+    steps = [(s[0](root) if callable(s[0]) else s[0], *s[1:]) for s in STEPS
+             if s[1](root, set(plan["after"]))]
+    # Everything that leaves the repo, named before anything is applied: removed files stay in
+    # git's history, but nobody should learn of a removal from the diff.
+    removed = [f"{r} ({n} replaces it)" for o, n in plan["rows"] for r in plan["retire"]
+               if r == o or (o.endswith("/") and r.startswith(o))]
+    removed += [f"{g} (nothing of jig's replaces it)" for g in plan["gone"]]
+    removed += [f"{REVIEW_LEDGER} (its untaken rows move to {DEFERRED})"
+                for s in steps if s[2] is fold_ledger]
+    removed += board_gone
     ignore = root / ".gitignore"
     # Today's board is at .jig/ too, so .jig/worktrees/ is old only beside an older board.
     old_ignores = OLD_IGNORES if board_at != BOARD or version < STAMP else OLD_IGNORES[1:]
     ignore_lines = ([l for l in ignore.read_text().splitlines() if l.strip() in old_ignores]
                     if ignore.exists() else [])
     untracked = [(o, n) for o, n in OLD_UNTRACKED if board_at.startswith("jig/")
-                 and (root / o).is_dir() and any(f.is_file() for f in (root / o).rglob("*"))]
+                 and (root / o).is_dir() and any(f.is_file() and f.relative_to(root).as_posix() not in files
+                                                 for f in (root / o).rglob("*"))]
     cache_line = [l for l in ignore.read_text().splitlines() if l.strip() == "jig/meta-cache/"] \
         if ignore.exists() and board_at.startswith("jig/") else []
     hooks_dir = git_common() / "hooks"
@@ -2370,7 +2500,7 @@ def cmd_update(root: Path, args) -> int:
 
     moved_board = board_at != BOARD
     actions = bool(plan["moves"] or replace or edits or moved_board or steps or ignore_lines
-                   or stale_hooks or aidev_state or untracked or cache_line)
+                   or stale_hooks or aidev_state or untracked or cache_line or removed)
     if not actions:
         print("up to date")
         for w in warnings:
@@ -2396,8 +2526,11 @@ def cmd_update(root: Path, args) -> int:
     if replace:
         print("\nWritten from this copy of jig:")
         for dest in replace:
-            gone = [o for o, n in plan["rows"] if n == dest and o in plan["retire"]]
-            print(f"  {dest}" + (f", replacing {', '.join(gone)}" if gone else ""))
+            print(f"  {dest}")
+    if removed:
+        print("\nRemoved:")
+        for r in removed:
+            print(f"  {r}")
     if edits:
         print("\nBoard:")
         for e in edits:
@@ -2456,7 +2589,7 @@ def cmd_update(root: Path, args) -> int:
     (root / BOARD).parent.mkdir(parents=True, exist_ok=True)
     (root / BOARD).write_text(json.dumps(new_board, indent=2) + "\n")
     blobs = {dest: sources[dest].read_bytes() for dest in replace}
-    for r in plan["retire"]:
+    for r in plan["retire"] + plan["gone"]:
         git("rm", "-q", "-f", r, check=True)
     for dest, blob in blobs.items():
         (root / dest).write_bytes(blob)

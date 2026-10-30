@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "main": "main",
+  "baseline": {
+    "section": 1,
+    "note": "Numbers up to these were taken before the board."
+  },
+  "common": [
+    "AGENTS.md",
+    "docs/**"
+  ],
+  "append_files": [
+    "AGENTS.md"
+  ],
+  "lanes": {
+    "old": {
+      "brief": "the first thing",
+      "branch": "old",
+      "worktree": ".claude/worktrees/old",
+      "state": "merged",
+      "after": [],
+      "owns": [
+        "src/**"
+      ],
+      "shares": [],
+      "reserved": {
+        "section": 1
+      },
+      "opened": "2026-01-01",
+      "handoffs": [],
+      "merged": "PR 1"
+    }
+  },
+  "seen": {
+    "old": "2026-01-02"
+  }
+}
