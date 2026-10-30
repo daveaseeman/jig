@@ -61,6 +61,21 @@
       "reserved": {},
       "opened": "2026-10-30",
       "handoffs": []
+    },
+    "gate-order": {
+      "brief": ".jig/specs/gate-order.md",
+      "branch": "claude/jolly-archimedes-6394e8",
+      "worktree": ".claude/worktrees/jolly-archimedes-6394e8",
+      "state": "building",
+      "after": [],
+      "owns": [
+        "plugin/**",
+        "tests/**"
+      ],
+      "shares": [],
+      "reserved": {},
+      "opened": "2026-10-30",
+      "handoffs": []
     }
   },
   "log": [
@@ -70,6 +85,7 @@
     "2026-10-30: names -> gated",
     "2026-10-30: para-spec -> gated",
     "2026-10-30: names -> merged",
-    "2026-10-30: para-spec -> merged"
+    "2026-10-30: para-spec -> merged",
+    "2026-10-30: adopted gate-order (branch claude/jolly-archimedes-6394e8)"
   ]
 }
