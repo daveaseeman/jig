@@ -544,10 +544,15 @@ def cmd_status(root: Path, args) -> int:
 
 
 def handoff_notes(branch: str, name: str) -> list[str]:
-    """The notes a job has filed, read from its branch: the record of a handoff is the note."""
+    """The notes a job has filed, read from its branch, oldest first: the record of a handoff
+    is the note."""
+    # The names `jig handoff` writes: <job>-<date>.md, then -2, -3 the same day. By name alone
+    # "-" sorts before ".", putting the day's first note last; and job X-y's notes start "X-".
+    note = re.compile(rf"{re.escape(name)}-(\d{{4}}-\d{{2}}-\d{{2}})(?:-(\d+))?\.md")
     listing = git("ls-tree", "-r", "--name-only", branch, "--", f"{DIR}/handoffs/")
-    return sorted(n for n in listing.splitlines()
-                  if Path(n).name.startswith(f"{name}-") and n.endswith(".md"))
+    found = [(m.group(1), int(m.group(2) or 1), n) for n in listing.splitlines()
+             if (m := note.fullmatch(Path(n).name))]
+    return [n for *_, n in sorted(found)]
 
 
 def opened(board: "Board", name: str) -> str:
@@ -867,6 +872,7 @@ def cmd_handoff(root: Path, args) -> int:
         die("no adversarial review on record for this commit.\n"
             f"  Review {head[:12]}, then: python3 {DIR}/jig.py reviewed")
     (root / DIR / "handoffs").mkdir(parents=True, exist_ok=True)
+    # handoff_notes reads these names back in order; a change here changes its pattern.
     path = root / DIR / "handoffs" / f"{name}-{date.today().isoformat()}.md"
     i = 2
     while path.exists():
