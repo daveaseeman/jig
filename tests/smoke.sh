@@ -1022,6 +1022,9 @@ expect_pass sh -c "echo \"\$0\" | grep -q 'add .- D-050.*CHANGELOG.md (M3)' && g
 git add -A; msg="staging: and M3 refuses that commit until the line is there"; expect_refuse git commit -qm "D-050: x"
 git reset -q --hard && git switch -q main
 
+msg="plugin: only the skills that change the repo, tag or write user config are user-only; read-only ones stay listed"
+expect_pass test "$(grep -l '^disable-model-invocation: true' $P/../skills/*/SKILL.md | xargs -n1 dirname | xargs -n1 basename | sort | tr '\n' ' ')" = "adopt init release repos update "
+
 msg="plugin: no skill description holds angle brackets (the desktop app reads them as XML tags)"
 expect_refuse grep -lE '^description:.*[<>]' $P/../skills/*/SKILL.md $P/skills/*/SKILL.md
 

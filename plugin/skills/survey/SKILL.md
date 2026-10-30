@@ -1,7 +1,6 @@
 ---
 name: survey
 description: Read-only inventory of this repo against the jig shape - stray documents, oversized always-loaded files, docs that drifted from the code, missing pieces. Use to check a repo, or periodically to catch strays.
-disable-model-invocation: true
 ---
 
 Run it. Nothing is written, and nothing needs to be installed first:

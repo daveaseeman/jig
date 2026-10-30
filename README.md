@@ -127,6 +127,10 @@ Day to day:
 
 Every rule the hooks enforce is written in `.jig/RULES.md` after init.
 
+`/jig:init`, `/jig:adopt`, `/jig:update`, `/jig:release` and `/jig:repos` don't show in the
+slash list, and an agent can't start them on its own: each changes the repo, tags a release or
+writes your repo list, so only you do. Type them in full at the start of a message.
+
 ## 📦 Installation
 
 ```sh
