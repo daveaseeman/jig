@@ -124,7 +124,9 @@ class Board:
             if raw:
                 return cls(base, json.loads(raw), json.loads(git("show", f"{trunk}:{JOBS}") or "{}"))
         if not (base / CONFIG).exists():
-            die(f"no board at {CONFIG}. Run: jig init", 2)
+            old = old_board(base)
+            die(f"an older jig's board is at {old}: run /jig:update first" if old
+                else f"no board at {CONFIG}. Run: jig init", 2)
         jobs = base / JOBS
         return cls(base, json.loads((base / CONFIG).read_text()),
                    json.loads(jobs.read_text()) if jobs.exists() else {})
@@ -377,11 +379,8 @@ def cmd_init(root: Path, args) -> int:
     # would run a trunk .jig/jig.py that doesn't exist yet: so nothing is written at all.
     old = old_board(root)
     if old:
-        then = (f"`jig init --para {args.para}`" if getattr(args, "para", None)
-                else "`jig init --meta`" if getattr(args, "meta", False)
-                else "nothing: update writes today's board")
         die(f"refused: {old} is an older jig's board, and init would write a second one beside "
-            f"it. Run `jig update` (then --apply), commit, then {then}", 2)
+            f"it. Run `jig update` (then --apply), commit, then run this same `jig init` again", 2)
     (root / DIR).mkdir(exist_ok=True)
     ensure_staging(root)
     path = root / CONFIG
@@ -445,6 +444,12 @@ def foreign_hooks() -> list[str]:
 
 
 def cmd_install_hooks(root: Path, args) -> int:
+    # The old board's hooks still work; these would run a trunk .jig/jig.py that isn't there.
+    # Update installs them itself, once the board has moved.
+    old = old_board(root)
+    if old:
+        die(f"refused: {old} is an older jig's board, and these hooks would replace its own with "
+            f"ones that check nothing. Run `jig update` (then --apply) instead: it installs them", 2)
     trunk = Board.trunk_name(root)
     common = git_common()
     hooks = common / "hooks"
@@ -1181,7 +1186,9 @@ def cmd_survey(root: Path, args) -> int:
                 co["open_branches"]]):
         print("  none found — a single-session repo; jobs need no setup until a second session starts")
     print("\nDoc homes: " + "; ".join(f"{k} = {v}" for k, v in DOC_HOMES.items()))
-    print("Run /jig:adopt to turn this into a migration plan.")
+    old = old_board(root)
+    print(f"An older jig's board is at {old}: run /jig:update first, not /jig:adopt or /jig:init."
+          if old else "Run /jig:adopt to turn this into a migration plan.")
     return 0
 
 # ------------------------------------------------------------------- metarepo

@@ -1123,9 +1123,15 @@ for gen in ai-dev jig-0.2; do
     out=$($IJ init $form 2>&1); rc=$?
     expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig update' && test -z \"\$(git status --porcelain)\" && test \"\$1\" = \"\$(find .git/hooks -type f | sort | xargs shasum 2>/dev/null)\" && test -z '$had_jig' -a ! -e .jig" "$out" "$before"
   done
-  msg="init --para beside $gen's board gives the order: update, commit, then init --para"
-  out=$($IJ init --para docs 2>&1)
-  expect_pass sh -c "echo \"\$0\" | grep -q 'jig update.*commit, then .jig init --para docs.'" "$out"
+  msg="init --para beside $gen's board gives the order: update, commit, then this same init again"
+  out=$($IJ init --para docs --contract 'src/**' 2>&1)
+  expect_pass sh -c "echo \"\$0\" | grep -q 'jig update.*commit, then run this same .jig init. again'" "$out"
+  msg="install-hooks beside $gen's board refuses; the old hooks and .git/jig/ stay as they were"
+  before=$(find .git/hooks .git/jig -type f 2>/dev/null | sort | xargs shasum); out=$($IJ install-hooks 2>&1); rc=$?
+  expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig update' && test \"\$1\" = \"\$(find .git/hooks .git/jig -type f 2>/dev/null | sort | xargs shasum)\"" "$out" "$before"
+  msg="survey and a board command beside $gen's board send it to update, not init or adopt"
+  sv=$($IJ survey 2>&1); st=$($IJ status 2>&1)
+  expect_pass sh -c "echo \"\$0\" | grep -q 'run /jig:update first, not /jig:adopt' && ! echo \"\$0\" | grep -q 'Run: jig init' && echo \"\$1\" | grep -q 'older jig.s board is at .*run /jig:update first'" "$sv" "$st"
   msg="repos add para beside $gen's board says to run jig update, then jig init --para"
   out=$($IJ repos add para --name ib-$gen 2>&1)
   expect_pass sh -c "echo \"\$0\" | grep -q 'run .jig update. there, commit, then .jig init --para' && ! echo \"\$0\" | grep -q 'not a pararepo yet'" "$out"
