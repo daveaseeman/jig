@@ -19,11 +19,27 @@ Each checked in a scratch ai-dev repo with today's template `update`.
 | Candidate | Checked | Whose | What changes |
 |---|---|---|---|
 | A tracked `.jig/specs/` file stops the whole root `specs/` move | [seen] "both left, not merged". The check is folder-level (`free`, in `plan_moves`) | jig's: update.md's Decision is per file ("old path exists and new one doesn't") | Per file, for every folder row. A file moves when its destination is free. A file at both paths stays, and is warned by name |
-| Markdown-only splits a subfolder from its other files | [seen] README moves, `t.rs` stays | jig's: the split is jig's doing | An immediate subfolder of root `specs/` or `ledgers/` that holds any Markdown, at any depth, moves whole, its other files included. A warning names it, so the dry run exits 1. If any file in it collides, the whole subfolder stays, warned once: it is never split. A subfolder with no Markdown, and non-Markdown files at the top level, stay as today |
+| Markdown-only splits a subfolder from its other files | [seen] README moves, `t.rs` stays | jig's: the split is jig's doing | A subfolder is never split. It moves whole when it is clearly jig's, and otherwise stays whole. See below. Files at the top level are judged as today |
 | `cd "$(dirname "$0")/.."` is wrong after `scripts/` → `.jig/scripts/` | [seen] no template generation (`eaec973`, `66a044c`, `62c8d9f`, `5d955a2`, now) wrote that line | The line is the repo's. jig's part: its move breaks the line, and the dry run is silent | Warning: a moved non-Markdown file whose folder depth changed, with its lines that use its own location (`$0`, `BASH_SOURCE`, `__file__`, `__dirname`). The skill offers the edit; `jig.py` never makes it |
 | Worktrees stranded by a repo folder rename | [seen] the refusal's own advice, `git worktree remove <old path>`, exits 0, drops git's record, and leaves the checkout on disk. Once the record is gone, `repair` and `remove` both fail on it | jig's: the advice is wrong for this case | Advice per case, below |
 | The old `worktrees/` ignore line goes while folders remain | [seen] `ignore_lines` reads only `.gitignore` | jig's | Folders left in an old worktrees folder refuse, below |
 | The stale-reference report prints only on `--apply`; nothing rewrites | [seen] false: the dry run prints it. But a refusal returns before the plan is printed, so a repo with worktrees never sees one | Rewriting is the repo's: update.md puts editing the repo's files out of scope, and the skill already offers it. Hiding the plan is jig's | A refusing dry run prints the refusal, then the plan and report, and still exits 2. A refusing `--apply` prints the refusal only |
+
+**Is a subfolder jig's?** This applies to each immediate subfolder of root `specs/` or `ledgers/`, only under an old board (`root_is_jigs`), whatever its files are. A path "names" the subfolder when it reaches into it at a path boundary, the way stale references are matched.
+- **Claimed**, any one of:
+  - jig's own files name it: the board (any key, lane briefs included), a handoff note, or a top-level Markdown file of the same root folder, which is a spec moving beside it;
+  - a Markdown file in it carries the spec template's `## Intent` and `## Done when` headings.
+- **Used by the repo**: a tracked non-Markdown file outside the root folder names it, other than the board. Its runner or build reads it there.
+- It moves whole when it is claimed and not used. A warning names it and the claim, so the dry run exits 1. It is `R100`, file by file, Markdown or not.
+- Otherwise it stays whole, warned once. The warning says why: not claimed, or used by `<file>`. A user who knows better moves it with `git mv`.
+- A collision anywhere in it keeps it whole at the root, warned once.
+
+Checked against the reporting repo's last ai-dev commit [seen]:
+- 18 top-level specs, 14 board lines (lane briefs) and 21 handoff notes name paths inside `specs/prework/`.
+- The only non-Markdown file that names it is the board.
+- So it is claimed and not used, and it moves.
+
+A JS test folder is the opposite case: named by `package.json` or a runner config, and named by none of jig's files.
 
 **Worktree refusal, per case.**
 - It reads git's records (`.git/worktrees/<id>/gitdir`) and the folders in the old worktrees folder (`.aidev/worktrees/`, or `.jig/worktrees/` beside an older board) and in `.git/jig/worktrees/`.
@@ -37,7 +53,7 @@ Each checked in a scratch ai-dev repo with today's template `update`.
 **A partly moved folder row.**
 - A row counts as applied when at least one file moved.
 - Where files stayed behind, the board keeps the old glob beside the new one.
-- A reference is stale only when the path it names no longer exists after the moves. For a glob or a folder, the path is its prefix up to the first wildcard. So a runner's `specs/**/*.spec.js` stays quiet while `specs/` remains, and the moved-subfolder warning is what catches it.
+- A reference is stale only when the path it names no longer exists after the moves. For a glob or a folder, the path is its prefix up to the first wildcard. So a runner's `specs/**/*.spec.js` stays quiet while `specs/` remains. A runner that names a subfolder keeps that subfolder at the root ("used by the repo").
 
 ## Done when
 `bash tests/smoke.sh` passes with these new cases. Each runs on the ai-dev fixture unless a case says otherwise:
@@ -46,13 +62,20 @@ Each checked in a scratch ai-dev repo with today's template `update`.
   - One warning names `specs/b.md`, and `.jig/specs/b.md` is unchanged.
   - The board's `common` holds both `specs/**` and `.jig/specs/**`.
   - A file naming `specs/b.md` is not listed as stale.
-- [ ] Root `specs/top.md`, `specs/app.spec.js`, `specs/suite/README.md`, `specs/suite/t.rs`, `specs/unit/x.spec.js`, `specs/deep/t.rs` and `specs/deep/a/n.md`.
-  - `top.md`, all of `specs/suite/` and all of `specs/deep/` move, each `R100`.
-  - The dry run exits 1, with one warning each for `specs/suite/` and `specs/deep/`.
-  - `app.spec.js` and `specs/unit/` stay, each with today's warning.
+- [ ] One ai-dev fixture with root `specs/top.md` (it names `specs/suite/t.rs`), `specs/app.spec.js`, and five subfolders, each holding a `README.md` and one non-Markdown file:
+  - `specs/suite/` is named by `top.md`.
+  - `specs/deep/` is named by a lane's `brief`, with its Markdown one level down (`specs/deep/a/n.md`).
+  - `specs/tpl/` is named by nothing, and its `README.md` has `## Intent` and `## Done when`.
+  - `specs/unit/` is named by `top.md` and by `package.json`.
+  - `specs/misc/` is named by nothing.
+
+  Expected:
+  - `top.md`, `specs/suite/`, `specs/deep/` and `specs/tpl/` move, each file `R100`.
+  - The dry run exits 1, with one warning per moved subfolder naming its claim.
+  - `specs/unit/` stays whole, with a warning naming `package.json`. `specs/misc/` stays whole, warned "not claimed". `app.spec.js` stays with today's warning.
   - A file naming `specs/suite/t.rs` is listed as stale.
 - [ ] The same with a tracked `.jig/specs/suite/README.md`: all of `specs/suite/` stays, with one warning naming it.
-- [ ] Root `ledgers/old/README.md` and `ledgers/old/data.csv` both move under `.jig/ledgers/old/`.
+- [ ] Root `ledgers/old/README.md` and `ledgers/old/data.csv`, named by a handoff note, both move under `.jig/ledgers/old/`.
 - [ ] A tracked `scripts/check.sh` with `cd "$(dirname "$0")/.."`.
   - The dry run exits 1, and a warning names `.jig/scripts/check.sh` with that line.
   - The existing fixtures' scripts raise no such warning.
@@ -71,12 +94,12 @@ Each checked in a scratch ai-dev repo with today's template `update`.
 ## Out of scope
 - `jig.py` editing the repo's files: stale references, script lines (update.md, Out of scope).
 - `update` running `git worktree repair`, `remove` or `prune` itself.
-- Moving non-Markdown out of a root `specs/` or `ledgers/`, except inside a subfolder that holds Markdown.
+- Moving a non-Markdown file from the top level of a root `specs/` or `ledgers/`. Only a subfolder that is clearly jig's moves non-Markdown.
 - P2 and the para rules. The report's P2 concern goes away once the move is per file.
 
 ## Touches
 - `plugin/templates/jig/jig.py`:
-  - `plan_moves`: the per-file check for every folder row; a subfolder with Markdown moves whole. The comment at the filter says why a subfolder differs from the top level.
+  - `plan_moves`: the per-file check for every folder row; whole-subfolder judgment by claim and use. It takes the board and reads the tracked files to find them. The comment at the filter says why a subfolder differs from the top level.
   - `rewrite_board`: keeps the old glob when files stay.
   - `stale_references`: a reference to a path that still exists is not stale.
   - `cmd_update`:
@@ -102,7 +125,9 @@ Its new rows are file rows, and the per-file rule here changes how folder rows d
 ## Alternatives considered
 - Move all of a root `specs/` under an old board, non-Markdown included. Rejected: the filter exists so a repo's own top-level test files (`specs/app.spec.js`) never move. [seen] The comment at the filter in `plan_moves`, and update.md's Oct 29 review.
 - Leave a mixed subfolder whole at the root, and let the repo `git mv` it by hand. Rejected by the owner, Oct 30: "update should move it". [seen]
-- Judge the top level of `specs/` whole too, the way a subfolder is judged. Rejected: specs were always written flat (`specs/<task>.md`), so at the top level each file is judged alone. A subfolder is one unit. [seen] Every generation's brief skill. That Markdown in a subfolder marks it as task material is the owner's call, below, not an observation.
+- Move any subfolder that holds Markdown. Rejected by the owner, Oct 30: "not any specs folder, just one that's clearly a jig spec folder". A README in a test folder doesn't make the folder jig's. [seen]
+- Judge the top level of `specs/` whole too, the way a subfolder is judged. Rejected: specs were always written flat (`specs/<task>.md`), so at the top level each file is judged alone. A subfolder is one unit. [seen] Every generation's brief skill.
+- Claim by jig's references alone, with no "used by the repo" veto. Rejected: a repo's test folder that a jig spec happens to mention would move away from its runner. The veto costs one warning and a hand `git mv` in the rare case of a jig folder that the repo's code also reads. [assumed]; the reporting repo has no such file [seen]. See open question 2.
 - Per file only for the root `specs/` and `ledgers/` rows. Rejected: `jig/specs/` would keep the folder-level rule, an asymmetry with no reason behind it. update.md's Decision is per file for every row. [seen]
 - `update` rewrites `/..` to `/../..` in moved scripts. Rejected:
   - `update` renames files and never edits them, and smoke asserts `R100`;
@@ -118,9 +143,13 @@ Its new rows are file rows, and the per-file rule here changes how folder rows d
 - Leftover worktree folders as a warning, with the ignore line kept. Rejected: they are checkouts, possibly with uncommitted work, and update already refuses on extra worktrees for this reason, with a fix the user knows. [seen] update.md Decisions, "Refusals".
 
 ## Decisions
-- Owner, Oct 30: a subfolder of root `specs/` or `ledgers/` that holds Markdown moves whole under `.jig/`, its other files included. A subfolder with no Markdown is the repo's own, and stays. This supersedes the Oct 29 review decision in `update.md` that a root `specs/` or `ledgers/` moves only its Markdown; that still holds at the top level. The risk is a repo's own test subfolder that carries a README. It moves, so each moved subfolder is warned by name and the skill puts it to the user before `--apply`.
+- Owner, Oct 30:
+  - `update` moves a subfolder of root `specs/` or `ledgers/` whole, its other files included, but only when it is clearly jig's. That is judged from its contents and from what names it, as above.
+  - Every other subfolder stays whole. This includes a Markdown-only subfolder nothing claims, which `update` moves today.
+  - This supersedes the Oct 29 review decision in `update.md` that a root `specs/` or `ledgers/` moves only its Markdown. That still holds at the top level.
 - Each refusal names the exact command for the case it sees. `update` runs none of them.
 - The depth warning covers any moved non-Markdown file, not only shell scripts. A false positive costs one warning line.
 
 ## Open questions
 1. Should the stale-reference report be retrievable after the update commit? Once the board is current, a re-run says "up to date". This spec leaves it to the skill, before the commit.
+2. A subfolder jig claims that the repo's own code also names: stay (this spec, warned), or move, with the code's reference reported as stale?
