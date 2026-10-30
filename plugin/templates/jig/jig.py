@@ -2944,8 +2944,9 @@ def main(argv: list[str] | None = None) -> int:
     fn = {
         "init": cmd_init, "install-hooks": cmd_install_hooks, "status": cmd_status,
         "open": cmd_open, "mark": cmd_mark, "merge": cmd_merge, "check": cmd_check,
-        "job": cmd_job, "sync": cmd_sync, "reviewed": cmd_reviewed, "workflow": cmd_workflow,
+        "job": cmd_job, "sync": cmd_sync, "reviewed": cmd_reviewed,
         "handoff": cmd_handoff, "gate": cmd_gate, "hook": cmd_hook,
+        "workflow": cmd_workflow,
         "survey": cmd_survey, "reading-list": cmd_reading_list, "update": cmd_update, "repos": cmd_repos, "staging": cmd_staging,
         "release": cmd_release, "para-sync": cmd_para_sync, "para-propose": cmd_para_propose,
     }[args.cmd]
