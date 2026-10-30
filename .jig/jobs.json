@@ -4,11 +4,19 @@
     "state": "claimed",
     "after": [],
     "owns": [
-      "plugin/**",
-      "tests/**",
-      "README.md"
+      "plugin/tiers.json",
+      "plugin/skills/subnode/**",
+      "plugin/skills/review/**",
+      "plugin/skills/spec/**",
+      "plugin/templates/specs/**"
     ],
-    "shares": [],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "README.md",
+      "plugin/skills/hubnode/SKILL.md"
+    ],
     "reserved": {}
   }
 }
