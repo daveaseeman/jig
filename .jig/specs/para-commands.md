@@ -38,15 +38,26 @@ Smoke, in the pararepo section unless it says otherwise:
 - [ ] **Two-part pins.** A pararepo pinned at a hand-made `v0.1` release, with a metarepo that then
       releases `v0.2.0`: `jig sync` reports `v0.2.0 is out` and `meta: docs v0.1 → v0.2.0`, and
       the cache fills at `v0.1`.
-- [ ] **`jig gate` refuses a lane built on an unreleased proposal.** The lane's specs are the
-      `.jig/specs/*.md` changed on its branch since trunk, as P2 finds them. If one says
-      `meta: <name> proposal <branch>` and that branch is not an ancestor of the pinned tag in
-      the metarepo checkout, the gate refuses, naming the proposal and the pin. Cases:
-  - unreleased → refused;
-  - released, but after the pin → refused, and the message says to bump the pin;
-  - in the pinned release → passes;
-  - metarepo unreachable → refused, naming the metarepo;
-  - plain repo → unchanged.
+- [ ] **`jig gate` refuses a lane built on an unreleased proposal.**
+  - The lane's specs are the `.jig/specs/*.md` changed in `trunk...<commit>`, read at that
+    commit, where `<commit>` is the handoff note's `Commit:` that the gate already uses. They are
+    not found from HEAD, which is trunk when the hubnode runs the gate.
+  - The pin is trunk's `para.json` pin, because that is what lands.
+  - A proposal is in the pin when its branch is an ancestor of the pin tag. If the branch ref
+    is gone (deleted after merge), it counts when a merge commit reachable from the pin names
+    it in its subject.
+
+  Cases, with a lane spec citing `meta: docs proposal <branch>`:
+  - unreleased → refused, naming the proposal and the pin;
+  - released after the pin → refused, saying to bump the pin;
+  - in the pinned release → passes, and still passes after `git branch -d` of the proposal in
+    the metarepo;
+  - a proposal naming a metarepo other than `para.json`'s → refused as the wrong metarepo;
+  - metarepo unreachable → refused, naming the metarepo, but only when a lane spec cites a
+    proposal;
+  - a `meta: none — …` spec, or a plain repo → unchanged.
+- [ ] `jig sync`'s report uses the same test: a proposal whose branch was deleted after its
+      release reads "released by", not "not released".
 - [ ] **`repos add` offers init.** `jig repos add meta` in a repo without `.jig/meta.json` prints
       `jig init --meta`. `add para` without `.jig/para.json` prints `jig init --para`.
 - [ ] **Metarepo release default via update.** In a metarepo with no `release.sh`, `update
@@ -68,8 +79,9 @@ Smoke, in the pararepo section unless it says otherwise:
   `forward()` prints changes its command name.
 
 ## Touches
-- `marketing/FEATURES.md` (main checkout only, gitignored): the `init --para / para-sync /
-  para-propose` row rewritten before the code.
+- `marketing/FEATURES.md` (main checkout only, gitignored), before the code:
+  - the `init --para / para-sync / para-propose` row, rewritten.
+  - a new row for the gate's proposal check.
 - `plugin/templates/jig/jig.py`:
   - `cmd_sync`:
     - on trunk in a pararepo, it runs `cmd_para_sync`'s body and adds the stale-header note.
@@ -81,7 +93,8 @@ Smoke, in the pararepo section unless it says otherwise:
   - `cmd_para_propose` → `cmd_propose`.
   - `para_header` and `HEADER_BEGIN` get the new wording.
   - `with_header` also finds the old begin marker.
-  - `cmd_gate` gains the proposal check, gated on `.jig/para.json` on trunk.
+  - `cmd_gate` gains the proposal check, gated on `.jig/para.json` on trunk. It shares one
+    "is this proposal in that tag" helper with `jig sync`'s report.
   - the P2 message, the `forward()` hint, the parser.
   - No `update` step and no `STAMP` bump (see Decisions).
 - `plugin/templates/jig/RULES.md`:
@@ -174,5 +187,9 @@ Smoke, in the pararepo section unless it says otherwise:
      sync the lane, gate.
    - An unreachable metarepo refuses. The gate is a hubnode command, not a hook, so it may read
      `repos.json`.
+   - A deleted proposal branch is found by its merge commit. M4 makes every change to the
+     metarepo's trunk a merge, and git's default merge subject names the branch. `[seen]`:
+     M4 in `meta_rules`. If the subject was edited and the branch deleted, the gate refuses,
+     and the fix is to restore the branch.
 4. `jig sync` in a metarepo reports nothing for now.
 5. The two-commit header migration stands.
