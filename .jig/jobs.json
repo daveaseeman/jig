@@ -27,7 +27,10 @@
     ],
     "owns": [],
     "shares": [
-      "plugin/templates/jig/jig.py plugin/templates/jig/RULES.md tests/smoke.sh README.md",
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "README.md",
       "plugin/skills/hubnode/SKILL.md"
     ],
     "reserved": {}
@@ -40,7 +43,10 @@
       "plugin/skills/repos/**"
     ],
     "shares": [
-      "plugin/templates/jig/jig.py plugin/templates/jig/RULES.md tests/smoke.sh README.md"
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "README.md"
     ],
     "reserved": {}
   },
@@ -55,7 +61,10 @@
       "plugin/templates/AGENTS.md"
     ],
     "shares": [
-      "plugin/templates/jig/jig.py plugin/templates/jig/RULES.md tests/smoke.sh README.md"
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "README.md"
     ],
     "reserved": {}
   }
