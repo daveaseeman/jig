@@ -1,7 +1,7 @@
 {
   "workflow": {
     "spec": ".jig/specs/workflow.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/tiers.json",
@@ -37,7 +37,7 @@
   },
   "init-ledger": {
     "spec": ".jig/specs/bug-init-old-board-ledger.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/repos/**"
@@ -53,7 +53,7 @@
   },
   "hardware-ref": {
     "spec": ".jig/specs/hardware-reference-files.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/templates/hardware.md",
