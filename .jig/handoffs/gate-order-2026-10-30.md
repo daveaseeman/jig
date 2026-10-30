@@ -45,9 +45,11 @@ Deferred, one row each in `.jig/ledgers/DEFERRED.md`, all optional:
 - This note.
 
 ## Test by hand
-On a job with two handoffs from one day, run `python3 .jig/jig.py gate <job>` from trunk. It
-should print `from .jig/handoffs/<job>-<date>-2.md`. This repo's installed `.jig/jig.py` still
-has the old order until `/jig:update`, so run it against `plugin/templates/jig/jig.py`.
+After `/jig:update` installs this, on a job with two handoffs from one day, run
+`python3 .jig/jig.py gate <job>` from trunk. It should print
+`from .jig/handoffs/<job>-<date>-2.md`. Before then, nothing to try here: the new `jig.py`
+refuses this repo's current board layout (`lanes.json`, version 6) with "no board at
+.jig/config.json", and the installed one has the old order. The smoke cases cover it meanwhile.
 
 ## Left
 - This repo's `.jig/jig.py` keeps the bug until `/jig:update` installs the next release.
