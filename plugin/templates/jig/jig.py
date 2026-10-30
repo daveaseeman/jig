@@ -244,18 +244,31 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
 
     # R6 on a job branch always; on trunk only while jobs are open, since solo
     # there is nobody to collide with and the numbers are yours
-    held: dict[str, set[str]] = {}
+    held: dict[str, set[int]] = {}
     who = f"job {name}"
     for k, v in ((job or {}).get("reserved") or {}).items():
-        held.setdefault(k, set()).add(str(v))
+        if str(v).isdigit():
+            held.setdefault(k, set()).add(int(v))
     if job is None and branch == trunk:
         # Merging a job brings in the numbers it holds: trunk takes them by merging it.
         tips = set(merging_commits())
         for n, l in board.jobs.items():
             if tips and git("rev-parse", "-q", "--verify", f"refs/heads/{board.branch(n)}") in tips:
                 for k, v in (l.get("reserved") or {}).items():
-                    held.setdefault(k, set()).add(str(v))
+                    if str(v).isdigit():
+                        held.setdefault(k, set()).add(int(v))
                 who = "the job being merged"
+    if job is None and not branch:
+        # A detached HEAD is the gate's scratch checkout of a job's commit: it holds what the
+        # job holds, or its merge of trunk would take every number the job built.
+        head = git("rev-parse", "HEAD")
+        for n, l in board.jobs.items():
+            if subprocess.run(["git", "merge-base", "--is-ancestor", head,
+                               f"refs/heads/{board.branch(n)}"], capture_output=True).returncode == 0:
+                for k, v in (l.get("reserved") or {}).items():
+                    if str(v).isdigit():
+                        held.setdefault(k, set()).add(int(v))
+                who = f"job {n}"
     if job is not None or board.open_jobs():
         out += reserved_refusals(root, board, held, who, staged)
 
@@ -331,13 +344,14 @@ def next_number(board: "Board", counter: str, spec: dict) -> int:
     return max([highest_on_trunk(board, counter, spec), *held]) + 1
 
 
-def reserved_refusals(root: Path, board: "Board", holds: dict[str, set[str]],
+def reserved_refusals(root: Path, board: "Board", holds: dict[str, set[int]],
                       who: str, staged: bool) -> list[str]:
     """R6. A scarce number (migration step, section number) belongs to one job.
     A number is taken when the base has no match for it in the counter's files and the
     index adds one. A second rule under a section the base already has takes nothing, and
     editing or moving a heading nets to zero. A counter with "unique" also refuses a number
-    whose count rises past one: a second migration 17 is a collision of its own."""
+    whose count rises past one: a second migration 17 is a collision of its own. Numbers
+    compare as ints, so D-002 is the 2 a job holds; a refusal shows the text it matched."""
     out: list[str] = []
     at = base(board.trunk)
     touched = git("diff", "--name-only", "--no-renames", at,
@@ -352,29 +366,38 @@ def reserved_refusals(root: Path, board: "Board", holds: dict[str, set[str]],
         files = {p for p in touched if p and matches(p, globs)}
         # Counted over every file the counter covers at the base, so a number defined in a
         # file this change doesn't touch is still one the base has.
-        before: dict[str, int] = {}
-        after: dict[str, int] = {}
+        before: dict[int, int] = {}
+        after: dict[int, int] = {}
+        shown: dict[int, str] = {}
+
+        def count(text: str, *into: dict[int, int]) -> None:
+            for m in pat.finditer(text):
+                try:
+                    n = int(m.group(1))
+                except ValueError:
+                    continue
+                shown.setdefault(n, m.group(1))
+                for d in into:
+                    d[n] = d.get(n, 0) + 1
+
         for p in tree:
             if p and matches(p, globs):
-                for m in pat.finditer(at_rev(at, p)):
-                    before[m.group(1)] = before.get(m.group(1), 0) + 1
-                    if p not in files:
-                        after[m.group(1)] = after.get(m.group(1), 0) + 1
+                count(at_rev(at, p), before, *([] if p in files else [after]))
         for p in files:
-            for m in pat.finditer(in_index(p, staged)):
-                after[m.group(1)] = after.get(m.group(1), 0) + 1
-        for got in sorted(after):
-            if spec.get("unique") and after[got] > max(1, before.get(got, 0)):
+            count(in_index(p, staged), after)
+        for n in sorted(after):
+            got = shown[n]
+            if spec.get("unique") and after[n] > max(1, before.get(n, 0)):
                 out.append(f"R6 {counter} {got} already exists: a {counter} is unique, and this "
                            f"change adds another")
-            if got in before:
+            if n in before:
                 continue
             if not held:
                 out.append(f"R6 this change takes {counter} {got}, but this branch holds no "
                            f"{counter}: ask the hubnode to reserve one")
-            elif got not in held:
+            elif n not in held:
                 out.append(f"R6 this change takes {counter} {got}, but {who} holds "
-                           f"{counter} {', '.join(sorted(held))}")
+                           f"{counter} {', '.join(str(h) for h in sorted(held))}")
     return out
 
 
@@ -1220,6 +1243,17 @@ def reviewed_commits() -> set[str]:
     return set(log.read_text().split()) if log.exists() else set()
 
 
+def counts_reviewed(commit: str, done: set[str]) -> bool:
+    """A commit is reviewed when `jig reviewed` recorded it, or when a recorded commit is its
+    first-parent ancestor and everything since touches only handoff notes: `jig handoff`
+    requires the review to be HEAD, so the note is always committed after it."""
+    for c in git("rev-list", "--first-parent", commit).splitlines():
+        if c in done:
+            return all(f.startswith(f"{DIR}/handoffs/")
+                       for f in git("diff", "--name-only", c, commit).splitlines() if f)
+    return False
+
+
 def merging_commits() -> list[str]:
     """The commits a merge in progress brings in. pre-merge-commit runs before git writes
     MERGE_HEAD, but git names what it merges in GIT_REFLOG_ACTION ("merge <ref>...")."""
@@ -1250,10 +1284,11 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
         if p.endswith(SRC_EXT) and not p.startswith(f"{DIR}/"):
             out.append(f"M1 a metarepo holds no code: {p}")
     if merging:
-        # M5 main takes only merges of reviewed branches
-        done = reviewed_commits()
-        for c in merging:
-            if c not in done:
+        # M5 main takes only merges of reviewed branches. A job's sync of trunk, and the
+        # gate's scratch merge, are merges into something else.
+        done = reviewed_commits() if branch == trunk else set()
+        for c in (merging if branch == trunk else []):
+            if not counts_reviewed(c, done):
                 out.append(f"M5 {c[:12]} has no review on record: review it on its branch "
                            f"(`jig reviewed`), then merge")
         return out
@@ -1311,7 +1346,7 @@ def meta_problems(root: Path, meta: dict, trunk: str) -> list[str]:
     for line in git("rev-list", "--first-parent", "--parents", rng).splitlines():
         commit, *parents = line.split()
         if len(parents) > 1:
-            if parents[1] not in done:
+            if not counts_reviewed(parents[1], done):
                 out.append(f"{commit[:12]} merges {parents[1][:12]}, which has no review on record")
             continue
         if not parents:
@@ -2004,11 +2039,14 @@ def cmd_staging(root: Path, args) -> int:
     if kind in ("spec", "doc") and not dest.endswith(".md"):
         die(f"destination {dest!r} isn't a path yet: find the page, put its path in the header, "
             "then resolve again", 1)
+    if kind == "decisions" and not re.fullmatch(r"[^\s,;]+\.md", dest):
+        die(f"destination {dest!r} in the header isn't a bare path: put only the register's "
+            "path in `destination:`, then resolve again", 1)
     if kind == "spec" and not dest.startswith(f"{DIR}/specs/"):
         dest = f"{DIR}/specs/{Path(dest).name}"
     if change == "update":
         if kind == "decisions":
-            reg = inside(dest if dest.endswith(".md") else "DECISIONS.md")
+            reg = inside(dest)
             rows = decision_rows(body, root)
             text = reg.read_text() if reg.exists() else ""
             missing = [r for r in rows if r not in text]
@@ -2021,7 +2059,7 @@ def cmd_staging(root: Path, args) -> int:
                 "as provenance, then resolve again", 1)
         return done(f"{dest} carries it")
     if kind == "decisions":
-        reg = inside(dest if dest.endswith(".md") else "DECISIONS.md")
+        reg = inside(dest)
         rows = decision_rows(body, root)
         rest = [l for l in body.splitlines() if l.strip() and l.rstrip() not in rows
                 and not l.lstrip().startswith(("|---", "| Id", "#", "<!--"))]

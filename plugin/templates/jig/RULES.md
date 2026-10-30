@@ -60,7 +60,8 @@ Checked before every commit by a git hook, and by `jig check`.
 - **R5** The board is the hubnode's: `config.json` and `jobs.json` are edited on trunk only.
 - **R6** A scarce number belongs to the one job that reserved it. A change that makes a
   number matching a counter's `pattern` exist where trunk had none, and the branch doesn't
-  hold it, is refused; merging a job takes the numbers it holds. A number trunk already has
+  hold it, is refused; merging a job takes the numbers it holds, and so does the gate's
+  scratch checkout of it. Numbers compare as numbers: `D-002` is 2. A number trunk already has
   is taken by nobody, however many times the change adds it: editing or moving a heading, or
   adding a rule under an existing section, takes nothing. A counter marked `"unique"` also
   refuses a change that adds a second match of one number. Two branches that each take
@@ -192,7 +193,9 @@ else stops with the files named, and a person resolves it.
 `.jig/staging/` is where a chat drops a file meant for a repo: a spec, a doc, decision rows, a
 user story. It is never committed, and nothing in it is decided — read it for context, never
 cite it. Each file's header names its `target` (a repo name, or `this`), `kind`, `change`
-(`new` or `update`), `destination` inside the target, and `source`.
+(`new` or `update`), `destination` inside the target, and `source`. A destination is a bare
+path: a spec, doc or decisions file whose destination carries anything else (`docs/DECISIONS.md,
+on branch x`) is refused, never guessed at.
 
 `jig staging resolve <file>` lands it: a new spec or doc is written with its source; an
 update, a story's spec, or decisions with other content wait until the work is done and the
@@ -227,7 +230,7 @@ does what that kind of repo needs.
 | M2 | a decision row (`| D-001 | … |`) without a status cell (open, proposed, accepted, superseded or rejected, optionally with a note in parentheses or `by D-…`) and a `YYYY-MM-DD` date |
 | M3 | an entry file changed without a line in `CHANGELOG.md` |
 | M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted) |
-| M5 | a merge of a commit `jig reviewed` never recorded |
+| M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and only `.jig/handoffs/` changed since: the note is committed after the review by design. A job's sync of trunk and the gate's scratch merge aren't merges into trunk |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`) |
 | P1 | an `AGENTS.md` header that differs from what `.jig/para.json` generates |
 | P2 | a contract-path change with no spec saying `meta: <name> proposal <branch>` or `meta: none — <reason>` |

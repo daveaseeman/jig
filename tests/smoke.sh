@@ -1117,6 +1117,70 @@ cd "$R/.git/jig/worktrees/S"
 msg="R6 take: holding section 12, the page with ### 12.1 is accepted"
 printf '### 12.1 New\n' > docs/n.md; git add -A; expect_pass git commit -qm s12
 
+# ---------------------------------------------------------------- R6 as ints, M5 in a job's flow, a decisions destination
+MJ="$T/metajob"; mkdir -p "$MJ" && cd "$MJ" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
+$J init --meta --name docs >/dev/null && git add -A && git commit -qm "meta-init"
+python3 - <<'EOF'
+import json; c = json.load(open('.jig/config.json'))
+c['reserve'] = {'decision': {'pattern': r'^\|\s*D-(\d+)\s*\|', 'files': ['DECISIONS.md']}}
+json.dump(c, open('.jig/config.json', 'w'), indent=2)
+EOF
+git add -A && git commit -qm "TOOL: decision counter"
+$J open D --shares DECISIONS.md CHANGELOG.md --reserve decision=2 >/dev/null && git add -A && git commit -qm "TOOL: open D"
+dec() { printf '| D-%s | x | accepted | 2026-10-30 |\n' "$1" >> DECISIONS.md && printf -- '- D-%s\n' "$1" >> CHANGELOG.md && git add -A; }
+foldin() { sed -i.bak -e 's/^- \[ \]/- [x]/' -e 's/___/smoke/g' .jig/handoffs/*.md && rm .jig/handoffs/*.bak; }
+cd "$MJ/.git/jig/worktrees/D"
+msg="R6 ints: a job holding decision 2 adds | D-002 |, and check prints ok"
+dec 002; expect_pass sh -c "$J check --staged | grep -qx ok"; undo
+msg="R6 ints: | D-003 | instead is refused, naming 003 and the held 2"
+dec 003; out=$($J check --staged 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'R6 this change takes decision 003, but job D holds decision 2'" "$out"; undo
+dec 002 && git commit -qm "D-002: x"
+( cd "$MJ" && mkdir -p .jig/specs && printf '# s\n' > .jig/specs/s.md && git add -A && git commit -qm "TOOL: spec" )
+msg="M5: after a .jig/-only commit on trunk, jig sync in a job commits its merge"
+expect_pass sh -c "$J sync && test \"\$(git rev-list --parents -n1 HEAD | wc -w | tr -d ' ')\" = 3"
+$J reviewed >/dev/null && $J handoff >/dev/null 2>&1; foldin
+git add -A && git commit -qm "HANDOFF: D"
+( cd "$MJ" && printf '# t\n' > .jig/specs/t.md && git add -A && git commit -qm "TOOL: spec t" )
+cd "$MJ"
+msg="M5: the gate's merge of trunk in a detached scratch checkout commits"
+c=$($J gate D | sed -n 's/.*: gate \([0-9a-f]*\) from.*/\1/p')
+git worktree add -q --detach "$T/gate-D" "$c" 2>/dev/null
+expect_pass sh -c "cd '$T/gate-D' && git merge -q --no-edit main && test \"\$(git rev-list --parents -n1 HEAD | wc -w | tr -d ' ')\" = 3"
+git worktree remove --force "$T/gate-D"
+msg="M5: jig merge of a job whose tip is the note committed after its review succeeds, and removes the entry"
+expect_pass sh -c "$J merge D >/dev/null 2>&1 && ! grep -q '\"D\"' .jig/jobs.json"
+msg="M5: jig release and pre-push accept that history"
+git init -q --bare "$T/metajob-remote.git" && git remote add origin "$T/metajob-remote.git"
+expect_pass sh -c "$J release >/dev/null 2>&1 && git tag | grep -qx v0.1.0 && git push -q origin main 2>/dev/null"
+$J open E --shares DECISIONS.md CHANGELOG.md --reserve decision=3 >/dev/null && git add -A && git commit -qm "TOOL: open E"
+cd "$MJ/.git/jig/worktrees/E"
+dec 003 && git commit -qm "D-003: x" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
+printf -- '- D-003 more\n' >> CHANGELOG.md && git commit -qm "D-003: more" CHANGELOG.md; foldin
+git add -A && git commit -qm "HANDOFF: E"
+cd "$MJ"
+msg="M5: content committed after the review, then a note: jig merge refuses"
+expect_refuse $J merge E
+msg="M5: and a plain merge of that tip is refused by M5"
+out=$(git merge --no-ff --no-edit E 2>&1); git merge --abort 2>/dev/null
+expect_pass sh -c "echo \"\$0\" | grep -q 'M5 '" "$out"
+
+cd "$R" && mkdir -p .jig/staging
+msg="staging: a decisions destination with prose after the path refuses, naming the header field"
+stage dd.md this decisions new 'docs/DECISIONS.md, on branch x' '| D-009 | x | accepted | 2026-10-30 |\n'
+out=$($J staging resolve dd.md 2>&1)
+expect_pass sh -c "! $J staging resolve dd.md >/dev/null 2>&1 && echo \"\$0\" | grep -q 'destination:' && test ! -e DECISIONS.md" "$out"
+msg="staging: destination docs/DECISIONS.md resolves there"
+stage dd.md this decisions new docs/DECISIONS.md '| D-009 | x | accepted | 2026-10-30 |\n'
+expect_pass sh -c "$J staging resolve dd.md && grep -q 'D-009' docs/DECISIONS.md"
+msg="staging: an empty decisions destination is still refused by the header check"
+stage de.md this decisions new '' '| D-010 | x | accepted | 2026-10-30 |\n'
+expect_refuse $J staging resolve de.md
+msg="staging: destination DECISIONS.md resolves to the root register"
+stage de.md this decisions new DECISIONS.md '| D-010 | x | accepted | 2026-10-30 |\n'
+expect_pass sh -c "$J staging resolve de.md && grep -q 'D-010' DECISIONS.md"
+
 # ---------------------------------------------------------------- repos
 export JIG_CONFIG="$T/repos-cmd.json"
 RP="$T/rp"; mkdir -p "$RP" && cd "$RP" && git init -q -b main && git config user.email t@t && git config user.name t
