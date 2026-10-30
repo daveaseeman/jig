@@ -9,7 +9,7 @@
       "name": "jig",
       "source": "./plugin",
       "description": "Minimal scaffolding for prototyping software and firmware with AI agents: specs, bug protocol, adversarial review, parallel lanes enforced by git hooks.",
-      "version": "0.3.0"
+      "version": "0.3.1"
     }
   ],
   "metadata": {
