@@ -643,7 +643,16 @@ msg="R5: a job editing config.json is refused"
 printf '{}\n' > .jig/config.json; git add -A; expect_refuse git commit -qm config; undo
 msg="R6: job A takes section 2, which it holds"
 printf '\n## 2 Two\n' >> docs/d.md && git add -A && expect_pass git commit -qm two
+$J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && git add -A && git commit -qm note
+printf 'x=2\n' > src/a.py && git commit -qam "after the note"
+msg="merge: a job whose branch moved past the commit its note names is refused"
+expect_refuse sh -c "cd '$B' && $J merge A"
+git reset -q --hard HEAD~1
 cd "$B"
+msg="open: --after naming no open job is refused, since a missing name reads as merged"
+expect_refuse $J open X --after B3
+msg="open: an explicit number another open job holds is refused"
+expect_refuse $J open Y --reserve section=3
 
 msg="merge: R8 refuses a job whose after has not merged"
 $J open E --after B2 >/dev/null && git add -A && git commit -qm "open E"

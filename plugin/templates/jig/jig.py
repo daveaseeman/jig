@@ -552,7 +552,8 @@ def handoff_notes(branch: str, name: str) -> list[str]:
 
 def opened(board: "Board", name: str) -> str:
     """The day the job's entry reached trunk. git keeps that, so the record doesn't."""
-    days = git("log", "--reverse", "--format=%as", "-S", f'"{name}": {{', board.trunk, "--", JOBS)
+    # Newest first: a name opened again after a merge has its latest entry.
+    days = git("log", "--format=%as", "-S", f'"{name}": {{', board.trunk, "--", JOBS)
     return days.splitlines()[0] if days else ""
 
 
@@ -585,6 +586,14 @@ def cmd_open(root: Path, args) -> int:
         # An adopted branch may already hold a number: it is recorded as held, and held
         # numbers are never handed out again while its job is open.
         reserve[k] = int(explicit) if explicit else next_number(board, k, spec)
+        holder = [n for n, l in board.jobs.items() if str((l.get("reserved") or {}).get(k)) == str(reserve[k])]
+        if holder:
+            die(f"{k} {reserve[k]} is held by open job {holder[0]}: one number, one job")
+    # A merged job's entry is gone, so a name that isn't open reads as merged to R8: a typo
+    # here would never gate anything.
+    unknown = [a for a in args.after or [] if a not in board.jobs]
+    if unknown:
+        die(f"--after names no open job: {', '.join(unknown)}")
 
     default = f"{worktrees_dir()}/{branch}"
     worktree = args.worktree or default
@@ -612,7 +621,7 @@ def cmd_open(root: Path, args) -> int:
     print(f"job {args.name} {verb}. worktree: {worktree}  state: {state}")
     if reserve:
         print("reserved: " + ", ".join(f"{k}={v}" for k, v in reserve.items()))
-    print(f"\n--- kickoff ---\nLane: {args.name}\nBranch: {branch}\nWorktree: {worktree}\n"
+    print(f"\n--- kickoff ---\nJob: {args.name}\nBranch: {branch}\nWorktree: {worktree}\n"
           f"Spec: {args.spec or '(see board)'}\n"
           f"Owns: {', '.join(owns) or '-'}\nShares: {', '.join(args.shares or []) or '-'}\n"
           f"Read {DIR}/RULES.md, then `python3 {DIR}/jig.py check`.")
@@ -648,6 +657,16 @@ def cmd_merge(root: Path, args) -> int:
     if waiting:
         die(f"R8 job {name} builds after {', '.join(waiting)}, which has not merged")
     branch = board.branch(name)
+    # The gate checked the commit the latest note names; anything built since is unchecked.
+    notes = handoff_notes(branch, name)
+    if not notes:
+        die(f"{name} has filed no handoff note on {branch}: hand off and gate it first")
+    m = re.search(r"^Commit: (\w+)", git("show", f"{branch}:{notes[-1]}"), re.M)
+    since = [f for f in git("diff", "--name-only", m.group(1) if m else branch, branch).splitlines()
+             if f and not f.startswith(f"{DIR}/handoffs/")]
+    if since:
+        die(f"{branch} has changed since the commit {notes[-1]} names ({', '.join(since[:5])}): "
+            "hand off again and gate that, or merge the gated commit by hand")
     msg = f"merge {name}" + (f"\n\n{args.message}" if args.message else "")
     p = subprocess.run(["git", "merge", "--no-ff", "--no-commit", "-m", msg, branch],
                        capture_output=True, text=True)
@@ -659,7 +678,8 @@ def cmd_merge(root: Path, args) -> int:
     git("add", "--", JOBS, check=True)
     if p.returncode:
         print(f"conflicts merging {branch}; {name}'s entry is already deleted in the index. "
-              "Resolve these, `git add` each, then `git commit`:", file=sys.stderr)
+              f"Resolve these, `git add` each, `git commit`, then run {DIR}/scripts/setup.sh:",
+              file=sys.stderr)
         for f in git("diff", "--name-only", "--diff-filter=U").splitlines():
             print(f"  {f}", file=sys.stderr)
         return 1
@@ -2158,6 +2178,7 @@ REVIEW_LEDGER = "docs/REVIEW_LEDGER.md"
 # "deferred then taken"); "not taken" is not. Only taken rows are in the code, so only they go.
 TAKEN = re.compile(r"(?:.*\bthen\s+)?taken\b")
 STATUS_COLUMNS = ("what happened", "status")
+SEPARATOR = re.compile(r"^\|\s*:?-")      # |---|, | --- |, |:--|
 
 
 def split_ledger(text: str) -> tuple[list[str], list[list[str]], int]:
@@ -2167,7 +2188,7 @@ def split_ledger(text: str) -> tuple[list[str], list[list[str]], int]:
     col = None
     for i, line in enumerate(lines):
         cells = [c.strip().lower() for c in line.strip().strip("|").split("|")]
-        if line.startswith("|") and i + 1 < len(lines) and lines[i + 1].startswith("|-"):
+        if line.startswith("|") and i + 1 < len(lines) and SEPARATOR.match(lines[i + 1]):
             # A findings table names the finding before what happened to it; a status in the
             # first column is a tally of the statuses, not a finding.
             col = next((n for n, c in enumerate(cells) if c in STATUS_COLUMNS and n > 0), None)
@@ -2175,7 +2196,7 @@ def split_ledger(text: str) -> tuple[list[str], list[list[str]], int]:
                 tables.append([line, lines[i + 1]])
         elif not line.startswith("|"):
             col = None
-        elif col is not None and not line.startswith("|-"):
+        elif col is not None and not SEPARATOR.match(line):
             if col < len(cells) and TAKEN.match(cells[col]):
                 dropped += 1
                 continue
@@ -2313,6 +2334,8 @@ def from_claude_lane(data: dict) -> tuple[dict, list[str]]:
     for key, value in data.items():
         if key == "main":
             out["trunk"] = value
+        elif key == "version":
+            continue                      # claude-lane's own schema, not a jig layout
         elif key == "baseline" and isinstance(value, dict):
             reserve = out.setdefault("reserve", {})
             for counter, n in value.items():
@@ -2458,7 +2481,9 @@ def files_to_review(root: Path, plan: dict) -> list[tuple[str, str]]:
                         f"{BOARD_PAGES}{slug}.md, one page per board as {DIR}/RULES.md "
                         "(Documentation) says, then check it against the code"))
     if "HARDWARE.md" in plan["after"] and (root / "HARDWARE.md").exists():
-        out.append(("HARDWARE.md", "still the template's TODOs: remove it"))
+        slug = board_slug((root / "HARDWARE.md").read_text(errors="replace"))
+        out.append(("HARDWARE.md", "still the template's TODOs: remove it" if not slug else
+                    f"names a board, but {BOARD_PAGES}{slug}.md exists: fold one into the other"))
     tpl = root / ".claude/skills/_skill-template/SKILL.md"
     if tpl.exists():
         if hashlib.sha256(tpl.read_bytes()).hexdigest() == OLD_SKILL_TEMPLATE:
@@ -2511,7 +2536,8 @@ def cmd_update(root: Path, args) -> int:
         open_jobs = [n for n, l in (data.get("lanes") or {}).items()
                       if not isinstance(l, dict) or l.get("state") != "merged"]
     if open_jobs:
-        refused.append(f"jobs are open: {', '.join(open_jobs)}. Merge or close every job "
+        refused.append(f"jobs are open: {', '.join(open_jobs)}. Merge each (`jig merge`), or close it "
+                       f"by deleting its entry from {JOBS} on trunk, "
                        "first: update moves files their worktrees rely on")
     extra = [l[len("worktree "):] for l in git("worktree", "list", "--porcelain").splitlines()
              if l.startswith("worktree ")][1:]
