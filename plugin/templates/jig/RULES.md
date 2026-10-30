@@ -24,17 +24,23 @@ identical; only the coordination disappears.
 
 ## The board
 
-`.jig/lanes.json`, on trunk, written only by the hubnode. Per lane:
+Two files on trunk, written only by the hubnode. `.jig/config.json` holds what rarely
+changes: `trunk`, `common`, `append_files`, `reserve`, `docmap`, `payload`, `release` and the
+layout's `version`. `.jig/jobs.json` holds the open lanes, nothing else. Per lane:
 
 | Key | Meaning |
 |---|---|
 | `brief` | the bundle, one paragraph |
-| `branch` / `worktree` | where it is built |
-| `state` | claimed → building → ready → gated → merged (or parked) |
+| `state` | claimed → building → ready → gated (or parked) |
 | `after` | lanes this one is gated behind |
 | `owns` | existing files only this lane may change while it is open |
 | `shares` | existing files it may change alongside others |
 | `reserved` | scarce numbers handed out centrally (migration steps, section numbers) |
+
+A lane's branch is its name, and its worktree is `.git/jig/worktrees/<branch>`. A lane
+adopted on another branch, or checked out somewhere else, stores `branch` or `worktree` —
+only the one that differs. The day it opened is the commit that added its entry. Merging a
+lane deletes its entry in the merge commit, so git log of `jobs.json` is the board's history.
 
 `common` and `append_files` are repo-wide. A file new to the repo belongs to whoever makes it.
 `payload` lists globs where markdown ships as code (skills, templates, fixtures); `survey`
@@ -52,10 +58,10 @@ Checked before every commit by a git hook, and by `jig check`.
 - **R2** A lane is built in its own worktree.
 - **R3** A lane changes only its `owns`, its `shares`, `common`, or files new to the repo.
 - **R4** Another open lane's `owns` is refused even if this lane also lists it.
-- **R5** The board is the hubnode's; it is edited on trunk only.
-- **R6** A scarce number belongs to the one lane that reserved it. A counter in `reserve`
-  with a `pattern` and `files` is enforced: a change that makes a matching number exist where
-  trunk had none, and the branch doesn't hold it, is refused. Editing or moving an existing
+- **R5** The board is the hubnode's: `config.json` and `jobs.json` are edited on trunk only.
+- **R6** A scarce number belongs to the one lane that reserved it. A change that makes a
+  number matching a counter's `pattern` exist where trunk had none, and the branch doesn't
+  hold it, is refused; merging a lane takes the numbers it holds. Editing or moving an existing
   heading takes nothing. Two branches that each take migration step 17 corrupt the first
   database that runs both.
 - **R7** A change adding a `WORKAROUND:` comment to code must stage `.jig/ledgers/WORKAROUNDS.md` too;
@@ -84,16 +90,18 @@ Conventions so two lanes rarely meet in one hunk:
 ## Reserved numbers
 
 Some things are scarce across the whole repo: migration step numbers, section numbers in a
-shared document, anything a runner stores and compares. `--reserve <counter>` hands the lane
-the next one at open. To enforce it as well as allocate it, give the counter a pattern:
+shared document, anything a runner stores and compares. Each counter in `config.json` says how
+to find its numbers:
 
 ```json
 "reserve": {
-  "schema": {"next": 17, "pattern": "SCHEMA_VERSION\\s*=\\s*(\\d+)", "files": ["**/storage.py"]}
+  "schema": {"pattern": "SCHEMA_VERSION\\s*=\\s*(\\d+)", "files": ["**/storage.py"]}
 }
 ```
 
-Without a pattern the counter allocates and trusts; `jig status` marks it `(not enforced)`.
+`--reserve <counter>` hands the lane max(the highest on trunk, the highest an open lane
+holds) + 1, so two lanes open at once never get the same number. Nothing stores a "next":
+the files say what is taken, and a counter without `pattern` and `files` is refused.
 
 A lane holding step N lists the lane holding N−1 in `after`, so they merge in order: a
 database already past a number never runs a step of that number that merges later.
@@ -138,7 +146,7 @@ several, such as its system page and the page of the board it runs on — and wr
 checklist into the note. `jig gate` refuses while a line is unanswered — each is either
 ticked as updated, or says why no change was needed.
 
-Ownership comes from `docmap` in the board:
+Ownership comes from `docmap` in `config.json`:
 
 ```json
 "docmap": {"docs/storage/storage.md": ["server/storage.py", "server/migrations/**"]}
@@ -167,7 +175,9 @@ else stops with the files named, and a person resolves it.
    manifests.
    That means a merge runs the merged-in `setup.sh`: review a change to it like any other
    code, because the next merge executes it.
-3. **The hubnode merges**, marks the lane, logs it, and syncs the clean lanes.
+3. **The hubnode merges** with `jig merge <lane>`, which deletes the lane's entry in the merge
+   commit itself, then syncs the clean lanes. What the merge touched in shared files goes in
+   that commit's message (`-m`).
 
 ## Staging
 
@@ -228,17 +238,17 @@ a commit of its own, `meta: <name> v0.3.0 → v0.4.0`, with `para-sync`'s report
 `jig release` runs the repo's own protocol. On trunk, with a clean tree and nothing staged, it
 runs `.jig/scripts/check.sh`, then `.jig/scripts/release.sh <version>`: the build and the version
 bump, which only the repo knows how to do. It commits the tracked files the script changed,
-checks that each glob in the board's `release.artifacts` matched a file, and tags `vX.Y.Z`. A
+checks that each glob in `release.artifacts` matched a file, and tags `vX.Y.Z`. A
 failure puts the tracked files back and tags nothing. The version is the last tag bumped by
 `--patch` (the default), `--minor` or `--major`, or `--version X.Y.Z` for the first.
 
-Until `release.sh` has steps and the board names its artifacts, the release refuses and points
+Until `release.sh` has steps and `config.json` names its artifacts, the release refuses and points
 to `/jig:release`, which asks what the repo builds and ships.
 
 ## Commands
 
 ```
-jig init [--trunk main]     board, git hooks
+jig init [--trunk main]     config.json, jobs.json, git hooks
 jig init --meta | --para <metarepo> --contract <globs>   ... as a metarepo / pararepo
 jig release [--major|--minor|--patch|--version X.Y.Z] [--force]   the repo's release protocol, then tag
 jig survey [--json]         inventory the repo against the jig shape
@@ -248,16 +258,16 @@ jig repos [add repo|meta|para | rename <new>]  where your repos live (user confi
 jig open ... --reserve K    allocate scarce counter K to this lane
 jig reading-list <paths>    what to read before touching these files
 jig install-hooks           rewrite the hooks
-jig status [--all]          lanes, states, distance from trunk, dirt
+jig status                  lanes, states, distance from trunk, dirt
 jig open <name> --brief … --owns … --shares … --after … --reserve schema
-jig mark <name> <state>     claimed|building|ready|gated|merged|parked
+jig mark <name> <state>     claimed|building|ready|gated|parked
+jig merge <name> [-m msg]   merge a lane; its entry is deleted in the merge commit
 jig check [--staged]        run the rules here
 jig lane                    this branch's manifest
 jig sync                    merge trunk in, append rule applied
 jig reviewed                record that HEAD has been reviewed
 jig handoff [--spec path]   write the note for HEAD
 jig gate <name>             hubnode: verify, then print the gate commands
-jig log [message] [-n N]    append to or read the log
 jig para-sync / para-propose   pararepo: refresh and report / propose
 ```
 

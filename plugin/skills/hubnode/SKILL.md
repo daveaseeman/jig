@@ -30,15 +30,14 @@ message you at a handoff or when blocked.
    number.
 2. `jig open <name> --brief "..." --owns <paths> --shares <paths> --after <lanes> --reserve schema`.
    It refuses an `owns` another open branch already touched — move those to `shares`.
-3. Commit the board on trunk. Give the printed kickoff to a subnode session, or paste it
+3. Commit `jobs.json` on trunk. Give the printed kickoff to a subnode session, or paste it
    into a new one.
 
 **Owns narrowly.** A file two live branches touch belongs in `shares` from the start.
 
 ## Gating a handoff
 
-1. `jig mark <name> ready`, then `jig gate <name>`. It refuses on R8, on being behind
-   trunk, and on a missing note.
+1. `jig mark <name> ready`, then `jig gate <name>`. It refuses on R8 and on a missing note.
 2. Run the printed commands: the checks against the commit the note names, in a detached
    scratch checkout. Not the lane's worktree — the subnode may still be building there.
 3. Read the note against the diff: every done-when item has evidence, shared files are
@@ -47,13 +46,14 @@ message you at a handoff or when blocked.
    as your own fix.
 4. **Do not re-review the diff.** The subnode's adversarial review is the review. You are
    checking that it happened and that the result matches the spec.
-5. `jig mark <name> gated`, then merge on the owner's word.
+5. `jig mark <name> gated`, commit `jobs.json`, then on the owner's word
+   `jig merge <name> -m "shared files: ..."`. It merges the lane and deletes its entry in the
+   same commit; the message records what it touched in shared files.
 
 ## After a merge
 
-`jig mark <name> merged`, `jig log "merged <name>; shared files ..."`, commit the board,
-and run `jig sync` in every open lane's worktree that is clean. Say which lanes must
-sync themselves.
+Run `jig sync` in every open lane's worktree that is clean. Say which lanes must sync
+themselves.
 
 ## Never
 

@@ -171,15 +171,15 @@ Then:
 python3 .jig/jig.py init --no-hooks
 ```
 
-That writes an empty board and leaves the predecessor's hooks running. Now fill the board by
-hand, from the predecessor's:
+That writes an empty board (`.jig/config.json`, `.jig/jobs.json`) and leaves the
+predecessor's hooks running. Now fill `config.json` by hand, from the predecessor's board:
 
-| jig board | from the predecessor |
+| `config.json` | from the predecessor |
 |---|---|
 | `trunk` | its main branch |
 | `common` | files every lane may touch |
 | `append_files` | files whose conflicts resolve by appending |
-| `reserve.<counter>` | each scarce number it allocates — set `next` to the highest ever taken, and give it a `pattern` + `files` so it is enforced |
+| `reserve.<counter>` | each scarce number it allocates, as a `pattern` + `files` that find every number ever taken: jig hands out the next above those, and refuses a counter without them |
 | `docmap` | its file → documentation map, if it has one |
 
 A counter's `files` must name every file its numbers live in — if the rules moved from
@@ -199,11 +199,12 @@ python3 .jig/jig.py open <name> --branch <its branch> --worktree <where it lives
 ```
 
 `open` sees the branch exists and adopts it: no new branch, no new worktree, the numbers it
-already holds recorded and fenced off from the counter. `--owns` and `--shares` come from
+already holds recorded and fenced off from the counter. The record keeps `branch` only when it
+isn't the lane's name, and `worktree` only when it isn't `.git/jig/worktrees/<branch>`. `--owns` and `--shares` come from
 `CODEOWNERS` if there is one, or from the predecessor's board, or from `git diff --name-only
 trunk...branch` — the files it has already touched are at minimum its `shares`. Keep the
-worktree where it is — R2 checks the path the board records, so `.claude/worktrees/x` is as
-good as `.git/jig/worktrees/x`. Commit the board.
+worktree where it is — R2 checks the path the record keeps, so `.claude/worktrees/x` is as
+good as `.git/jig/worktrees/x`. Commit `jobs.json`.
 
 A lane with uncommitted work is fine; its next commit is judged by whichever hooks are
 installed at that moment, and its ownership and numbers are the same under both.
