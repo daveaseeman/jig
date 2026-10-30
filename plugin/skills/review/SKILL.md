@@ -8,6 +8,11 @@ scope, so that is the scope at which these questions can be answered.
 
 ## Dispatch
 
+Run the subagent at the `review` step's settings: `jig workflow` gives its tier and effort,
+`${CLAUDE_PLUGIN_ROOT}/tiers.json` maps them to a model and an effort level. A number with no
+entry there is refused: say so and stop. Its prompt starts with `running <model> at
+<effort>`, and so must the first line of its reply; a different model stops the review.
+
 Give a subagent exactly this and nothing else: the diff since the last handoff
 (`git diff <last-handoff-commit>..HEAD`, or `git diff <trunk>...HEAD` for the first one; the
 last handoff is the `Commit:` of the note `jig gate` names, not the last note by name),
@@ -41,8 +46,9 @@ because the reviewer suggested them.
 
 ## Then
 
-Fix blocking items and re-run the checks. One round of should-fix is enough; if a third
-round is needed, the spec was wrong — fix the spec. Every should-fix or optional finding you
+Fix blocking items and re-run the checks. One round of should-fix is enough. If a third
+round of fixes still leaves something blocking, don't start a fourth: run `/jig:bug` on why
+the fixes aren't converging. Every should-fix or optional finding you
 don't take gets a row in `.jig/ledgers/DEFERRED.md` with its rank and one reason, tagged `[seen]` or
 `[assumed]`. The first row creates the file from `${CLAUDE_PLUGIN_ROOT}/templates/ledgers/DEFERRED.md`.
 
@@ -51,8 +57,12 @@ don't take gets a row in `.jig/ledgers/DEFERRED.md` with its rank and one reason
 When no blocking findings remain, with everything committed:
 
 ```sh
-python3 .jig/jig.py reviewed
+python3 .jig/jig.py reviewed --tier N --effort N --ran "<model> at <effort>"
 ```
+
+The tier and effort the review ran at, from `jig workflow`'s `review` line, and what its
+first line said it ran on. `jig gate` warns when they fall short of the spec's Workflow
+section.
 
 `jig handoff` refuses without a record for that exact commit. Only record a review you
 actually ran, and carry its findings into the note's Review heading.
