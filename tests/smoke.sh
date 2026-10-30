@@ -372,7 +372,7 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
   expect_pass sh -c "grep -q 'git show main:.jig/jig.py' .git/hooks/pre-commit && ! ls .git/hooks/*.local && test -f .git/jig/enabled && test ! -e .git/aidev && ! grep -q worktrees .gitignore"
 
   msg="update $name: nothing tracked is left in jig/, .aidev/, specs/ or ledgers/; the config is stamped 8, with release.sh added"
-  expect_pass sh -c "test -z \"\$(git ls-files jig .aidev specs ledgers .jig/lanes.json)\" && ! grep -q payload .jig/config.json && grep -q '\"version\": 8' .jig/config.json && git ls-files --error-unmatch .jig/scripts/release.sh"
+  expect_pass sh -c "test -z \"\$(git ls-files jig .aidev specs ledgers .jig/lanes.json)\" && ! grep -q payload .jig/config.json && grep -q '\"version\": 9' .jig/config.json && git ls-files --error-unmatch .jig/scripts/release.sh"
 
   if [ -n "$had_setup" ]; then
     msg="update $name: its setup.sh moves to .jig/scripts/ untouched"
@@ -577,7 +577,7 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
       expect_pass sh -c "python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['trunk'] == 'main' and 'lanes' not in b and 'seen' not in b and 'main' not in b and 'next' not in b['reserve']['section'], b\" && test ! -e .claude/claude-lane && git diff --cached -M --name-status | grep -q '^R100.*old-2026-01-01.md'";;
     dot-jig-v7)
       msg="update $gen: the one-file board splits: config.json without jobs or log, an empty jobs.json, no lanes.json"
-      expect_pass sh -c "python3 -c \"import json; c = json.load(open('.jig/config.json')); assert c['version'] == 8 and not {'lanes', 'log'} & set(c) and json.load(open('.jig/jobs.json')) == {}, c\" && test ! -e .jig/lanes.json && echo \"\$0\" | grep -q 'board: lanes.old (merged)' && echo \"\$0\" | grep -q 'board: log'" "$out";;
+      expect_pass sh -c "python3 -c \"import json; c = json.load(open('.jig/config.json')); assert c['version'] == 9 and not {'lanes', 'log'} & set(c) and json.load(open('.jig/jobs.json')) == {}, c\" && test ! -e .jig/lanes.json && echo \"\$0\" | grep -q 'board: lanes.old (merged)' && echo \"\$0\" | grep -q 'board: log'" "$out";;
   esac
 
   msg="update $gen: a second update is up to date"
@@ -609,8 +609,8 @@ git add -A && git commit -qm init && $J init >/dev/null
 msg="init: config.json holds the settings, no jobs and no log; jobs.json is empty"
 expect_pass python3 -c "
 import json; c = json.load(open('.jig/config.json')); j = json.load(open('.jig/jobs.json'))
-assert sorted(c) == sorted(['version', 'name', 'trunk', 'common', 'append_files', 'reserve', 'docmap', 'not_docs', 'release']), c
-assert c['version'] == 8 and j == {}, (c, j)"
+assert sorted(c) == sorted(['version', 'name', 'trunk', 'common', 'append_files', 'reserve', 'docmap', 'not_docs', 'release', 'reference_files']), c
+assert c['version'] == 9 and j == {}, (c, j)"
 python3 - <<'EOF'
 import json; c = json.load(open('.jig/config.json'))
 c['reserve'] = {'section': {'pattern': r'^## (\d+) ', 'files': ['docs/**']}, 'loose': {}}
@@ -1105,6 +1105,59 @@ import importlib.util, sys; s = importlib.util.spec_from_file_location('j', '.ji
 assert j.repo_path('rp') is not None and j.repo_path('tools') is not None"
 msg="repos: the list marks this folder"
 expect_pass sh -c "$J repos | grep -q 'tools .*← here'"
+
+# ---------------------------------------------------------------- hardware reference files
+HR="$T/hwref"
+mkdir -p "$HR" && cd "$HR" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs/hardware/components/pmic docs/hardware/watch main
+printf '# Watch\n\n| PMIC | QX-100 | power | [ds](components/pmic/qx-100.pdf) |\n' > docs/hardware/watch.md
+printf '%%PDF-fake\n' > docs/hardware/components/pmic/qx-100.pdf
+printf '# PMIC notes\n' > docs/hardware/components/pmic/notes.md
+printf '# Vendor definition\n' > docs/hardware/watch/vendor-definition.md
+printf 'int led = 2;\n' > main/app.c
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+hrsurvey() { python3 -c "
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+$1"; }
+
+msg="reference files: unmapped, only docs/hardware/<board>.md is a board page"
+expect_pass hrsurvey "assert r['boards_unmapped'] == ['docs/hardware/watch.md'], r['boards_unmapped']"
+
+python3 - <<'PY'
+import json; b = json.load(open('.jig/config.json'))
+b['docmap'] = {'docs/hardware/watch.md': ['main/**']}
+json.dump(b, open('.jig/config.json', 'w'), indent=2)
+PY
+git add -A && git commit -qm docmap
+msg="reference files: mapped, a component note and a board's folder are no board pages"
+expect_pass hrsurvey "assert r['boards_unmapped'] == [], r['boards_unmapped']"
+
+msg="reference files: a component file no board page links is reported, a linked one is not"
+expect_pass hrsurvey "assert r['components_unlinked'] == ['docs/hardware/components/pmic/notes.md'], r['components_unlinked']"
+
+msg="reference files: neither the component note nor the board's folder is homeless"
+expect_pass hrsurvey "assert r['homeless'] == [], r['homeless']"
+
+printf '| LDO | QX-7 | rail | [ds](components/ldo/qx-7.pdf) |\n' >> docs/hardware/watch.md
+git add -A && git commit -qm "link a missing datasheet"
+msg="reference files: a board page linking a component file that doesn't exist is reported"
+expect_pass hrsurvey "assert r['components_missing'] == [['docs/hardware/watch.md', 'docs/hardware/components/ldo/qx-7.pdf']], r['components_missing']"
+
+msg="reference files: survey's Homes line names both new homes"
+expect_pass sh -c "$J survey | grep '^Doc homes: ' | grep -q 'docs/hardware/components/ = ' && $J survey | grep '^Doc homes: ' | grep -q 'docs/hardware/<board>/ = '"
+
+msg="reference files: init leaves reference_files unset, so /jig:hardware asks"
+expect_pass python3 -c "import json; assert json.load(open('.jig/config.json'))['reference_files'] == ''"
+
+msg="reference files: update adds reference_files to a config that lacks it"
+python3 - <<'PY'
+import json; b = json.load(open('.jig/config.json'))
+del b['reference_files']; b['version'] = 8
+json.dump(b, open('.jig/config.json', 'w'), indent=2)
+PY
+git add -A && git commit -qm "older config"
+expect_pass sh -c "$J update 2>&1 | grep -q 'reference_files: added'"
 
 rm -rf "$T"
 exit $fail

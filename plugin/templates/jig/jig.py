@@ -31,7 +31,7 @@ STATES = ["claimed", "building", "ready", "gated", "parked"]
 # The layout this copy of jig writes into the config's "version". Any change that adds a
 # LAYOUT row, a config default or an update STEP bumps it. Nothing branches on it except
 # update's refusal to take a newer repo back to an older jig.
-STAMP = 8
+STAMP = 9
 BOARD_DEFAULTS = {
     "version": STAMP,
     "name": "",            # init and update fill it with the folder name; staging's targets match it
@@ -42,6 +42,10 @@ BOARD_DEFAULTS = {
     "docmap": {},
     "not_docs": [],        # globs whose markdown ships as code; survey finds no home for it
     "release": {"artifacts": []},   # globs release.sh must produce; see `jig release`
+    # Whether a board's datasheets are committed ("commit") or gitignored ("ignore"). Left
+    # unset, the hardware skill asks on the repo's first board page: a public repo may not be
+    # allowed to redistribute vendor PDFs, so it's the repo's call.
+    "reference_files": "",
 }
 
 
@@ -969,12 +973,17 @@ def cmd_gate(root: Path, args) -> int:
 # --------------------------------------------------------------------- survey
 
 BOARD_PAGES = "docs/hardware/"
+# One folder per part, shared by every board page that uses it: one part sits on several
+# boards, and a per-board copy of its datasheet would drift.
+COMPONENTS = f"{BOARD_PAGES}components/"
 # Where each kind of document lives: a file by name, a folder by its trailing "/".
 DOC_HOMES = {
     "AGENTS.md": "rules, always loaded",
     "CLAUDE.md": "pointer to AGENTS.md",
     "README.md": "for people outside",
     "docs/": f"what the code is now; docs/<system>/<system>.md each system, {BOARD_PAGES}<board>.md each board",
+    COMPONENTS: "<part>/ one folder per part: its datasheets and notes, linked from board pages",
+    f"{BOARD_PAGES}<board>/": "one board's files that aren't its page (schematic, a snapshot of its definition)",
     f"{DIR}/specs/": "a task in flight",
     f"{DIR}/ledgers/": "WORKAROUNDS.md patches that are in the code; DEFERRED.md review findings that are not",
     f"{DIR}/staging/": "chat-born files waiting to be resolved (untracked)",
@@ -1054,6 +1063,35 @@ def board_like_json(root: Path, files: list[str]) -> list[str]:
     return out
 
 
+def board_pages(md: list[str]) -> list[str]:
+    """docs/hardware/<board>.md only. A note beside a datasheet, or a board's own folder of
+    files, is not a page."""
+    return [f for f in md if f.startswith(BOARD_PAGES) and "/" not in f[len(BOARD_PAGES):]]
+
+
+MD_LINK = re.compile(r"\]\(([^)\s]+)")
+
+
+def component_links(root: Path, files: list[str], pages: list[str]) -> tuple[list[str], list[tuple[str, str]]]:
+    """Files under COMPONENTS that no board page links, and links from board pages into
+    COMPONENTS that point at nothing on disk. Disk, not git: an ignored datasheet that was
+    fetched is present."""
+    linked, missing = set(), []
+    for page in pages:
+        text = (root / page).read_text(errors="replace") if (root / page).exists() else ""
+        for target in MD_LINK.findall(text):
+            if "://" in target:
+                continue
+            path = os.path.normpath(os.path.join(os.path.dirname(page), target.split("#")[0]))
+            if not path.startswith(COMPONENTS):
+                continue
+            linked.add(path)
+            if not (root / path).exists():
+                missing.append((page, path))
+    unlinked = [f for f in files if f.startswith(COMPONENTS) and f not in linked]
+    return unlinked, missing
+
+
 def cmd_survey(root: Path, args) -> int:
     files = tracked(root)
     md = [f for f in files if f.endswith(".md")]
@@ -1102,8 +1140,9 @@ def cmd_survey(root: Path, args) -> int:
     report["docmap_present"] = bool(board.get("docmap"))
     # The fold-in asks about a page only when docmap names it, so a board page left out
     # of docmap is never checked against the code that targets that board.
-    report["boards_unmapped"] = [f for f in md if f.startswith(BOARD_PAGES)
-                                 and f not in (board.get("docmap") or {})]
+    pages = board_pages(md)
+    report["boards_unmapped"] = [f for f in pages if f not in (board.get("docmap") or {})]
+    report["components_unlinked"], report["components_missing"] = component_links(root, files, pages)
     if args.json:
         print(json.dumps(report, indent=2))
         return 0
@@ -1148,6 +1187,16 @@ def cmd_survey(root: Path, args) -> int:
               "\nmatch the code. Map each to the code that targets its board:")
         for f in report["boards_unmapped"]:
             print(f"  {f}")
+    if report["components_unlinked"]:
+        print(f"\nFiles under {COMPONENTS} that no board page links: link each from the"
+              "\nComponents table of the page whose checks lean on it, or drop it:")
+        for f in report["components_unlinked"]:
+            print(f"  {f}")
+    if report["components_missing"]:
+        print("\nBoard pages linking a component file that doesn't exist: fetch it again from"
+              "\nthe source URL the page records, and check its hash:")
+        for page, target in report["components_missing"]:
+            print(f"  {page:<40} -> {target}")
     co = report["coordination"]
     print("\nHow parallel work is coordinated today (and what each maps to in jig):")
     for f in co["found"]:

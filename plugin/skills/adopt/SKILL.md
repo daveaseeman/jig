@@ -38,6 +38,8 @@ Each one gets exactly one job and one home:
 | `.jig/ledgers/WORKAROUNDS.md` | patches that are in the code |
 | `.jig/ledgers/DEFERRED.md` | review findings that are not |
 | `docs/hardware/<board>.md` | one per board: components, wiring, toolchain, flash |
+| `docs/hardware/components/<part>/` | one folder per part: its datasheets and notes, linked from board pages |
+| `docs/hardware/<board>/` | one board's files that aren't its page: schematic, a snapshot of its definition |
 | `.claude/skills/` | reusable know-how, loaded on demand |
 | git history | everything else |
 

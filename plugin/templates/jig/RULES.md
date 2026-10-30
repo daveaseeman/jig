@@ -137,6 +137,17 @@ that changes that code asks whether the page still matches. Code that runs on a 
 not pass the gate without a page that matches it; for that code, "no page needed" is not an
 answer.
 
+Only `docs/hardware/<board>.md` is a board page. The files a page leans on have two homes
+beside it: `docs/hardware/components/<part>/`, one folder per part with its datasheets and
+notes, shared by every board that uses the part; and `docs/hardware/<board>/`, one board's
+files that aren't its page (a schematic, a snapshot of its definition). The page's Components
+table links each datasheet with its source URL, the date it was retrieved and the first 12
+hex digits of its sha256, so a check names the exact document it was made against. Whether
+the binaries are committed is the repo's call, `reference_files` in the config: `commit`, or
+`ignore` with `docs/hardware/components/**/*.pdf` in `.gitignore` and the URL and hash on the
+page to fetch it again. `jig survey` reports a component file no board page links, and a link
+to one that doesn't exist.
+
 ## Fold-in
 
 Code and the page that documents it move together, or the page starts lying. `jig handoff`

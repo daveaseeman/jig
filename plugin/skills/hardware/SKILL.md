@@ -14,9 +14,27 @@ the code always matches it, and the check at the gate would catch nothing.
    Write nothing.
 2. **Write the page.** Copy `${CLAUDE_PLUGIN_ROOT}/templates/hardware.md` to
    `docs/hardware/<board>.md`, the board's name in lowercase with dashes
-   (`esp32-s3-devkitc-1.md`). Never overwrite: if the page exists, you are updating it, so
+   (`acme-devboard-2.md`). Never overwrite: if the page exists, you are updating it, so
    show the diff before changing it. Fill every section the definition covers and leave TODO
-   where it says nothing. Set `Defined from:` to the file's path, or `pasted <date>`.
+   where it says nothing. Board pages are only `docs/hardware/<board>.md`; the files they lean
+   on go beside them:
+   - **The definition**, when it is a file, is saved to `docs/hardware/<board>/` and
+     `Defined from:` names that path and the first 12 hex of its sha256 (`sha256sum`, or
+     `shasum -a 256`). Pasted: `pasted <date>`. A URL: the URL and a commit or hash, since the
+     page behind it changes.
+   - **Each datasheet** the user gives, or the checks lean on, is saved to
+     `docs/hardware/components/<part>/`, the part's name in lowercase with dashes, one folder
+     per part, shared by every board that uses it: never a copy per board. Its Components row's
+     Datasheet cell gets a relative link to it, the source URL, the date retrieved and the
+     first 12 hex of its sha256. Fetch nothing yourself: ask for the file or the URL.
+   - **Committed or ignored.** Read `reference_files` in `.jig/config.json`. Unset (`""`, or
+     absent), this is the repo's first board page: ask once whether reference binaries are
+     committed (`commit`) or ignored (`ignore`). A public repo may not be allowed to
+     redistribute vendor PDFs, so don't pick for it. On `ignore`, add
+     `docs/hardware/components/**/*.pdf` to `.gitignore`; the page keeps the URL and hash, so
+     the file can be fetched again. The config is the hubnode's: hand it the line
+     (`"reference_files": "ignore"`) with the `docmap` line in step 6, or, working solo on
+     trunk, write it.
 3. **Check it against the code.** Read what the code assumes about the board: `sdkconfig`,
    `platformio.ini`, `Kconfig`, devicetree overlays, pin and bus defines. Then show every
    difference in one list before asking about any:
@@ -38,8 +56,9 @@ the code always matches it, and the check at the gate would catch nothing.
    handoff that changes that code then asks whether the page still matches, and the gate
    refuses until it is answered. The board is the hubnode's: hand it the line.
 
-Report the page, each mismatch and how it was settled, the code to change, the skills listed
-and installed, and the `docmap` line.
+Report the page, the reference files saved and their hashes, each mismatch and how it was
+settled, the code to change, the skills listed and installed, and the `docmap` and
+`reference_files` lines.
 
 ## Install skills only
 
