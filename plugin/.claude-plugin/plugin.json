@@ -1,6 +1,6 @@
 {
   "name": "jig",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Minimal scaffolding for prototyping software and firmware with AI agents: spec, bug, verify, review, retro; init/survey/adopt to set up a repo, update to bring it to the current layout; hubnode/subnode for parallel jobs; hardware to spec a board and install its skills; stage to land chat-born files through .jig/staging/; release to build and tag a version by the repo's own protocol; feedback for bugs in the tool itself.",
   "author": {
     "name": "Dave Seeman",
