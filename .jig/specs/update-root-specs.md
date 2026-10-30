@@ -1,67 +1,124 @@
-# `jig update`: root `specs/` collisions, mixed subfolders, scripts moved down, stranded worktrees
+# `jig update`: folder collisions, mixed subfolders, files moved deeper, stranded worktrees
 
 Source: an adopting repo's report on running `jig update` from an ai-dev layout; it recovered by
 hand and put jig out of scope. This is the jig side.
 
 ## Intent
-A repo that reaches `update` with a pre-written `.jig/specs/` file, a root `specs/` subfolder of
-mixed files, a script that finds the repo root from its own folder, or lane worktrees left behind by
-a folder rename gets a working update, or a refusal that names the exact fix. Nothing needs a
-hand-written recovery.
+A repo that reaches `update` with any of these gets a working update, or a refusal that names the
+exact fix:
+- a pre-written `.jig/specs/` file,
+- a root `specs/` subfolder of mixed files,
+- a moved script that finds paths from its own folder,
+- lane checkouts left behind by a repo folder rename.
+
+Nothing needs a hand-written recovery.
 
 ## The report's candidates, checked against `plugin/templates/jig/jig.py` at `bb1eb98`
 Each checked in a scratch ai-dev repo with today's template `update`.
 
 | Candidate | Checked | Whose | What changes |
 |---|---|---|---|
-| A tracked `.jig/specs/` file stops the whole root `specs/` move | [seen] "both left, not merged" | jig's: update.md's own rule is per file ("old path exists and new one doesn't"); the folder-level check is coarser than that | Per file: a file moves when its destination is free. A file at both paths stays, and the warning names it |
-| Markdown-only splits `specs/prework/` from its other files | [seen] README moves, `t.rs` stays | jig's: jig's move does the splitting | A subfolder of root `specs/` or `ledgers/` holding any non-Markdown file, at any depth, stays whole, Markdown included. One warning names it and gives the `git mv` that moves it whole. Non-Markdown still never moves |
-| `cd "$(dirname "$0")/.."` is wrong after `scripts/` → `.jig/scripts/` | [seen] no template generation (`eaec973`, `66a044c`, `62c8d9f`, `5d955a2`, now) wrote that line | The line is the repo's. jig's part: its move breaks the line, and the dry run says nothing | Warning: a moved file whose folder depth changed and that has a line building a path from its own location (`$0`, `BASH_SOURCE`, `__file__`, `__dirname`) with `..`. The warning shows the line. The skill offers the edit; `jig.py` never makes it |
-| Worktrees stranded by a repo folder rename | [seen] the refusal's own advice, `git worktree remove <old path>`, exits 0, drops git's record, and leaves the checkout on disk | jig's: the advice is wrong for this case | A registered worktree whose path is gone (`prunable`), with a folder in the repo whose `.git` file names that record: the refusal says `git worktree repair <folder>`, then `git worktree remove <folder>`. Prunable with no such folder: `git worktree prune` |
-| The old `worktrees/` ignore line goes while folders remain | [seen] `ignore_lines` never looks at the disk | jig's | Any folder inside an old worktrees folder (`.aidev/worktrees/`, or `.jig/worktrees/` beside an older board) is a refusal. A folder with a `.git` file gets the advice above. Any other folder gets "not a checkout git knows: look, then delete it". jig deletes nothing |
-| The stale-reference report prints only on `--apply`; nothing rewrites | [seen] false: the dry run prints it. But a refusal returns before the plan, so a repo with worktrees never sees a plan at all | Rewriting is the repo's: update.md puts editing the repo's files out of scope, and the skill already offers it. Hiding the plan is jig's | A dry run that refuses prints the refusal, then the plan and the report, and still exits 2. `--apply` that refuses prints the refusal only |
+| A tracked `.jig/specs/` file stops the whole root `specs/` move | [seen] "both left, not merged". The check is folder-level (`free`, in `plan_moves`) | jig's: update.md's Decision is per file ("old path exists and new one doesn't") | Per file, for every folder row. A file moves when its destination is free. A file at both paths stays, and is warned by name |
+| Markdown-only splits a subfolder from its other files | [seen] README moves, `t.rs` stays | jig's: the split is jig's doing | A subfolder of root `specs/` or `ledgers/` that holds any non-Markdown file, at any depth, stays whole, Markdown included. One warning names it. If the subfolder is jig's material, the repo's own `git mv` moves it whole |
+| `cd "$(dirname "$0")/.."` is wrong after `scripts/` → `.jig/scripts/` | [seen] no template generation (`eaec973`, `66a044c`, `62c8d9f`, `5d955a2`, now) wrote that line | The line is the repo's. jig's part: its move breaks the line, and the dry run is silent | Warning: a moved non-Markdown file whose folder depth changed, with its lines that use its own location (`$0`, `BASH_SOURCE`, `__file__`, `__dirname`). The skill offers the edit; `jig.py` never makes it |
+| Worktrees stranded by a repo folder rename | [seen] the refusal's own advice, `git worktree remove <old path>`, exits 0, drops git's record, and leaves the checkout on disk. Once the record is gone, `repair` and `remove` both fail on it | jig's: the advice is wrong for this case | Advice per case, below |
+| The old `worktrees/` ignore line goes while folders remain | [seen] `ignore_lines` reads only `.gitignore` | jig's | Folders left in an old worktrees folder refuse, below |
+| The stale-reference report prints only on `--apply`; nothing rewrites | [seen] false: the dry run prints it. But a refusal returns before the plan is printed, so a repo with worktrees never sees one | Rewriting is the repo's: update.md puts editing the repo's files out of scope, and the skill already offers it. Hiding the plan is jig's | A refusing dry run prints the refusal, then the plan and report, and still exits 2. A refusing `--apply` prints the refusal only |
+
+**Worktree refusal, per case.**
+- It reads git's records (`.git/worktrees/<id>/gitdir`) and the folders in the old worktrees folder (`.aidev/worktrees/`, or `.jig/worktrees/` beside an older board) and in `.git/jig/worktrees/`.
+- Like the other refusals, it fires only when there is something to apply.
+- Each case gets its own line:
+  - A record whose path exists: `git worktree remove <path>`. This is today's advice.
+  - A record whose path is gone, with a folder whose `.git` file names that record's id: it moved with the repo. `git worktree repair <folder>`, then `git worktree remove <folder>`.
+  - A record whose path is gone, with no such folder: `git worktree prune`.
+  - A folder in an old worktrees folder whose record is gone, or that has no `.git` file: "not a checkout git knows: look, then delete it". jig deletes nothing.
+
+**A partly moved folder row.**
+- A row counts as applied when at least one file moved.
+- Where files stayed behind, the board keeps the old glob beside the new one.
+- A reference is stale only when the path it names no longer exists after the moves.
 
 ## Done when
-`bash tests/smoke.sh` gains these cases, each on the ai-dev fixture, and passes:
-- [ ] Root `specs/a.md`, `specs/b.md`, and a tracked `.jig/specs/b.md`. `update --apply` moves `a.md` (`R100`) and leaves `specs/b.md`. One warning names `specs/b.md`, and `.jig/specs/b.md` is unchanged.
-- [ ] `specs/top.md`, `specs/app.spec.js`, `specs/prework/README.md` and `specs/prework/t.rs`. `top.md` moves and the other three stay. One warning names `specs/prework/` with `git mv specs/prework .jig/specs/prework`. A moved spec that names `specs/prework/t.rs` is not listed under stale references.
-- [ ] A tracked `scripts/check.sh` with `cd "$(dirname "$0")/.."`. The dry run exits 1, and a warning names `.jig/scripts/check.sh` and shows that line. The existing fixtures' scripts raise no such warning.
-- [ ] A worktree at `.aidev/worktrees/l1`, then the repo folder renamed. The dry run exits 2 and its refusal contains `git worktree repair .aidev/worktrees/l1`. Run the printed commands, then `update --apply`, then commit: `git status --porcelain --untracked-files=all` is empty, and `.aidev` is gone.
-- [ ] An untracked, unregistered `.aidev/worktrees/x/f`. The dry run and `--apply` both exit 2 and name `.aidev/worktrees/x`, and `.gitignore` is unchanged.
-- [ ] With an extra worktree, the dry run prints the refusal and then `Moves`, and exits 2. `--apply` prints no `Moves`.
-- [ ] `claude plugin validate ./plugin` passes. `grep -rniE 'prework|maige' plugin` finds nothing: smoke fixtures use generic names.
+`bash tests/smoke.sh` passes with these new cases. Each runs on the ai-dev fixture unless a case says otherwise:
+- [ ] Root `specs/a.md` and `specs/b.md`, plus a tracked `.jig/specs/b.md`.
+  - `update --apply` moves `a.md` (`R100`) and leaves `specs/b.md`.
+  - One warning names `specs/b.md`, and `.jig/specs/b.md` is unchanged.
+  - The board's `common` holds both `specs/**` and `.jig/specs/**`.
+  - A file naming `specs/b.md` is not listed as stale.
+- [ ] Root `specs/top.md`, `specs/app.spec.js`, `specs/suite/README.md` and `specs/suite/t.rs`.
+  - `top.md` moves; the other three stay.
+  - One warning names `specs/suite/`.
+  - A moved spec naming `specs/suite/t.rs` is not listed as stale.
+- [ ] A tracked `scripts/check.sh` with `cd "$(dirname "$0")/.."`.
+  - The dry run exits 1, and a warning names `.jig/scripts/check.sh` with that line.
+  - The existing fixtures' scripts raise no such warning.
+- [ ] A worktree at `.aidev/worktrees/l1`, then the repo folder renamed.
+  - The dry run exits 2, and its output contains both `git worktree repair .aidev/worktrees/l1` and `Moves`.
+  - Run the printed commands, then `update --apply`, then commit. `git status --porcelain --untracked-files=all` is empty, and `.aidev` is gone.
+- [ ] The same, after `git worktree remove <old path>` has dropped the record.
+  - The refusal names `.aidev/worktrees/l1` as not a checkout git knows.
+  - `--apply` exits 2, and `.gitignore` is unchanged.
+- [ ] An untracked `.aidev/worktrees/x/f` with no `.git` file: the dry run and `--apply` exit 2 and name it.
+- [ ] A worktree whose folder was deleted by hand: the refusal says `git worktree prune`.
+- [ ] On the eaec973 `dot` fixture, a folder in `.jig/worktrees/` refuses the same way.
+- [ ] The existing case "jig/specs/ and .jig/specs/ both exist, so neither moves" now expects `jig/specs/_template.md` to move and `.jig/specs/new.md` to stay.
+- [ ] `claude plugin validate ./plugin` passes, and `grep -rniE 'prework|maige' plugin` finds nothing. Smoke's fixtures use generic names (`specs/suite/`).
 
 ## Out of scope
-- `jig.py` editing the repo's files: stale references, script `cd` lines (update.md, Out of scope).
+- `jig.py` editing the repo's files: stale references, script lines (update.md, Out of scope).
 - `update` running `git worktree repair`, `remove` or `prune` itself.
 - Moving any non-Markdown file out of a root `specs/` or `ledgers/`.
 - P2 and the para rules. The report's P2 concern goes away once the move is per file.
 
 ## Touches
 - `plugin/templates/jig/jig.py`:
-  - `plan_moves`: per-file collision check for folder rows; a mixed subfolder stays whole.
-  - `stale_references`: skip references into a subfolder that stayed.
-  - `cmd_update`: the worktree refusal reads `prunable` and old worktrees folders on disk; the depth warning; the plan printed under a dry-run refusal.
+  - `plan_moves`: the per-file check for every folder row, and mixed subfolders staying whole.
+  - `rewrite_board`: keeps the old glob when files stay.
+  - `stale_references`: a reference to a path that still exists is not stale.
+  - `cmd_update`:
+    - the worktree refusal, per case;
+    - the depth warning;
+    - the plan printed under a refusing dry run;
+    - an untracked staging or cache file whose destination is taken is now warned, not skipped silently.
   - No `LAYOUT` row, board default or `STEPS` entry, so no `STAMP` bump.
-- `plugin/skills/update/SKILL.md`: the refusal's repair advice. After `--apply`, a depth warning is code to fix, like a stale reference.
+- `plugin/skills/update/SKILL.md`:
+  - The refusal advice.
+  - After `--apply`, a depth warning is code to fix, like a stale reference.
+- `plugin/skills/adopt/SKILL.md`: the same worktree advice, per case. It gives today's `git worktree remove <path>` too.
 - `tests/smoke.sh`.
-- `marketing/FEATURES.md` (main checkout, ignored): a clause in the `update` row's "what". No new row; no new feature.
+- `marketing/FEATURES.md` (main checkout, ignored): a clause in the `update` row's "what". No new feature.
 
-**Collision with lane `names`.** It edits the same functions: `LAYOUT` gets claude-lane, `REVIEW_LEDGER.md` and root `HARDWARE.md` rows; `BOARD` becomes `CONFIG`/`JOBS`; lane→job and `/jig:brief`→`/jig:spec` everywhere; new refusals for counters without a pattern. It also edits `smoke.sh` and the update skill. Its new rows are file rows, and the per-file rule here changes folder rows only, so the logic doesn't conflict, but the text does. Build this after `names` merges and use its words: "job", `/jig:spec`. This spec is the smaller one to rebase.
+**Collision with lane `names`.** It edits the same places:
+- functions: `LAYOUT` (claude-lane, `REVIEW_LEDGER.md` and root `HARDWARE.md` rows), `plan_moves`, `cmd_update`'s refusals (new ones for counters without a pattern);
+- names used everywhere: `BOARD` → `CONFIG`/`JOBS`, lane → job, `/jig:brief` → `/jig:spec`;
+- files: `smoke.sh` and the update and adopt skills.
+
+Its new rows are file rows, and the per-file rule here changes how folder rows decide. The logic doesn't conflict, but the text does. Build this after `names` merges, in its words. This spec is the smaller one to rebase.
 
 ## Alternatives considered
-- Move all of a root `specs/` under an old board, non-Markdown included. Rejected: the filter protects a repo's own test files (`specs/app.spec.js`). [seen] The comment at the filter, and update.md's Oct 29 review.
-- Move a mixed subfolder whole, the Markdown and the rest. Rejected: a test folder with a README is still the repo's test folder, and its runner names those paths. [assumed] See open question 1.
-- `update` rewrites `/..` to `/../..` in moved scripts. Rejected: update renames and never edits, and smoke asserts `R100`. The line was never jig's. [seen] update.md Decisions; the five template generations.
-- `update` runs `git worktree repair` and `remove` itself. Rejected: a dry run changes nothing, removal needs someone to look at uncommitted work first, and jig never removes a worktree. [seen] update.md Decisions.
-- Keep the old ignore line while folders remain. Rejected: it hides checkouts that git no longer tracks (the report's were tens of GB) behind a line jig no longer owns, and the refusal's fix is one the user knows. [assumed]
-- Keep the folder-level collision rule, and have the skills write specs to root `specs/` while the repo is behind. Rejected: every skill that writes into `.jig/` would need the branch (brief, bug, stage), and per file is already update.md's rule. [assumed]
+- Move all of a root `specs/` under an old board, non-Markdown included. Rejected: the filter exists so a repo's own test files (`specs/app.spec.js`) never move. [seen] The comment at the filter in `plan_moves`, and update.md's Oct 29 review.
+- Move a mixed subfolder whole. Rejected for the same reason: it moves non-Markdown, and jig can't tell a task's material from the repo's own tests. The warning leaves that call to the repo. [seen] The same comment.
+- Judge the top level of `specs/` whole too, the way a subfolder is judged. Rejected: the top level is where jig wrote its specs, so its Markdown is jig's. Specs were always written flat, `specs/<task>.md`, so a subfolder is a unit jig never made. [seen] Every generation's brief skill.
+- Per file only for the root `specs/` and `ledgers/` rows. Rejected: `jig/specs/` would keep the folder-level rule, an asymmetry with no reason behind it. update.md's Decision is per file for every row. [seen]
+- `update` rewrites `/..` to `/../..` in moved scripts. Rejected:
+  - `update` renames files and never edits them, and smoke asserts `R100`;
+  - the line was never jig's.
+
+  [seen] update.md Decisions; the five template generations.
+- `update` runs `git worktree repair` and `remove` itself. Rejected:
+  - a dry run changes nothing;
+  - removal needs someone to look at uncommitted work first;
+  - jig never removes a worktree.
+
+  [seen] update.md Decisions.
+- Leftover worktree folders as a warning, with the ignore line kept. Rejected: they are checkouts, possibly with uncommitted work, and update already refuses on extra worktrees for this reason, with a fix the user knows. [seen] update.md Decisions, "Refusals".
 
 ## Decisions
-- Non-Markdown under a root `specs/` or `ledgers/` still never moves. A mixed subfolder now stays with it, rather than being split.
-- Each refusal names the exact command for the case it sees. `update` itself still runs none of them.
+- Non-Markdown under a root `specs/` or `ledgers/` still never moves. A mixed subfolder now stays with it, not split.
+- Each refusal names the exact command for the case it sees. `update` runs none of them.
+- The depth warning covers any moved non-Markdown file, not only shell scripts. A false positive costs one warning line.
 
 ## Open questions
-1. Should a mixed subfolder stay whole at the root (this spec) or move whole into `.jig/specs/`, as the reporting repo did by hand?
-2. Should the stale-reference report be retrievable after the update commit? Once the board is current, a re-run says "up to date". This spec leaves it to the skill, before the commit.
-3. Should the depth warning cover only shell scripts, or any moved file (this spec)? Today `scripts/check.sh` and `format.sh` are the only file rows that change depth.
+1. Should the stale-reference report be retrievable after the update commit? Once the board is current, a re-run says "up to date". This spec leaves it to the skill, before the commit.
+2. Should `jig update` be able to name a mixed subfolder as the repo's material and move it whole on request (a flag, or a board key)? This spec leaves it to a hand `git mv`.
