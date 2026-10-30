@@ -18,6 +18,8 @@
     "plugin/**"
   ],
   "release": {
-    "artifacts": []
+    "artifacts": [
+      "dist/jig-*.plugin"
+    ]
   }
 }

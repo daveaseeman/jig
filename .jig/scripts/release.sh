@@ -9,12 +9,16 @@ set -eu
 cd "$(dirname "$0")/../.."
 version="$1"
 
-# TODO: release protocol. /jig:release fills this in with you, then deletes this line.
+# --- the version lives in the plugin manifest and the marketplace entry
+for f in plugin/.claude-plugin/plugin.json .claude-plugin/marketplace.json; do
+  sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"$version\"/" "$f" && rm "$f.bak"
+done
 
-# --- write the version where the repo keeps it, for example:
-# npm version "$version" --no-git-tag-version
-# sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"$version\"/" app/manifest.json && rm app/manifest.json.bak
+# --- the plugin must validate and every rule must pass end to end before it ships
+claude plugin validate ./plugin
+bash tests/smoke.sh
 
-# --- build what the release ships, into a folder git ignores, for example:
-# npm run dist                      # an app's installers
-# zip -r "dist/app-$version.zip" build/
+# --- the release is the plugin folder zipped as a .plugin, from the working tree: the version
+# bump above isn't committed yet, so `git archive HEAD` would ship the old version
+mkdir -p dist && rm -f "dist/jig-$version.plugin"
+(cd plugin && git ls-files -z | xargs -0 zip -q "../dist/jig-$version.plugin")
