@@ -1,0 +1,22 @@
+{
+  "version": 6,
+  "name": "jig",
+  "trunk": "main",
+  "common": [
+    "AGENTS.md",
+    "docs/**",
+    ".jig/**"
+  ],
+  "append_files": [
+    "AGENTS.md",
+    ".jig/ledgers/**",
+    "CHANGELOG.md"
+  ],
+  "reserve": {},
+  "docmap": {},
+  "payload": [
+    "plugin/**"
+  ],
+  "lanes": {},
+  "log": []
+}
