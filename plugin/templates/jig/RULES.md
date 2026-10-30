@@ -24,8 +24,8 @@ identical; only the coordination disappears.
 ## The board
 
 Two files on trunk, written only by the hubnode. `.jig/config.json` holds what rarely
-changes: `trunk`, `common`, `append_files`, `reserve`, `docmap`, `not_docs`, `release` and the
-layout's `version`. `.jig/jobs.json` holds the open jobs, nothing else. Per job:
+changes: `trunk`, `common`, `append_files`, `reserve`, `docmap`, `not_docs`, `release`,
+`reference_files` and the layout's `version`. `.jig/jobs.json` holds the open jobs, nothing else. Per job:
 
 | Key | Meaning |
 |---|---|
@@ -144,8 +144,8 @@ files that aren't its page (a schematic, a snapshot of its definition). The page
 table links each datasheet with its source URL, the date it was retrieved and the first 12
 hex digits of its sha256, so a check names the exact document it was made against. Whether
 the binaries are committed is the repo's call, `reference_files` in the config: `commit`, or
-`ignore` with `docs/hardware/components/**/*.pdf` in `.gitignore` and the URL and hash on the
-page to fetch it again. `jig survey` reports a component file no board page links, and a link
+`ignore` with `docs/hardware/*/**/*.[pP][dD][fF]` in `.gitignore`, covering both homes, and
+the URL and hash on the page to fetch it again. `jig survey` reports a component file no board page links, and a link
 to one that doesn't exist.
 
 ## Fold-in

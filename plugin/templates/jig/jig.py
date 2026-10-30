@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.parse
 from datetime import date
 from pathlib import Path
 
@@ -1069,7 +1070,23 @@ def board_pages(md: list[str]) -> list[str]:
     return [f for f in md if f.startswith(BOARD_PAGES) and "/" not in f[len(BOARD_PAGES):]]
 
 
-MD_LINK = re.compile(r"\]\(([^)\s]+)")
+# Markdown link targets: inline `[t](target "title")` and reference definitions `[d]: target`.
+# A target may sit in <...> so it can hold spaces; a bare one with a space is accepted too,
+# because a board page is read by people, and a link that renders for them counts.
+MD_INLINE = re.compile(r"""\]\(\s*(<[^>]*>|[^)\n]*?)(?:\s+"[^"]*"|\s+'[^']*')?\s*\)""")
+MD_REFDEF = re.compile(r"""^ {0,3}\[[^\]]+\]:\s*(<[^>]*>|.*?)(?:\s+"[^"]*"|\s+'[^']*')?\s*$""", re.M)
+
+
+def link_targets(page: str, text: str) -> list[str]:
+    """Every local link in a page, as a repo-relative path. A leading / is the repo root."""
+    out = []
+    for raw in MD_INLINE.findall(text) + MD_REFDEF.findall(text):
+        target = urllib.parse.unquote(raw.strip().strip("<>").split("#")[0])
+        if not target or "://" in target or target.startswith("mailto:"):
+            continue
+        base = "" if target.startswith("/") else os.path.dirname(page)
+        out.append(os.path.normpath(os.path.join(base, target.lstrip("/"))))
+    return out
 
 
 def component_links(root: Path, files: list[str], pages: list[str]) -> tuple[list[str], list[tuple[str, str]]]:
@@ -1079,14 +1096,11 @@ def component_links(root: Path, files: list[str], pages: list[str]) -> tuple[lis
     linked, missing = set(), []
     for page in pages:
         text = (root / page).read_text(errors="replace") if (root / page).exists() else ""
-        for target in MD_LINK.findall(text):
-            if "://" in target:
-                continue
-            path = os.path.normpath(os.path.join(os.path.dirname(page), target.split("#")[0]))
+        for path in link_targets(page, text):
             if not path.startswith(COMPONENTS):
                 continue
             linked.add(path)
-            if not (root / path).exists():
+            if not (root / path).exists() and (page, path) not in missing:
                 missing.append((page, path))
     unlinked = [f for f in files if f.startswith(COMPONENTS) and f not in linked]
     return unlinked, missing

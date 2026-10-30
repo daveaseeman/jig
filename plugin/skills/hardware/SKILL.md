@@ -26,15 +26,18 @@ the code always matches it, and the check at the gate would catch nothing.
      `docs/hardware/components/<part>/`, the part's name in lowercase with dashes, one folder
      per part, shared by every board that uses it: never a copy per board. Its Components row's
      Datasheet cell gets a relative link to it, the source URL, the date retrieved and the
-     first 12 hex of its sha256. Fetch nothing yourself: ask for the file or the URL.
+     first 12 hex of its sha256. Fetch nothing yourself: ask for the file or the URL. Given
+     only a URL, the cell holds the URL, the date and "not saved", and no hash: there is no
+     file to hash.
    - **Committed or ignored.** Read `reference_files` in `.jig/config.json`. Unset (`""`, or
      absent), this is the repo's first board page: ask once whether reference binaries are
      committed (`commit`) or ignored (`ignore`). A public repo may not be allowed to
-     redistribute vendor PDFs, so don't pick for it. On `ignore`, add
-     `docs/hardware/components/**/*.pdf` to `.gitignore`; the page keeps the URL and hash, so
-     the file can be fetched again. The config is the hubnode's: hand it the line
-     (`"reference_files": "ignore"`) with the `docmap` line in step 6, or, working solo on
-     trunk, write it.
+     redistribute vendor PDFs, so don't pick for it. On `ignore`, `.gitignore` gains
+     `docs/hardware/*/**/*.[pP][dD][fF]`, which covers both homes, and any PDF already
+     committed there leaves the index with `git rm --cached` (the file stays on disk); the page
+     keeps the URL and hash, so the file can be fetched again. The `reference_files` line and
+     the `.gitignore` edit are trunk files: in a job, hand both to the hubnode with the
+     `docmap` line in step 6; working solo on trunk, make them yourself.
 3. **Check it against the code.** Read what the code assumes about the board: `sdkconfig`,
    `platformio.ini`, `Kconfig`, devicetree overlays, pin and bus defines. Then show every
    difference in one list before asking about any:
@@ -64,6 +67,6 @@ settled, the code to change, the skills listed and installed, and the `docmap` a
 
 Asked to install hardware skills ("install the ESP-IDF skill"), no definition is needed.
 Install the named skill from `${CLAUDE_PLUGIN_ROOT}/templates/skills/`, or, with none named,
-every skill the pages under `docs/hardware/` list that `.claude/skills/` lacks. Never
+every skill the board pages (`docs/hardware/<board>.md`) list that `.claude/skills/` lacks. Never
 overwrite. If a skill fits a board whose page doesn't list it, offer to add it to that
 page's Skills.

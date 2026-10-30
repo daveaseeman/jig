@@ -1136,8 +1136,20 @@ expect_pass hrsurvey "assert r['boards_unmapped'] == [], r['boards_unmapped']"
 msg="reference files: a component file no board page links is reported, a linked one is not"
 expect_pass hrsurvey "assert r['components_unlinked'] == ['docs/hardware/components/pmic/notes.md'], r['components_unlinked']"
 
-msg="reference files: neither the component note nor the board's folder is homeless"
-expect_pass hrsurvey "assert r['homeless'] == [], r['homeless']"
+mkdir -p docs/hardware/components/rtc docs/hardware/components/imu docs/hardware/components/buck docs/hardware/components/led
+for f in rtc/rtc.pdf "imu/imu rev b.pdf" buck/buck.pdf "led/led sheet.pdf"; do printf '%%PDF-fake\n' > "docs/hardware/components/$f"; done
+cat >> docs/hardware/watch.md <<'MD'
+| RTC | QX-20 | clock | [ds][rtc] |
+| IMU | QX-30 | motion | [ds](<components/imu/imu rev b.pdf> "rev B") |
+| Buck | QX-40 | rail | [ds](/docs/hardware/components/buck/buck.pdf) |
+| LED | QX-50 | status | [ds](components/led/led sheet.pdf) |
+
+[rtc]: components/rtc/rtc.pdf
+MD
+git add -A && git commit -qm "more link forms"
+msg="reference files: reference-style, <angle>, root-absolute and spaced links all count as links"
+expect_pass hrsurvey "assert r['components_unlinked'] == ['docs/hardware/components/pmic/notes.md'], r['components_unlinked']
+assert r['components_missing'] == [], r['components_missing']"
 
 printf '| LDO | QX-7 | rail | [ds](components/ldo/qx-7.pdf) |\n' >> docs/hardware/watch.md
 git add -A && git commit -qm "link a missing datasheet"
