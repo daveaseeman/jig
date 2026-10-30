@@ -13,20 +13,28 @@ smoke case where it has none, or is closed here.
 
 ## Done when
 Smoke, in the pararepo section unless it says otherwise:
-- [ ] **`jig sync` in a pararepo** does what `para-sync` does now. The three `para-sync` cases
-      (report after a release, offline, `defer_until`) pass with `jig sync` run on trunk.
-- [ ] On a pararepo lane, `jig sync` merges trunk first. Then it refreshes this worktree's cache
-      at the pin it just merged: after trunk bumps the pin, `.jig/meta-cache/PIN` in the lane
-      names the new pin. If the merge stops on a conflict, it exits 1 and does no metarepo step.
+- [ ] **`jig sync` brings in this checkout's upstream.** On a lane, the upstream is trunk, as
+      now. On trunk in a pararepo, it is the metarepo. The three `para-sync` cases pass with
+      `jig sync` run on trunk: the report after a release, offline, and `defer_until`, which runs
+      with `.jig/para.json` modified and uncommitted.
+- [ ] On a pararepo lane, after trunk bumps the pin, `jig sync` merges trunk. The lane's
+      `.jig/meta-cache/PIN` then names the new pin, even with the metarepo unreachable.
 - [ ] `jig sync` on trunk in a plain repo or a metarepo is still refused ("not on a lane
       branch"). There is nothing upstream to sync.
 - [ ] **`jig propose <spec> <slug>`** passes today's `para-propose` cases. In a plain repo or a
       metarepo it refuses and names `jig init --para`.
-- [ ] **Header migration.** A fixture pararepo whose committed `.jig/jig.py` is today's (its
-      header names `jig para-init`) runs `update --apply` and commits, and the hook accepts it.
-      Then `jig init --para` and a commit of `AGENTS.md` alone, also accepted. After that,
-      `grep -cE 'para-(init|sync|propose)' AGENTS.md` is 0 and only one `jig:meta —` block
-      exists. The update's printed plan names the second step.
+- [ ] **Header migration.** The fixture is a pararepo whose committed `.jig/jig.py` is today's,
+      from `git -C "$R" show bb1eb98:plugin/templates/jig/jig.py`. Smoke already reads older
+      files this way. Its header names `jig para-init`.
+  - `update --apply` and a commit: the hook accepts it.
+  - `jig sync` on trunk prints `the AGENTS.md header is out of date`, naming `jig init --para`.
+  - `jig init --para` and a commit of only what it changed (`AGENTS.md`, and `para.json` if it
+    rewrote it): also accepted.
+  - Afterwards `grep -cE 'para-(init|sync|propose)' AGENTS.md` is 0, there is one `jig:meta —`
+    block, and `jig sync` no longer prints the note.
+- [ ] **Header offline.** With the metarepo removed from `repos.json`, `jig init --para` in an
+      existing pararepo still regenerates the header, says the cache wasn't refreshed, and
+      exits 0.
 - [ ] **Two-part pins.** A pararepo pinned at a hand-made `v0.1` release, with a metarepo that then
       releases `v0.2.0`: `jig sync` reports `v0.2.0 is out` and `meta: docs v0.1 → v0.2.0`, and
       the cache fills at `v0.1`.
@@ -35,8 +43,9 @@ Smoke, in the pararepo section unless it says otherwise:
 - [ ] **Metarepo release default via update.** In a metarepo with no `release.sh`, `update
       --apply` adds one with no `# TODO: release protocol` line, and `jig release` runs with no
       `/jig:release` refusal.
-- [ ] `grep -rnE 'para-(init|sync|propose)' plugin README.md` finds only `with_header`'s
-      old-marker match and its comment, plus the aliases if the owner keeps them (Q1).
+- [ ] `grep -rnE 'para-(init|sync|propose)' plugin README.md` finds only the comment
+      by `with_header`'s marker match that explains the old marker, plus the aliases if the owner
+      keeps them (Q1).
 - [ ] Smoke passes, `claude plugin validate ./plugin` passes, and
       `grep -rnE 'Maige|maige|"E-' plugin` finds nothing.
 
@@ -54,7 +63,13 @@ Smoke, in the pararepo section unless it says otherwise:
 - `marketing/FEATURES.md` (main checkout only, gitignored): the `init --para / para-sync /
   para-propose` row rewritten before the code.
 - `plugin/templates/jig/jig.py`:
-  - `cmd_sync` gains the pararepo step, with `cmd_para_sync`'s body as a helper.
+  - `cmd_sync`:
+    - on trunk in a pararepo, it runs `cmd_para_sync`'s body and adds the stale-header note.
+    - the dirty-tree refusal moves inside the lane path.
+  - `run_setup` copies the main checkout's cache when the lane's `PIN` differs from its pin, not
+    only when it has none.
+  - `cmd_para_init`, run again in an existing pararepo, writes the header before it looks for
+    the metarepo. An unreachable metarepo is a warning, not a stop.
   - `cmd_para_propose` → `cmd_propose`.
   - `para_header` and `HEADER_BEGIN` get the new wording.
   - `with_header` also finds the old begin marker.
@@ -68,7 +83,8 @@ Smoke, in the pararepo section unless it says otherwise:
   - `hubnode`: step 5, and "Opening a lane".
   - `brief`, which `names.md` renames to `spec`.
   - `retro`
-  - `update`: after the commit, `jig init --para`, then commit `AGENTS.md` alone.
+  - `update`: in a pararepo, after the commit, run `jig init --para` and commit only what it
+    changed.
 - `tests/smoke.sh`, `README.md` (line 39).
 - **Collides with the `names` lane.** The `cmd_sync` messages say "lane". The hubnode, brief→spec
   and retro skills, the RULES Commands block and `smoke.sh` are all files `names` rewrites. Build
@@ -101,17 +117,30 @@ Smoke, in the pararepo section unless it says otherwise:
   commit 1, the update, leaves `AGENTS.md` alone, and P1 doesn't run because neither
   `AGENTS.md` nor `para.json` changed. Commit 2 is `jig init --para` regenerating the header,
   and the new checker now on trunk judges it. Until commit 2, a commit that touches `AGENTS.md`
-  is refused by P1, whose message already says to run `jig init --para`. A lane branched before
-  the update gets the same refusal until it `jig sync`s. `[seen]`: the hook template, `base()`,
-  and P1's trigger.
+  is refused by P1, whose message already says to run `jig init --para`. `update` refuses while
+  lanes are open, so only a lane opened between the two commits can get that refusal, and it
+  clears once the lane `jig sync`s. `[seen]`: the hook template, `base()`, P1's trigger, and
+  `cmd_update`'s open-lane refusal.
+- **Commit 2 needs no metarepo.** The header is generated from `para.json` alone, so a re-run
+  of `init --para` writes it before it looks for the checkout. Offline, or on a machine whose
+  `repos.json` doesn't list the metarepo, the header can still be fixed.
+- **The reminder for commit 2 comes from `jig sync` on trunk, not from `update`.** The hubnode
+  runs `jig sync` every session. Right after commit 1, `update` says "up to date", and the
+  update skill stops there.
+- **A lane's cache follows its pin through `run_setup`.** `run_setup` already runs after every
+  merge and copies the main checkout's cache. Widening it to copy whenever the pins differ
+  needs no metarepo access. A second path through `fill_cache` would need it. The main
+  checkout's cache is at the new pin, because the bump commit is made after `jig init --para`
+  refills it.
+- **The dirty-tree refusal is lane-only.** It protects the merge. On trunk, the metarepo step
+  writes only the untracked cache.
 - **`with_header` matches `<!-- jig:meta — ` up to the end marker, not the exact begin line.**
   Otherwise the new code can't find the old block and adds a second one.
 - **The new header, still at most 6 lines.** The begin line says `by \`jig init --para\``.
   `jig sync` refreshes the cache and reports releases. Contract changes need `jig propose` or
   `meta: none — <reason>`. The metarepo is written only by branch, via `jig propose`.
 - **No `update` step and no `STAMP` bump.** The header is regenerated by an existing command,
-  and the board doesn't change. In a pararepo whose header differs from what this `jig.py`
-  generates, `update` prints the second step as a note after its plan. It doesn't apply it.
+  and the board doesn't change.
 - **`propose` stays kind-specific, with a reason.** It is the one command that writes a branch
   into another repo, and no standard verb does that. Dropping the prefix doesn't reduce the
   number of commands. It makes the kind show up in the command's refusal, not in its name, and
@@ -132,3 +161,7 @@ Smoke, in the pararepo section unless it says otherwise:
 4. Should `jig sync` on trunk in a metarepo report anything, such as pararepos whose pins lag
    the latest release? It could find them through `meta.json`'s `pararepos` and `repos.json`.
    Recommended: not now. Nothing has needed it.
+5. The header migration leaves every existing pararepo with a manual second commit, and with
+   `AGENTS.md` edits refused until that commit is made. Is that trade acceptable, or should the
+   header keep its current wording and only the commands change? In that case the header would
+   name the aliases for good.
