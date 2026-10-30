@@ -18,5 +18,45 @@
       "plugin/skills/hubnode/SKILL.md"
     ],
     "reserved": {}
+  },
+  "r6-merge": {
+    "spec": ".jig/specs/bug-merge-after-sync.md",
+    "state": "claimed",
+    "after": [
+      "workflow"
+    ],
+    "owns": [],
+    "shares": [
+      "plugin/templates/jig/jig.py plugin/templates/jig/RULES.md tests/smoke.sh README.md",
+      "plugin/skills/hubnode/SKILL.md"
+    ],
+    "reserved": {}
+  },
+  "init-ledger": {
+    "spec": ".jig/specs/bug-init-old-board-ledger.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/repos/**"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py plugin/templates/jig/RULES.md tests/smoke.sh README.md"
+    ],
+    "reserved": {}
+  },
+  "hardware-ref": {
+    "spec": ".jig/specs/hardware-reference-files.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/templates/hardware.md",
+      "plugin/skills/hardware/**",
+      "plugin/skills/adopt/**",
+      "plugin/templates/AGENTS.md"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py plugin/templates/jig/RULES.md tests/smoke.sh README.md"
+    ],
+    "reserved": {}
   }
 }
