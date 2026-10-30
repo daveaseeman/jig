@@ -21,7 +21,7 @@ python3 .jig/jig.py release            # --minor, --major, or --version X.Y.Z fo
     `.jig/scripts/release.sh`, which receives the version as `$1` (`X.Y.Z`, no "v").
   - Write the build into `release.sh`. The artifacts go to a folder git ignores (`dist/`), and
     the TODO line goes.
-  - Set the board's `release.artifacts` (`.jig/lanes.json`) to globs that match what the build
+  - Set `release.artifacts` in `.jig/config.json` to globs that match what the build
     produces, one per kind of file: `["dist/*.dmg", "dist/*.exe"]`.
   - Run `release.sh` once by hand with a throwaway version if the user agrees, then put the
     tracked files back with `git checkout -- .`.

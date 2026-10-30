@@ -1,0 +1,5 @@
+#!/bin/sh
+# jig hook (jig/jig.py). Delete to disable; `jig install-hooks` rewrites it.
+copy=$(mktemp)
+git show main:jig/jig.py > "$copy" 2>/dev/null || exit 0
+python3 "$copy" hook pre-push "$@"

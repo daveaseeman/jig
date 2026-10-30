@@ -16,13 +16,13 @@ Risk: R0 — personal prototype, single user, nothing shipped. Optimize for spee
 - setup:  `.jig/scripts/setup.sh` (runs itself in new worktrees and after merges; run it after changing dependencies)
 
 ## Workflow
-- Task bigger than a one-sentence diff → write `.jig/specs/<task>.md` first (see /jig:brief). Plan before editing.
+- Task bigger than a one-sentence diff → write `.jig/specs/<task>.md` first (see /jig:spec). Plan before editing.
 - Run `check` yourself and show the output. Don't claim done on a green build alone.
 - Commit often; the git hook runs the rules. Never `--no-verify`.
 - A mergeable chunk is a handoff: checks pass → adversarial review (/jig:review) → `jig reviewed` → `jig handoff`. Review happens once per handoff, not per commit.
 - Same fix twice → write a skill (see /jig:retro).
 
-## Lanes (parallel sessions)
+## Jobs (parallel sessions)
 - Rulebook `.jig/RULES.md`, enforced by `python3 .jig/jig.py`. Roles: /jig:hubnode, /jig:subnode.
 - Only the hubnode touches trunk, the board, and merges; a subnode stays in its worktree and its listed files.
 - Keep merges mechanical: append rather than edit shared prose; new routes, tests, and fixtures each in a file of your own.

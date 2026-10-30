@@ -19,7 +19,7 @@ main=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
 # --- local config that git doesn't carry
 # [ -e .env ] || cp "$main/.env" .env
 
-# --- link instead of install: opt-in. Every lane then shares the main checkout's
+# --- link instead of install: opt-in. Every job then shares the main checkout's
 # environment, and the gate can't catch a package that is installed but not declared.
 # Ignore the link as `.venv`, not `.venv/`: git doesn't treat a link as a folder.
 # [ -e .venv ] || ln -s "$main/.venv" .venv

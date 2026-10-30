@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end check of the rules in a throwaway repo: one lane in a worktree, the hooks
+# End-to-end check of the rules in a throwaway repo: one job in a worktree, the hooks
 # installed from the template. Every case prints PASS or the refusal it expected.
 set -u
 T=$(mktemp -d "${TMPDIR:-/tmp}/jig-smoke.XXXXXX")
@@ -20,12 +20,12 @@ printf '# A\n\n## 28 Alpha\ntext\n\n## 29 Beta\ntext\n' > docs/alpha/alpha.md
 git add -A && git commit -qm init
 $J init >/dev/null
 python3 - <<'EOF'
-import json; b = json.load(open('.jig/lanes.json'))
-b['reserve'] = {'section': {'next': 29, 'pattern': r'^## (\d+) ', 'files': ['docs/**']}}
-json.dump(b, open('.jig/lanes.json', 'w'), indent=2)
+import json; b = json.load(open('.jig/config.json'))
+b['reserve'] = {'section': {'pattern': r'^## (\d+) ', 'files': ['docs/**']}}
+json.dump(b, open('.jig/config.json', 'w'), indent=2)
 EOF
 git add -A && git commit -qm board
-$J open L1 --brief t --owns 'src/**' 'docs/**' --reserve section >/dev/null
+$J open L1 --spec t --owns 'src/**' 'docs/**' --reserve section >/dev/null
 git add -A && git commit -qm "open L1"
 cd .git/jig/worktrees/L1
 
@@ -96,12 +96,12 @@ $J sync >/dev/null 2>&1; expect_pass git log -1 --format=%s --grep="Merge branch
 msg="review marker is per branch"
 $J reviewed >/dev/null; expect_pass test -f "$T/.git/jig/reviewed/L1"
 
-msg="gate does not refuse a lane behind trunk"
+msg="gate does not refuse a job behind trunk"
 ( cd "$T" && printf 'r\n' > r.txt && git add -A && git commit -qm trunk5 )
 out=$(cd "$T" && $J gate L1 2>&1); if echo "$out" | grep -q behind; then bad "$msg"; else ok "$msg"; fi
 
 msg="fold-in: a change to .jig/jig.py is the tool's, not unowned code"
-printf '# lane edit\n' >> .jig/jig.py; printf 'x=7\n' > src/a.py; git add -A; git commit -qm tool
+printf '# job edit\n' >> .jig/jig.py; printf 'x=7\n' > src/a.py; git add -A; git commit -qm tool
 $J reviewed >/dev/null; $J handoff >/dev/null 2>&1
 note=$(cat .jig/handoffs/L1-*.md 2>/dev/null)
 if echo "$note" | grep -q 'UNOWNED src/a.py' && ! echo "$note" | grep -q 'UNOWNED .jig/jig.py'
@@ -115,8 +115,8 @@ git add -A && git commit -qm init && $J init >/dev/null && git add -A && git com
 msg="init: root holds only AGENTS.md, CLAUDE.md and .jig/"
 expect_pass test "$(ls -A | grep -v '^\.git$' | LC_ALL=C sort | tr '\n' ' ')" = ".jig AGENTS.md CLAUDE.md "
 
-msg="init: .jig/ holds jig.py, RULES.md, the board, the four scripts and staging/.gitignore, nothing else"
-expect_pass test "$(find .jig -type f | LC_ALL=C sort | tr '\n' ' ')" = ".jig/RULES.md .jig/jig.py .jig/lanes.json .jig/scripts/check.sh .jig/scripts/format.sh .jig/scripts/release.sh .jig/scripts/setup.sh .jig/staging/.gitignore "
+msg="init: .jig/ holds jig.py, RULES.md, config.json, jobs.json, the four scripts and staging/.gitignore, nothing else"
+expect_pass test "$(find .jig -type f | LC_ALL=C sort | tr '\n' ' ')" = ".jig/RULES.md .jig/config.json .jig/jig.py .jig/jobs.json .jig/scripts/check.sh .jig/scripts/format.sh .jig/scripts/release.sh .jig/scripts/setup.sh .jig/staging/.gitignore "
 
 msg="init: the spec template and both ledgers stay in the plugin until first use"
 expect_pass sh -c "test ! -e .jig/specs -a ! -e .jig/ledgers -a ! -e '$P/jig/specs' -a ! -e '$P/jig/ledgers' && test -f '$P/specs/_template.md' -a -f '$P/ledgers/WORKAROUNDS.md' -a -f '$P/ledgers/DEFERRED.md'"
@@ -137,10 +137,10 @@ r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--j
 assert all(r.values()) and not any('_template' in k or 'ledgers' in k for k in r), r"
 
 msg="init: the repo's docs/ is common on a new board"
-expect_pass python3 -c "import json,sys; sys.exit('docs/**' not in json.load(open('.jig/lanes.json'))['common'])"
+expect_pass python3 -c "import json,sys; sys.exit('docs/**' not in json.load(open('.jig/config.json'))['common'])"
 
-msg="open: a lane's worktree lives in .git/jig/worktrees and trunk stays clean"
-$J open L2 --brief t --owns 'docs/**' >/dev/null && git add -A && git commit -qm "open L2"
+msg="open: a job's worktree lives in .git/jig/worktrees and trunk stays clean"
+$J open L2 --spec t --owns 'docs/**' >/dev/null && git add -A && git commit -qm "open L2"
 expect_pass test -d .git/jig/worktrees/L2 -a -z "$(git status --porcelain)"
 
 msg="survey: a fresh init has no homeless files and no source counted from .jig/"
@@ -149,9 +149,15 @@ import json, subprocess
 r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 assert r['homeless'] == [] and r['src_count'] == 0, (r['homeless'], r['src_count'])"
 
-msg="survey: lists docs/ and .jig/ as homes"
-homes=$(python3 .jig/jig.py survey | grep '^Homes: ')
-expect_pass test -n "$(echo "$homes" | grep -F '; docs/ = ')" -a -n "$(echo "$homes" | grep -F '; .jig/ = ')"
+msg="survey: Doc homes lists docs/ and .jig/specs/, and not the tool folders"
+homes=$(python3 .jig/jig.py survey | grep '^Doc homes: ')
+expect_pass sh -c "echo \"\$0\" | grep -qF '; docs/ = ' && echo \"\$0\" | grep -qF '; .jig/specs/ = ' && ! echo \"\$0\" | grep -qF '; .jig/ = ' && ! echo \"\$0\" | grep -qF '.claude/skills/ = '" "$homes"
+msg="survey: a handoff note in .jig/ is a tool's record, not a homeless document"
+mkdir -p .jig/handoffs && printf '# Handoff\n' > .jig/handoffs/x-2026-01-01.md && git add -A && git commit -qm note
+expect_pass python3 -c "
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+assert r['homeless'] == [], r['homeless']"
 
 H="$T/hardware"
 mkdir -p "$H" && cd "$H" && git init -q -b main && git config user.email t@t && git config user.name t
@@ -168,10 +174,10 @@ assert r['boards_unmapped'] == ['docs/hardware/devkit.md'], r['boards_unmapped']
 
 # The system page comes first, so a docmap that stops at the first match hides the board page.
 python3 - <<'EOF'
-import json; b = json.load(open('.jig/lanes.json'))
+import json; b = json.load(open('.jig/config.json'))
 b['docmap'] = {'docs/gpio/gpio.md': ['main/**'],
                'docs/hardware/devkit.md': ['main/**', 'sdkconfig*']}
-json.dump(b, open('.jig/lanes.json', 'w'), indent=2)
+json.dump(b, open('.jig/config.json', 'w'), indent=2)
 EOF
 git add -A && git commit -qm docmap
 msg="survey: a board page docmap names is not listed"
@@ -184,7 +190,7 @@ msg="reading-list: a file covered by a system page and a board page lists both"
 out=$($J reading-list main/app.c)
 expect_pass test -n "$(echo "$out" | grep -F docs/gpio/gpio.md)" -a -n "$(echo "$out" | grep -F docs/hardware/devkit.md)"
 
-$J open H1 --brief t --owns 'main/**' >/dev/null && $J open H2 --brief t --owns 'sdkconfig*' >/dev/null
+$J open H1 --spec t --owns 'main/**' >/dev/null && $J open H2 --spec t --owns 'sdkconfig*' >/dev/null
 git add -A && git commit -qm "open H1 H2"
 cd .git/jig/worktrees/H1 && printf 'int led = 2;\n' > main/app.c && git add -A && git commit -qm led
 $J reviewed >/dev/null; $J handoff >/dev/null 2>&1; git add -A && git commit -qm note
@@ -211,35 +217,35 @@ cp "$P/jig/jig.py" .jig/
 printf '# W\n' > src/widgets/README.md && printf '# X\n' > plugin/skills/x/SKILL.md
 git add -A && git commit -qm init && $J init --no-hooks >/dev/null
 
-msg="init: a new board has an empty payload"
-expect_pass python3 -c "import json,sys; sys.exit(json.load(open('.jig/lanes.json'))['payload'] != [])"
+msg="init: a new config has an empty not_docs"
+expect_pass python3 -c "import json,sys; sys.exit(json.load(open('.jig/config.json'))['not_docs'] != [])"
 
-msg="payload: survey skips declared globs, still flags the stray README"
+msg="not_docs: survey skips declared globs, still flags the stray README"
 python3 - <<'EOF'
-import json; b = json.load(open('.jig/lanes.json'))
-b['payload'] = ['plugin/**']
-json.dump(b, open('.jig/lanes.json', 'w'), indent=2)
+import json; b = json.load(open('.jig/config.json'))
+b['not_docs'] = ['plugin/**']
+json.dump(b, open('.jig/config.json', 'w'), indent=2)
 EOF
 git add -A && git commit -qm board   # survey reads trunk's board, not the working tree
 expect_pass python3 -c "
 import json, subprocess
 r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 homeless = [e['path'] for e in r['homeless']]
-assert r['payload'] == ['plugin/**'], r['payload']
+assert r['not_docs'] == ['plugin/**'], r['not_docs']
 assert 'src/widgets/README.md' in homeless and 'plugin/skills/x/SKILL.md' not in homeless, homeless
-assert r['payload_unmatched'] == [], r['payload_unmatched']"
+assert r['not_docs_unmatched'] == [], r['not_docs_unmatched']"
 
-msg="payload: a directory-style glob that matches nothing is named"
+msg="not_docs: a directory-style glob that matches nothing is named"
 python3 - <<'EOF'
-import json; b = json.load(open('.jig/lanes.json'))
-b['payload'] = ['plugin/']
-json.dump(b, open('.jig/lanes.json', 'w'), indent=2)
+import json; b = json.load(open('.jig/config.json'))
+b['not_docs'] = ['plugin/']
+json.dump(b, open('.jig/config.json', 'w'), indent=2)
 EOF
 git add -A && git commit -qm board2
 expect_pass python3 -c "
 import json, subprocess
 r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
-assert r['payload_unmatched'] == ['plugin/'], r['payload_unmatched']"
+assert r['not_docs_unmatched'] == ['plugin/'], r['not_docs_unmatched']"
 
 
 # ---------------------------------------------------------------- update
@@ -250,7 +256,7 @@ code() { "$@" >/dev/null 2>&1; echo $?; }
 snap() { git status --porcelain; find .git -type f | sort | xargs shasum 2>/dev/null; }
 
 # old <dir> <commit> <style>: a repo set up the way that commit's init skill says, with a
-# reserve counter on docs/**, a docmap page, a merged lane, and a script of the repo's own.
+# reserve counter on docs/**, a docmap page, a merged job, and a script of the repo's own.
 # Styles: dot = eaec973's .jig/ with specs/, ledgers/, scripts/ at root; aidev = the same as
 # ai-dev renamed it; jig = 62c8d9f's jig/ holding docs too; jig2 = 0.2.x's jig/, docs at root.
 old() {
@@ -306,14 +312,13 @@ GLOBS='
 import importlib.util, json, subprocess, sys
 spec = importlib.util.spec_from_file_location("j", sys.argv[1]); j = importlib.util.module_from_spec(spec); spec.loader.exec_module(j)
 old = json.loads(subprocess.check_output(["git", "show", "HEAD:" + sys.argv[2]]))
-new = json.load(open(".jig/lanes.json"))
+new = json.load(open(".jig/config.json"))
 before = subprocess.check_output(["git", "ls-tree", "-r", "--name-only", "HEAD"], text=True).split()
 after = subprocess.check_output(["git", "ls-files"], text=True).split()
 def lists(b):
-    out = [b.get(k) or [] for k in ("common", "append_files", "payload")]
+    out = [b.get(k) or [] for k in ("common", "append_files", ("payload" if "payload" in b else "not_docs"))]
     out += [v.get("files") or [] for v in (b.get("reserve") or {}).values()]
     out += [list(b.get("docmap", {}))] + list(b.get("docmap", {}).values())
-    out += [l.get(k) or [] for l in b.get("lanes", {}).values() for k in ("owns", "shares")]
     return out
 dead_before = {g for l in lists(old) for g in l if not any(j.matches(f, [g]) for f in before)}
 for l in lists(new):
@@ -325,8 +330,8 @@ for o, n in moved:
     if o.startswith(("jig/", "specs/", "ledgers/", ".aidev/")):
         for lo, ln in zip(lists(old), lists(new)):
             assert not j.matches(o, lo) or j.matches(n, ln), (o, n, ln)
-lane = new["lanes"]["old"]
-assert "scripts/**" in lane["owns"] and lane["worktree"] == old["lanes"]["old"]["worktree"], lane
+# The merged job is history: the config holds no jobs and the open jobs file starts empty.
+assert "lanes" not in new and "log" not in new and json.load(open(".jig/jobs.json")) == {}, new
 '
 
 for layout in "eaec973 dot" "66a044c dot" "62c8d9f jig" "eaec973 aidev" "5d955a2 jig2"; do
@@ -347,7 +352,7 @@ for layout in "eaec973 dot" "66a044c dot" "62c8d9f jig" "eaec973 aidev" "5d955a2
   $UP --apply >/dev/null 2>&1
   expect_pass python3 -c "
 import subprocess
-allowed = {'$board', '.jig/lanes.json', '.aidev/aidev.py', 'jig/jig.py', '.jig/jig.py',
+allowed = {'$board', '.jig/config.json', '.jig/jobs.json', '.aidev/aidev.py', 'jig/jig.py', '.jig/jig.py',
            '.aidev/RULES.md', 'jig/RULES.md', '.jig/RULES.md', '.gitignore', '.jig/scripts/setup.sh', '.jig/scripts/release.sh', '.jig/staging/.gitignore'}
 for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
     status, *paths = line.split('\t')
@@ -359,8 +364,8 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
   msg="update $name: hooks read trunk's .jig/jig.py and none was kept as .local; .git/jig/enabled, no .git/aidev, no old ignore line"
   expect_pass sh -c "grep -q 'git show main:.jig/jig.py' .git/hooks/pre-commit && ! ls .git/hooks/*.local && test -f .git/jig/enabled && test ! -e .git/aidev && ! grep -q worktrees .gitignore"
 
-  msg="update $name: nothing tracked is left in jig/, .aidev/, specs/ or ledgers/; the board is stamped 7, with release.sh added"
-  expect_pass sh -c "test -z \"\$(git ls-files jig .aidev specs ledgers)\" && grep -q '\"version\": 7' .jig/lanes.json && git ls-files --error-unmatch .jig/scripts/release.sh"
+  msg="update $name: nothing tracked is left in jig/, .aidev/, specs/ or ledgers/; the config is stamped 8, with release.sh added"
+  expect_pass sh -c "test -z \"\$(git ls-files jig .aidev specs ledgers .jig/lanes.json)\" && ! grep -q payload .jig/config.json && grep -q '\"version\": 8' .jig/config.json && git ls-files --error-unmatch .jig/scripts/release.sh"
 
   if [ -n "$had_setup" ]; then
     msg="update $name: its setup.sh moves to .jig/scripts/ untouched"
@@ -371,7 +376,7 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
   fi
 
   git ls-files > "$T/$name.paths"
-  python3 -c "import json; print(sorted(json.load(open('.jig/lanes.json'))))" > "$T/$name.keys"
+  python3 -c "import json; print(sorted(json.load(open('.jig/config.json'))))" > "$T/$name.keys"
 
   msg="update $name: a second --apply is up to date and changes nothing"
   before=$(git status --porcelain); out=$($UP --apply 2>&1); after=$(git status --porcelain)
@@ -402,7 +407,7 @@ old "$T/up-staged" 5d955a2 jig2
 printf 'jig/meta-cache/\n' >> .gitignore && git commit -qam ignore
 printf -- '---\nstaged: true\n---\nx\n' > jig/staging/pending.md && mkdir -p jig/meta-cache && printf 'v0.1\n' > jig/meta-cache/PIN
 out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
-expect_pass sh -c "echo \"\$0\" | grep -q 'move the untracked files in jig/staging/ to .jig/staging/' && test -f .jig/staging/pending.md -a -f .jig/meta-cache/PIN -a ! -e jig && grep -qx '.jig/meta-cache/' .gitignore && ! grep -qx 'jig/meta-cache/' .gitignore && test -z \"\$(git status --porcelain --untracked-files=all | grep -v '^[RAM] ')\"" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -q 'move the untracked files in jig/staging/ to .jig/staging/' && test -f .jig/staging/pending.md -a -f .jig/meta-cache/PIN -a ! -e jig && grep -qx '.jig/meta-cache/' .gitignore && ! grep -qx 'jig/meta-cache/' .gitignore && test -z \"\$(git status --porcelain --untracked-files=all | grep -v '^[RAMD] ')\"" "$out"
 
 msg="update: same stamp, different jig.py and RULES.md: both replaced, hooks rewritten, nothing moves, the repo's setup.sh kept byte for byte"
 cd "$T/up-eaec973-dot"
@@ -421,7 +426,7 @@ expect_pass test "$($UP 2>&1)" = "up to date"
 git reset -q --hard HEAD~1
 
 msg="update: a board stamped above this jig refuses"
-python3 -c "import json; b = json.load(open('.jig/lanes.json')); b['version'] = 99; json.dump(b, open('.jig/lanes.json', 'w'))"
+python3 -c "import json; b = json.load(open('.jig/config.json')); b['version'] = 99; json.dump(b, open('.jig/config.json', 'w'))"
 git commit -qam ahead
 out=$($UP 2>&1); rc=$?
 expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'repo is ahead; update the plugin'" "$out"
@@ -433,11 +438,11 @@ expect_pass test "$($UP 2>&1)" = "up to date"
 git worktree remove --force "$T/up-extra0"
 printf '# behind\n' >> .jig/jig.py && git commit -qam behind   # the refusals below need a plan
 
-msg="update: an open lane refuses, naming it"
-python3 -c "import json; b = json.load(open('.jig/lanes.json')); b['lanes']['live'] = {'state': 'building'}; json.dump(b, open('.jig/lanes.json', 'w'))"
+msg="update: an open job refuses, naming it"
+printf '{"live": {"state": "building"}}\n' > .jig/jobs.json
 git commit -qam live
 out=$($UP 2>&1); rc=$?
-expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'lanes are open: live'" "$out"
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'jobs are open: live'" "$out"
 git reset -q --hard HEAD~1
 
 msg="update: a worktree besides the main checkout refuses, naming it"
@@ -453,9 +458,9 @@ expect_pass test "$rc" = 2 -a "$before" = "$after"
 git checkout -q -- AGENTS.md
 
 msg="update blocked: two boards are both named, and --apply changes nothing"
-mkdir -p jig && cp .jig/lanes.json jig/lanes.json && git add -A && git commit -qm two
+mkdir -p jig && cp .jig/config.json jig/lanes.json && git add -A && git commit -qm two
 before=$(snap); out=$($UP --apply 2>&1); rc=$?; after=$(snap)
-expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'two boards, .jig/lanes.json and jig/lanes.json' && test \"\$1\" = \"\$2\"" "$out" "$before" "$after"
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'two boards, .jig/config.json and jig/lanes.json' && test \"\$1\" = \"\$2\"" "$out" "$before" "$after"
 
 msg="update blocked: no board names the board-like JSON and the foreign hooks"
 N="$T/up-none"; mkdir -p "$N/.other" && cd "$N" && git init -q -b main
@@ -480,7 +485,7 @@ msg="update warning: jig/specs/ and .jig/specs/ both exist, so neither moves"
 expect_pass sh -c "echo \"\$0\" | grep -q 'jig/specs/ and .jig/specs/ both exist'" "$out"
 msg="update warning: --apply proceeds; the extra file, both specs folders and the unknown key stay"
 rc=$(code $UP --apply)
-expect_pass sh -c "test $rc = 0 && test -f jig/notes.txt && test -f jig/specs/_template.md && test -f .jig/specs/new.md && grep -q '\"extra\"' .jig/lanes.json"
+expect_pass sh -c "test $rc = 0 && test -f jig/notes.txt && test -f jig/specs/_template.md && test -f .jig/specs/new.md && grep -q '\"extra\"' .jig/config.json"
 
 
 # Firmware, as eaec973's init set it up: docs/HARDWARE.md and the blank skill template.
@@ -507,11 +512,162 @@ msg="update: after --apply, a kept warning still reads up to date, exit 0"
 out=$($UP 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | head -1 | grep -qx 'up to date'" "$out"
 
+# Every generation, from the made-up repos in tests/fixtures/: each ends with the same jig
+# paths and board keys, and every file it doesn't remove moves byte for byte.
+FX="$R/tests/fixtures"
+fixture() {  # fixture <generation>: a fresh repo from tests/fixtures/<generation>, committed
+  mkdir -p "$T/fx-$1" && cp -R "$FX/$1/repo/." "$T/fx-$1/" && cd "$T/fx-$1"
+  git init -q -b main && git config user.email t@t && git config user.name t
+  git add -A && git commit -qm init && cp -R "$FX/$1/git/." .git/
+}
+for gen in claude-lane ai-dev jig-0.2 dot-jig-v7; do
+  fixture $gen
+  if [ $gen = claude-lane ]; then
+    msg="update $gen: a counter with no pattern and files refuses, naming it"
+    out=$($UP 2>&1); rc=$?
+    expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'without a pattern and files: section'" "$out"
+    python3 - <<'EOF'
+import json; p = '.claude/claude-lane/manifests/board.json'; b = json.load(open(p))
+b['reserve'] = {'section': {'pattern': r'^## (\d+) ', 'files': ['docs/**']}}
+json.dump(b, open(p, 'w'), indent=2)
+EOF
+    git commit -qam "board: the counter's pattern"
+  fi
+
+  msg="update $gen: the dry run changes nothing, and lists every removal before applying"
+  before=$(snap); out=$($UP 2>&1); after=$(snap)
+  removed=$(echo "$out" | sed -n '/^Removed:/,/^$/p' | sed -n 's/^  \([^ ]*\) .*/\1/p')
+  case $gen in
+    claude-lane) want=".claude/claude-lane/LANES.md .claude/claude-lane/claude-lane.py .claude/claude-lane/README.md .claude/claude-lane/install-hooks.sh board: board:";;
+    ai-dev) want=".aidev/aidev.py .aidev/RULES.md docs/REVIEW_LEDGER.md";;
+    *) want="board:";;
+  esac
+  expect_pass sh -c "test \"\$1\" = \"\$2\" && for w in \$3; do echo \"\$0\" | grep -qF \"  \$w\" || exit 1; done" "$out" "$before" "$after" "$want"
+  if [ $gen = claude-lane ]; then
+    msg="update $gen: the dry run names the merged board entry and claude-lane's own key it drops"
+    expect_pass sh -c "echo \"\$0\" | grep -q 'board: lanes.old (merged)' && echo \"\$0\" | grep -q 'board: .seen.'" "$out"
+  fi
+
+  msg="update $gen: --apply moves every file it keeps byte for byte, and removes only what the dry run listed"
+  board=$(git ls-files | grep -E '(lanes|board)\.json$'); $UP --apply >/dev/null 2>&1
+  expect_pass python3 -c "
+import subprocess, sys
+removed = set(sys.argv[1].split())
+jig = {'.jig/config.json', '.jig/jobs.json', '.jig/jig.py', '.jig/RULES.md', '.jig/scripts/setup.sh', '.jig/scripts/release.sh',
+       '.jig/ledgers/DEFERRED.md', '.jig/staging/.gitignore', '.gitignore'}
+for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
+    status, *paths = line.split('\t')
+    assert status == 'R100' or (status == 'D' and paths[0] in removed) or paths[-1] in jig, line" "$removed $board"
+
+  case $gen in
+    ai-dev)
+      msg="update $gen: REVIEW_LEDGER.md's untaken rows are DEFERRED.md; its taken rows are gone"
+      expect_pass sh -c "grep -q L-001 .jig/ledgers/DEFERRED.md && grep -q L-003 .jig/ledgers/DEFERRED.md && grep -q L-005 .jig/ledgers/DEFERRED.md && ! grep -q 'L-00[24]' .jig/ledgers/DEFERRED.md && test ! -e docs/REVIEW_LEDGER.md"
+      msg="update $gen: a root HARDWARE.md naming a board moves to its board page, byte for byte"
+      expect_pass sh -c "git diff --cached -M --name-status | grep -q '^R100.HARDWARE.md.docs/hardware/devkit-s3.md'";;
+    claude-lane)
+      msg="update $gen: board.json is the board, merged entries and claude-lane's own keys gone; the folder is gone"
+      expect_pass sh -c "python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['trunk'] == 'main' and 'lanes' not in b and 'seen' not in b and 'main' not in b and 'next' not in b['reserve']['section'], b\" && test ! -e .claude/claude-lane && git diff --cached -M --name-status | grep -q '^R100.*old-2026-01-01.md'";;
+    dot-jig-v7)
+      msg="update $gen: the one-file board splits: config.json without jobs or log, an empty jobs.json, no lanes.json"
+      expect_pass sh -c "python3 -c \"import json; c = json.load(open('.jig/config.json')); assert c['version'] == 8 and not {'lanes', 'log'} & set(c) and json.load(open('.jig/jobs.json')) == {}, c\" && test ! -e .jig/lanes.json && echo \"\$0\" | grep -q 'board: lanes.old (merged)' && echo \"\$0\" | grep -q 'board: log'" "$out";;
+  esac
+
+  msg="update $gen: a second update is up to date"
+  expect_pass test "$($UP 2>&1)" = "up to date"
+
+  msg="update $gen: the update commits with the hooks on, and survey then finds no homeless files"
+  expect_pass sh -c "git commit -qm update && python3 -c \"
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+assert r['homeless'] == [], r['homeless']\""
+  git ls-files .jig > "$T/fx-$gen.paths"
+  python3 -c "import json; print(sorted(json.load(open('.jig/config.json'))), json.load(open('.jig/jobs.json')))" > "$T/fx-$gen.keys"
+done
+msg="update: every generation ends with the same jig paths and board keys"
+expect_pass sh -c "cd '$T' && for n in ai-dev jig-0.2 dot-jig-v7; do cmp -s fx-claude-lane.paths fx-\$n.paths && cmp -s fx-claude-lane.keys fx-\$n.keys || exit 1; done"
+
 msg="update: a root specs/ file that isn't Markdown stays, with a warning"
 old "$T/up-js" eaec973 dot
 printf 'it()\n' > specs/app.spec.js && git add -A && git commit -qm js
 out=$($UP 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'specs/app.spec.js is in specs/ but isn.t Markdown' && ! echo \"\$0\" | grep -q 'app.spec.js → '" "$out"
+
+# ---------------------------------------------------------------- the board, split
+B="$T/jobs"; mkdir -p "$B" && cd "$B" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs src
+printf '# D\n\n## 1 One\n' > docs/d.md && printf 'x=1\n' > src/a.py
+git add -A && git commit -qm init && $J init >/dev/null
+
+msg="init: config.json holds the settings, no jobs and no log; jobs.json is empty"
+expect_pass python3 -c "
+import json; c = json.load(open('.jig/config.json')); j = json.load(open('.jig/jobs.json'))
+assert sorted(c) == sorted(['version', 'name', 'trunk', 'common', 'append_files', 'reserve', 'docmap', 'not_docs', 'release']), c
+assert c['version'] == 8 and j == {}, (c, j)"
+python3 - <<'EOF'
+import json; c = json.load(open('.jig/config.json'))
+c['reserve'] = {'section': {'pattern': r'^## (\d+) ', 'files': ['docs/**']}, 'loose': {}}
+json.dump(c, open('.jig/config.json', 'w'), indent=2)
+EOF
+git add -A && git commit -qm config
+
+msg="open: two jobs reserving at once get max(trunk, held) + 1, never the same number"
+$J open A --owns 'src/**' --reserve section >/dev/null && $J open B2 --reserve section >/dev/null
+expect_pass python3 -c "import json; j = json.load(open('.jig/jobs.json')); assert j['A']['reserved'] == {'section': 2} and j['B2']['reserved'] == {'section': 3}, j"
+msg="open: a record stores no branch, worktree, opened date or handoffs it can derive"
+expect_pass python3 -c "import json; j = json.load(open('.jig/jobs.json')); assert not {'branch', 'worktree', 'opened', 'handoffs'} & set(j['A']), j['A']"
+msg="open: only jobs.json changes; config.json is untouched"
+expect_pass test -z "$(git status --porcelain -- .jig/config.json)"
+msg="open: a counter without a pattern and files is refused"
+expect_refuse $J open C --reserve loose
+git add -A && git commit -qm "open A B2"
+
+msg="job: prints the branch and worktree it derives, and the day it opened"
+out=$(cd .git/jig/worktrees/A && $J job)
+expect_pass sh -c "echo \"\$0\" | grep -q '\"branch\": \"A\"' && echo \"\$0\" | grep -q '\"worktree\": \".git/jig/worktrees/A\"' && echo \"\$0\" | grep -q '\"opened\": \"20'" "$out"
+
+msg="open: a branch adopted under another name stores only its branch"
+git branch feat && $J open F --branch feat >/dev/null && git add -A && git commit -qm "adopt feat"
+expect_pass sh -c "python3 -c \"import json; r = json.load(open('.jig/jobs.json'))['F']; assert r['branch'] == 'feat' and 'worktree' not in r, r\" && cd .git/jig/worktrees/feat && $J check"
+msg="open: a branch checked out elsewhere stores only its worktree, and R2 reads that, not the default"
+git branch side && git worktree add -q "$T/jobs-side" side 2>/dev/null
+$J open side --worktree "$T/jobs-side" >/dev/null && git add -A && git commit -qm "adopt side"
+mkdir -p .git/jig/worktrees/side
+expect_pass sh -c "python3 -c \"import json; r = json.load(open('.jig/jobs.json'))['side']; assert r['worktree'] == '$T/jobs-side' and 'branch' not in r, r\" && cd '$T/jobs-side' && $J check"
+rmdir .git/jig/worktrees/side
+
+cd .git/jig/worktrees/A
+msg="R5: a job editing jobs.json is refused"
+printf '{}\n' > .jig/jobs.json; git add -A; expect_refuse git commit -qm jobs; undo
+msg="R5: a job editing config.json is refused"
+printf '{}\n' > .jig/config.json; git add -A; expect_refuse git commit -qm config; undo
+msg="R6: job A takes section 2, which it holds"
+printf '\n## 2 Two\n' >> docs/d.md && git add -A && expect_pass git commit -qm two
+$J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && git add -A && git commit -qm note
+printf 'x=2\n' > src/a.py && git commit -qam "after the note"
+msg="merge: a job whose branch moved past the commit its note names is refused"
+expect_refuse sh -c "cd '$B' && $J merge A"
+git reset -q --hard HEAD~1
+cd "$B"
+msg="open: --after naming no open job is refused, since a missing name reads as merged"
+expect_refuse $J open X --after B3
+msg="open: an explicit number another open job holds is refused"
+expect_refuse $J open Y --reserve section=3
+
+msg="merge: R8 refuses a job whose after has not merged"
+$J open E --after B2 >/dev/null && git add -A && git commit -qm "open E"
+expect_refuse $J merge E
+msg="mark: merged is not a state; jig merge is how a job merges"
+expect_refuse $J mark B2 merged
+msg="merge: the job's entry is deleted in the merge commit itself, and trunk takes the number it held"
+$J merge A -m "shared: none" >/dev/null 2>&1
+expect_pass sh -c "test \"\$(git rev-list --parents -n1 HEAD | wc -w | tr -d ' ')\" = 3 && git show --format= --name-only HEAD | grep -qx .jig/jobs.json && ! git show HEAD:.jig/jobs.json | grep -q '\"A\"' && git log -1 --format=%B | grep -q 'shared: none' && test -z \"\$(git status --porcelain --untracked-files=no)\""
+msg="open: after A merged, the next section is above trunk's 2 and B2's 3"
+$J open G --reserve section >/dev/null
+expect_pass python3 -c "import json; assert json.load(open('.jig/jobs.json'))['G']['reserved'] == {'section': 4}"
+git add -A && git commit -qm "open G"
+msg="no log: neither file has a log key, and jig log is not a command"
+expect_pass sh -c "! grep -q '\"log\"' .jig/config.json .jig/jobs.json && ! $J log 2>/dev/null"
 
 # ---------------------------------------------------------------- worktree setup
 W="$T/setup"; LOG="$T/setup.log"
@@ -547,19 +703,19 @@ git merge -q side 2>/dev/null
 expect_pass test "$n" = 3 -a "$(lines)" = 3
 git worktree remove --force "$T/setup-plain"
 
-msg="setup: jig open sets the lane's worktree up once, and its stderr shows setup's output"
+msg="setup: jig open sets the job's worktree up once, and its stderr shows setup's output"
 err=$($J open S1 --owns 'src/**' 2>&1 >/dev/null); git add -A && git commit -qm "open S1"
 expect_pass sh -c "test $(lines) = 4 && echo \"\$0\" | grep -q 'set up .*S1'" "$err"
 
-msg="setup: jig sync that resolves an append conflict itself sets the lane up once"
+msg="setup: jig sync that resolves an append conflict itself sets the job up once"
 printf '\n- trunk line\n' >> AGENTS.md && git commit -qam trunk-append
-(cd .git/jig/worktrees/S1 && printf '\n- lane line\n' >> AGENTS.md && git commit -qam lane-append && $J sync >/dev/null 2>&1)
+(cd .git/jig/worktrees/S1 && printf '\n- job line\n' >> AGENTS.md && git commit -qam job-append && $J sync >/dev/null 2>&1)
 expect_pass test "$(lines)" = 5 -a "$(tail -1 "$LOG")" = "$(cd .git/jig/worktrees/S1 && pwd -P)"
 
 printf '#!/bin/sh\necho broken >&2\nexit 1\n' > .jig/scripts/setup.sh && git commit -qam "setup fails"
 msg="setup: a failing setup.sh fails nothing; jig open exits 0 and stderr names the script, code and checkout"
 err=$($J open S2 --owns 'docs/**' 2>&1 >/dev/null); rc=$?
-expect_pass sh -c "test $rc = 0 && test -d .git/jig/worktrees/S2 && grep -q '\"S2\"' .jig/lanes.json && echo \"\$0\" | grep -q '.jig/scripts/setup.sh exited 1 in .*S2'" "$err"
+expect_pass sh -c "test $rc = 0 && test -d .git/jig/worktrees/S2 && grep -q '\"S2\"' .jig/jobs.json && echo \"\$0\" | grep -q '.jig/scripts/setup.sh exited 1 in .*S2'" "$err"
 git add -A && git commit -qm "open S2"
 
 msg="setup: a failing setup.sh fails nothing for a plain git worktree add either"
@@ -706,10 +862,10 @@ msg="para P4: once it is resolved, the same commit is accepted"
 expect_pass git commit -qm "api: more"
 
 msg="para: a new worktree gets the main checkout's cache; para-propose there names the repo, not the folder"
-git worktree add -q --detach "$T/pr-lane" HEAD 2>/dev/null
-(cd "$T/pr-lane" && $J para-propose .jig/specs/x.md lanefix >/dev/null)
-expect_pass sh -c "test -f '$T/pr-lane/.jig/meta-cache/DECISIONS.md' && git -C mrclone rev-parse -q --verify refs/heads/propose/pr-lanefix"
-git worktree remove --force "$T/pr-lane"
+git worktree add -q --detach "$T/pr-job" HEAD 2>/dev/null
+(cd "$T/pr-job" && $J para-propose .jig/specs/x.md lanefix >/dev/null)
+expect_pass sh -c "test -f '$T/pr-job/.jig/meta-cache/DECISIONS.md' && git -C mrclone rev-parse -q --verify refs/heads/propose/pr-lanefix"
+git worktree remove --force "$T/pr-job"
 
 msg="repos: works outside any git repo"
 expect_pass sh -c "cd '$T' && python3 '$P/jig/jig.py' repos"
@@ -813,14 +969,13 @@ expect_refuse $J staging resolve r.md; rm .jig/staging/r.md
 
 msg="staging: drop deletes the file and records nothing"
 stage q.md this doc new docs/q.md
-expect_pass sh -c "$J staging drop q.md && test ! -e .jig/staging/q.md && ! grep -q q.md .jig/lanes.json && test -z \"\$(git status --porcelain -- .jig/lanes.json)\""
+expect_pass sh -c "$J staging drop q.md && test ! -e .jig/staging/q.md && ! grep -q q.md .jig/config.json .jig/jobs.json && test -z \"\$(git status --porcelain -- .jig/config.json .jig/jobs.json)\""
 git add -A && git commit -qm landed
 
 stage w.md this doc new docs/w.md
 msg="staging: the gate doesn't look at staging"
 out=$($J gate 2>&1)
 expect_pass sh -c "! echo \"\$0\" | grep -q 'waits while'" "$out"
-git checkout -q -- .jig/lanes.json
 msg="staging: pushing trunk with a file staged is accepted"
 git init -q --bare "$T/st-remote.git" && git remote add origin "$T/st-remote.git"
 expect_pass git push -q origin main
@@ -855,7 +1010,7 @@ expect_refuse grep -lE '^description:.*[<>]' $P/../skills/*/SKILL.md $P/skills/*
 RL="$T/rl"; mkdir -p "$RL" && cd "$RL" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && printf 'dist/\n' > .gitignore && printf '0.0.0\n' > VERSION && git add -A && git commit -qm init
 $J init >/dev/null && git add -A && git commit -qm board
-board() { python3 -c "import json,sys; b=json.load(open('.jig/lanes.json')); $1; json.dump(b, open('.jig/lanes.json','w'), indent=2)"; }
+board() { python3 -c "import json,sys; b=json.load(open('.jig/config.json')); $1; json.dump(b, open('.jig/config.json','w'), indent=2)"; }
 msg="release: an undefined protocol refuses and points to /jig:release, naming the kind"
 out=$($J release --version 1.0.0 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'jig release: rl (repo)' && echo \"\$0\" | grep -q \"isn't defined (.jig/scripts/release.sh still holds the template's TODO).*/jig:release\" && ! git tag | grep -q ." "$out"

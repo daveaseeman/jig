@@ -1,0 +1,2 @@
+#!/bin/sh
+python3 .claude/claude-lane/claude-lane.py check || exit 1

@@ -1,5 +1,5 @@
 ---
-name: brief
+name: spec
 description: Turn a task request into .jig/specs/TASK.md before implementing. Use for anything bigger than a one-sentence diff.
 ---
 

@@ -99,3 +99,58 @@ One spec, three commits, one release. Each stage leaves smoke green.
   - **Staging and release are their own spec, `release.md`.** `release.md` takes staging off
     `gate` and makes drop record nothing, which removes the last board-log writes outside
     this spec.
+
+## Build notes
+Built Oct 30 on job `names`, three commits: `9e8ec9f` migrations, `04a591a` board split,
+`49cc024` renames. Smoke 237 → 255 → 256, all PASS at each stage; the validator passes; the
+instance grep finds nothing.
+- **`STAMP` is 8, and the split reads a v7 board.** `release.md` took 7 first; the spec's "7"
+  and "v6" predate that.
+- **claude-lane's layout** is `.claude/claude-lane/`: `claude-lane.py`, `README.md`,
+  `LANES.md`, `install-hooks.sh`, `manifests/board.json`, `manifests/handoffs/`. `[seen]`: the
+  commit that retired it in the repo that ran it. Its `main` is the trunk, its `baseline` the
+  counters; its handoffs move; its script and README are replaced by jig's; `LANES.md` and the
+  installer go (`GONE`); its other board keys are dropped and listed. Its hooks are rewritten,
+  not chained (`claude-lane.py` joins `HOOK_MARKERS`). Its root `specs/`, `ledgers/` and
+  `scripts/check.sh` count as jig's, as beside eaec973's board.
+- **A claude-lane counter has no pattern**, so `update` refuses it per the Decisions; the
+  refusal says to add `reserve.<counter>` with `pattern` and `files` to the old board, and the
+  conversion merges that in. The fixture's smoke case does exactly that.
+- **`REVIEW_LEDGER.md`** is a `STEPS` entry. A row is taken when its status cell ("What
+  happened" or "Status", not the first column) is `taken…` or `… then taken`; "not taken"
+  stays. Into an existing `DEFERRED.md` the untaken rows append under `## From
+  docs/REVIEW_LEDGER.md`; with none, the ledger minus taken rows becomes it.
+- **Root `HARDWARE.md`** moves to `docs/hardware/<board>.md` only when its `- MCU / board:`
+  line names one; a page of TODOs is listed for review instead.
+- **Merging a job that holds a number was refused by R6 before this change** (trunk held no
+  number, and the merge brought one in). `jig merge` exposed it; R6 now lets trunk take the
+  numbers the merged job holds. `[seen]`: smoke's merge case fails without it.
+- **`jig log` is gone**, not redirected: `jig merge -m` puts what a merge touched in shared
+  files into the merge commit.
+- **`.jig/` joins `TOOL_DIRS`.** The spec says both dead `HOME_DIRS` entries were already in
+  `TOOL_DIRS`; only `.claude/skills/` was (under `.claude/`). Dropping `.jig/` alone would
+  have made every handoff note homeless. `[seen]`: smoke's new survey case.
+- **"lane" remains** in update's old-name rows, the predecessor-board detection
+  (`board_like_json` looks for `"lanes"`), and the fixtures.
+- **For the hubnode:** this repo's `.jig/` is v7 until `/jig:update`; `tests/fixtures/**`
+  holds Markdown that survey will list until `not_docs` names it; root `AGENTS.md` says
+  `/jig:brief` until the release that ships `/jig:spec`.
+- **Review, Oct 30 (fresh context):** one blocking finding, five should-fix, four optional.
+  Taken: the blocking one, four should-fix and all four optional. One should-fix deferred.
+  - **Blocking: `split_ledger` saw only `|---|` separators.** A `| --- |` or `|:--|` ledger
+    found no table. With no `DEFERRED.md`, the taken rows survived; with one, every untaken
+    row was lost. Now any separator counts. The fixture uses `| --- |` and `:--`.
+  - **`jig merge` merged the branch tip, not the gated commit.** It now refuses a branch that
+    changed outside `.jig/handoffs/` since its latest note's commit, and refuses a job with
+    no note.
+  - **An explicit `--reserve K=N` another open job holds is refused.**
+  - **`--after` naming no open job is refused**, since a missing name reads as merged to R8.
+  - **The kickoff printed `Lane:`** (`\nLane` escapes `grep -w`). It prints `Job:`.
+  - **Optional, taken:**
+    - claude-lane's own `version` is dropped.
+    - A root `HARDWARE.md` whose board page already exists says so.
+    - `opened` takes the latest add of a reused name.
+    - The conflict message for `jig merge` says to run `setup.sh`.
+  - **Deferred: no `jig close`.** The refusal and the update skill say how to close a job by
+    hand. The row is in `DEFERRED.md`.
+  - Smoke 259/259 after the fixes.

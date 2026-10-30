@@ -1,0 +1,49 @@
+{
+  "version": 2,
+  "trunk": "main",
+  "common": [
+    "AGENTS.md",
+    "docs/**",
+    ".aidev/**"
+  ],
+  "append_files": [
+    "AGENTS.md",
+    "WORKAROUNDS.md"
+  ],
+  "reserve": {
+    "section": {
+      "next": 1,
+      "pattern": "^## (\\d+) ",
+      "files": [
+        "docs/**"
+      ]
+    }
+  },
+  "docmap": {
+    "docs/alpha/alpha.md": [
+      "src/**"
+    ]
+  },
+  "payload": [],
+  "lanes": {
+    "old": {
+      "brief": "the first thing",
+      "branch": "old",
+      "worktree": ".aidev/worktrees/old",
+      "state": "merged",
+      "after": [],
+      "owns": [
+        "src/**"
+      ],
+      "shares": [],
+      "reserved": {
+        "section": 1
+      },
+      "opened": "2026-01-01",
+      "handoffs": []
+    }
+  },
+  "log": [
+    "2026-01-02: old -> merged"
+  ]
+}

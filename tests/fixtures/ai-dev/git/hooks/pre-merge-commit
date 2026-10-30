@@ -1,0 +1,5 @@
+#!/bin/sh
+# aidev hook (.aidev/aidev.py)
+copy=$(mktemp)
+git show main:.aidev/aidev.py > "$copy" 2>/dev/null || exit 0
+python3 "$copy" hook pre-merge-commit "$@"
