@@ -1106,5 +1106,58 @@ assert j.repo_path('rp') is not None and j.repo_path('tools') is not None"
 msg="repos: the list marks this folder"
 expect_pass sh -c "$J repos | grep -q 'tools .*← here'"
 
+# ---------------------------------------------------------------- workflow
+WF="$T/wf"; mkdir -p "$WF" && cd "$WF" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && chmod +x .jig/scripts/*.sh && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+setwf() { python3 -c "import json, sys; c = json.load(open('.jig/config.json')); c['workflow'] = json.loads(sys.argv[1]); json.dump(c, open('.jig/config.json', 'w'), indent=2)" "$1"; }
+msg="workflow: prints jig's defaults, one step per line"
+expect_pass sh -c "$J workflow | grep -qx 'execute: tier 2, effort 3' && $J workflow | grep -qx 'review: tier 2, effort 1'"
+for rule in \
+  '{"execute": {"tier": 1}}|workflow.execute: tier 1 is above the spec.s tier 2' \
+  '{"execute": {"effort": 2}}|workflow.execute: effort 2 is not below the spec.s effort 2' \
+  '{"review": {"tier": 3}}|workflow.review: tier 3 is below the spec.s tier 2' \
+  '{"spec": {"effort": 1}}|workflow.review: effort 1 is not above the spec.s effort 1'; do
+  setwf "${rule%%|*}"
+  msg="workflow: $(echo "${rule%%|*}") is refused by jig workflow, naming the rule"
+  expect_pass sh -c "! $J workflow >/dev/null 2>&1 && $J workflow 2>&1 | grep -q '${rule#*|}' && test -z \"\$($J workflow 2>/dev/null)\""
+  msg="workflow: $(echo "${rule%%|*}") is refused by the commit hook"
+  git add -A; expect_refuse git commit -qm wf; undo
+done
+setwf '{"review": {"tier": 1, "effort": 0}}'
+msg="workflow: an override that keeps the rules is accepted by the hook"
+git add -A; expect_pass git commit -qm wf
+msg="workflow: the accepted override is the step in effect"
+expect_pass sh -c "$J workflow | grep -qx 'review: tier 1, effort 0'"
+
+mkdir -p .jig/specs && printf '# t\n\n## Workflow\nspec: tier 2, effort 2\nreview: tier 2, effort 1\n' > .jig/specs/t.md
+git add -A && git commit -qm spec && git switch -q -c g
+printf 'a\n' > notes.txt && git add -A && git commit -qm one
+msg="reviewed: --tier without --effort is refused"
+expect_refuse $J reviewed --tier 2
+$J reviewed --tier 2 --effort 2 --ran "model-x at level-y" >/dev/null && $J handoff --spec .jig/specs/t.md >/dev/null
+note=".jig/handoffs/g-$(date +%F).md"
+msg="handoff: the note carries the review's tier, effort and what it ran on"
+expect_pass sh -c "grep -qx 'Review: tier 2, effort 2' $note && grep -qx 'Ran: model-x at level-y' $note"
+sed -i.bak 's/^- \[ \]/- [x]/' "$note" && rm "$note.bak" && git add -A && git commit -qm note
+msg="gate: a review at a lower effort than the spec asks is warned about, not refused"
+out=$($J gate 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'warning: review ran at tier 2, effort 2; the spec asks for tier 2, effort 1'" "$out"
+msg="gate: the branch relaxing its spec's Workflow doesn't silence the warning: trunk's copy is read"
+sed -i.bak 's/review: tier 2, effort 1/review: tier 3, effort 4/' .jig/specs/t.md && rm .jig/specs/t.md.bak && git commit -qam relax
+expect_pass sh -c "$J gate 2>&1 | grep -q 'warning: review ran at tier 2, effort 2'"
+printf 'b\n' >> notes.txt && git commit -qam two
+$J reviewed --tier 1 --effort 1 >/dev/null && $J handoff --spec .jig/specs/t.md >/dev/null
+sed -i.bak 's/^- \[ \]/- [x]/' "$note" .jig/handoffs/g-$(date +%F)-2.md && rm .jig/handoffs/*.bak && git add -A && git commit -qm note2
+msg="gate: a review at the spec's settings or better gives no warning"
+out=$($J gate 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'from .jig/handoffs/g-.*-2.md on g' && ! echo \"\$0\" | grep -q warning" "$out"
+git switch -q main
+$J open k --spec .jig/specs/t.md --owns 'k/**' >/dev/null && git add -A && git commit -qm "open k"
+(cd .git/jig/worktrees/k && mkdir k && printf 'x\n' > k/x.txt && git add -A && git commit -qm x \
+  && $J reviewed >/dev/null && $J handoff >/dev/null && sed -i.bak 's/^- \[ \]/- [x]/' .jig/handoffs/k-*.md \
+  && rm .jig/handoffs/*.bak && git add -A && git commit -qm note)
+msg="gate: a note with no --spec is judged by the board's spec, and an unrecorded review is warned about"
+expect_pass sh -c "$J gate k 2>&1 | grep -q 'warning: the review.s tier and effort are not recorded; the spec asks for tier 2, effort 1'"
+
 rm -rf "$T"
 exit $fail

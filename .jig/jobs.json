@@ -1,24 +1,4 @@
 {
-  "workflow": {
-    "spec": ".jig/specs/workflow.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/tiers.json",
-      "plugin/skills/subnode/**",
-      "plugin/skills/review/**",
-      "plugin/skills/spec/**",
-      "plugin/templates/specs/**"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh",
-      "README.md",
-      "plugin/skills/hubnode/SKILL.md"
-    ],
-    "reserved": {}
-  },
   "r6-merge": {
     "spec": ".jig/specs/bug-merge-after-sync.md",
     "state": "claimed",

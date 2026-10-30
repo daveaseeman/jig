@@ -9,6 +9,10 @@ One job, one branch, one worktree. You never commit on trunk, never push trunk, 
 
 ## Check in
 
+The first line of your first reply is `running <model> at <effort>`: the model id and the
+effort your session runs at, from your own settings. If the kickoff named different ones,
+say so and stop: the owner set them, and the hubnode raises a session before briefing it.
+
 1. Find your job on the board: `jig job`. If this branch is on no job, stop and ask
    the hubnode to open one. Never create a job branch yourself.
 2. Work in the worktree the board names, nowhere else.
@@ -31,8 +35,12 @@ A handoff is a mergeable chunk, not the whole job — hand off as often as a coh
 is done.
 
 1. Run the project's checks (`.jig/scripts/check.sh`, plus whatever `/jig:verify` calls for).
-2. Have the diff adversarially reviewed: `/jig:review`. Fix anything blocking.
-3. `jig reviewed` to record it, then `jig handoff --spec .jig/specs/<task>.md`.
+2. Have the diff adversarially reviewed. If a hubnode started you, report the commit and
+   wait: it runs the review at the review step's settings and sends blocking findings back
+   here as fixes. Working alone, `/jig:review`. Fix anything blocking.
+3. `jig handoff --spec .jig/specs/<task>.md`. The review is already recorded: by the hubnode
+   when it ran it, by `/jig:review` when you did. Never run a bare `jig reviewed` after the
+   hubnode's review — it overwrites the tier and effort the hubnode recorded.
 4. Fill every heading in the note. Commit it with the work.
 5. Message the hubnode: the job, the commit, the note's path. Then keep building, or wait.
 

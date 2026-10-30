@@ -43,6 +43,16 @@ BOARD_DEFAULTS = {
     "not_docs": [],        # globs whose markdown ships as code; survey finds no home for it
     "release": {"artifacts": []},   # globs release.sh must produce; see `jig release`
 }
+# Who runs each step, as numbers the tool maps to its own models and efforts. Tier 1 is the
+# tool's best model, a higher number a lesser one; effort 0 is its highest, each number up one
+# level lower. Effort 0 is left unused so a repo can raise any step. Overridden per repo by
+# config.json's "workflow", never per task: a model would be choosing its own budget.
+WORKFLOW_DEFAULTS = {
+    "spec":    {"tier": 2, "effort": 2},   # and decide, retro, a hardware page: the hubnode's
+    "execute": {"tier": 2, "effort": 3},   # and fix, in the session that executed
+    "review":  {"tier": 2, "effort": 1},   # always in a fresh context
+    "check":   {"tier": 3, "effort": 4},   # gate check, release run, survey: fixed commands
+}
 
 
 # ---------------------------------------------------------------- git helpers
@@ -165,6 +175,60 @@ class Board:
         return None, None
 
 
+# ------------------------------------------------------------------- workflow
+
+def workflow_steps(config: dict) -> tuple[dict, list[str]]:
+    """The steps in effect, and every way the override breaks the rules. Execute is judged
+    against the spec it builds from; review must be able to see more than the work it judges."""
+    steps = {k: dict(v) for k, v in WORKFLOW_DEFAULTS.items()}
+    over = config.get("workflow") or {}
+    if not isinstance(over, dict):
+        return steps, ["workflow: must map step names to {\"tier\": N, \"effort\": N}"]
+    bad = []
+    for step, vals in over.items():
+        if step not in steps:
+            bad.append(f"workflow.{step}: no such step; the steps are {', '.join(steps)}")
+            continue
+        if not isinstance(vals, dict):
+            bad.append(f"workflow.{step}: must be {{\"tier\": N, \"effort\": N}}")
+            continue
+        for k, v in vals.items():
+            least = {"tier": 1, "effort": 0}.get(k)
+            if least is None:
+                bad.append(f"workflow.{step}.{k}: only tier and effort are set")
+            elif type(v) is not int or v < least:
+                bad.append(f"workflow.{step}.{k}: {v!r} is not a whole number from {least} up")
+            else:
+                steps[step][k] = v
+    sp, ex, rv = steps["spec"], steps["execute"], steps["review"]
+    lower = " (a higher number is a lower effort)"
+    if ex["tier"] < sp["tier"]:
+        bad.append(f"workflow.execute: tier {ex['tier']} is above the spec's tier {sp['tier']}")
+    if ex["effort"] <= sp["effort"]:
+        bad.append(f"workflow.execute: effort {ex['effort']} is not below the spec's "
+                   f"effort {sp['effort']}{lower}")
+    if rv["tier"] > sp["tier"]:
+        bad.append(f"workflow.review: tier {rv['tier']} is below the spec's tier {sp['tier']}")
+    if rv["effort"] >= sp["effort"]:
+        bad.append(f"workflow.review: effort {rv['effort']} is not above the spec's "
+                   f"effort {sp['effort']}{lower}")
+    return steps, bad
+
+
+def cmd_workflow(root: Path, args) -> int:
+    """Print the steps in effect; refuse an override that breaks a rule."""
+    # The working tree's config, so the hubnode sees a refusal before committing the edit.
+    steps, bad = workflow_steps(Board.load(root, working_tree=True).data)
+    # Refused, nothing goes to stdout: a skill copying the steps into a spec must get none.
+    for b in bad:
+        print(b, file=sys.stderr)
+    if bad:
+        return 1
+    for step, v in steps.items():
+        print(f"{step}: tier {v['tier']}, effort {v['effort']}")
+    return 0
+
+
 # ---------------------------------------------------------------------- rules
 
 AUTO_MERGE = False   # set by the pre-merge-commit hook: git has not written MERGE_HEAD yet
@@ -228,6 +292,11 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     for f in (CONFIG, JOBS):
         if f in paths and branch != trunk:
             out.append(f"R5 the board is the hubnode's: {f} is edited on {trunk} only")
+    if CONFIG in paths and (raw := in_index(CONFIG, staged)):
+        try:
+            out += workflow_steps(json.loads(raw))[1]
+        except ValueError as e:
+            out.append(f"{CONFIG} is not JSON: {e}")
 
     # R7 a workaround needs its ledger row — job or not; code only, prose may quote it. Only
     # the marker right after a comment opener is the comment the rule names: a string or regex
@@ -790,9 +859,16 @@ def review_marker(root: Path) -> Path:
 
 
 def cmd_reviewed(root: Path, args) -> int:
-    """Record that HEAD has had its adversarial review. Called by the review skill."""
+    """Record that HEAD has had its adversarial review, and what it ran at. Called by the
+    review skill."""
+    if (args.tier is None) != (args.effort is None):
+        die("give --tier and --effort together")
+    if args.tier is not None and (args.tier < 1 or args.effort < 0):
+        die("tier counts from 1, effort from 0")
     head = git("rev-parse", "HEAD")
-    review_marker(root).write_text(head + "\n")
+    ran = {k: v for k, v in (("tier", args.tier), ("effort", args.effort), ("ran", args.ran))
+           if v is not None}
+    review_marker(root).write_text(head + "\n" + (json.dumps(ran) + "\n" if ran else ""))
     # Every review ever, for a metarepo's gate: a merge's second parent must be one of them.
     with open(git_common() / "jig" / "reviewed.log", "a") as log:
         log.write(head + "\n")
@@ -805,7 +881,7 @@ NOTE = """# Handoff: {job}
 Commit: {head}
 Date: {today}
 Spec: {spec}
-
+{ran}
 ## Built
 <!-- what this delivers, in a few lines -->
 
@@ -867,8 +943,8 @@ def cmd_handoff(root: Path, args) -> int:
         die("commit everything first: a handoff names one commit")
     head = git("rev-parse", "HEAD")
     marker = review_marker(root)
-    seen = marker.read_text().strip() if marker.exists() else ""
-    if seen != head:
+    lines = marker.read_text().splitlines() if marker.exists() else []
+    if not lines or lines[0].strip() != head:
         die("no adversarial review on record for this commit.\n"
             f"  Review {head[:12]}, then: python3 {DIR}/jig.py reviewed")
     (root / DIR / "handoffs").mkdir(parents=True, exist_ok=True)
@@ -878,8 +954,14 @@ def cmd_handoff(root: Path, args) -> int:
     while path.exists():
         path = root / DIR / "handoffs" / f"{name}-{date.today().isoformat()}-{i}.md"
         i += 1
+    ran = json.loads(lines[1]) if len(lines) > 1 and lines[1].strip() else {}
+    # jig gate reads the Review line back against the spec's Workflow section.
+    ran_lines = (f"Review: tier {ran['tier']}, effort {ran['effort']}\n" if "tier" in ran
+                 else "Review: tier and effort not recorded\n")
+    if ran.get("ran"):
+        ran_lines += f"Ran: {ran['ran']}\n"
     path.write_text(NOTE.format(job=name, head=head, today=date.today().isoformat(),
-                                spec=args.spec or "(none)",
+                                spec=args.spec or "(none)", ran=ran_lines,
                                 foldin=foldin_lines(root, board, branch)))
     print(f"wrote {path.relative_to(root)}")
     if job is not None:
@@ -913,6 +995,33 @@ def cmd_reading_list(root: Path, args) -> int:
         for f in sorted(set(unowned)):
             print(f"  {f}")
     return 0
+
+
+def review_shortfall(root: Path, branch: str, name: str, note: str) -> str:
+    """What the note's review fell short of in the spec's Workflow section, or "". A warning
+    for now: it becomes a refusal only if weak reviews keep reaching the gate."""
+    # The board's spec before the note's, and trunk's copy before the branch's, so a branch
+    # can't edit what it is judged by. Only a spec trunk lacks (solo work) is read from the
+    # branch.
+    trunk_board = Board.load(root)
+    m = re.search(r"^Spec: (\S+)", note, re.M)
+    paths = [(trunk_board.jobs.get(name) or {}).get("spec") or "", m.group(1) if m else ""]
+    text = ""
+    for path in filter(None, paths):
+        text = git("show", f"{trunk_board.trunk}:{path}") or git("show", f"{branch}:{path}")
+        if text:
+            break
+    sec = re.search(r"^## Workflow\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+    asked = re.search(r"\breview: tier (\d+), effort (\d+)", sec.group(1)) if sec else None
+    if not asked:
+        return ""
+    want = f"the spec asks for tier {asked.group(1)}, effort {asked.group(2)}"
+    got = re.search(r"^Review: tier (\d+), effort (\d+)", note, re.M)
+    if not got:
+        return f"the review's tier and effort are not recorded; {want}"
+    if int(got.group(1)) > int(asked.group(1)) or int(got.group(2)) > int(asked.group(2)):
+        return f"review ran at tier {got.group(1)}, effort {got.group(2)}; {want}"
+    return ""
 
 
 def cmd_gate(root: Path, args) -> int:
@@ -952,6 +1061,9 @@ def cmd_gate(root: Path, args) -> int:
     commit = m.group(1) if m else branch
     label = f"job {name}" if job is not None else name
     print(f"{label}: gate {commit[:12]} from {note} on {branch}")
+    weak = review_shortfall(root, branch, name, body)
+    if weak:
+        print(f"warning: {weak}", file=sys.stderr)
     print("Run the project checks against that exact commit, in a scratch checkout —")
     print("not the working tree, which may already have moved on:\n")
     scratch = f"{worktrees_dir()}/gate-{name}"
@@ -2799,7 +2911,11 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--staged", action="store_true")
     sub.add_parser("job", help="print this branch's manifest")
     sub.add_parser("sync", help="merge trunk in, resolving append-only conflicts")
-    sub.add_parser("reviewed", help="record that HEAD has had its review")
+    rv = sub.add_parser("reviewed", help="record that HEAD has had its review")
+    rv.add_argument("--tier", type=int, help="the model tier the review ran at")
+    rv.add_argument("--effort", type=int, help="the effort it ran at")
+    rv.add_argument("--ran", help="what it ran on, in the tool's own words")
+    sub.add_parser("workflow", help="the steps in effect: each one's model tier and effort")
     h = sub.add_parser("handoff", help="write the handoff note for HEAD")
     h.add_argument("--spec", help="path to the spec this delivers")
     rl = sub.add_parser("reading-list", help="what to read before touching these files")
@@ -2842,6 +2958,7 @@ def main(argv: list[str] | None = None) -> int:
         "open": cmd_open, "mark": cmd_mark, "merge": cmd_merge, "check": cmd_check,
         "job": cmd_job, "sync": cmd_sync, "reviewed": cmd_reviewed,
         "handoff": cmd_handoff, "gate": cmd_gate, "hook": cmd_hook,
+        "workflow": cmd_workflow,
         "survey": cmd_survey, "reading-list": cmd_reading_list, "update": cmd_update, "repos": cmd_repos, "staging": cmd_staging,
         "release": cmd_release, "para-sync": cmd_para_sync, "para-propose": cmd_para_propose,
     }[args.cmd]

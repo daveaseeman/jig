@@ -178,6 +178,37 @@ else stops with the files named, and a person resolves it.
    commit itself, then syncs the clean jobs. What the merge touched in shared files goes in
    that commit's message (`-m`).
 
+## Workflow
+
+The hubnode writes specs, talks with the owner and decides. The work goes to sessions it
+starts, each at a model tier and an effort the owner set, never one a model picks for
+itself.
+
+| Step | Who | Tier | Effort | An override must keep |
+|---|---|---|---|---|
+| `spec`: spec, decide, retro, hardware page | hubnode | 2 | 2 | — |
+| `execute`: execute, fix | a subnode it starts | 2 | 3 | tier no better than spec's; effort lower |
+| `review` | a subnode, always a fresh context | 2 | 1 | tier no worse than spec's; effort higher |
+| `check`: gate check, release run, survey | a subnode it starts | 3 | 4 | nothing: fixed commands |
+
+Tier 1 is the best model the tool has; a higher number is a lesser model. Effort 0 is the
+tool's highest; each number up is one level lower. The defaults leave effort 0 free, so a
+repo can raise any step. Which model and level a number means is the tool's business, not
+`.jig/`'s.
+
+`jig workflow` prints the steps in effect. A repo overrides them in `config.json`:
+`"workflow": {"review": {"tier": 1, "effort": 0}}`. An override that breaks the last column
+is refused by `jig workflow` and by the commit hook. There is no per-task override: a task
+that needs other settings means the owner changes the config.
+
+A spec's `## Workflow` section is `jig workflow`'s output when it was written. The review
+records the review step's configured settings (`jig reviewed --tier N --effort N --ran
+"..."`), the handoff note carries them, and `jig gate` warns when they are a worse tier or a
+lower effort than the spec asks. So the warning catches a review recorded without them, or a
+config changed after the spec was written; it can't see a review that actually ran weaker
+than it was set to. A fix goes back to the session that executed. A third round that doesn't converge is a
+bug in the spec or the approach: investigate it, don't start a fourth.
+
 ## Staging
 
 `.jig/staging/` is where a chat drops a file meant for a repo: a spec, a doc, decision rows, a
@@ -264,7 +295,8 @@ jig merge <name> [-m msg]   merge a job; its entry is deleted in the merge commi
 jig check [--staged]        run the rules here
 jig job                    this branch's manifest
 jig sync                    merge trunk in, append rule applied
-jig reviewed                record that HEAD has been reviewed
+jig reviewed [--tier N --effort N] [--ran text]   record that HEAD has been reviewed, and at what
+jig workflow                each step's model tier and effort in effect
 jig handoff [--spec path]   write the note for HEAD
 jig gate <name>             hubnode: verify, then print the gate commands
 jig para-sync / para-propose   pararepo: refresh and report / propose
