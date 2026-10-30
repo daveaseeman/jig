@@ -246,17 +246,15 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     # there is nobody to collide with and the numbers are yours
     held: dict[str, set[int]] = {}
     who = f"job {name}"
-    for k, v in ((job or {}).get("reserved") or {}).items():
-        if str(v).isdigit():
-            held.setdefault(k, set()).add(int(v))
+    for k, v in held_numbers(job or {}).items():
+        held.setdefault(k, set()).update(v)
     if job is None and branch == trunk:
         # Merging a job brings in the numbers it holds: trunk takes them by merging it.
         tips = set(merging_commits())
         for n, l in board.jobs.items():
             if tips and git("rev-parse", "-q", "--verify", f"refs/heads/{board.branch(n)}") in tips:
-                for k, v in (l.get("reserved") or {}).items():
-                    if str(v).isdigit():
-                        held.setdefault(k, set()).add(int(v))
+                for k, v in held_numbers(l).items():
+                    held.setdefault(k, set()).update(v)
                 who = "the job being merged"
     if job is None and not branch:
         # A detached HEAD is the gate's scratch checkout of a job's commit: it holds what the
@@ -265,9 +263,8 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
         for n, l in board.jobs.items():
             if subprocess.run(["git", "merge-base", "--is-ancestor", head,
                                f"refs/heads/{board.branch(n)}"], capture_output=True).returncode == 0:
-                for k, v in (l.get("reserved") or {}).items():
-                    if str(v).isdigit():
-                        held.setdefault(k, set()).add(int(v))
+                for k, v in held_numbers(l).items():
+                    held.setdefault(k, set()).update(v)
                 who = f"job {n}"
     if job is not None or board.open_jobs():
         out += reserved_refusals(root, board, held, who, staged)
@@ -336,11 +333,19 @@ def highest_on_trunk(board: "Board", counter: str, spec: dict) -> int:
     return top
 
 
+def held_numbers(job: dict) -> dict[str, set[int]]:
+    """What a job holds, per counter. `jig reserve` turns one value into a list."""
+    out: dict[str, set[int]] = {}
+    for k, v in (job.get("reserved") or {}).items():
+        out.setdefault(k, set()).update(int(x) for x in (v if isinstance(v, list) else [v])
+                                        if str(x).isdigit())
+    return out
+
+
 def next_number(board: "Board", counter: str, spec: dict) -> int:
     """The next free number: above everything trunk has and everything an open job holds,
     so two jobs open at once never get the same one."""
-    held = [int(v) for l in board.jobs.values()
-            for k, v in (l.get("reserved") or {}).items() if k == counter and str(v).isdigit()]
+    held = [n for l in board.jobs.values() for n in held_numbers(l).get(counter, ())]
     return max([highest_on_trunk(board, counter, spec), *held]) + 1
 
 
@@ -625,7 +630,7 @@ def cmd_open(root: Path, args) -> int:
         # An adopted branch may already hold a number: it is recorded as held, and held
         # numbers are never handed out again while its job is open.
         reserve[k] = int(explicit) if explicit else next_number(board, k, spec)
-        holder = [n for n, l in board.jobs.items() if str((l.get("reserved") or {}).get(k)) == str(reserve[k])]
+        holder = [n for n, l in board.jobs.items() if reserve[k] in held_numbers(l).get(k, ())]
         if holder:
             die(f"{k} {reserve[k]} is held by open job {holder[0]}: one number, one job")
     # A merged job's entry is gone, so a name that isn't open reads as merged to R8: a typo
@@ -667,6 +672,28 @@ def cmd_open(root: Path, args) -> int:
     return 0
 
 
+def cmd_reserve(root: Path, args) -> int:
+    """Another number for an open job, by the rule `open --reserve` uses: a hand edit of the
+    board is checked by nothing, so a number taken that way can collide."""
+    board = Board.load(root, working_tree=True)
+    if git("branch", "--show-current") != board.trunk:
+        die(f"reserve from {board.trunk} (the hubnode's checkout)")
+    job = board.jobs.get(args.name)
+    if job is None:
+        die(f"no open job {args.name}")
+    spec = (board.data.get("reserve") or {}).get(args.counter)
+    if not (isinstance(spec, dict) and spec.get("pattern") and spec.get("files")):
+        die(f"counter '{args.counter}' needs a \"pattern\" and \"files\" in reserve.{args.counter} "
+            f"of {CONFIG}: the pattern is how jig knows which numbers are taken")
+    n = next_number(board, args.counter, spec)
+    reserved = job.setdefault("reserved", {})
+    had = reserved.get(args.counter)
+    reserved[args.counter] = n if had is None else [*(had if isinstance(had, list) else [had]), n]
+    board.save()
+    print(f"job {args.name}: {args.counter} {n} reserved. Commit {JOBS} on {board.trunk}.")
+    return 0
+
+
 def cmd_mark(root: Path, args) -> int:
     board = Board.load(root, working_tree=True)
     if args.name not in board.jobs:
@@ -701,8 +728,7 @@ def cmd_merge(root: Path, args) -> int:
     if not notes:
         die(f"{name} has filed no handoff note on {branch}: hand off and gate it first")
     m = re.search(r"^Commit: (\w+)", git("show", f"{branch}:{notes[-1]}"), re.M)
-    since = [f for f in git("diff", "--name-only", m.group(1) if m else branch, branch).splitlines()
-             if f and not f.startswith(f"{DIR}/handoffs/")]
+    since = changed_since(m.group(1) if m else branch, branch, board)
     if since:
         die(f"{branch} has changed since the commit {notes[-1]} names ({', '.join(since[:5])}): "
             "hand off again and gate that, or merge the gated commit by hand")
@@ -766,7 +792,12 @@ CONFLICT = re.compile(
 
 def resolve_appends(path: Path) -> bool:
     """Resolve conflicts where both sides only added at the same spot. True if clean."""
-    text = path.read_text()
+    text, ok = resolved_appends(path.read_text())
+    path.write_text(text)
+    return ok
+
+
+def resolved_appends(text: str) -> tuple[str, bool]:
     out, pos, ok = [], 0, True
     for m in CONFLICT.finditer(text):
         out.append(text[pos:m.start()])
@@ -777,8 +808,7 @@ def resolve_appends(path: Path) -> bool:
             out.append(m.group(0))
         pos = m.end()
     out.append(text[pos:])
-    path.write_text("".join(out))
-    return ok
+    return "".join(out), ok
 
 
 def cmd_sync(root: Path, args) -> int:
@@ -789,29 +819,76 @@ def cmd_sync(root: Path, args) -> int:
         die("not on a job branch")
     if git("status", "--porcelain"):
         die("commit or stash first: the tree is dirty")
-    p = subprocess.run(["git", "-c", "merge.conflictStyle=diff3", "merge", trunk],
-                       stdout=subprocess.PIPE, text=True)
-    if p.returncode == 0:
+    stuck = merge_trunk(board, root)
+    if stuck is None:
         print(f"merged {trunk}; nothing to resolve")
         return 0
-    conflicted = git("diff", "--name-only", "--diff-filter=U").splitlines()
-    append_files = board.data.get("append_files", [])
-    stuck = []
-    for f in conflicted:
-        if matches(f, append_files) and resolve_appends(root / f):
-            git("add", "--", f)
-        else:
-            stuck.append(f)
     if stuck:
         print(f"resolve by hand, then `git commit` and `./{DIR}/scripts/setup.sh`:", file=sys.stderr)
         for f in stuck:
             print(f"  {f}", file=sys.stderr)
         return 1
-    git("commit", "--no-edit", check=True)
-    # git runs post-merge only for a merge it finished itself, not this one.
-    run_setup(root)
     print(f"merged {trunk}; append conflicts resolved automatically")
     return 0
+
+
+def merge_trunk(board: "Board", here: Path) -> list[str] | None:
+    """Merge trunk into the checkout at HERE, resolving append-only conflicts in append_files.
+    None: git merged it cleanly. []: resolved and committed. Otherwise the files left for a
+    hand, with the merge still in progress."""
+    p = subprocess.run(["git", "-c", "merge.conflictStyle=diff3", "merge", "--no-edit", board.trunk],
+                       stdout=subprocess.PIPE, text=True, cwd=here)
+    if p.returncode == 0:
+        return None
+    append_files = board.data.get("append_files", [])
+    stuck = []
+    for f in git("diff", "--name-only", "--diff-filter=U", cwd=str(here)).splitlines():
+        if matches(f, append_files) and resolve_appends(here / f):
+            git("add", "--", f, cwd=str(here))
+        else:
+            stuck.append(f)
+    if stuck:
+        return stuck
+    git("commit", "--no-edit", check=True, cwd=str(here))
+    # git runs post-merge only for a merge it finished itself, not this one.
+    run_setup(here)
+    return []
+
+
+def blob(rev: str, path: str) -> str:
+    return subprocess.run(["git", "show", f"{rev}:{path}"], capture_output=True, text=True).stdout
+
+
+def changed_since(commit: str, branch: str, board: "Board") -> list[str]:
+    """What a job did after the commit that was checked: the files its own commits changed,
+    and what a merge of trunk carries beyond what `jig sync` makes of that merge. Trunk's
+    changes aren't the job's, a hand edit hidden in a resolution is, and handoff notes are
+    bookkeeping made after the check by design."""
+    trunk, appends = board.trunk, board.data.get("append_files", [])
+    out: list[str] = []
+    for line in git("rev-list", "--first-parent", "--parents", f"{commit}..{branch}").splitlines():
+        c, *parents = line.split()
+        if len(parents) > 1 and subprocess.run(["git", "merge-base", "--is-ancestor", parents[1], trunk],
+                                               capture_output=True).returncode == 0:
+            # Replay the sync: git's merge, then the append rule, compared with what was committed.
+            p = subprocess.run(["git", "-c", "merge.conflictStyle=diff3", "merge-tree", "--write-tree",
+                                "--name-only", "--no-messages", parents[0], parents[1]],
+                               capture_output=True, text=True)
+            tree, *conflicted = p.stdout.splitlines() or [""]
+            if p.returncode not in (0, 1) or not tree:
+                # No replay to compare with: everything the merge changed counts as the job's.
+                tree, conflicted = parents[0], []
+            files = []
+            for f in git("diff", "--name-only", tree, c).splitlines():
+                if f in conflicted and matches(f, appends):
+                    text, ok = resolved_appends(blob(tree, f))
+                    if ok and text == blob(c, f):
+                        continue
+                files.append(f)
+        else:
+            files = git("diff", "--name-only", parents[0], c).splitlines()
+        out += [f for f in files if f and not f.startswith(f"{DIR}/handoffs/") and f not in out]
+    return out
 
 
 # ---------------------------------------------------------- review + handoff
@@ -986,11 +1063,25 @@ def cmd_gate(root: Path, args) -> int:
     commit = m.group(1) if m else branch
     label = f"job {name}" if job is not None else name
     print(f"{label}: gate {commit[:12]} from {note} on {branch}")
-    print("Run the project checks against that exact commit, in a scratch checkout —")
-    print("not the working tree, which may already have moved on:\n")
+    # The commit the note names, never the job's live worktree, which may have moved on; and
+    # trunk merged in the way `jig sync` merges it, so the gate checks the merge a sync makes.
     scratch = f"{worktrees_dir()}/gate-{name}"
-    print(f"  git worktree add --detach {scratch} {commit}")
-    print(f"  cd {scratch} && git merge {trunk} && ./{DIR}/scripts/check.sh")
+    where = main_root() / scratch
+    if where.exists():
+        die(f"{scratch} is left from an earlier gate: `git worktree remove --force {scratch}`, "
+            "then gate again")
+    subprocess.run(["git", "worktree", "add", "--detach", str(where), commit], stdout=subprocess.DEVNULL)
+    if not where.exists():
+        die(f"git worktree add {scratch} {commit[:12]} failed")
+    stuck = merge_trunk(board, where)
+    if stuck:
+        print(f"merging {trunk} into {scratch} needs a hand in {', '.join(stuck)}: the job resolves "
+              f"that by `jig sync` and hands off again. Remove the checkout: "
+              f"git worktree remove --force {scratch}", file=sys.stderr)
+        return 1
+    print(f"{scratch} holds {commit[:12]} with {trunk} merged in. Run the project checks there; "
+          "jig never runs them:\n")
+    print(f"  cd {scratch} && ./{DIR}/scripts/check.sh")
     print(f"  cd - && git worktree remove {scratch}\n")
     if job is not None:
         print(f"Then: jig mark {name} gated, and on the owner's word: jig merge {name}")
@@ -1243,14 +1334,13 @@ def reviewed_commits() -> set[str]:
     return set(log.read_text().split()) if log.exists() else set()
 
 
-def counts_reviewed(commit: str, done: set[str]) -> bool:
+def counts_reviewed(commit: str, done: set[str], board: "Board") -> bool:
     """A commit is reviewed when `jig reviewed` recorded it, or when a recorded commit is its
-    first-parent ancestor and everything since touches only handoff notes: `jig handoff`
-    requires the review to be HEAD, so the note is always committed after it."""
+    first-parent ancestor and nothing of the job's changed since (`changed_since`): `jig
+    handoff` requires the review to be HEAD, so the note is always committed after it."""
     for c in git("rev-list", "--first-parent", commit).splitlines():
         if c in done:
-            return all(f.startswith(f"{DIR}/handoffs/")
-                       for f in git("diff", "--name-only", c, commit).splitlines() if f)
+            return not changed_since(c, commit, board)
     return False
 
 
@@ -1288,7 +1378,7 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
         # gate's scratch merge, are merges into something else.
         done = reviewed_commits() if branch == trunk else set()
         for c in (merging if branch == trunk else []):
-            if not counts_reviewed(c, done):
+            if not counts_reviewed(c, done, board):
                 out.append(f"M5 {c[:12]} has no review on record: review it on its branch "
                            f"(`jig reviewed`), then merge")
         return out
@@ -1343,10 +1433,11 @@ def meta_problems(root: Path, meta: dict, trunk: str) -> list[str]:
     last = latest_tag(released)
     rng = f"{last}..{trunk}" if last else trunk
     done = reviewed_commits()
+    board = Board.load(root)
     for line in git("rev-list", "--first-parent", "--parents", rng).splitlines():
         commit, *parents = line.split()
         if len(parents) > 1:
-            if not counts_reviewed(parents[1], done):
+            if not counts_reviewed(parents[1], done, board):
                 out.append(f"{commit[:12]} merges {parents[1][:12]}, which has no review on record")
             continue
         if not parents:
@@ -2838,6 +2929,9 @@ def main(argv: list[str] | None = None) -> int:
     o.add_argument("--worktree", help="adopting: where the branch is already checked out")
     o.add_argument("--state", choices=STATES, help="adopting: its state (default building)")
 
+    rs = sub.add_parser("reserve", help="hubnode: give an open job another number of a counter")
+    rs.add_argument("name")
+    rs.add_argument("counter")
     m = sub.add_parser("mark", help="hubnode: set a job's state")
     m.add_argument("name")
     m.add_argument("state")
@@ -2888,7 +2982,7 @@ def main(argv: list[str] | None = None) -> int:
     root = repo_root()
     fn = {
         "init": cmd_init, "install-hooks": cmd_install_hooks, "status": cmd_status,
-        "open": cmd_open, "mark": cmd_mark, "merge": cmd_merge, "check": cmd_check,
+        "open": cmd_open, "reserve": cmd_reserve, "mark": cmd_mark, "merge": cmd_merge, "check": cmd_check,
         "job": cmd_job, "sync": cmd_sync, "reviewed": cmd_reviewed,
         "handoff": cmd_handoff, "gate": cmd_gate, "hook": cmd_hook,
         "survey": cmd_survey, "reading-list": cmd_reading_list, "update": cmd_update, "repos": cmd_repos, "staging": cmd_staging,

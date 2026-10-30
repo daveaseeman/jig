@@ -86,7 +86,7 @@ Conventions so two jobs rarely meet in one hunk:
 - Append, never edit, shared prose. A change to someone else's section is a note in yours.
 - A file of one's own: new routes in your own handler registered by one line; new state in
   your own module; new tests in your own file; a new fixture as a new file.
-- Scarce numbers come from the board (`--reserve`), never from looking at what seems free.
+- Scarce numbers come from the board (`--reserve`, `jig reserve`), never from looking at what seems free.
   Two branches that both take migration 17 corrupt the first database that runs both.
 
 ## Reserved numbers
@@ -109,7 +109,8 @@ takes section 32. `"unique": true` is for numbers that must also appear once: a 
 set, because a section number appears once per rule under it.
 
 `--reserve <counter>` hands the job max(the highest on trunk, the highest an open job
-holds) + 1, so two jobs open at once never get the same number. Nothing stores a "next":
+holds) + 1, so two jobs open at once never get the same number. `jig reserve <job> <counter>`
+hands an open job another by the same rule; it then holds a list. Nothing stores a "next":
 the files say what is taken, and a counter without `pattern` and `files` is refused.
 
 A job holding step N lists the job holding N−1 in `after`, so they merge in order: a
@@ -177,16 +178,21 @@ else stops with the files named, and a person resolves it.
    (`jig reviewed`), then `jig handoff` writes a note naming that exact commit. Fill every
    heading, commit the note with the work, tell the hubnode the job and the commit.
    A job may hand off several times.
-2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it runs the checks **against the commit the note names, in a detached
-   scratch checkout** — never the job's live worktree, which the subnode may still be building in.
+2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it sets
+   up a **detached scratch checkout of the commit the note names**, with trunk merged in the
+   way `jig sync` merges it, and prints the check to run there and the cleanup. It never runs
+   the check: whoever runs it runs the same command. Never the job's live worktree, which the
+   subnode may still be building in.
    The hooks set that checkout up with `.jig/scripts/setup.sh`, when it is added and again
    after its merge of trunk, so the checks run in an environment built from the job's own
    manifests.
    That means a merge runs the merged-in `setup.sh`: review a change to it like any other
    code, because the next merge executes it.
 3. **The hubnode merges** with `jig merge <job>`, which deletes the job's entry in the merge
-   commit itself, then syncs the clean jobs. What the merge touched in shared files goes in
-   that commit's message (`-m`).
+   commit itself, then syncs the clean jobs. A job synced since its note still merges: only
+   the job's own commits count as changes since the check, and what a sync's resolution
+   carries beyond what `jig sync` would make of it. Either refuses until it is handed off
+   again. What the merge touched in shared files goes in that commit's message (`-m`).
 
 ## Staging
 
@@ -267,6 +273,7 @@ jig update [--apply]        bring the repo to the current jig layout (dry run wi
 jig staging [resolve|drop <file>]   list staged files, or land / drop one
 jig repos [add repo|meta|para | rename <new>]  where your repos live (user config)
 jig open ... --reserve K    allocate scarce counter K to this job
+jig reserve <job> <K>       hubnode: give an open job the next number of counter K too
 jig reading-list <paths>    what to read before touching these files
 jig install-hooks           rewrite the hooks
 jig status                  jobs, states, distance from trunk, dirt
@@ -278,7 +285,7 @@ jig job                    this branch's manifest
 jig sync                    merge trunk in, append rule applied
 jig reviewed                record that HEAD has been reviewed
 jig handoff [--spec path]   write the note for HEAD
-jig gate <name>             hubnode: verify, then print the gate commands
+jig gate <name>             hubnode: verify, set up the scratch checkout, print its check
 jig para-sync / para-propose   pararepo: refresh and report / propose
 ```
 

@@ -38,8 +38,10 @@ message you at a handoff or when blocked.
 ## Gating a handoff
 
 1. `jig mark <name> ready`, then `jig gate <name>`. It refuses on R8 and on a missing note.
-2. Run the printed commands: the checks against the commit the note names, in a detached
-   scratch checkout. Not the job's worktree — the subnode may still be building there.
+2. `jig gate` sets up a detached scratch checkout of the commit the note names, with trunk
+   merged in as `jig sync` would, and prints the check to run there. Don't run it in this
+   session: hand it to a subnode, which runs it in the scratch checkout and reports the exit
+   code and output. Not the job's worktree — the subnode may still be building there.
 3. Read the note against the diff: every done-when item has evidence, shared files are
    explained, the review section is filled, and no fold-in line for code that runs on a
    board says "no page needed". A miss goes back to the subnode as a note, never
@@ -53,7 +55,9 @@ message you at a handoff or when blocked.
 ## After a merge
 
 Run `jig sync` in every open job's worktree that is clean. Say which jobs must sync
-themselves.
+themselves. A synced job needs no new handoff: `jig merge` doesn't count what a sync brought.
+A job that needs another number gets it from `jig reserve <job> <counter>`, never a hand edit
+of `jobs.json`.
 
 ## Never
 

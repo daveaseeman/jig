@@ -1181,6 +1181,57 @@ msg="staging: destination DECISIONS.md resolves to the root register"
 stage de.md this decisions new DECISIONS.md '| D-010 | x | accepted | 2026-10-30 |\n'
 expect_pass sh -c "$J staging resolve de.md && grep -q 'D-010' DECISIONS.md"
 
+# ---------------------------------------------------------------- merge after a sync, the gate's own scratch merge, jig reserve
+MS="$T/msync"; mkdir -p "$MS" && cd "$MS" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs
+printf '# D\n\n## 1 One\n' > docs/d.md && printf '# Changelog\n' > CHANGELOG.md
+git add -A && git commit -qm init && $J init >/dev/null
+python3 - <<'EOF'
+import json; c = json.load(open('.jig/config.json'))
+c['reserve'] = {'section': {'pattern': r'^## (\d+) ', 'files': ['docs/**']}, 'loose': {}}
+json.dump(c, open('.jig/config.json', 'w'), indent=2)
+EOF
+git add -A && git commit -qm config
+for j in K L M; do $J open $j --shares CHANGELOG.md >/dev/null; done; git add -A && git commit -qm "open K L M"
+foldin() { sed -i.bak -e 's/^- \[ \]/- [x]/' -e 's/___/smoke/g' .jig/handoffs/*.md && rm .jig/handoffs/*.bak; }
+for j in K L M; do
+  ( cd "$MS/.git/jig/worktrees/$j" && printf -- '- %s\n' "$j" >> CHANGELOG.md && printf 'x=1\n' > "$j.py" && git add -A && git commit -qm "$j" \
+    && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && foldin && git add -A && git commit -qm "note $j" )
+done
+printf -- '- trunk\n' >> CHANGELOG.md && git commit -qam "trunk appends"
+msg="gate: with an append conflict between trunk and the note commit, the scratch checkout has trunk merged and no conflict, and the check is printed"
+out=$($J gate K 2>&1); s=.git/jig/worktrees/gate-K
+expect_pass sh -c "echo \"\$0\" | grep -q 'cd $s && ./.jig/scripts/check.sh' && test \"\$(git -C $s rev-list --parents -n1 HEAD | wc -w | tr -d ' ')\" = 3 && test -z \"\$(git -C $s status --porcelain)\" && ! grep -q '^<<<<<<<' $s/CHANGELOG.md && grep -q '^- K' $s/CHANGELOG.md && grep -q '^- trunk' $s/CHANGELOG.md" "$out"
+git worktree remove --force "$s"
+for j in K L M; do ( cd "$MS/.git/jig/worktrees/$j" && [ $j = M ] || $J sync >/dev/null 2>&1 ); done
+( cd "$MS/.git/jig/worktrees/M" && git -c merge.conflictStyle=diff3 merge -q main >/dev/null 2>&1
+  printf -- '# Changelog\n- trunk\n- M\n' > CHANGELOG.md && printf 'x=2\n' > M.py && git add -A && git commit -q --no-edit )
+( cd "$MS/.git/jig/worktrees/L" && printf 'x=2\n' > L.py && git commit -qam "L after its note" )
+msg="merge: a job synced after its handoff, append conflict resolved by the sync, merges with no new handoff"
+expect_pass $J merge K
+msg="merge: a commit of the job's own after the note refuses, naming its files"
+out=$($J merge L 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'changed since .*(L.py)'" "$out"
+msg="merge: a sync whose resolution adds an edit jig sync wouldn't make refuses, naming the file"
+out=$($J merge M 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'changed since .*(M.py)'" "$out"
+
+msg="reserve: jig reserve adds the next free number to an open job; a second hands out the next"
+$J open R --shares 'docs/**' --reserve section >/dev/null
+$J reserve R section >/dev/null && a=$(python3 -c "import json; print(json.load(open('.jig/jobs.json'))['R']['reserved']['section'])")
+$J reserve R section >/dev/null && b=$(python3 -c "import json; print(json.load(open('.jig/jobs.json'))['R']['reserved']['section'])")
+expect_pass test "$a|$b" = "[2, 3]|[2, 3, 4]"
+git add -A && git commit -qm "reserve R"
+msg="reserve: R6 accepts either number R holds on its branch"
+cd "$MS/.git/jig/worktrees/R"
+printf '\n## 3 Three\n' >> docs/d.md; git add -A; expect_pass git commit -qm three
+printf '\n## 2 Two\n' >> docs/d.md; git add -A; expect_pass git commit -qm two
+cd "$MS"
+msg="reserve: a job that isn't open is refused"
+expect_refuse $J reserve K section
+msg="reserve: a counter with no pattern is refused"
+expect_refuse $J reserve R loose
+msg="reserve: open still refuses a number another job holds in a list"
+expect_refuse $J open Q --reserve section=3
+
 # ---------------------------------------------------------------- repos
 export JIG_CONFIG="$T/repos-cmd.json"
 RP="$T/rp"; mkdir -p "$RP" && cd "$RP" && git init -q -b main && git config user.email t@t && git config user.name t
