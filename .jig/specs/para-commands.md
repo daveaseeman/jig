@@ -38,20 +38,28 @@ Smoke, in the pararepo section unless it says otherwise:
 - [ ] **Two-part pins.** A pararepo pinned at a hand-made `v0.1` release, with a metarepo that then
       releases `v0.2.0`: `jig sync` reports `v0.2.0 is out` and `meta: docs v0.1 → v0.2.0`, and
       the cache fills at `v0.1`.
+- [ ] **`jig gate` refuses a lane built on an unreleased proposal.** The lane's specs are the
+      `.jig/specs/*.md` changed on its branch since trunk, as P2 finds them. If one says
+      `meta: <name> proposal <branch>` and that branch is not an ancestor of the pinned tag in
+      the metarepo checkout, the gate refuses, naming the proposal and the pin. Cases:
+  - unreleased → refused;
+  - released, but after the pin → refused, and the message says to bump the pin;
+  - in the pinned release → passes;
+  - metarepo unreachable → refused, naming the metarepo;
+  - plain repo → unchanged.
 - [ ] **`repos add` offers init.** `jig repos add meta` in a repo without `.jig/meta.json` prints
       `jig init --meta`. `add para` without `.jig/para.json` prints `jig init --para`.
 - [ ] **Metarepo release default via update.** In a metarepo with no `release.sh`, `update
       --apply` adds one with no `# TODO: release protocol` line, and `jig release` runs with no
       `/jig:release` refusal.
 - [ ] `grep -rnE 'para-(init|sync|propose)' plugin README.md` finds only the comment
-      by `with_header`'s marker match that explains the old marker, plus the aliases if the owner
-      keeps them (Q1).
+      by `with_header`'s marker match that explains the old marker. No aliases.
 - [ ] Smoke passes, `claude plugin validate ./plugin` passes, and
       `grep -rnE 'Maige|maige|"E-' plugin` finds nothing.
 
 ## Out of scope
-- `jig open` refusing a spec that cites an unreleased proposal itself, instead of the hubnode
-  skill doing it (Q3). That needs the job record's `spec` path from `names.md`.
+- Aliases for `para-sync` / `para-propose`. Owner, Oct 30: none.
+- Anything reported by `jig sync` in a metarepo. Owner, Oct 30: not now.
 - A pararepo release step. `release.md` decided a pararepo releases like a plain repo.
 - The decision `open` status and lifecycle. Built and smoke-tested in `decision-open.md`.
   Nothing here changes it.
@@ -73,6 +81,7 @@ Smoke, in the pararepo section unless it says otherwise:
   - `cmd_para_propose` → `cmd_propose`.
   - `para_header` and `HEADER_BEGIN` get the new wording.
   - `with_header` also finds the old begin marker.
+  - `cmd_gate` gains the proposal check, gated on `.jig/para.json` on trunk.
   - the P2 message, the `forward()` hint, the parser.
   - No `update` step and no `STAMP` bump (see Decisions).
 - `plugin/templates/jig/RULES.md`:
@@ -80,13 +89,17 @@ Smoke, in the pararepo section unless it says otherwise:
   - the bump-commit sentence names `jig sync`'s report and says older `vX.Y` pins keep working.
   - the Commands block.
 - Skills:
-  - `hubnode`: step 5, and "Opening a lane".
+  - `hubnode`:
+    - step 5 runs `jig sync`.
+    - "Opening a lane" keeps its check as an early warning, now named by `jig sync`'s report.
+    - "Gating" says the gate refuses an unreleased proposal.
   - `brief`, which `names.md` renames to `spec`.
   - `retro`
   - `update`: in a pararepo, after the commit, run `jig init --para` and commit only what it
     changed.
 - `tests/smoke.sh`, `README.md` (line 39).
-- **Collides with the `names` lane.** The `cmd_sync` messages say "lane". The hubnode, brief→spec
+- **Collides with the `names` lane.** The `cmd_sync` and `cmd_gate` messages say
+  "lane". The hubnode, brief→spec
   and retro skills, the RULES Commands block and `smoke.sh` are all files `names` rewrites. Build
   this after `names` merges.
 
@@ -149,19 +162,17 @@ Smoke, in the pararepo section unless it says otherwise:
   (`release.md`, `release_script`, `version_key`, `cmd_repos`). This spec adds only the smoke
   cases they lack.
 
-## Open questions for the owner
-1. Keep `para-sync` / `para-propose` as hidden aliases for one release? They would print the new
-   name and run it. Until commit 2, an existing pararepo's header still names them.
-   Recommended: yes, then remove them.
-2. `jig propose`, or keep `para-propose`? Both are pararepo-only. The rename buys a Commands
-   list with no `para-` entries.
-3. Should `jig open` in a pararepo refuse a spec that cites an unreleased proposal itself, once
-   `names` gives the job record a spec path? Enforcement belongs in `jig.py`, and today it is
-   one line of hubnode prose.
-4. Should `jig sync` on trunk in a metarepo report anything, such as pararepos whose pins lag
-   the latest release? It could find them through `meta.json`'s `pararepos` and `repos.json`.
-   Recommended: not now. Nothing has needed it.
-5. The header migration leaves every existing pararepo with a manual second commit, and with
-   `AGENTS.md` edits refused until that commit is made. Is that trade acceptable, or should the
-   header keep its current wording and only the commands change? In that case the header would
-   name the aliases for good.
+## Owner answers, Oct 30
+1. No aliases for `para-sync` / `para-propose`. Between the two commits, an existing pararepo's
+   header names commands that are gone, and P1's message points to the fix.
+2. `jig propose`.
+3. The check moves into `jig gate`, not `jig open`. A spec is often written on the lane after
+   it opens, so at open time there is nothing to check, and the merge is the step that can't be
+   taken back.
+   - The check is against the **pinned** tag, not the latest release. The pin is what the
+     pararepo's code cites, so the order is: release in the metarepo, bump the pin on trunk,
+     sync the lane, gate.
+   - An unreachable metarepo refuses. The gate is a hubnode command, not a hook, so it may read
+     `repos.json`.
+4. `jig sync` in a metarepo reports nothing for now.
+5. The two-commit header migration stands.
