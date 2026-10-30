@@ -22,7 +22,7 @@ That is a dry run. It changes nothing, and its exit code says what you have:
   repo: a file at an old path, an unknown board key, a hook jig didn't write, code that names
   a moved path.
 - **2, refused or blocked.** A refusal has a fix the user knows: merge or close the open
-  lanes, remove the extra worktrees, or update the plugin. A block means the layout is one
+  jobs, remove the extra worktrees, or update the plugin. A block means the layout is one
   jig doesn't recognize. Say why the update would fail, then draft the change to jig that
   would recognize it — which `LAYOUT` row, board default or `STEPS` entry to add, with a
   done-when the plugin owner can test — written the way `/jig:feedback` writes its report,

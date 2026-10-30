@@ -22,8 +22,8 @@ Report the output, then say what it means in a few lines:
   `.jig/ledgers/DEFERRED.md` review findings not in it,
   `.claude/skills/` know-how, `README.md` outsiders, git for history. Zero inbound links plus
   a stale last-commit is a document written once and never read again; git keeps it either way.
-  If a directory ships markdown as code, list it under `payload` on the board as a glob such
-  as `dir/**`. Survey names any `payload` glob that matches no file.
+  If a directory ships markdown as code, list it under `not_docs` in `.jig/config.json` as a glob
+  such as `dir/**`. Survey names any `not_docs` glob that matches no file.
 - **No docmap.** Handoff can't tell which page a change touches until pages are mapped to globs.
 - **Missing pieces.** What `/jig:init` would add.
 - **How parallel work is coordinated today.** What the repo already has, under its standard

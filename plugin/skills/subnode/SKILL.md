@@ -1,20 +1,20 @@
 ---
 name: subnode
-description: Work one lane in a repo with parallel lanes. Use at the start of a feature session, on a kickoff message, or on "work on lane X", "hand off", "sync my lane".
+description: Work one job in a repo with parallel jobs. Use at the start of a feature session, on a kickoff message, or on "work on job X", "hand off", "sync my job".
 ---
 
 Read `.jig/RULES.md` first. `jig` below is `python3 .jig/jig.py`.
 
-One lane, one branch, one worktree. You never commit on trunk, never push trunk, never merge.
+One job, one branch, one worktree. You never commit on trunk, never push trunk, never merge.
 
 ## Check in
 
-1. Find your lane on the board: `jig lane`. If this branch is on no lane, stop and ask
-   the hubnode to open one. Never create a lane branch yourself.
+1. Find your job on the board: `jig job`. If this branch is on no job, stop and ask
+   the hubnode to open one. Never create a job branch yourself.
 2. Work in the worktree the board names, nowhere else.
 3. `jig check`. If you are behind trunk, `jig sync` and run the checks before changing
    anything.
-4. Say in three lines: the lane, its reserved numbers, what you will build first.
+4. Say in three lines: the job, its reserved numbers, what you will build first.
 
 ## Build
 
@@ -27,21 +27,21 @@ One lane, one branch, one worktree. You never commit on trunk, never push trunk,
 
 ## Hand off
 
-A handoff is a mergeable chunk, not the whole lane — hand off as often as a coherent piece
+A handoff is a mergeable chunk, not the whole job — hand off as often as a coherent piece
 is done.
 
 1. Run the project's checks (`.jig/scripts/check.sh`, plus whatever `/jig:verify` calls for).
 2. Have the diff adversarially reviewed: `/jig:review`. Fix anything blocking.
 3. `jig reviewed` to record it, then `jig handoff --spec .jig/specs/<task>.md`.
 4. Fill every heading in the note. Commit it with the work.
-5. Message the hubnode: the lane, the commit, the note's path. Then keep building, or wait.
+5. Message the hubnode: the job, the commit, the note's path. Then keep building, or wait.
 
 Do not push. Every push and merge happens in the hubnode's session.
 
 ## When trunk moves
 
 `jig sync`. Append-only collisions resolve themselves; anything else stops with the files
-named — resolve those with the other lane's section open, then run the checks.
+named — resolve those with the other job's section open, then run the checks.
 
 ## Never
 

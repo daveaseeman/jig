@@ -13,7 +13,7 @@ without Claude Code.
 
 ## ✨ What it does
 
-- **Parallel sessions stay in their lanes.** Each session gets a *lane*: its own branch,
+- **Parallel sessions stay in their jobs.** Each session gets a *job*: its own branch,
   worktree and declared files. A commit outside those files is refused by a git hook.
 - **The rules come from trunk.** Hooks run trunk's copy of the checker, so a branch can't
   weaken the rules it's judged by.
@@ -62,7 +62,7 @@ person prototyping actually needs. Then I added the things none of them enforce.
 
 Most agent toolkits are prose: a long instructions file the model reads and mostly follows. jig
 keeps the prose to one short file and moves everything that must not be skipped into hooks. Its
-lanes, board and gate are a small, enforced version of what teams already do with topic
+jobs, board and gate are a small, enforced version of what teams already do with topic
 branches, CODEOWNERS, PR templates and a merge queue, and `/jig:survey` names which of those a
 repo already has.
 
@@ -70,7 +70,7 @@ repo already has.
 
 This repo holds two things:
 
-- **A Claude Code plugin** in `plugin/`. Its skills run the loop (`brief`, `bug`, `verify`,
+- **A Claude Code plugin** in `plugin/`. Its skills run the loop (`spec`, `bug`, `verify`,
   `review`, `retro`), set a repo up (`init`, `survey`, `adopt`, `update`), coordinate parallel
   sessions (`hubnode`, `subnode`), spec a circuit board and install the skills it needs
   (`hardware`), land files from other chats (`stage`, `repos`), cut releases (`release`), and report bugs in jig itself
@@ -86,7 +86,7 @@ Your root gets an `AGENTS.md` and a one-line `CLAUDE.md`, and that's it.
 A task moves through:
 
 ```
-brief → plan → do → commit (hook-checked) → … → checks → review → handoff → gate → merge
+spec → plan → do → commit (hook-checked) → … → checks → review → handoff → gate → merge
 ```
 
 ## 🚀 Usage
@@ -115,14 +115,14 @@ before touching any file of yours:
 Day to day:
 
 ```
-/jig:brief <task>        # .jig/specs/<task>.md before building
+/jig:spec <task>         # .jig/specs/<task>.md before building
 /jig:bug <symptom>       # investigate before fixing
 /jig:review              # fresh-context review, once per handoff
 /jig:stage               # send a file from this chat to a repo, or resolve what's staged
 /jig:repos add repo      # register this folder so other chats can stage files to it
 /jig:release             # build and tag a version, the way this repo ships
 /jig:hubnode             # the session that owns trunk, the board and merges
-/jig:subnode             # a session that works one lane
+/jig:subnode             # a session that works one job
 ```
 
 Every rule the hooks enforce is written in `.jig/RULES.md` after init.

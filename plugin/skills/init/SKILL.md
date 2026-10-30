@@ -32,11 +32,11 @@ templates/CLAUDE.md → CLAUDE.md
 ```
 
 Nothing else. The spec template and the two ledgers stay in the plugin until first used:
-`/jig:brief` copies the template, and the first ledger row creates its ledger.
+`/jig:spec` copies the template, and the first ledger row creates its ledger.
 
 Then run `python3 .jig/jig.py init` — it writes the board and installs the git hooks that
 enforce the rules. Those hooks are the real enforcement and work with or without any AI tool.
-Lanes' worktrees go in `.git/jig/worktrees/`, so nothing needs gitignoring.
+Jobs' worktrees go in `.git/jig/worktrees/`, so nothing needs gitignoring.
 
 Then:
 
@@ -54,6 +54,6 @@ Then:
 4. Write one sentence for the Project line in `AGENTS.md` from the README or the code. Mark it `(inferred)` so the user corrects it.
 5. If the repo already has a `CLAUDE.md` with content, don't replace it; append `@AGENTS.md` and say so.
 6. Offer to register the repo with `/jig:repos add repo` (or `add meta` / `add para`), so a chat can find its `.jig/staging/`.
-7. Report: files created, TODOs remaining, the git hooks installed, and that lanes are available (`/jig:hubnode`, `/jig:subnode`) but need no setup until a second session starts.
+7. Report: files created, TODOs remaining, the git hooks installed, and that jobs are available (`/jig:hubnode`, `/jig:subnode`) but need no setup until a second session starts.
 
 Keep `AGENTS.md` under 40 lines. If it's longer after filling, cut.

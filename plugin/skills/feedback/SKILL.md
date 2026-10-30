@@ -16,4 +16,4 @@ Then:
    One section per issue, each with the five steps and a "done when" the plugin owner can test.
 2. Print the path. That file is the deliverable; the user carries it to the plugin.
 3. Stop. Do not edit `.jig/jig.py` or `.jig/RULES.md`, do not add a `WORKAROUND:` or a ledger row, do not commit.
-   If the lane is blocked, say so and ask the hubnode to park it.
+   If the job is blocked, say so and ask the hubnode to park it.

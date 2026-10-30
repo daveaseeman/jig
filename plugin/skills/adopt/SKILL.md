@@ -1,6 +1,6 @@
 ---
 name: adopt
-description: Analyze an existing repo and propose how to bring it to the jig shape - trim the always-loaded file, give every stray document a home, fill the gaps, and move any existing lanes and hooks onto jig. Proposes a plan; applies nothing without approval.
+description: Analyze an existing repo and propose how to bring it to the jig shape - trim the always-loaded file, give every stray document a home, fill the gaps, and move any existing jobs and hooks onto jig. Proposes a plan; applies nothing without approval.
 disable-model-invocation: true
 ---
 
@@ -45,7 +45,7 @@ Then decide per file: **keep** · **merge into X** · **move to Y** · **split**
 
 Judgment, in order:
 0. **Is it a document at all?** A directory that ships markdown as code — skill files,
-   templates, fixtures, a docs site's source — gets a `payload` glob (`dir/**`) in the plan,
+   templates, fixtures, a docs site's source — gets a `not_docs` glob (`dir/**`) in the plan,
    not a move. Survey reads trunk's board, so after `jig init` and a commit, re-run survey and
    judge only what is still listed.
 1. **Does anything read it?** Zero inbound links and months since the last commit is the
@@ -95,13 +95,13 @@ must say two more things, or the repo ends up stating one rule and living anothe
 
 1. **The test or hook that enforced the old rule.** Name it. It changes in the same stage as
    the rule, never a later one.
-2. **The code that followed the old rule.** *Sweep* it in its own lane, or *grandfather* it:
+2. **The code that followed the old rule.** *Sweep* it in its own job, or *grandfather* it:
    the new rule applies to changed code and old code migrates as touched. Grandfather by
    default for style rules — an agent rewriting comments it did not write will invent reasons.
 
 ## 4. Write the plan
 
-`.jig/specs/adopt-<repo>.md`, using the spec template as `/jig:brief` finds it, plus:
+`.jig/specs/adopt-<repo>.md`, using the spec template as `/jig:spec` finds it, plus:
 
 - **Inventory** — a table: file, lines, inbound links, verdict, destination, why.
 - **AGENTS.md before/after** — the proposed 40-line version in full, and a list of what left
@@ -119,8 +119,8 @@ worktrees, `CODEOWNERS`, a PR template, branch protection, husky or pre-commit h
 homebrew system with its own board and hooks. The goal is one system to manage, not a better
 one, and the path has to be safe for work that is mid-stream.
 
-"Lane" is jig's word; `.jig/RULES.md` defines it in standard terms. Use the repo's own words in
-the plan and never assume it calls anything a lane. What matters is whether it has the
+"Job" is jig's word; `.jig/RULES.md` defines it in standard terms. Use the repo's own words in
+the plan and never assume it calls anything a job. What matters is whether it has the
 *parts*:
 
 | If the repo has… | it maps to jig's… |
@@ -131,14 +131,14 @@ the plan and never assume it calls anything a lane. What matters is whether it h
 | husky, pre-commit, lefthook, or hooks in `.git/hooks` | the hooks (to be replaced) |
 | `CLAUDE.md`, `.cursorrules`, copilot instructions | `AGENTS.md` |
 | ADRs | `.jig/specs/` decisions and `.jig/ledgers/WORKAROUNDS.md` |
-| branches not merged into trunk | lanes to adopt |
+| branches not merged into trunk | jobs to adopt |
 | a homebrew board with owners and states | the board |
 | a step that links or installs into each new worktree | `.jig/scripts/setup.sh` |
 
 If any of those are present, the plan's first stages are the migration stages in step 6.
 
-List every lane the predecessor's board shows as open, by name with the numbers it holds;
-those are the whole difficulty. **Walk the predecessor's board, not git's branch list.** A lane
+List every job the predecessor's board shows as open, by name with the numbers it holds;
+those are the whole difficulty. **Walk the predecessor's board, not git's branch list.** A job
 that is claimed but has no commits yet is "merged" by git's definition — `git branch
 --no-merged` will not show it — but it holds reserved numbers that must come across or they
 will be handed out twice. The survey's *branches not merged into trunk* is a cross-check for
@@ -152,7 +152,7 @@ unsure about. Ask for approval, and go no further without it.
 
 ## 6. Carry it out
 
-On approval, execute the stages — one lane each if the repo has lanes, one commit each if
+On approval, execute the stages — one job each if the repo has jobs, one commit each if
 not. Each stage can be undone by reverting it. Never delete a file in the same stage that
 created its replacement.
 
@@ -177,7 +177,7 @@ predecessor's hooks running. Now fill `config.json` by hand, from the predecesso
 | `config.json` | from the predecessor |
 |---|---|
 | `trunk` | its main branch |
-| `common` | files every lane may touch |
+| `common` | files every job may touch |
 | `append_files` | files whose conflicts resolve by appending |
 | `reserve.<counter>` | each scarce number it allocates, as a `pattern` + `files` that find every number ever taken: jig hands out the next above those, and refuses a counter without them |
 | `docmap` | its file → documentation map, if it has one |
@@ -187,9 +187,9 @@ A counter's `files` must name every file its numbers live in — if the rules mo
 
 Commit on trunk. The predecessor still enforces; jig enforces nothing yet.
 
-### 6.2 Adopt every open lane
+### 6.2 Adopt every open job
 
-For each lane on the plan's list (4b) — whether the repo called it a lane, a feature branch, a
+For each job on the plan's list (4b) — whether the repo called it a job, a feature branch, a
 workstream, or nothing — in the trunk checkout:
 
 ```sh
@@ -200,16 +200,16 @@ python3 .jig/jig.py open <name> --branch <its branch> --worktree <where it lives
 
 `open` sees the branch exists and adopts it: no new branch, no new worktree, the numbers it
 already holds recorded and fenced off from the counter. The record keeps `branch` only when it
-isn't the lane's name, and `worktree` only when it isn't `.git/jig/worktrees/<branch>`. `--owns` and `--shares` come from
+isn't the job's name, and `worktree` only when it isn't `.git/jig/worktrees/<branch>`. `--owns` and `--shares` come from
 `CODEOWNERS` if there is one, or from the predecessor's board, or from `git diff --name-only
 trunk...branch` — the files it has already touched are at minimum its `shares`. Keep the
 worktree where it is — R2 checks the path the record keeps, so `.claude/worktrees/x` is as
 good as `.git/jig/worktrees/x`. Commit `jobs.json`.
 
-A lane with uncommitted work is fine; its next commit is judged by whichever hooks are
+A job with uncommitted work is fine; its next commit is judged by whichever hooks are
 installed at that moment, and its ownership and numbers are the same under both.
 
-Then prune. A predecessor that never removed worktrees for merged lanes leaves dozens behind;
+Then prune. A predecessor that never removed worktrees for merged jobs leaves dozens behind;
 `git worktree list` shows them. `git worktree remove <path>` for each whose branch is merged,
 then `git worktree prune`. Do this before cutting hooks over, so the cutover touches only
 live checkouts.
@@ -228,7 +228,7 @@ tools manage `.git/hooks` themselves, so uninstall them (`npx husky uninstall`,
 Confirm with `ls .git/hooks`.
 
 Worktrees share `.git`, so this one command switches every live session at once. Each subnode
-runs `python3 .jig/jig.py check` in its worktree; `ok` means its lane came across clean.
+runs `python3 .jig/jig.py check` in its worktree; `ok` means its job came across clean.
 
 ### 6.4 Switch the skills and the always-loaded file
 
@@ -240,17 +240,17 @@ runs `python3 .jig/jig.py check` in its worktree; `ok` means its lane came acros
 
 ### 6.5 Prove it, then delete the predecessor
 
-One lane completes a full cycle on the new system — build, review, `jig reviewed`,
+One job completes a full cycle on the new system — build, review, `jig reviewed`,
 `jig handoff`, `jig gate`, merge — before anything is deleted. Then remove the
 predecessor's script, board, rendered list, rulebook, and installer in one commit. Its tests,
 if any, go with it.
 
 ### What does not migrate
 
-- **A lane built on another lane's branch** (`on`). jig syncs against trunk only. Merge or
-  rebase such a lane before adopting it.
+- **A job built on another job's branch** (`on`). jig syncs against trunk only. Merge or
+  rebase such a job before adopting it.
 - **Intake of a branch that predates any board.** Adopt it by hand with `open --branch`.
 - **A rendered human-readable board.** `jig status` is the view.
 - **Repo-specific docs tests.** They stay the repo's, reading whatever file they read.
 - **CODEOWNERS itself.** GitHub keeps reading it for review assignment; jig's `owns` is
-  exclusive write during an open lane, a stronger claim. Keep both; derive `owns` from it.
+  exclusive write during an open job, a stronger claim. Keep both; derive `owns` from it.
