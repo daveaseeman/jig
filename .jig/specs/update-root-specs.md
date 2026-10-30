@@ -25,21 +25,36 @@ Each checked in a scratch ai-dev repo with today's template `update`.
 | The old `worktrees/` ignore line goes while folders remain | [seen] `ignore_lines` reads only `.gitignore` | jig's | Folders left in an old worktrees folder refuse, below |
 | The stale-reference report prints only on `--apply`; nothing rewrites | [seen] false: the dry run prints it. But a refusal returns before the plan is printed, so a repo with worktrees never sees one | Rewriting is the repo's: update.md puts editing the repo's files out of scope, and the skill already offers it. Hiding the plan is jig's | A refusing dry run prints the refusal, then the plan and report, and still exits 2. A refusing `--apply` prints the refusal only |
 
-**Is a subfolder jig's?** This applies to each immediate subfolder of root `specs/` or `ledgers/`, only under an old board (`root_is_jigs`), whatever its files are. A path "names" the subfolder when it reaches into it at a path boundary, the way stale references are matched.
+**Is a subfolder jig's?** This applies to each immediate subfolder `<sub>` of root `specs/` or `ledgers/`, only under an old board (`root_is_jigs`), whatever its files are.
 - **Claimed**, any one of:
-  - jig's own files name it: the board (any key, lane briefs included), a handoff note, or a top-level Markdown file of the same root folder, which is a spec moving beside it;
-  - a Markdown file in it carries the spec template's `## Intent` and `## Done when` headings.
-- **Used by the repo**: a tracked non-Markdown file outside the root folder names it, other than the board. Its runner or build reads it there.
-- It moves whole when it is claimed and not used. A warning names it and the claim, so the dry run exits 1. It is `R100`, file by file, Markdown or not.
-- Otherwise it stays whole, warned once. The warning says why: not claimed, or used by `<file>`. A user who knows better moves it with `git mv`.
-- A collision anywhere in it keeps it whole at the root, warned once.
+  - A jig record names a path inside it: a lane's `brief` on the board, or a handoff note under the handoffs row's old paths (`.aidev/handoffs/`, `jig/handoffs/`, `.jig/handoffs/`).
+  - A jig spec names a path inside it. A jig spec is a top-level Markdown file in the same root folder that carries the template's `## Intent` and `## Done when` headings; every generation's template has both. It counts whether the spec moves or collides and stays.
+  - A Markdown file in the subfolder, at any depth, carries those headings.
+  - Not counted: lane `owns`/`shares`, `common`, `docmap`. Those name the repo's code.
+- **Used by the repo**, any one of:
+  - A file in it is named like a test a runner finds by default: `*.spec.*`, `*.test.*`, `test_*`, `*_test.*`.
+  - A non-comment line (the `COMMENT` prefixes) in a tracked file names the root folder or the subfolder. The file counts if it is not Markdown, decodes as text, is outside the root folder, and is not jig's: not the old jig folder, the board, `.gitignore` or `.gitattributes`.
+- **Names** means `specs` (or `ledgers`):
+  - not preceded by a word character, `.` or `-` (a leading `/` is allowed, so `<rootDir>/specs/unit` counts);
+  - then either the root folder, followed by end of token or a wildcard: `specs`, `specs/`, `specs/**`;
+  - or `/<sub>`, followed by `/` or end of token, so `specs/suite2/` never names `specs/suite`.
+
+  End of token is a quote, whitespace, `,`, `)`, `]` or end of line.
+- A subfolder that is claimed and not used moves whole. A warning names it and its claim, so the dry run exits 1. It is `R100`, file by file, Markdown or not.
+- Otherwise it stays whole, warned once with the reason: "not claimed", or "used: `<file>:<line>`". A user who knows better moves it with `git mv`. Every "used" mistake fails safe this way, another tool's JSON among them.
+- A collision anywhere in the subfolder keeps it whole at the root, warned once.
+- Board briefs that name moved paths stay as written. Like the board's `log`, they are history.
 
 Checked against the reporting repo's last ai-dev commit [seen]:
-- 18 top-level specs, 14 board lines (lane briefs) and 21 handoff notes name paths inside `specs/prework/`.
-- The only non-Markdown file that names it is the board.
-- So it is claimed and not used, and it moves.
+- **Claimed:**
+  - all 21 top-level specs carry both headings, and 18 of them name paths inside `specs/prework/`;
+  - so do 9 lane briefs and 21 handoff notes.
+- **Not used:**
+  - no file in it is test-named;
+  - outside the board, no non-Markdown file names it or root `specs`, except in comments.
+- So it moves.
 
-A JS test folder is the opposite case: named by `package.json` or a runner config, and named by none of jig's files.
+A JS repo's `specs/unit/` holding `login.spec.js` is the opposite case. Its files are test-named, so the folder stays even when a jig spec touched one of them.
 
 **Worktree refusal, per case.**
 - It reads git's records (`.git/worktrees/<id>/gitdir`) and the folders in the old worktrees folder (`.aidev/worktrees/`, or `.jig/worktrees/` beside an older board) and in `.git/jig/worktrees/`.
@@ -62,20 +77,28 @@ A JS test folder is the opposite case: named by `package.json` or a runner confi
   - One warning names `specs/b.md`, and `.jig/specs/b.md` is unchanged.
   - The board's `common` holds both `specs/**` and `.jig/specs/**`.
   - A file naming `specs/b.md` is not listed as stale.
-- [ ] One ai-dev fixture with root `specs/top.md` (it names `specs/suite/t.rs`), `specs/app.spec.js`, and five subfolders, each holding a `README.md` and one non-Markdown file:
+- [ ] One ai-dev fixture with root `specs/top.md`, `specs/app.spec.js`, and subfolders, each holding a `README.md` and one `.rs` file unless the item says otherwise. `top.md` carries `## Intent` and `## Done when`, and names `specs/suite/t.rs`, `specs/suite2/u.rs` and `specs/unit/login.spec.js`.
   - `specs/suite/` is named by `top.md`.
+  - `specs/suite2/` is named by `top.md` and by a non-comment `Makefile` line, `cat specs/suite2/u.rs`.
   - `specs/deep/` is named by a lane's `brief`, with its Markdown one level down (`specs/deep/a/n.md`).
-  - `specs/tpl/` is named by nothing, and its `README.md` has `## Intent` and `## Done when`.
-  - `specs/unit/` is named by `top.md` and by `package.json`.
+  - `specs/tpl/` is named by nothing; `specs/tpl/a/plan.md` has both headings.
+  - `specs/unit/` holds `login.spec.js` instead of the `.rs` file, and is named by `top.md`.
   - `specs/misc/` is named by nothing.
+  - `specs/notes/` is Markdown only and named by nothing.
+  - `specs/cmt/` is named by `top.md` and by a `.py` file, only in a `#` comment.
 
   Expected:
-  - `top.md`, `specs/suite/`, `specs/deep/` and `specs/tpl/` move, each file `R100`.
+  - `top.md` moves, and so do `specs/suite/`, `specs/deep/`, `specs/tpl/` and `specs/cmt/`, each file `R100`.
   - The dry run exits 1, with one warning per moved subfolder naming its claim.
-  - `specs/unit/` stays whole, with a warning naming `package.json`. `specs/misc/` stays whole, warned "not claimed". `app.spec.js` stays with today's warning.
+  - These stay whole, each warned once:
+    - `specs/suite2/`: used, `Makefile:<n>`;
+    - `specs/unit/`: used, `login.spec.js`;
+    - `specs/misc/` and `specs/notes/`: not claimed.
+  - `app.spec.js` stays, with today's warning.
   - A file naming `specs/suite/t.rs` is listed as stale.
 - [ ] The same with a tracked `.jig/specs/suite/README.md`: all of `specs/suite/` stays, with one warning naming it.
-- [ ] Root `ledgers/old/README.md` and `ledgers/old/data.csv`, named by a handoff note, both move under `.jig/ledgers/old/`.
+- [ ] The same with a `package.json` holding `"test": "mocha --recursive specs"`. It names the root folder, so every subfolder stays, each with a warning: used, `package.json:<n>`.
+- [ ] Root `ledgers/old/README.md` and `ledgers/old/data.csv`, named by a note in `.aidev/handoffs/`, both move under `.jig/ledgers/old/`.
 - [ ] A tracked `scripts/check.sh` with `cd "$(dirname "$0")/.."`.
   - The dry run exits 1, and a warning names `.jig/scripts/check.sh` with that line.
   - The existing fixtures' scripts raise no such warning.
@@ -127,7 +150,9 @@ Its new rows are file rows, and the per-file rule here changes how folder rows d
 - Leave a mixed subfolder whole at the root, and let the repo `git mv` it by hand. Rejected by the owner, Oct 30: "update should move it". [seen]
 - Move any subfolder that holds Markdown. Rejected by the owner, Oct 30: "not any specs folder, just one that's clearly a jig spec folder". A README in a test folder doesn't make the folder jig's. [seen]
 - Judge the top level of `specs/` whole too, the way a subfolder is judged. Rejected: specs were always written flat (`specs/<task>.md`), so at the top level each file is judged alone. A subfolder is one unit. [seen] Every generation's brief skill.
-- Claim by jig's references alone, with no "used by the repo" veto. Rejected: a repo's test folder that a jig spec happens to mention would move away from its runner. The veto costs one warning and a hand `git mv` in the rare case of a jig folder that the repo's code also reads. [assumed]; the reporting repo has no such file [seen]. See open question 2.
+- Claim by jig's references alone, with no "used by the repo" veto. Rejected: a jig spec routinely names the test files a lane touched, so a test folder would move away from its runner. The veto costs one warning and a hand `git mv` in the rare case of a jig folder that the repo's code also reads. [seen] The reporting repo's specs name test paths, and a jig spec's Touches section exists to name files. See open question 2.
+- Count lane `owns`/`shares` as a claim. Rejected: they name the repo's own code, which is exactly what a lane changes. [seen] update.md's board, `owns`.
+- Recognize a test folder only by a runner config naming it. Rejected: default discovery (jest, mocha, pytest) finds tests by file name and names no folder. [seen] Hence the test-name signal.
 - Per file only for the root `specs/` and `ledgers/` rows. Rejected: `jig/specs/` would keep the folder-level rule, an asymmetry with no reason behind it. update.md's Decision is per file for every row. [seen]
 - `update` rewrites `/..` to `/../..` in moved scripts. Rejected:
   - `update` renames files and never edits them, and smoke asserts `R100`;
@@ -144,7 +169,7 @@ Its new rows are file rows, and the per-file rule here changes how folder rows d
 
 ## Decisions
 - Owner, Oct 30:
-  - `update` moves a subfolder of root `specs/` or `ledgers/` whole, its other files included, but only when it is clearly jig's. That is judged from its contents and from what names it, as above.
+  - `update` moves a subfolder of root `specs/` or `ledgers/` whole, its other files included, but only when it is clearly jig's. That is judged from its contents and from what names it, as above. When in doubt it stays: a jig folder left at the root costs one `git mv`, while a test folder that moves stops running.
   - Every other subfolder stays whole. This includes a Markdown-only subfolder nothing claims, which `update` moves today.
   - This supersedes the Oct 29 review decision in `update.md` that a root `specs/` or `ledgers/` moves only its Markdown. That still holds at the top level.
 - Each refusal names the exact command for the case it sees. `update` runs none of them.
