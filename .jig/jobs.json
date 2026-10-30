@@ -1,1 +1,14 @@
-{}
+{
+  "workflow": {
+    "spec": ".jig/specs/workflow.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/**",
+      "tests/**",
+      "README.md"
+    ],
+    "shares": [],
+    "reserved": {}
+  }
+}
