@@ -23,35 +23,46 @@ Each checked in a scratch ai-dev repo with today's template `update`.
 | `cd "$(dirname "$0")/.."` is wrong after `scripts/` → `.jig/scripts/` | [seen] no template generation (`eaec973`, `66a044c`, `62c8d9f`, `5d955a2`, now) wrote that line | The line is the repo's. jig's part: its move breaks the line, and the dry run is silent | Warning: a moved non-Markdown file whose folder depth changed, with its lines that use its own location (`$0`, `BASH_SOURCE`, `__file__`, `__dirname`). The skill offers the edit; `jig.py` never makes it |
 | Worktrees stranded by a repo folder rename | [seen] the refusal's own advice, `git worktree remove <old path>`, exits 0, drops git's record, and leaves the checkout on disk. Once the record is gone, `repair` and `remove` both fail on it | jig's: the advice is wrong for this case | Advice per case, below |
 | The old `worktrees/` ignore line goes while folders remain | [seen] `ignore_lines` reads only `.gitignore` | jig's | Folders left in an old worktrees folder refuse, below |
-| The stale-reference report prints only on `--apply`; nothing rewrites | [seen] false: the dry run prints it. But a refusal returns before the plan is printed, so a repo with worktrees never sees one | Rewriting is the repo's: update.md puts editing the repo's files out of scope, and the skill already offers it. Hiding the plan is jig's | A refusing dry run prints the refusal, then the plan and report, and still exits 2. A refusing `--apply` prints the refusal only |
+| The stale-reference report prints only on `--apply`; nothing rewrites | [seen] false: the dry run prints it. But a refusal returns before the plan is printed, so a repo with worktrees never sees one | Rewriting is the repo's: update.md puts editing the repo's files out of scope, and the skill already offers it. Hiding the plan is jig's | A refusing dry run prints the refusal, then the plan and report (Subfolders to decide included), and still exits 2. A refusing `--apply` prints the refusal only |
 
 **Mixed subfolders: `jig.py` gathers, the skill judges, `--move` moves.**
 
 `jig.py` (applies only under an old board, `root_is_jigs`):
-- A mixed subfolder is an immediate subfolder `<sub>` of root `specs/` or `ledgers/` that holds any non-Markdown file, at any depth.
+- A mixed subfolder is an immediate subfolder `<sub>` of root `specs/` or `ledgers/` that holds both Markdown and non-Markdown files, at any depth.
 - It stays whole by default; nothing in it moves, Markdown included.
-- The dry run lists it under **Subfolders to decide**, with the evidence `jig.py` can count:
-  - the jig records that name a path inside it: lane briefs on the board, handoff notes, and top-level Markdown in the same root folder that carries the template's `## Intent` and `## Done when` headings. Every generation's template has both;
-  - its files by extension;
-  - the line to move it: `--move specs/<sub>`.
-- "Names a path inside it" means `specs/<sub>` (or `ledgers/<sub>`) at the stale-reference boundary, followed by `/` or end of token. So `specs/suite2/` never names `specs/suite`, and `specs/**` names no subfolder.
-- Listing a subfolder makes the dry run exit 1.
-- A Markdown-only subfolder moves as it does today.
+- Today's behaviour stays for the rest:
+  - a subfolder with no Markdown stays, each file warned "isn't Markdown";
+  - a Markdown-only subfolder moves per file, like top-level Markdown.
+- The dry run and `--apply` both list each mixed subfolder under **Subfolders to decide**, one line each, and each line is a warning. The line looks like:
 
-`--move <root>/<sub>`, repeatable:
+  `specs/<sub>/: named by N specs, N lane briefs, N handoff notes; files .md N, .rs N; named by code: <file>:<line>, … (or none); --move specs/<sub>`
+
+  - "Specs" are top-level Markdown files in the same root folder that carry the template's `## Intent` and `## Done when`; every generation's template has both.
+  - "Code" is any tracked non-Markdown file outside the subfolder and outside jig's old folder, comment lines included. It is the same scan as `stale_references`.
+- "Names" means `specs/<sub>` (or `ledgers/<sub>`) at the stale-reference boundary, followed by `/` or end of token. So `specs/suite2/` never names `specs/suite`, and `specs/**` names no subfolder.
+- A held subfolder counts as files left behind for the board rule below. A glob under it (`specs/<sub>/**`) is left as written.
+
+`--move <root>/<sub>`, repeatable (`action="append"`); a trailing `/` and a leading `./` are dropped:
 - It moves that subfolder whole into the plan, file by file, `R100`, Markdown or not.
 - Board globs, collisions and stale references are worked out with it, as for any other move.
-- A path that is not a listed subfolder exits 2, naming the path.
-- So does a subfolder with a file already at its destination, naming that file.
+- It is checked before anything else runs, including the up-to-date path. These exit 2 with `refused: --move …` on stderr and change nothing:
+  - a path that is not a mixed subfolder of the plan;
+  - a subfolder with a file already at its destination (the message names that file);
+  - a repo already current. The message says: "update has run; move it with `git mv` in the update commit, and fix what names it".
 
-The update skill, for each subfolder to decide:
-- It reads the subfolder's README and files and the evidence, and says in one line whether it is jig's task material or the repo's own (tests, fixtures, a runner's input).
-- It asks. On a yes it reruns with `--move`. When it is unsure, it says so and recommends leaving the subfolder where it is.
+The update skill orders the steps so the user sees every plan before it is applied:
+1. Dry run.
+2. For each subfolder to decide, read its README, its files and the evidence line. Say in one line whether it is jig's task material or the repo's own (tests, fixtures, a runner's input). Ask. When unsure, say so and recommend leaving it.
+3. Dry run again with the chosen `--move` flags. This run shows the new moves and the stale references they make.
+4. The usual ask.
+5. `--apply` with the same `--move` flags.
+
+A `refused: --move` exit 2 goes back to step 2 for that subfolder. It is not a block, so no `/jig:feedback` draft.
 
 Checked against the reporting repo's last ai-dev commit [seen]:
 - `specs/prework/` is named by 18 top-level specs (all carry both headings), 9 lane briefs and 21 handoff notes.
 - Its READMEs say what it is, e.g. "the lane copies … verbatim".
-- No non-Markdown file outside the board names it, except in comments.
+- Code naming it: only the board, which isn't counted.
 
 The skill has what it needs to recommend `--move specs/prework`.
 
@@ -66,7 +77,7 @@ The skill has what it needs to recommend `--move specs/prework`.
 
 **A partly moved folder row.**
 - A row counts as applied when at least one file moved.
-- Where files stayed behind, the board keeps the old glob beside the new one.
+- Where files stayed behind, the board keeps the old glob beside the new one. Files left behind means colliding files and held subfolders only. A top-level non-Markdown file filtered out today (`specs/app.spec.js`) doesn't count, so `common`'s `specs/**` is rewritten as today.
 - A reference is stale only when the path it names no longer exists after the moves. For a glob or a folder, the path is its prefix up to the first wildcard.
 - Board briefs that name moved paths stay as written: like the board's `log`, they are history.
 
@@ -77,19 +88,21 @@ The skill has what it needs to recommend `--move specs/prework`.
   - One warning names `specs/b.md`, and `.jig/specs/b.md` is unchanged.
   - The board's `common` holds both `specs/**` and `.jig/specs/**`.
   - A file naming `specs/b.md` is not listed as stale.
-- [ ] Root `specs/top.md` (with both headings), `specs/app.spec.js`, `specs/suite/README.md` and `specs/suite/t.rs`. `top.md` names `specs/suite/t.rs` and `specs/suite2/x`. A lane brief names `specs/suite/`. `specs/notes/n.md` is the only file in `specs/notes/`.
-  - Dry run:
-    - exits 1;
-    - lists `specs/suite/` under "Subfolders to decide", with 1 spec and 1 lane brief, `.md 1, .rs 1`, and `--move specs/suite`;
-    - leaves `specs/notes/` off the list.
-  - `--apply`:
-    - moves `top.md` and `specs/notes/n.md`;
-    - `specs/suite/` and `app.spec.js` stay, untouched.
-- [ ] The same with `--move specs/suite --apply`:
-  - both files in `specs/suite/` move, `R100`;
-  - `.jig/specs/top.md` is listed as stale for `specs/suite/t.rs`.
-- [ ] `--move specs/nope` exits 2 and names it. So does `--move specs/suite` with a tracked `.jig/specs/suite/README.md`, which names that file.
-- [ ] Root `ledgers/old/README.md` and `ledgers/old/data.csv`: listed, and moved under `.jig/ledgers/old/` with `--move ledgers/old`.
+- [ ] The fixture: root `specs/top.md` (with both headings), `specs/app.spec.js`, `specs/suite/README.md` and `specs/suite/t.rs`.
+  - `top.md` names `specs/suite/t.rs` and `specs/suite2/x`.
+  - A merged lane's brief names `specs/suite/`, and its `owns` holds `specs/suite/**`.
+  - `Makefile` has `cat specs/suite/t.rs`.
+  - `specs/notes/n.md` is the only file in `specs/notes/`.
+  - The dry run prints exactly: `specs/suite/: named by 1 specs, 1 lane briefs, 0 handoff notes; files .md 1, .rs 1; named by code: Makefile:1; --move specs/suite`. `specs/notes/` is not listed.
+  - `--apply` prints the same line. `top.md` and `specs/notes/n.md` move; `specs/suite/` and `app.spec.js` stay untouched.
+  - The board's `common` holds both `specs/**` and `.jig/specs/**`, and the lane's `owns` still says `specs/suite/**`.
+  - `top.md` is not listed as stale for `specs/suite/t.rs`.
+  - After the commit, `--move specs/suite` exits 2 with "update has run".
+- [ ] The same fixture with `--move specs/suite/`:
+  - The dry run lists both `specs/suite/` files under Moves, and lists `.jig/specs/top.md` and `Makefile` as stale for `specs/suite/t.rs`.
+  - `--apply --move specs/suite` moves both, `R100`.
+- [ ] `--move specs/nope` exits 2 and names it. So does `--move specs/suite` with a tracked `.jig/specs/suite/README.md`: it names that file, `--apply` changes nothing, and `git status --porcelain` is the same before and after.
+- [ ] Root `ledgers/old/README.md` and `ledgers/old/data.csv`, and nothing else to warn about. The dry run exits 1 and lists `ledgers/old/`. `--move ledgers/old --apply` moves both under `.jig/ledgers/old/`.
 - [ ] A tracked `scripts/check.sh` with `cd "$(dirname "$0")/.."`.
   - The dry run exits 1, and a warning names `.jig/scripts/check.sh` with that line.
   - The existing fixtures' scripts raise no such warning.
@@ -131,8 +144,10 @@ The skill has what it needs to recommend `--move specs/prework`.
     - the plan printed under a refusing dry run;
     - an untracked staging or cache file whose destination is taken is now warned, not skipped silently.
   - No `LAYOUT` row, board default or `STEPS` entry, so no `STAMP` bump.
+- `main`: `--move` on the `update` subparser.
 - `plugin/skills/update/SKILL.md`:
-  - the "Subfolders to decide" step;
+  - the "Subfolders to decide" steps, in order;
+  - `refused: --move` in the exit-code list;
   - the refusal advice;
   - after `--apply`, a depth warning is code to fix, like a stale reference.
 - `plugin/skills/adopt/SKILL.md`: the same worktree advice, per case. It gives today's `git worktree remove <path>` too.
@@ -174,8 +189,8 @@ Its new rows are file rows, and the per-file rule here changes how folder rows d
 ## Decisions
 - Owner, Oct 30:
   - `update` moves a mixed subfolder of root `specs/` or `ledgers/` whole, but only one that is clearly jig's, judged from its contents and context.
-  - `jig.py` stays deterministic: it gathers the evidence and moves on `--move`. The skill reads the folder and decides with the user. This is the same split update.md already uses for repo files to review.
-  - When in doubt, a subfolder stays. A jig folder left behind costs one rerun, while a test folder that moves stops running.
+  - `jig.py` stays deterministic: it gathers the evidence and moves on `--move`. The skill reads the folder and decides with the user. It is like update.md's repo files to review, except that `jig.py` carries out the move, so the plan, the board and the stale references stay one computation.
+  - When in doubt, a subfolder stays. Decided before `--apply`, that costs a rerun. After it, it costs a `git mv` in the update commit, which the refusal names. A test folder that moves would simply stop running.
   - This supersedes the Oct 29 review decision in `update.md` that a root `specs/` or `ledgers/` moves only its Markdown, for mixed subfolders. Top-level files and Markdown-only subfolders keep that rule.
 - Each refusal names the exact command for the case it sees. `update` runs none of them.
 - The depth warning covers any moved non-Markdown file, not only shell scripts. A false positive costs one warning line.
