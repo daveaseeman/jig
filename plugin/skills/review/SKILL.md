@@ -9,7 +9,8 @@ scope, so that is the scope at which these questions can be answered.
 ## Dispatch
 
 Give a subagent exactly this and nothing else: the diff since the last handoff
-(`git diff <last-handoff-commit>..HEAD`, or `git diff <trunk>...HEAD` for the first one),
+(`git diff <last-handoff-commit>..HEAD`, or `git diff <trunk>...HEAD` for the first one; the
+last handoff is the `Commit:` of the note `jig gate` names, not the last note by name),
 the task's spec, and `AGENTS.md`. Not the conversation, not your reasoning. The reviewer
 evaluates the result on its own terms.
 

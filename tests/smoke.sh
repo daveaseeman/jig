@@ -648,12 +648,13 @@ printf 'x=2\n' > src/a.py && git commit -qam "after the note"
 msg="merge: a job whose branch moved past the commit its note names is refused"
 expect_refuse sh -c "cd '$B' && $J merge A"
 git reset -q --hard HEAD~1
+first=$(git rev-parse HEAD)   # past the first note's commit: a merge checked against that note refuses
 printf 'x=3\n' > src/a.py && git commit -qam three
 $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && git add -A && git commit -qm note2
 printf 'x=4\n' > src/a.py && git commit -qam four
 $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
 sed -i.bak 's/^- \[ \] \(.*\)___/- [x] \1smoke/' ".jig/handoffs/A-$(date +%F)-3.md" && rm .jig/handoffs/*.bak
-printf '# Handoff: A-x\n' > ".jig/handoffs/A-x-$(date +%F).md"   # job A-x's note, on A's branch
+printf '# Handoff: A-x\n\nCommit: %s\n' "$first" > ".jig/handoffs/A-x-$(date +%F).md"   # job A-x's note, on A's branch
 git add -A && git commit -qm note3
 msg="gate: of three notes filed on one day, the gate takes the -3 note"
 expect_pass sh -c "cd '$B' && $J gate A | grep -q \"from .jig/handoffs/A-$(date +%F)-3.md \""
