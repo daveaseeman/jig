@@ -35,10 +35,13 @@ Write it into the target's `.jig/staging/`, found with `jig repos` (needs only
 - **decisions**: `resolve` appends the rows. Body lines that aren't rows (doc edits listed
   with them) are refused: apply those with the user, delete them from the staged file,
   resolve again. An `update` changes existing rows; edit them, then `resolve`.
+  In a metarepo, add the `CHANGELOG.md` line `resolve` prints before committing: M3 refuses
+  the commit without it.
 - **user-story**: run `/jig:brief` with the story as input — a new spec, or an amendment to
   the spec it extends — carrying `Source: <source> (staged as <file name>)`. Then `resolve`.
 - **another repo's**: `resolve` forwards it into that repo's `.jig/staging/`; it is resolved
   in a session there.
-- **not wanted**: `jig staging resolve <file> --drop "<why>"`.
+- **not wanted**: show it, ask, then `jig staging drop <file>`. Nothing records it: it was
+  never committed.
 
 Resolve one file per step and show the result before the next.

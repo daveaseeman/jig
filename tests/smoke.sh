@@ -115,8 +115,8 @@ git add -A && git commit -qm init && $J init >/dev/null && git add -A && git com
 msg="init: root holds only AGENTS.md, CLAUDE.md and .jig/"
 expect_pass test "$(ls -A | grep -v '^\.git$' | LC_ALL=C sort | tr '\n' ' ')" = ".jig AGENTS.md CLAUDE.md "
 
-msg="init: .jig/ holds jig.py, RULES.md, the board, the three scripts and staging/.gitignore, nothing else"
-expect_pass test "$(find .jig -type f | LC_ALL=C sort | tr '\n' ' ')" = ".jig/RULES.md .jig/jig.py .jig/lanes.json .jig/scripts/check.sh .jig/scripts/format.sh .jig/scripts/setup.sh .jig/staging/.gitignore "
+msg="init: .jig/ holds jig.py, RULES.md, the board, the four scripts and staging/.gitignore, nothing else"
+expect_pass test "$(find .jig -type f | LC_ALL=C sort | tr '\n' ' ')" = ".jig/RULES.md .jig/jig.py .jig/lanes.json .jig/scripts/check.sh .jig/scripts/format.sh .jig/scripts/release.sh .jig/scripts/setup.sh .jig/staging/.gitignore "
 
 msg="init: the spec template and both ledgers stay in the plugin until first use"
 expect_pass sh -c "test ! -e .jig/specs -a ! -e .jig/ledgers -a ! -e '$P/jig/specs' -a ! -e '$P/jig/ledgers' && test -f '$P/specs/_template.md' -a -f '$P/ledgers/WORKAROUNDS.md' -a -f '$P/ledgers/DEFERRED.md'"
@@ -348,7 +348,7 @@ for layout in "eaec973 dot" "66a044c dot" "62c8d9f jig" "eaec973 aidev" "5d955a2
   expect_pass python3 -c "
 import subprocess
 allowed = {'$board', '.jig/lanes.json', '.aidev/aidev.py', 'jig/jig.py', '.jig/jig.py',
-           '.aidev/RULES.md', 'jig/RULES.md', '.jig/RULES.md', '.gitignore', '.jig/scripts/setup.sh', '.jig/staging/.gitignore'}
+           '.aidev/RULES.md', 'jig/RULES.md', '.jig/RULES.md', '.gitignore', '.jig/scripts/setup.sh', '.jig/scripts/release.sh', '.jig/staging/.gitignore'}
 for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
     status, *paths = line.split('\t')
     assert status == 'R100' or set(paths) <= allowed, line"
@@ -359,8 +359,8 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
   msg="update $name: hooks read trunk's .jig/jig.py and none was kept as .local; .git/jig/enabled, no .git/aidev, no old ignore line"
   expect_pass sh -c "grep -q 'git show main:.jig/jig.py' .git/hooks/pre-commit && ! ls .git/hooks/*.local && test -f .git/jig/enabled && test ! -e .git/aidev && ! grep -q worktrees .gitignore"
 
-  msg="update $name: nothing tracked is left in jig/, .aidev/, specs/ or ledgers/; the board is stamped 6"
-  expect_pass sh -c "test -z \"\$(git ls-files jig .aidev specs ledgers)\" && grep -q '\"version\": 6' .jig/lanes.json"
+  msg="update $name: nothing tracked is left in jig/, .aidev/, specs/ or ledgers/; the board is stamped 7, with release.sh added"
+  expect_pass sh -c "test -z \"\$(git ls-files jig .aidev specs ledgers)\" && grep -q '\"version\": 7' .jig/lanes.json && git ls-files --error-unmatch .jig/scripts/release.sh"
 
   if [ -n "$had_setup" ]; then
     msg="update $name: its setup.sh moves to .jig/scripts/ untouched"
@@ -574,14 +574,17 @@ expect_pass sh -c "test -z \"\$0\" && test $n = \$(wc -l < '$LOG' | tr -d ' ') &
 # ---------------------------------------------------------------- metarepo
 M="$T/meta"; mkdir -p "$M" && cd "$M" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
-$J init >/dev/null && $J meta-init --name docs >/dev/null && git add -A && git commit -qm "meta-init"
-mrel() { $J meta-release 2>&1; }
+$J init --meta --name docs >/dev/null && git add -A && git commit -qm "meta-init"
+mrel() { $J release 2>&1; }
 branch_commit() {  # branch_commit <branch> <subject>: commit what's staged on a new branch
   git switch -q -c "$1" && git commit -qm "$2"; }
 
-msg="meta: meta-init then meta-release tags v0.1"
-expect_pass sh -c "$J meta-release && git tag | grep -qx v0.1 && grep -q '^## v0.1 — ' CHANGELOG.md"
-msg="meta: a second meta-release with no entry-file change says nothing to release"
+msg="meta: init --meta then release tags v0.1.0, with no release.sh steps to fill, and says it's a metarepo"
+out=$($J release 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '(metarepo)' && git tag | grep -qx v0.1.0 && grep -q '^## v0.1.0 — ' CHANGELOG.md" "$out"
+msg="meta: the release leaves an empty ## Unreleased above its heading for the next entries"
+expect_pass sh -c "grep -A2 '^## Unreleased\$' CHANGELOG.md | grep -q '^## v0.1.0 — '"
+msg="meta: a second release with no entry-file change says nothing to release"
 out=$(mrel); expect_pass sh -c "echo \"\$0\" | grep -q 'nothing to release'" "$out"
 
 git switch -q -c b1
@@ -606,7 +609,7 @@ msg="meta M2: a status word with more letters is refused"
 expect_refuse m2 '| D-001 | x | acceptedly | 2026-10-29 |'
 msg="meta M2: the refusal lists all five statuses"
 out=$(m2 '| D-001 | x |  | 2026-10-29 |' 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'open/proposed/accepted/superseded/rejected'" "$out"
-msg="meta: meta-init's DECISIONS.md lists all five statuses"
+msg="meta: init --meta's DECISIONS.md lists all five statuses"
 expect_pass grep -q 'open, proposed, accepted, superseded, rejected' DECISIONS.md
 msg="meta M3: an entry file changed without CHANGELOG.md is refused"
 printf '| D-001 | use JSON | accepted | 2026-10-29 |\n' >> DECISIONS.md && git add -A
@@ -631,41 +634,44 @@ msg="meta: a git pull of a reviewed branch into main is accepted"
 git switch -q -c b3 && printf '\n## seam\n' >> GLOSSARY.md && printf -- '- seam\n' >> CHANGELOG.md && git add -A && git commit -qm "GLOSSARY: seam" && $J reviewed >/dev/null && git switch -q main
 expect_pass git pull -q --no-ff --no-edit . b3
 
-msg="meta: meta-release tags v0.2"
-expect_pass sh -c "$J meta-release && git tag | grep -qx v0.2"
+msg="meta: release tags v0.2.0 (minor is a metarepo's default)"
+expect_pass sh -c "$J release && git tag | grep -qx v0.2.0"
 
 git switch -q -c b2 && printf '\n## grain\n' >> GLOSSARY.md && printf -- '- grain\n' >> CHANGELOG.md && git add -A && git commit -qm "GLOSSARY: grain" && git switch -q main
 git merge -q --ff-only b2
 git init -q --bare "$T/meta-remote.git" && git remote add origin "$T/meta-remote.git"
-msg="meta: a fast-forward of an unreviewed branch: meta-release refuses, naming the commit"
+msg="meta: a fast-forward of an unreviewed branch: release refuses, naming the commit"
 out=$(mrel); c=$(git rev-parse --short=12 HEAD)
 expect_pass sh -c "echo \"\$0\" | grep -q '$c is on main without a reviewed merge'" "$out"
 msg="meta: and pre-push refuses it"
 expect_refuse git push -q origin main
-git reset -q --hard v0.2
+git reset -q --hard v0.2.0
 
-msg="meta: a tag made by hand fails the next meta-release and pre-push, naming it"
+msg="meta: a tag made by hand fails the next release and pre-push, naming it"
 git tag v0.3
 out=$(mrel)
-expect_pass sh -c "echo \"\$0\" | grep -q 'tag v0.3 was not made by meta-release' && ! git push -q origin main 2>/dev/null" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -q 'tag v0.3 was not made by jig release' && ! git push -q origin main 2>/dev/null" "$out"
 git tag -d v0.3 >/dev/null
 
 # ---------------------------------------------------------------- pararepo
 export JIG_CONFIG="$T/repos.json"     # never the user's real list
 MR="$T/mr"; mkdir -p "$MR" && cd "$MR" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
-$J init >/dev/null && $J meta-init --name docs >/dev/null && git add -A && git commit -qm meta-init && $J meta-release >/dev/null
+$J init --meta --name docs >/dev/null && git add -A && git commit -qm meta-init && $J release >/dev/null
 PR="$T/pr"; mkdir -p "$PR" && cd "$PR" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p api && printf 'x=1\n' > api/a.py
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 git clone -q "$MR" mrclone
 
-msg="para: para-init writes para.json, the AGENTS.md header, the cache, and ignores the cache"
-$J para-init --meta docs --location mrclone --contract 'api/**' >/dev/null
-expect_pass sh -c "grep -q '\"pin\": \"v0.1\"' .jig/para.json && ! grep -q location .jig/para.json && grep -q '\"docs\"' '$T/repos.json' && grep -q 'jig:meta' AGENTS.md && test -f .jig/meta-cache/DECISIONS.md && grep -qx '.jig/meta-cache/' .gitignore && grep -qx 'mrclone/' .gitignore"
+msg="para: init --para writes para.json, the AGENTS.md header, the cache, and ignores the cache"
+$J init --para docs --location mrclone --contract 'api/**' >/dev/null
+expect_pass sh -c "grep -q '\"pin\": \"v0.1.0\"' .jig/para.json && ! grep -q location .jig/para.json && grep -q '\"docs\"' '$T/repos.json' && grep -q 'jig:meta' AGENTS.md && test -f .jig/meta-cache/DECISIONS.md && grep -qx '.jig/meta-cache/' .gitignore && grep -qx 'mrclone/' .gitignore"
 msg="para: the generated header is at most 6 lines"
 expect_pass test "$(sed -n '/jig:meta —/,/jig:meta end/p' AGENTS.md | wc -l | tr -d ' ')" -le 6
 git add -A && git commit -qm "para-init"
+
+msg="release: a pararepo says so"
+expect_pass sh -c "$J release 2>&1 | grep -q '(pararepo)'"
 
 msg="para P1: a hand-edited header is refused"
 sed -i.bak 's/is written only by branch/is written by anyone/' AGENTS.md && rm AGENTS.md.bak
@@ -695,7 +701,7 @@ msg="para P4: a contract change waits while a file for the metarepo is staged"
 stage meta-note.md docs decisions new DECISIONS.md '| D-009 | x | proposed | 2026-10-29 |\n'
 printf 'z=3\n' >> api/a.py && printf -- '- meta: none — still internal\n' >> .jig/specs/x.md && git add api/a.py .jig/specs/x.md
 expect_refuse git commit -qm "api: more"
-python3 .jig/jig.py staging resolve meta-note.md --drop "superseded in chat" >/dev/null
+python3 .jig/jig.py staging drop meta-note.md >/dev/null
 msg="para P4: once it is resolved, the same commit is accepted"
 expect_pass git commit -qm "api: more"
 
@@ -710,11 +716,11 @@ expect_pass sh -c "cd '$T' && python3 '$P/jig/jig.py' repos"
 
 cd "$MR" && git switch -q -c d1 && printf '| D-001 | ids are numbers | accepted | 2026-10-29 |\n' >> DECISIONS.md
 printf -- '- D-001\n' >> CHANGELOG.md && git add -A && git commit -qm "D-001: ids" && $J reviewed >/dev/null
-git switch -q main && git merge -q --no-ff --no-edit d1 2>/dev/null && $J meta-release >/dev/null
+git switch -q main && git merge -q --no-ff --no-edit d1 2>/dev/null && $J release >/dev/null
 cd "$PR" && printf 'D-001 is how ids work\n' > api/ids.md && git add api/ids.md && git commit -qm "api: ids" >/dev/null 2>&1
 msg="para-sync: after a release it reports the change in this repo's terms and proposes the bump; the pin stays"
 out=$($J para-sync 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -q 'docs v0.2 is out' && echo \"\$0\" | grep -q 'D-001: used in api/ids.md' && echo \"\$0\" | grep -q 'meta: docs v0.1 → v0.2' && grep -q '\"pin\": \"v0.1\"' .jig/para.json" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -q 'docs v0.2.0 is out' && echo \"\$0\" | grep -q 'D-001: used in api/ids.md' && echo \"\$0\" | grep -q 'meta: docs v0.1.0 → v0.2.0' && grep -q '\"pin\": \"v0.1.0\"' .jig/para.json" "$out"
 
 msg="repos: lists each repo and flags a path that no longer exists"
 mv mrclone ../mrclone-away; out=$($J repos 2>&1); mv ../mrclone-away mrclone
@@ -729,7 +735,14 @@ python3 -c "import json; p = json.load(open('.jig/para.json')); p['defer_until']
 quiet=$($J para-sync 2>&1)
 python3 -c "import json; p = json.load(open('.jig/para.json')); p['defer_until'] = '2000-01-01'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
 loud=$($J para-sync 2>&1)
-expect_pass sh -c "test -z \"\$0\" && echo \"\$1\" | grep -q 'v0.2 is out'" "$quiet" "$loud"
+expect_pass sh -c "test -z \"\$0\" && echo \"\$1\" | grep -q 'v0.2.0 is out'" "$quiet" "$loud"
+git checkout -q -- .jig/para.json
+msg="update: a pararepo's generated header is left as it is (trunk's older checker would refuse a change)"
+expect_pass sh -c "! python3 '$P/jig/jig.py' update | grep -q AGENTS.md"
+msg="update: a metarepo's two-part tag_pattern is widened to take vX.Y.Z"
+(cd "$MR" && python3 -c "import json; m = json.load(open('.jig/meta.json')); m['tag_pattern'] = r'^v\\d+\\.\\d+$'; json.dump(m, open('.jig/meta.json', 'w'), indent=2)")
+expect_pass sh -c "cd '$MR' && python3 '$P/jig/jig.py' update | grep -q 'widen .jig/meta.json'"
+git -C "$MR" checkout -q -- .jig/meta.json
 
 msg="plugin: no instance names or the instance's decision prefix"
 expect_refuse grep -rnE 'Maige|maige|"E-' "$P/.."
@@ -798,22 +811,19 @@ msg="staging: a decision id already in the register is refused as new"
 stage r.md this decisions new docs/decisions.md '| D-001 | again | accepted | 2026-10-29 |\n'
 expect_refuse $J staging resolve r.md; rm .jig/staging/r.md
 
-msg="staging: --drop needs a reason, and logs it"
+msg="staging: drop deletes the file and records nothing"
 stage q.md this doc new docs/q.md
-expect_refuse $J staging resolve q.md --drop ""
-expect_pass sh -c "$J staging resolve q.md --drop 'said elsewhere' && grep -q 'said elsewhere' .jig/lanes.json && test ! -e .jig/staging/q.md"
+expect_pass sh -c "$J staging drop q.md && test ! -e .jig/staging/q.md && ! grep -q q.md .jig/lanes.json && test -z \"\$(git status --porcelain -- .jig/lanes.json)\""
 git add -A && git commit -qm landed
 
 stage w.md this doc new docs/w.md
-msg="staging: the gate refuses while anything is staged; --force proceeds"
-out=$($J gate 2>&1); out2=$($J gate --force 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -q 'merge waits while 1 file' && ! echo \"\$1\" | grep -q 'waits while'" "$out" "$out2"
+msg="staging: the gate doesn't look at staging"
+out=$($J gate 2>&1)
+expect_pass sh -c "! echo \"\$0\" | grep -q 'waits while'" "$out"
 git checkout -q -- .jig/lanes.json
-msg="staging: pushing trunk is refused while anything is staged"
+msg="staging: pushing trunk with a file staged is accepted"
 git init -q --bare "$T/st-remote.git" && git remote add origin "$T/st-remote.git"
-expect_refuse git push -q origin main
-msg="staging: pushing another branch onto trunk is refused too"
-git switch -q -c feat && expect_refuse git push -q origin feat:main; git switch -q main
+expect_pass git push -q origin main
 
 msg="staging: a target that isn't this repo or in repos.json is refused"
 stage f.md other doc new docs/f.md
@@ -826,14 +836,79 @@ msg="staging: listed in repos.json, it is forwarded into that repo's .jig/stagin
 expect_pass sh -c "$J staging resolve f.md && test -f '$O/.jig/staging/f.md' && test ! -e .jig/staging/f.md"
 rm .jig/staging/w.md
 
-msg="staging: meta-release refuses while anything is staged; --force gets past it"
+msg="staging: a metarepo's release refuses while anything is staged; --force gets past it"
 cd "$M" && stage m.md this doc new GUIDE.md
-out=$($J meta-release 2>&1); out2=$($J meta-release --force 2>&1)
+out=$($J release 2>&1); out2=$($J release --force 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'release waits while' && ! echo \"\$1\" | grep -q 'waits while'" "$out" "$out2"
 rm .jig/staging/m.md
+msg="staging: decisions resolved into a metarepo append the rows, write no changelog line, and print the one M3 wants"
+git switch -q -c dec && stage dm.md this decisions new DECISIONS.md '| D-050 | x | open | 2026-10-30 |\n'
+out=$($J staging resolve dm.md 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'add .- D-050.*CHANGELOG.md (M3)' && grep -q 'D-050' DECISIONS.md && git diff --quiet -- CHANGELOG.md" "$out"
+git add -A; msg="staging: and M3 refuses that commit until the line is there"; expect_refuse git commit -qm "D-050: x"
+git reset -q --hard && git switch -q main
 
 msg="plugin: no skill description holds angle brackets (the desktop app reads them as XML tags)"
 expect_refuse grep -lE '^description:.*[<>]' $P/../skills/*/SKILL.md $P/skills/*/SKILL.md
+
+# ---------------------------------------------------------------- release
+RL="$T/rl"; mkdir -p "$RL" && cd "$RL" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && printf 'dist/\n' > .gitignore && printf '0.0.0\n' > VERSION && git add -A && git commit -qm init
+$J init >/dev/null && git add -A && git commit -qm board
+board() { python3 -c "import json,sys; b=json.load(open('.jig/lanes.json')); $1; json.dump(b, open('.jig/lanes.json','w'), indent=2)"; }
+msg="release: an undefined protocol refuses and points to /jig:release, naming the kind"
+out=$($J release --version 1.0.0 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'jig release: rl (repo)' && echo \"\$0\" | grep -q \"isn't defined (.jig/scripts/release.sh still holds the template's TODO).*/jig:release\" && ! git tag | grep -q ." "$out"
+sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
+git add -A && git commit -qm "release.sh: no steps yet"
+msg="release: no artifacts named on the board refuses too"
+out=$($J release --version 1.0.0 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'release.artifacts is empty'" "$out"
+printf 'printf "%%s\\n" "$version" > VERSION\nmkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/release.sh
+board "b['release'] = {'artifacts': ['dist/app-*.zip']}"
+git add -A && git commit -qm "release protocol"
+msg="release: a dirty tree refuses"
+printf 'x\n' >> VERSION; expect_refuse $J release --version 1.0.0; git checkout -q -- VERSION
+msg="release: a failing check.sh refuses, and release.sh never runs"
+cp .jig/scripts/check.sh "$T/rl-check.sh"; sed -i.bak 's/^exit 0$/exit 4/' .jig/scripts/check.sh && rm .jig/scripts/check.sh.bak; git add -A && git commit -qm "check: broken"
+out=$($J release --version 1.0.0 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'check.sh exited 4' && test ! -e dist && ! git tag | grep -q ." "$out"
+cp "$T/rl-check.sh" .jig/scripts/check.sh; git add -A && git commit -qm "check: fixed"
+msg="release: the first needs --version"
+out=$($J release 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'no v\* tag yet'" "$out"
+msg="release: --version 1.0.0 runs the script, commits what it changed, tags v1.0.0, prints the artifact"
+out=$($J release --version 1.0.0 2>&1)
+expect_pass sh -c "git tag | grep -qx v1.0.0 && test \"\$(git show v1.0.0:VERSION)\" = 1.0.0 && test \"\$(git log -1 --format=%s v1.0.0)\" = 'release v1.0.0' && echo \"\$0\" | grep -q 'dist/app-1.0.0.zip' && test -z \"\$(git status --porcelain)\"" "$out"
+msg="release: patch is the default; --minor and --major bump their part"
+expect_pass sh -c "$J release >/dev/null && $J release --minor >/dev/null && $J release --major >/dev/null && git tag | grep -qx v1.0.1 && git tag | grep -qx v1.1.0 && git tag | grep -qx v2.0.0"
+msg="release: refused while a file is staged, listing it"
+mkdir -p .jig/staging && printf -- '---\nstaged: true\n---\nx\n' > .jig/staging/s.md
+out=$($J release 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'release waits while 1 file.*s.md' && ! git tag | grep -qx v2.0.1" "$out"
+msg="release: --force releases anyway and names the staged file in the release commit"
+expect_pass sh -c "$J release --force >/dev/null && git log -1 --format=%B v2.0.1 | grep -q 'left unresolved: s.md'"
+rm .jig/staging/s.md
+msg="release: a failing release.sh tags nothing and puts the tracked files back"
+cp .jig/scripts/release.sh "$T/rl-release.sh"; printf 'exit 3\n' >> .jig/scripts/release.sh; git add -A && git commit -qm "release: broken"
+out=$($J release 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'release.sh exited 3' && ! git tag | grep -qx v2.0.2 && test \"\$(cat VERSION)\" = 2.0.1 && test -z \"\$(git status --porcelain)\"" "$out"
+cp "$T/rl-release.sh" .jig/scripts/release.sh; git add -A && git commit -qm "release: fixed"
+msg="release: an artifact glob that matches nothing tags nothing"
+board "b['release']['artifacts'].append('dist/*.dmg')"; git add -A && git commit -qm "release: dmg"
+out=$($J release 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'this release made no file matching dist/\*.dmg' && ! git tag | grep -qx v2.0.2" "$out"
+msg="release: last release's build left in dist/ doesn't count as this one's"
+cp .jig/scripts/release.sh "$T/rl-release.sh"; sed -i.bak '/dist\/app-/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
+board "b['release']['artifacts'] = ['dist/app-*.zip']"; git add -A && git commit -qm "release: no build"
+out=$($J release 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'this release made no file matching dist/app-\*.zip' && ! git tag | grep -qx v2.0.2" "$out"
+cp "$T/rl-release.sh" .jig/scripts/release.sh; git add -A && git commit -qm "release: build again"
+msg="release: run from a subfolder, a refusal still puts every tracked file back"
+mkdir -p sub && board "b['release']['artifacts'].append('dist/*.dmg')"; git add -A && git commit -qm "release: dmg again"
+(cd sub && python3 ../.jig/jig.py release >/dev/null 2>&1)
+expect_pass sh -c "test -z \"\$(git status --porcelain)\" && ! git tag | grep -qx v2.0.2"
+msg="release: run from a subfolder, a release commits every tracked change"
+board "b['release']['artifacts'] = ['dist/app-*.zip']"; git add -A && git commit -qm "release: zip only"
+(cd sub && python3 ../.jig/jig.py release >/dev/null 2>&1)
+expect_pass sh -c "git tag | grep -qx v2.0.2 && test \"\$(git show v2.0.2:VERSION)\" = 2.0.2 && test -z \"\$(git status --porcelain)\""
+msg="release: off trunk it refuses"
+git switch -q -c side && expect_refuse $J release; git switch -q main
 
 # ---------------------------------------------------------------- repos
 export JIG_CONFIG="$T/repos-cmd.json"
@@ -842,7 +917,7 @@ cp -r "$P/jig" .jig && git add -A && git commit -qm init && $J init >/dev/null
 msg="repos add repo: this folder, under its own name and path"
 $J repos add repo >/dev/null
 expect_pass python3 -c "import json; e = json.load(open('$JIG_CONFIG'))['rp']; assert e['kind'] == 'repo' and e['path'].endswith('/rp'), e"
-msg="repos add meta: the kind is recorded, and it says meta-init hasn't run"
+msg="repos add meta: the kind is recorded, and it says init --meta hasn't run"
 expect_pass sh -c "$J repos add meta | grep -q 'not a metarepo yet' && python3 -c \"import json; assert json.load(open('$JIG_CONFIG'))['rp']['kind'] == 'meta'\""
 msg="repos rename: this folder's entry gets the new name; the old one is gone"
 $J repos rename tools >/dev/null

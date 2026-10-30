@@ -179,10 +179,10 @@ cite it. Each file's header names its `target` (a repo name, or `this`), `kind`,
 `jig staging resolve <file>` lands it: a new spec or doc is written with its source; an
 update, a story's spec, or decisions with other content wait until the work is done and the
 source is in it; a file for another repo moves into that repo's staging, found through
-`jig repos`. `--drop "<why>"` removes it with the reason in the board log.
+`jig repos`. `jig staging drop <file>` deletes it and records nothing: it was never committed.
 
-While anything is staged, `jig gate`, a push of trunk and `meta-release` refuse. `--force`
-(or `git push --no-verify`) gets past it. A chat needs access to `~/.config/jig/` (where
+While anything is staged, `jig release` refuses; `--force` releases anyway and names the staged
+files in the release commit. Commits, pushes and gates don't look at staging. A chat needs access to `~/.config/jig/` (where
 `jig repos` keeps paths) and then to one repo's `.jig/staging/`, nothing more.
 
 ## Metarepo and pararepos
@@ -193,13 +193,15 @@ nothing copies it. Three rules do the work:
 
 1. A pararepo writes the metarepo only by branch, via `jig para-propose`.
 2. The metarepo holds no code and no copied pararepo content.
-3. Only `jig meta-release` tags, so a pin never names something that failed validation.
+3. Only `jig release` tags, so a pin never names something that failed validation.
 
 A question that binds the pararepos gets its decision row when it is asked, with status
 `open`, so it can be cited before it is answered. The same row then moves to `proposed`, then
 `accepted` or `rejected`; a reversed decision is marked `superseded` and released as a major.
 
 Each side's gates are on only when its file is on trunk: `.jig/meta.json` or `.jig/para.json`.
+`jig init --meta` and `jig init --para <metarepo>` write them; every other command reads them and
+does what that kind of repo needs.
 
 | Gate | Refuses |
 |---|---|
@@ -214,19 +216,34 @@ Each side's gates are on only when its file is on trunk: `.jig/meta.json` or `.j
 | P4 | a contract-path change while a file targeting the metarepo is staged |
 | P3 | the metarepo's cache (`.jig/meta-cache/`) or its checkout committed into the pararepo |
 
-A fast-forward runs no hook, so `meta-release` and the metarepo's pre-push re-check every
-first-parent commit since the last release, and refuse any tag `meta-release` didn't make.
-Tags are `v<major>.<minor>`: minor for additions and clarifications, major for a rename or a
-reversed decision. A pararepo pins a minor, never `main`, and bumps it in a commit of its
-own, `meta: <name> v0.3 → v0.4`, with `para-sync`'s report as the body.
+A fast-forward runs no hook, so a metarepo's release and its pre-push re-check every
+first-parent commit since the last release, and refuse any tag `jig release` didn't make.
+In a metarepo the release also turns `## Unreleased` into the version's heading, needs no
+`release.sh` steps, and defaults to `--minor`: minor for additions and clarifications, major
+for a rename or a reversed decision. A pararepo pins a release, never `main`, and bumps it in
+a commit of its own, `meta: <name> v0.3.0 → v0.4.0`, with `para-sync`'s report as the body.
+
+## Release
+
+`jig release` runs the repo's own protocol. On trunk, with a clean tree and nothing staged, it
+runs `.jig/scripts/check.sh`, then `.jig/scripts/release.sh <version>`: the build and the version
+bump, which only the repo knows how to do. It commits the tracked files the script changed,
+checks that each glob in the board's `release.artifacts` matched a file, and tags `vX.Y.Z`. A
+failure puts the tracked files back and tags nothing. The version is the last tag bumped by
+`--patch` (the default), `--minor` or `--major`, or `--version X.Y.Z` for the first.
+
+Until `release.sh` has steps and the board names its artifacts, the release refuses and points
+to `/jig:release`, which asks what the repo builds and ships.
 
 ## Commands
 
 ```
 jig init [--trunk main]     board, git hooks
+jig init --meta | --para <metarepo> --contract <globs>   ... as a metarepo / pararepo
+jig release [--major|--minor|--patch|--version X.Y.Z] [--force]   the repo's release protocol, then tag
 jig survey [--json]         inventory the repo against the jig shape
 jig update [--apply]        bring the repo to the current jig layout (dry run without --apply)
-jig staging [resolve <file> [--drop why]]   list staged files, or land / drop one
+jig staging [resolve|drop <file>]   list staged files, or land / drop one
 jig repos [add repo|meta|para | rename <new>]  where your repos live (user config)
 jig open ... --reserve K    allocate scarce counter K to this lane
 jig reading-list <paths>    what to read before touching these files
@@ -241,8 +258,7 @@ jig reviewed                record that HEAD has been reviewed
 jig handoff [--spec path]   write the note for HEAD
 jig gate <name>             hubnode: verify, then print the gate commands
 jig log [message] [-n N]    append to or read the log
-jig meta-init / meta-release [--major]     metarepo: set up / validate, then tag
-jig para-init / para-sync / para-propose   pararepo: cite / refresh and report / propose
+jig para-sync / para-propose   pararepo: refresh and report / propose
 ```
 
 ## Hooks are opt-in per checkout

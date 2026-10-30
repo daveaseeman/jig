@@ -40,6 +40,8 @@ one's proposed edit and ask about each; make it only on a yes. `--apply` never t
    anything in the repo that already does its job by hand — a check script that borrows the
    main checkout's environment, `ln -s` steps in a skill — and offer to remove each once
    `setup.sh` covers it.
+   If it added `.jig/scripts/release.sh`, leave the TODO: `/jig:release` fills it on the first
+   release.
 3. Commit on trunk. The hooks read trunk's `.jig/jig.py`. Coming from `jig/` or `.aidev/`,
    it exists only once this commit lands, so this one commit goes unchecked. Coming from the
    first `.jig/` layout (root `specs/` and `ledgers/`), trunk's old checker judges it and

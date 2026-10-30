@@ -26,7 +26,7 @@ STATES = ["claimed", "building", "ready", "gated", "merged", "parked"]
 # The layout this copy of jig writes into the board's "version". Any change that adds a
 # LAYOUT row, a board default or an update STEP bumps it. Nothing branches on it except
 # update's refusal to take a newer repo back to an older jig.
-STAMP = 6
+STAMP = 7
 BOARD_DEFAULTS = {
     "version": STAMP,
     "name": "",            # init and update fill it with the folder name; staging's targets match it
@@ -36,6 +36,7 @@ BOARD_DEFAULTS = {
     "reserve": {},
     "docmap": {},
     "payload": [],
+    "release": {"artifacts": []},   # globs release.sh must produce; see `jig release`
     "lanes": {},
     "log": [],
 }
@@ -349,10 +350,18 @@ def cmd_init(root: Path, args) -> int:
         data["name"] = main_root().name
         path.write_text(json.dumps(data, indent=2) + "\n")
         print(f"wrote {BOARD}")
+    rc = 0
     if getattr(args, "no_hooks", False):
         print("hooks not installed (--no-hooks). Run `jig install-hooks` to cut over.")
-        return 0
-    return cmd_install_hooks(root, args)
+    else:
+        rc = cmd_install_hooks(root, args)
+    # A metarepo or pararepo is a repo with one more file, so it is made by the same init.
+    if getattr(args, "meta", False):
+        return cmd_meta_init(root, args)
+    if getattr(args, "para", None):
+        args.meta = args.para
+        return cmd_para_init(root, args)
+    return rc
 
 
 HOOK = """#!/bin/sh
@@ -466,11 +475,6 @@ def cmd_hook(root: Path, args) -> int:
         return 1 if refusals else 0
     if name == "pre-push":
         problems = meta_problems(root, meta, board.trunk) if meta else []
-        # The refs git is pushing arrive on stdin; trunk is refused by where it lands, not by
-        # which branch happens to be checked out (`git push origin feat:main`).
-        pushed = [l.split()[2] for l in sys.stdin.read().splitlines() if len(l.split()) == 4]
-        if f"refs/heads/{board.trunk}" in pushed:
-            problems += staged_refusal(f"pushing {board.trunk}")
         for p in problems:
             print(f"jig: refused: {p}", file=sys.stderr)
         return 1 if problems else 0
@@ -834,11 +838,6 @@ def cmd_gate(root: Path, args) -> int:
     if args.name and lane is None:
         die(f"no lane {args.name}")
     bad = []
-    if not args.force:
-        bad += staged_refusal("the merge")
-    elif staged_files(main_root()) and lane is not None:
-        board.log(f"gate {name} forced with {len(staged_files(main_root()))} staged files")
-        board.save()
     for dep in (lane or {}).get("after", []):
         if board.lanes.get(dep, {}).get("state") != "merged":
             bad.append(f"R8 lane {name} builds after {dep}, which has not merged")
@@ -1098,7 +1097,7 @@ META = f"{DIR}/meta.json"
 META_DEFAULTS = {
     "name": "",
     "entry_files": ["DECISIONS.md", "GLOSSARY.md"],
-    "tag_pattern": r"^v\d+\.\d+$",
+    "tag_pattern": r"^v\d+\.\d+(\.\d+)?$",
     "decision_prefix": "D-",
     "pararepos": [],
 }
@@ -1201,8 +1200,8 @@ def check_subject(msg_file: str, meta: dict) -> list[str]:
 
 
 def meta_problems(root: Path, meta: dict, trunk: str) -> list[str]:
-    """What makes the metarepo's history unreleasable. Shared by meta-release and pre-push,
-    because a fast-forward runs no hook and a hand-made tag skips meta-release."""
+    """What makes the metarepo's history unreleasable. Shared by release and pre-push,
+    because a fast-forward runs no hook and a hand-made tag skips the release."""
     out: list[str] = []
     pat = re.compile(meta["tag_pattern"])
     tags = [t for t in git("tag", "--list").splitlines() if pat.match(t)]
@@ -1212,7 +1211,7 @@ def meta_problems(root: Path, meta: dict, trunk: str) -> list[str]:
         if heading.search(git("show", f"{t}:{CHANGELOG}")):
             released.append(t)
         else:
-            out.append(f"tag {t} was not made by meta-release: its {CHANGELOG} has no "
+            out.append(f"tag {t} was not made by jig release: its {CHANGELOG} has no "
                        f"`## {t} — <date>` heading. Delete it (`git tag -d {t}`)")
     last = latest_tag(released)
     rng = f"{last}..{trunk}" if last else trunk
@@ -1229,7 +1228,7 @@ def meta_problems(root: Path, meta: dict, trunk: str) -> list[str]:
         if all(f.startswith(f"{DIR}/") for f in files):
             continue
         if not git("show", f"{parents[0]}:{META}"):
-            continue                      # meta-init's own commit: nothing was gated yet
+            continue                      # init --meta's own commit: nothing was gated yet
         out.append(f"{commit[:12]} is on {trunk} without a reviewed merge "
                    f"({git('log', '-1', '--format=%s', commit)}): a fast-forward, or a commit "
                    f"made with the hooks off")
@@ -1245,13 +1244,14 @@ def latest_tag(tags: list[str]) -> str:
 
 
 def cmd_meta_init(root: Path, args) -> int:
+    """`jig init --meta`."""
     path = root / META
     if path.exists():
         print(f"{META} already exists")
     else:
         data = json.loads(json.dumps(META_DEFAULTS))
-        data["name"] = args.name or root.name
-        if args.prefix:
+        data["name"] = getattr(args, "name", None) or root.name
+        if getattr(args, "prefix", None):
             data["decision_prefix"] = args.prefix
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2) + "\n")
@@ -1259,7 +1259,7 @@ def cmd_meta_init(root: Path, args) -> int:
     meta = {**META_DEFAULTS, **json.loads(path.read_text())}
     seeds = {
         CHANGELOG: "# Changelog\n\nEvery change to an entry file adds a line here; "
-                   "`jig meta-release` turns Unreleased into the next version.\n\n## Unreleased\n",
+                   "`jig release` turns Unreleased into the next version.\n\n## Unreleased\n",
         "DECISIONS.md": "# Decisions\n\n<!-- One row per decision. A row needs a status "
                         f"({', '.join(DECISION_STATUSES)}) and a date. -->\n\n"
                         "| Id | Decision | Status | Date |\n|---|---|---|---|\n",
@@ -1270,23 +1270,85 @@ def cmd_meta_init(root: Path, args) -> int:
         if f in (CHANGELOG, *meta["entry_files"]) and not (root / f).exists():
             (root / f).write_text(body)
             print(f"wrote {f}")
-    cmd_install_hooks(root, argparse.Namespace(replace=False))
+    release_script(root, meta=True)
     print(f"Commit these on {Board.trunk_name(root)}. From then on {Board.trunk_name(root)} "
-          "takes only reviewed merges, and only `jig meta-release` tags.")
+          "takes only reviewed merges, and only `jig release` tags.")
     return 0
 
 
-def cmd_meta_release(root: Path, args) -> int:
+RELEASE = f"{DIR}/scripts/release.sh"
+RELEASE_TODO = "# TODO: release protocol."
+VERSION = re.compile(r"^\d+\.\d+\.\d+$")
+
+
+def release_script(root: Path, meta: bool = False) -> bool:
+    """Add release.sh from the template if it's missing. A metarepo's has no build: jig runs
+    its release steps itself, so the protocol is already defined."""
+    dest = root / RELEASE
+    src = Path(__file__).resolve().parent / "scripts" / "release.sh"
+    if dest.exists() and not meta:
+        return False
+    if not dest.exists() and not src.exists():
+        return False
+    # init copies the template before `init --meta` runs, so a metarepo's may already be here.
+    text = (dest if dest.exists() else src).read_text()
+    if meta:
+        text = "\n".join(l for l in text.splitlines() if not l.startswith(RELEASE_TODO)) + "\n"
+    if dest.exists() and dest.read_text() == text:
+        return False
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(text)
+    dest.chmod(0o755)
+    return True
+
+
+def protocol_missing(root: Path, board: "Board", meta: dict | None) -> str:
+    script = root / RELEASE
+    if not script.exists():
+        return f"no {RELEASE}"
+    if any(l.startswith(RELEASE_TODO) for l in script.read_text().splitlines()):
+        return f"{RELEASE} still holds the template's TODO"
+    if not meta and not (board.data.get("release") or {}).get("artifacts"):
+        return f"the board's release.artifacts is empty"
+    return ""
+
+
+def next_version(last: str, args, meta: dict | None) -> str:
+    if args.version:
+        if not VERSION.match(args.version):
+            die(f"--version takes X.Y.Z, not {args.version}", 2)
+        if last and version_key(args.version) <= version_key(last):
+            die(f"--version {args.version} is not after {last}", 2)
+        return args.version
+    if not last:
+        if not meta:
+            die("no v* tag yet: name the first version with --version X.Y.Z", 2)
+        last = "v0.0.0"
+    x, y, z = (version_key(last) + (0, 0, 0))[:3]
+    if args.major:
+        return f"{x + 1}.0.0"
+    # A metarepo's changes are additions unless they rename or reverse, so minor is its default.
+    if args.minor or (meta and not args.patch):
+        return f"{x}.{y + 1}.0"
+    return f"{x}.{y}.{z + 1}"
+
+
+def cmd_release(root: Path, args) -> int:
+    os.chdir(root)        # every git path below, `.` and `add -u` included, is the whole repo
     board = Board.load(root)
     trunk = board.trunk
     meta = load_meta(trunk)
-    if meta is None:
-        die(f"no {META} on {trunk}: run `jig meta-init` and commit it first", 2)
+    kind = "metarepo" if meta else "pararepo" if load_para(trunk) else "repo"
+    print(f"jig release: {board.data.get('name') or root.name} ({kind})")
     if git("branch", "--show-current") != trunk:
         die(f"release from {trunk}", 2)
-    if git("status", "--porcelain"):
+    if git("status", "--porcelain", "--untracked-files=no"):
         die("commit or stash first: a release names one commit", 2)
-    problems = meta_problems(root, meta, trunk)
+    missing = protocol_missing(root, board, meta)
+    if missing:
+        die(f"the release protocol isn't defined ({missing}): run /jig:release, which asks what "
+            f"this repo builds and ships and fills in {RELEASE} and release.artifacts", 2)
+    problems = meta_problems(root, meta, trunk) if meta else []
     left = staged_files(main_root())
     if not args.force:
         problems += staged_refusal("the release")
@@ -1294,33 +1356,72 @@ def cmd_meta_release(root: Path, args) -> int:
         for p in problems:
             print(f"refused: {p}", file=sys.stderr)
         return 2
-    pat = re.compile(meta["tag_pattern"])
+    pat = re.compile(meta["tag_pattern"] if meta else r"^v\d+\.\d+(\.\d+)?$")
     last = latest_tag([t for t in git("tag", "--list").splitlines() if pat.match(t)])
-    changed = git("diff", "--name-only", last, "HEAD", "--", *meta["entry_files"]) if last \
-        else " ".join(f for f in meta["entry_files"] if (root / f).exists())
-    if not changed:
-        die(f"nothing to release: no entry file changed since {last}", 2)
-    major, minor = (version_key(last) + (0, 0))[:2] if last else (0, 0)
-    tag = f"v{major + 1}.0" if args.major else f"v{major}.{minor + 1}"
+    if meta:
+        changed = git("diff", "--name-only", last, "HEAD", "--", *meta["entry_files"]) if last \
+            else " ".join(f for f in meta["entry_files"] if (root / f).exists())
+        if not changed:
+            die(f"nothing to release: no entry file changed since {last}", 2)
+    version = next_version(last, args, meta)
+    tag = f"v{version}"
+
+    def undo(why: str) -> int:
+        # The tree was clean, so putting tracked files back loses only what the release wrote.
+        git("checkout", "-q", "--", ".")
+        print(f"refused: {why}. Tracked files are back as they were; nothing is tagged.",
+              file=sys.stderr)
+        return 2
+
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX")}
+    globs = (board.data.get("release") or {}).get("artifacts", [])
+    # What the globs match before the build, by mtime: a file counts only if this run wrote it.
+    before = {f: f.stat().st_mtime_ns for g in globs for f in root.glob(g) if f.is_file()}
+    for script, argv in ((root / DIR / "scripts" / "check.sh", []), (root / RELEASE, [version])):
+        if not script.exists():
+            continue
+        cmd = ([str(script)] if os.access(script, os.X_OK) else ["bash", str(script)]) + argv
+        rc = subprocess.run(cmd, cwd=root, env=env).returncode
+        if rc:
+            return undo(f"{script.relative_to(root)} exited {rc}")
+    # Only files this run wrote count: last release's build left in dist/ proves nothing.
+    made = {g: [f for f in root.glob(g) if f.is_file() and before.get(f) != f.stat().st_mtime_ns]
+            for g in globs}
+    empty = [g for g, fs in made.items() if not fs]
+    if empty:
+        return undo(f"this release made no file matching {', '.join(empty)}")
+    if meta:
+        log = root / CHANGELOG
+        text = log.read_text() if log.exists() else "# Changelog\n"
+        heading = f"## {tag} — {date.today().isoformat()}"
+        # The next entries need an Unreleased of their own, above the version they follow.
+        if re.search(r"^## Unreleased[ \t]*$", text, re.M):
+            text = re.sub(r"^## Unreleased[ \t]*$", f"## Unreleased\n\n{heading}", text, count=1,
+                          flags=re.M)
+        else:
+            text = text.rstrip("\n") + f"\n\n## Unreleased\n\n{heading}\n"
+        log.write_text(text)
+        git("add", "--", CHANGELOG, check=True)
+    git("add", "-u", check=True)
+    msg = f"release {tag}"
     if left:
-        changelog_line(root, f"- released with {len(left)} staged file{'s' if len(left) > 1 else ''} "
-                             f"left unresolved: {', '.join(f.name for f in left)}")
-    log = root / CHANGELOG
-    text = log.read_text() if log.exists() else "# Changelog\n"
-    heading = f"## {tag} — {date.today().isoformat()}"
-    if re.search(r"^## Unreleased\s*$", text, re.M):
-        text = re.sub(r"^## Unreleased\s*$", heading, text, count=1, flags=re.M)
-    else:
-        text = text.rstrip("\n") + f"\n\n{heading}\n"
-    log.write_text(text)
-    git("add", "--", CHANGELOG, check=True)
-    # Written with plumbing, so no hook sees it: this is the one commit on trunk that isn't a
-    # merge, and the tag beside it is what marks it.
+        msg += (f"\n\nReleased with {len(left)} staged file{'s' if len(left) > 1 else ''} left "
+                f"unresolved: {', '.join(f.name for f in left)}")
     tree = git("write-tree", check=True)
-    commit = git("commit-tree", tree, "-p", "HEAD", "-m", f"release: {tag}", check=True)
-    git("update-ref", f"refs/heads/{trunk}", commit, check=True)
+    commit = git("rev-parse", "HEAD")
+    if tree != git("rev-parse", "HEAD^{tree}") or left:
+        # Written with plumbing, so no hook sees it: in a metarepo this is the one commit on
+        # trunk that isn't a merge, and the tag beside it is what marks it.
+        commit = git("commit-tree", tree, "-p", "HEAD", "-m", msg, check=True)
+        git("update-ref", f"refs/heads/{trunk}", commit, check=True)
+        git("reset", "-q")
     git("tag", "-a", tag, "-m", tag, commit, check=True)
-    print(f"released {tag} at {commit[:12]}. Push it: git push --follow-tags")
+    print(f"released {tag} at {commit[:12]}.")
+    for fs in made.values():
+        for f in sorted(fs):
+            print(f"  {f.relative_to(root)}")
+    print("Push it: git push --follow-tags")
     return 0
 
 # ------------------------------------------------------------------- pararepo
@@ -1329,6 +1430,8 @@ def cmd_meta_release(root: Path, args) -> int:
 # of the pinned docs, never a copy committed here, and writes the metarepo only by branch.
 PARA = f"{DIR}/para.json"
 CACHE = f"{DIR}/meta-cache"
+# It still names `jig para-init`, which is now `jig init --para`: every pararepo's AGENTS.md
+# holds this line, and P1 on trunk's older checker refuses a commit that changes it.
 HEADER_BEGIN = f"<!-- jig:meta — generated from {PARA} by `jig para-init`; edit that, not this -->"
 HEADER_END = "<!-- jig:meta end -->"
 # How a spec says what its contract change means for the metarepo: a proposal branch, or why none.
@@ -1447,9 +1550,9 @@ def cmd_repos(root: Path, args) -> int:
         save_repos(repos)
         print(f"{name} ({kind}) → {path}")
         if kind == "meta" and not (path / META).exists():
-            print(f"  not a metarepo yet: run `jig meta-init` there")
+            print(f"  not a metarepo yet: run `jig init --meta` there")
         if kind == "para" and not (path / PARA).exists():
-            print(f"  not a pararepo yet: run `jig para-init --meta <metarepo name>` there")
+            print(f"  not a pararepo yet: run `jig init --para <metarepo name>` there")
         return 0
     if args.action == "rename":
         # rename <new> renames this folder's entry; rename <old> <new> any entry
@@ -1486,7 +1589,7 @@ def meta_checkout(root: Path, para: dict) -> Path | None:
 
 def released_tags(cwd: str) -> list[str]:
     """Tags the metarepo's own gates would accept: matching its pattern, with the heading
-    meta-release writes."""
+    the release writes."""
     meta = {**META_DEFAULTS, **json.loads(git("show", f"HEAD:{META}", cwd=cwd) or "{}")}
     pat = re.compile(meta["tag_pattern"])
     out = []
@@ -1534,7 +1637,7 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
         agents = in_index("AGENTS.md", staged)
         if para_header(now) not in agents:
             out.append(f"P1 the AGENTS.md header is generated from {PARA}: edit that, then "
-                       "`jig para-init` regenerates it")
+                       "`jig init --para` regenerates it")
     # P2 a contract change carries its metarepo proposal, or says why it needs none
     touched = [p for p in paths if matches(p, para.get("contract_paths", []))]
     if touched:
@@ -1564,14 +1667,16 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
 
 
 def cmd_para_init(root: Path, args) -> int:
+    """`jig init --para <metarepo>`. Run again, it regenerates the header and cache from
+    para.json."""
     path = root / PARA
     para = json.loads(path.read_text()) if path.exists() else {
-        "meta": args.meta, "pin": args.pin, "defer_until": None,
-        "contract_paths": args.contract or []}
+        "meta": args.meta, "pin": getattr(args, "pin", None), "defer_until": None,
+        "contract_paths": getattr(args, "contract", None) or []}
     para.pop("location", None)          # an older para.json: where it lives is repos.json's
     if not para.get("meta"):
-        die("first run needs --meta <name>", 2)
-    if args.location:
+        die("first run needs --para <metarepo name>", 2)
+    if getattr(args, "location", None):
         cmd_repos(root, argparse.Namespace(action="add", kind="meta", name=para["meta"],
                                            path=args.location))
     loc = meta_checkout(root, para)
@@ -1580,7 +1685,7 @@ def cmd_para_init(root: Path, args) -> int:
     if not para.get("pin"):
         tags = released_tags(str(loc))
         if not tags:
-            die(f"{para['meta']} has no release yet: run `jig meta-release` there first", 2)
+            die(f"{para['meta']} has no release yet: run `jig release` there first", 2)
         para["pin"] = tags[-1]
     path.write_text(json.dumps(para, indent=2) + "\n")
     fill_cache(root, loc, para["pin"])
@@ -1606,7 +1711,7 @@ def terms_changed(loc: Path, old: str, new: str) -> list[str]:
 def cmd_para_sync(root: Path, args) -> int:
     para = json.loads((root / PARA).read_text()) if (root / PARA).exists() else None
     if para is None:
-        die(f"no {PARA}: run `jig para-init`", 2)
+        die(f"no {PARA}: run `jig init --para <metarepo name>`", 2)
     until = para.get("defer_until")
     if until and date.today().isoformat() < until:
         return 0
@@ -1639,7 +1744,7 @@ def cmd_para_sync(root: Path, args) -> int:
         users = [f for f in git("grep", "-l", "-F", "--", term).splitlines()
                  if not f.startswith(f"{DIR}/")]
         print(f"  {term}: " + (f"used in {', '.join(users)}" if users else "not used here"))
-    print(f"\nTo take it: set \"pin\" to \"{latest}\" in {PARA}, run `jig para-init`, and commit "
+    print(f"\nTo take it: set \"pin\" to \"{latest}\" in {PARA}, run `jig init --para {name}`, and commit "
           f"those alone as `meta: {name} {pin} → {latest}` with this report as the body.")
     return 0
 
@@ -1647,7 +1752,7 @@ def cmd_para_sync(root: Path, args) -> int:
 def cmd_para_propose(root: Path, args) -> int:
     para = json.loads((root / PARA).read_text()) if (root / PARA).exists() else None
     if para is None:
-        die(f"no {PARA}: run `jig para-init`", 2)
+        die(f"no {PARA}: run `jig init --para <metarepo name>`", 2)
     loc = meta_checkout(root, para)
     if loc is None:
         die(f"can't find {para['meta']}: run `jig repos add meta` in its checkout", 2)
@@ -1730,7 +1835,7 @@ def staged_refusal(what: str) -> list[str]:
     files = staged_files(main_root())
     return [f"{what} waits while {len(files)} file{'s' if len(files) > 1 else ''} sit in "
             f"{STAGING}: {', '.join(f.name for f in files)}. Resolve or drop each "
-            f"(`jig staging resolve`), or force it"] if files else []
+            f"(`jig staging resolve` / `drop`), or force it"] if files else []
 
 
 def this_repo_names(root: Path) -> set[str]:
@@ -1744,7 +1849,7 @@ def this_repo_names(root: Path) -> set[str]:
 
 
 def cmd_staging(root: Path, args) -> int:
-    if args.action != "resolve":
+    if args.action not in ("resolve", "drop"):
         files = staged_files(root)
         if not files:
             print(f"nothing staged in {STAGING}")
@@ -1761,30 +1866,21 @@ def cmd_staging(root: Path, args) -> int:
         return 1 if bad else 0
 
     if not args.file:
-        die("which file? jig staging resolve <file>", 2)
+        die(f"which file? jig staging {args.action} <file>", 2)
     # Staged files live in the main checkout only: they are never committed into a lane.
     path = main_root() / STAGING / Path(args.file).name
     if not path.exists():
         die(f"no {args.file} in {STAGING}", 2)
-    head, body, problems = read_staged(path)
-    if problems and not args.drop:
-        die(f"{path.name}: {'; '.join(problems)}", 2)
-    board = Board.load(root, working_tree=True)
-    kind, change, dest = (head.get(k, "") for k in ("kind", "change", "destination"))
-    source = head.get("source", "")
-    mark = provenance(head, path)
-    meta_here = (root / META).exists()
-
-    if args.drop is not None:
-        if not args.drop.strip():
-            die("say why: --drop \"<reason>\"", 2)
-        board.log(f"dropped staged {kind} for {head.get('target')} ({source}): {args.drop}")
-        board.save()
-        if meta_here:
-            changelog_line(root, f"- dropped a staged {kind} from {source}: {args.drop}")
+    if args.action == "drop":
+        # A staged file was never committed, so a record of dropping it would point at nothing.
         path.unlink()
-        print(f"dropped {path.name}; the reason is in the board log")
+        print(f"dropped {path.name}")
         return 0
+    head, body, problems = read_staged(path)
+    if problems:
+        die(f"{path.name}: {'; '.join(problems)}", 2)
+    kind, change, dest = (head.get(k, "") for k in ("kind", "change", "destination"))
+    mark = provenance(head, path)
 
     target = head["target"]
     if target not in this_repo_names(root):
@@ -1850,12 +1946,10 @@ def cmd_staging(root: Path, args) -> int:
             die(f"{', '.join(dupes)} already in {reg.name}: stage it as `change: update`", 1)
         reg.write_text(text.rstrip("\n") + "\n" + "\n".join(rows) + "\n")
         ids = ", ".join(r.split("|")[1].strip() for r in rows)
-        if meta_here:
-            changelog_line(root, f"- {ids}. {mark}")
-        else:
-            board.log(f"decisions {ids} into {reg.relative_to(root.resolve())}. {mark}")
-            board.save()
-        return done(f"{len(rows)} row{'s' if len(rows) > 1 else ''} appended to {reg.name}")
+        # In a metarepo, M3 refuses the commit until CHANGELOG.md says so: that's its rule to
+        # enforce, not staging's line to write.
+        also = f"; add `- {ids}. {mark}` to {CHANGELOG} (M3)" if (root / META).exists() else ""
+        return done(f"{len(rows)} row{'s' if len(rows) > 1 else ''} appended to {reg.name}{also}")
     out = inside(dest)
     if out.exists():
         die(f"{dest} exists: stage it as `change: update`, or pick another path", 1)
@@ -1875,15 +1969,6 @@ def decision_rows(body: str, root: Path) -> list[str]:
     prefix = re.escape(known) if known else r"[A-Z][A-Z0-9]*-"
     rx = re.compile(rf"^\s*\|\s*{prefix}\d+\s*\|")
     return [l.rstrip() for l in body.splitlines() if rx.match(l)]
-
-
-def changelog_line(root: Path, line: str) -> None:
-    log = root / CHANGELOG
-    text = log.read_text() if log.exists() else "# Changelog\n\n## Unreleased\n"
-    if not re.search(r"^## Unreleased\s*$", text, re.M):
-        text = text.rstrip("\n") + "\n\n## Unreleased\n"
-    log.write_text(re.sub(r"^(## Unreleased\s*\n)", lambda m: m.group(1) + line + "\n", text,
-                          count=1, flags=re.M))
 
 
 def forward(root: Path, path: Path, head: dict) -> int:
@@ -1910,7 +1995,7 @@ def forward(root: Path, path: Path, head: dict) -> int:
     if meta and target in meta.get("pararepos", []):
         theirs = json.loads((there / PARA).read_text()) if (there / PARA).exists() else {}
         if theirs.get("meta") != meta.get("name"):
-            die(f"{target}'s {PARA} doesn't cite {meta.get('name')}: run `jig para-init` there "
+            die(f"{target}'s {PARA} doesn't cite {meta.get('name')}: run `jig init --para` there "
                 "first", 2)
     dest = there / STAGING / path.name
     if dest.exists():
@@ -1987,6 +2072,27 @@ def ensure_staging(root: Path) -> None:
         ignore.write_text(f"# Staged files are never committed: see Staging in {DIR}/RULES.md.\n*\n!.gitignore\n")
 
 
+def add_release(root: Path, here: Path) -> None:
+    if release_script(root, meta=(root / META).exists()):
+        git("add", "--", RELEASE, check=True)
+
+
+def meta_pattern_old(root: Path) -> bool:
+    f = root / META
+    try:
+        return f.exists() and json.loads(f.read_text()).get("tag_pattern") == r"^v\d+\.\d+$"
+    except ValueError:
+        return False
+
+
+def widen_meta_pattern(root: Path, here: Path) -> None:
+    f = root / META
+    data = json.loads(f.read_text())
+    data["tag_pattern"] = META_DEFAULTS["tag_pattern"]
+    f.write_text(json.dumps(data, indent=2) + "\n")
+    git("add", "--", META, check=True)
+
+
 STEPS: list = [
     (f"add {STAGING}/ (its .gitignore), where chats drop files for this repo",
      lambda root, after: f"{STAGING}/.gitignore" not in after
@@ -1995,7 +2101,14 @@ STEPS: list = [
     (f"add {SETUP} from the template, TODOs to fill: it runs in every new worktree and after "
      "every merge", lambda root, after: SETUP not in after and not (root / SETUP).exists()
      and (Path(__file__).resolve().parent / "scripts" / "setup.sh").exists(), add_setup),
+    (f"add {RELEASE} from the template: the repo's release protocol, which /jig:release fills in "
+     "on the first `jig release`", lambda root, after: RELEASE not in after
+     and not (root / RELEASE).exists()
+     and (Path(__file__).resolve().parent / "scripts" / "release.sh").exists(), add_release),
+    (f"widen {META}'s tag_pattern to accept vX.Y.Z: every repo now releases with three parts",
+     lambda root, after: meta_pattern_old(root), widen_meta_pattern),
 ]
+
 
 
 def root_is_jigs(board_at: str, version: int) -> bool:
@@ -2405,6 +2518,14 @@ def main(argv: list[str] | None = None) -> int:
     i.add_argument("--replace", action="store_true", help="see install-hooks --replace")
     i.add_argument("--no-hooks", action="store_true",
                    help="write the board only; a predecessor's hooks keep running")
+    i.add_argument("--meta", action="store_true",
+                   help="make this repo a metarepo: docs only, released by tag")
+    i.add_argument("--name", help="with --meta: the metarepo's name (default: the folder)")
+    i.add_argument("--prefix", help="with --meta: decision id prefix (default D-)")
+    i.add_argument("--para", metavar="METAREPO", help="cite this metarepo at a released tag")
+    i.add_argument("--location", help="with --para: the metarepo's checkout, recorded in repos.json")
+    i.add_argument("--pin", help="with --para: the release to cite (default: the latest)")
+    i.add_argument("--contract", nargs="*", help="with --para: globs whose changes need a metarepo proposal")
     ih = sub.add_parser("install-hooks", help="(re)write the git hooks")
     ih.add_argument("--replace", action="store_true",
                     help="remove a predecessor's hooks instead of chaining them as .local")
@@ -2440,28 +2561,22 @@ def main(argv: list[str] | None = None) -> int:
     rl.add_argument("paths", nargs="+")
     g = sub.add_parser("gate", help="verify a lane (or this branch) is mergeable")
     g.add_argument("name", nargs="?")
-    g.add_argument("--force", action="store_true", help="gate though files are staged")
     sv = sub.add_parser("survey", help="inventory the repo against the jig shape")
     sv.add_argument("--json", action="store_true")
-    mi = sub.add_parser("meta-init", help="make this repo a metarepo: docs only, released by tag")
-    mi.add_argument("--name")
-    mi.add_argument("--prefix", help="decision id prefix (default D-)")
-    mr = sub.add_parser("meta-release", help="metarepo: validate, then tag the next version")
-    mr.add_argument("--major", action="store_true", help="a rename or a reversed decision")
-    mr.add_argument("--force", action="store_true", help="release though files are staged")
-    pi = sub.add_parser("para-init", help="cite a metarepo at a released tag")
-    pi.add_argument("--meta", help="the metarepo's name")
-    pi.add_argument("--location", help="its checkout; recorded in repos.json, not the repo")
-    pi.add_argument("--pin", help="the release to cite (default: the latest)")
-    pi.add_argument("--contract", nargs="*", help="globs whose changes need a metarepo proposal")
+    rl_ = sub.add_parser("release", help="run this repo's release protocol, then tag vX.Y.Z")
+    bump = rl_.add_mutually_exclusive_group()
+    bump.add_argument("--major", action="store_true", help="in a metarepo: a rename or a reversed decision")
+    bump.add_argument("--minor", action="store_true")
+    bump.add_argument("--patch", action="store_true", help="the default, except in a metarepo")
+    bump.add_argument("--version", help="X.Y.Z: the first release, or a jump")
+    rl_.add_argument("--force", action="store_true", help="release though files are staged")
     sub.add_parser("para-sync", help="refresh the cache; report newer metarepo releases")
     pp = sub.add_parser("para-propose", help="open a proposal branch on the metarepo for a spec")
     pp.add_argument("spec")
     pp.add_argument("slug")
-    st = sub.add_parser("staging", help="list staged files, or resolve one")
-    st.add_argument("action", nargs="?", choices=["resolve"])
+    st = sub.add_parser("staging", help="list staged files, or resolve or drop one")
+    st.add_argument("action", nargs="?", choices=["resolve", "drop"])
     st.add_argument("file", nargs="?")
-    st.add_argument("--drop", metavar="WHY", help="with resolve: drop it, recording why")
     rp = sub.add_parser("repos", help="list, or add to, where your repos live (user config)")
     rp.add_argument("action", nargs="?", choices=["add", "rename"])
     rp.add_argument("kind", nargs="?", help="add: repo, meta or para; rename: the new name")
@@ -2483,8 +2598,7 @@ def main(argv: list[str] | None = None) -> int:
         "lane": cmd_lane, "sync": cmd_sync, "reviewed": cmd_reviewed,
         "handoff": cmd_handoff, "gate": cmd_gate, "hook": cmd_hook,
         "survey": cmd_survey, "reading-list": cmd_reading_list, "update": cmd_update, "repos": cmd_repos, "staging": cmd_staging,
-        "meta-init": cmd_meta_init, "meta-release": cmd_meta_release,
-        "para-init": cmd_para_init, "para-sync": cmd_para_sync, "para-propose": cmd_para_propose,
+        "release": cmd_release, "para-sync": cmd_para_sync, "para-propose": cmd_para_propose,
     }[args.cmd]
     return fn(root, args)
 

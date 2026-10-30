@@ -16,9 +16,9 @@ python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" repos <args>
   path, with that kind. Its own name is the board's `name`, else the folder's. Pass
   `--name <name>` to choose another, or `--path <path>` for a checkout other than this one.
   Adding the same checkout again replaces its entry.
-  - `add meta` in a repo with no `.jig/meta.json`: offer `jig meta-init`.
+  - `add meta` in a repo with no `.jig/meta.json`: offer `jig init --meta`.
   - `add para` with no `.jig/para.json`: list the meta entries, ask which metarepo it cites,
-    and offer `jig para-init --meta <name> --contract <globs>`.
+    and offer `jig init --para <name> --contract <globs>`.
 - **`rename <name>`**: give this folder's entry a new name to call it by. **`rename <old>
   <new>`** renames any entry. A rename is an alias in this list only. The repo's own name
   still finds it, so a pararepo citing a metarepo you renamed keeps working.

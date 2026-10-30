@@ -31,6 +31,10 @@ without Claude Code.
 - **Files from a chat land on purpose.** A spec or a user story written in some other chat goes
   into the repo's `.jig/staging/` and waits there until a session in the repo resolves it. A
   release is refused while anything is still staged.
+- **Every repo ships its own way, through one command.** `jig release` runs the repo's own
+  `.jig/scripts/release.sh` (a plugin file for one repo, a `.dmg` and an `.exe` for another),
+  checks the files it promised came out, and tags `vX.Y.Z`. The first time, `/jig:release`
+  asks you what the repo builds and writes the script with you.
 - **Repos that share decisions stay in sync.** A *metarepo* holds definitions and decisions; each
   *pararepo* cites it at a released tag, and `para-sync` reports when a newer release lands.
 - **It's portable.** The repo half is one stdlib Python file, some JSON and POSIX hooks. You can
@@ -69,7 +73,7 @@ This repo holds two things:
 - **A Claude Code plugin** in `plugin/`. Its skills run the loop (`brief`, `bug`, `verify`,
   `review`, `retro`), set a repo up (`init`, `survey`, `adopt`, `update`), coordinate parallel
   sessions (`hubnode`, `subnode`), spec a circuit board and install the skills it needs
-  (`hardware`), land files from other chats (`stage`, `repos`), and report bugs in jig itself
+  (`hardware`), land files from other chats (`stage`, `repos`), cut releases (`release`), and report bugs in jig itself
   (`feedback`).
 - **A checker**, `plugin/templates/jig/jig.py`, which `init` copies into a hidden `.jig/` folder
   in your repo with the rulebook, the board and three scripts. The checker owns the board,
@@ -116,6 +120,7 @@ Day to day:
 /jig:review              # fresh-context review, once per handoff
 /jig:stage               # send a file from this chat to a repo, or resolve what's staged
 /jig:repos add repo      # register this folder so other chats can stage files to it
+/jig:release             # build and tag a version, the way this repo ships
 /jig:hubnode             # the session that owns trunk, the board and merges
 /jig:subnode             # a session that works one lane
 ```
