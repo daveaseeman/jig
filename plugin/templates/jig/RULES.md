@@ -61,7 +61,7 @@ Checked before every commit by a git hook, and by `jig check`.
 - **R6** A scarce number belongs to the one job that reserved it. A change that makes a
   number matching a counter's `pattern` exist where trunk had none, and the branch doesn't
   hold it, is refused; merging a job takes the numbers it holds, and so does the gate's
-  scratch checkout of it. Numbers compare as numbers: `D-002` is 2. A number trunk already has
+  scratch checkout of it (a detached HEAD off trunk); a detached trunk holds nothing. Numbers compare as numbers: `D-002` is 2. A number trunk already has
   is taken by nobody, however many times the change adds it: editing or moving a heading, or
   adding a rule under an existing section, takes nothing. A counter marked `"unique"` also
   refuses a change that adds a second match of one number. Two branches that each take
@@ -236,7 +236,7 @@ does what that kind of repo needs.
 | M2 | a decision row (`| D-001 | … |`) without a status cell (open, proposed, accepted, superseded or rejected, optionally with a note in parentheses or `by D-…`) and a `YYYY-MM-DD` date |
 | M3 | an entry file changed without a line in `CHANGELOG.md` |
 | M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted) |
-| M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and only `.jig/handoffs/` changed since: the note is committed after the review by design. A job's sync of trunk and the gate's scratch merge aren't merges into trunk |
+| M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`) |
 | P1 | an `AGENTS.md` header that differs from what `.jig/para.json` generates |
 | P2 | a contract-path change with no spec saying `meta: <name> proposal <branch>` or `meta: none — <reason>` |

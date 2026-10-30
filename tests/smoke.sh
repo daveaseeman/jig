@@ -1111,6 +1111,9 @@ out=$($J check --staged 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'takes 
 msg="R6 unique: a second SCHEMA_VERSION = 17 where trunk has one is refused as 17 already exists"
 printf 'SCHEMA_VERSION = 17\n' >> src/storage.py; git add -A
 out=$($J check --staged 2>&1); expect_pass sh -c "! git commit -qm dup 2>/dev/null && echo \"\$0\" | grep -q 'schema 17 already exists'" "$out"; undo
+msg="R6 unique: a new number added twice is refused as appearing twice in this change"
+printf 'SCHEMA_VERSION = 18\nSCHEMA_VERSION = 18\n' >> src/storage.py; git add -A
+out=$($J check --staged 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'schema 18 appears twice in this change'" "$out"; undo
 msg="R6 unique: without unique, the same duplicate is accepted and takes nothing"
 printf 'SCHEMA_VERSION = 17\n' >> src/plain.py; git add -A; expect_pass git commit -qm dup2
 cd "$R/.git/jig/worktrees/S"
@@ -1144,11 +1147,10 @@ $J reviewed >/dev/null && $J handoff >/dev/null 2>&1; foldin
 git add -A && git commit -qm "HANDOFF: D"
 ( cd "$MJ" && printf '# t\n' > .jig/specs/t.md && git add -A && git commit -qm "TOOL: spec t" )
 cd "$MJ"
-msg="M5: the gate's merge of trunk in a detached scratch checkout commits"
-c=$($J gate D | sed -n 's/.*: gate \([0-9a-f]*\) from.*/\1/p')
-git worktree add -q --detach "$T/gate-D" "$c" 2>/dev/null
-expect_pass sh -c "cd '$T/gate-D' && git merge -q --no-edit main && test \"\$(git rev-list --parents -n1 HEAD | wc -w | tr -d ' ')\" = 3"
-git worktree remove --force "$T/gate-D"
+msg="M5: the gate's merge of trunk in its detached scratch checkout commits"
+g=.git/jig/worktrees/gate-D
+expect_pass sh -c "$J gate D >/dev/null 2>&1 && test \"\$(git -C $g rev-list --parents -n1 HEAD | wc -w | tr -d ' ')\" = 3 && test -z \"\$(git -C $g branch --show-current)\""
+git worktree remove --force "$g"
 msg="M5: jig merge of a job whose tip is the note committed after its review succeeds, and removes the entry"
 expect_pass sh -c "$J merge D >/dev/null 2>&1 && ! grep -q '\"D\"' .jig/jobs.json"
 msg="M5: jig release and pre-push accept that history"
@@ -1165,6 +1167,12 @@ expect_refuse $J merge E
 msg="M5: and a plain merge of that tip is refused by M5"
 out=$(git merge --no-ff --no-edit E 2>&1); git merge --abort 2>/dev/null
 expect_pass sh -c "echo \"\$0\" | grep -q 'M5 '" "$out"
+$J open F --shares DECISIONS.md CHANGELOG.md --reserve decision=4 >/dev/null && git add -A && git commit -qm "TOOL: open F"
+( cd "$MJ/.git/jig/worktrees/F" && dec 004 && git commit -qm "D-004: x" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && foldin && git add -A && git commit -qm "HANDOFF: F" )
+printf '# u\n' > .jig/specs/u.md && git add -A && git commit -qm "TOOL: spec u"
+( cd "$MJ/.git/jig/worktrees/F" && $J sync >/dev/null 2>&1 )
+msg="M5: review, then a note, then a sync of trunk: jig merge is accepted, and so is the release"
+expect_pass sh -c "$J merge F >/dev/null 2>&1 && ! grep -q '\"F\"' .jig/jobs.json && $J release >/dev/null 2>&1 && git tag | grep -qx v0.2.0"
 
 cd "$R" && mkdir -p .jig/staging
 msg="staging: a decisions destination with prose after the path refuses, naming the header field"
@@ -1180,6 +1188,9 @@ expect_refuse $J staging resolve de.md
 msg="staging: destination DECISIONS.md resolves to the root register"
 stage de.md this decisions new DECISIONS.md '| D-010 | x | accepted | 2026-10-30 |\n'
 expect_pass sh -c "$J staging resolve de.md && grep -q 'D-010' DECISIONS.md"
+msg="staging: D-10 is the D-010 already in the register, and is refused as new"
+stage de.md this decisions new DECISIONS.md '| D-10 | again | accepted | 2026-10-30 |\n'
+expect_refuse $J staging resolve de.md; rm .jig/staging/de.md
 
 # ---------------------------------------------------------------- merge after a sync, the gate's own scratch merge, jig reserve
 MS="$T/msync"; mkdir -p "$MS" && cd "$MS" && git init -q -b main && git config user.email t@t && git config user.name t
@@ -1231,6 +1242,10 @@ msg="reserve: a counter with no pattern is refused"
 expect_refuse $J reserve R loose
 msg="reserve: open still refuses a number another job holds in a list"
 expect_refuse $J open Q --reserve section=3
+msg="R6: on a detached trunk, a number an open job holds is still refused (no fast-forward carries it onto trunk)"
+( cd "$MS/.git/jig/worktrees/R" && $J sync >/dev/null 2>&1 )
+git switch -q --detach main && printf '\n## 4 Four\n' >> docs/d.md && git add -A
+expect_refuse git commit -qm four; git reset -q --hard && git switch -q main
 
 # ---------------------------------------------------------------- repos
 export JIG_CONFIG="$T/repos-cmd.json"

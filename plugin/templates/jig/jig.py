@@ -256,10 +256,12 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
                 for k, v in held_numbers(l).items():
                     held.setdefault(k, set()).update(v)
                 who = "the job being merged"
-    if job is None and not branch:
-        # A detached HEAD is the gate's scratch checkout of a job's commit: it holds what the
-        # job holds, or its merge of trunk would take every number the job built.
-        head = git("rev-parse", "HEAD")
+    head = git("rev-parse", "HEAD") if job is None and not branch else ""
+    if head and subprocess.run(["git", "merge-base", "--is-ancestor", head, trunk],
+                               capture_output=True).returncode:
+        # A detached HEAD off trunk is the gate's scratch checkout of a job's commit: it holds
+        # what the job holds, or its merge of trunk would take every number the job built. A
+        # detached trunk holds nothing, or a fast-forward could carry a held number onto it.
         for n, l in board.jobs.items():
             if subprocess.run(["git", "merge-base", "--is-ancestor", head,
                                f"refs/heads/{board.branch(n)}"], capture_output=True).returncode == 0:
@@ -394,7 +396,8 @@ def reserved_refusals(root: Path, board: "Board", holds: dict[str, set[int]],
             got = shown[n]
             if spec.get("unique") and after[n] > max(1, before.get(n, 0)):
                 out.append(f"R6 {counter} {got} already exists: a {counter} is unique, and this "
-                           f"change adds another")
+                           f"change adds another" if n in before else
+                           f"R6 {counter} {got} appears twice in this change: a {counter} is unique")
             if n in before:
                 continue
             if not held:
@@ -2066,6 +2069,16 @@ def this_repo_names(root: Path) -> set[str]:
     return names - {""}
 
 
+def bare_path(dest: str) -> bool:
+    """A header's destination is a path and nothing else: prose after it is never guessed at."""
+    return dest.endswith(".md") and not re.search(r"[,;]", dest)
+
+
+def decision_id(cell: str) -> str:
+    """D-2 and D-002 are one decision: the number counts, as R6 counts it."""
+    return re.sub(r"\d+", lambda m: str(int(m.group())), cell.strip())
+
+
 def cmd_staging(root: Path, args) -> int:
     if args.action not in ("resolve", "drop"):
         files = staged_files(root)
@@ -2127,10 +2140,10 @@ def cmd_staging(root: Path, args) -> int:
             die(f"a story resolves into a spec: {how} under {DIR}/specs/ from it, carrying "
                 f"`{mark}`, then resolve again", 1)
         return done(f"carried by {specs[0].relative_to(root)}")
-    if kind in ("spec", "doc") and not dest.endswith(".md"):
+    if kind in ("spec", "doc") and not bare_path(dest):
         die(f"destination {dest!r} isn't a path yet: find the page, put its path in the header, "
             "then resolve again", 1)
-    if kind == "decisions" and not re.fullmatch(r"[^\s,;]+\.md", dest):
+    if kind == "decisions" and not bare_path(dest):
         die(f"destination {dest!r} in the header isn't a bare path: put only the register's "
             "path in `destination:`, then resolve again", 1)
     if kind == "spec" and not dest.startswith(f"{DIR}/specs/"):
@@ -2161,8 +2174,8 @@ def cmd_staging(root: Path, args) -> int:
         if not rows:
             die(f"no decision rows in {path.name}", 1)
         text = reg.read_text() if reg.exists() else "| Id | Decision | Status | Date |\n|---|---|---|---|\n"
-        have = {l.split("|")[1].strip() for l in text.splitlines() if l.startswith("|") and l.count("|") > 2}
-        dupes = [r.split("|")[1].strip() for r in rows if r.split("|")[1].strip() in have]
+        have = {decision_id(l.split("|")[1]) for l in text.splitlines() if l.startswith("|") and l.count("|") > 2}
+        dupes = [r.split("|")[1].strip() for r in rows if decision_id(r.split("|")[1]) in have]
         if dupes:
             die(f"{', '.join(dupes)} already in {reg.name}: stage it as `change: update`", 1)
         reg.write_text(text.rstrip("\n") + "\n" + "\n".join(rows) + "\n")

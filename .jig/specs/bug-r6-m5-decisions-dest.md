@@ -36,8 +36,8 @@ bare path is refused, the way a doc's is, instead of landing in a guessed file.
   `DECISIONS.md` the repo may not have.
 - `[seen]` The spec/doc branch already refuses a destination that isn't a path.
 - Correction:
-  - A non-empty destination that isn't a bare `.md` path refuses, naming the header field.
-  - An empty one still falls back to the root `DECISIONS.md`.
+  - A destination that isn't a bare `.md` path refuses, naming the header field.
+  - An empty one is refused by the header check, as before (see Decisions).
 
 ## Done when
 Smoke, in a metarepo fixture with `reserve.decision = {pattern: ^\|\s*D-(\d+)\s*\|, files: [DECISIONS.md]}`:
@@ -48,11 +48,13 @@ Smoke, in a metarepo fixture with `reserve.decision = {pattern: ^\|\s*D-(\d+)\s*
 - [ ] Review, handoff, a committed note, then gate: `jig merge <job>` succeeds and removes the
       entry from `jobs.json`. `jig release` and a push (pre-push) accept the history.
 - [ ] Still refused: content committed after `jig reviewed`, then a note, then gate. `jig merge`
-      refuses with M5.
-- [ ] The gate's `git merge <trunk>` in a detached scratch checkout commits.
+      refuses (its changed-since check names the file), and a plain `git merge --no-ff` of that
+      tip is refused with M5.
+- [ ] Review, a note, then a sync of trunk: `jig merge` is accepted, and so is the release.
+- [ ] The gate's merge of trunk in its detached scratch checkout commits.
 - [ ] `destination: docs/DECISIONS.md, on branch x` refuses, naming the header.
-      `destination: docs/DECISIONS.md` resolves. An empty destination resolves to the root
-      `DECISIONS.md` as before.
+      `destination: docs/DECISIONS.md` resolves, and `destination: DECISIONS.md` resolves to the
+      root. An empty destination is refused by the header check, as before.
 - [ ] Smoke passes, and the validator passes.
 
 ## Out of scope
@@ -74,3 +76,11 @@ exception), `tests/smoke.sh`.
   Rejected: larger, and the note would have to reach trunk separately. `[assumed]`
 - Read the leading path out of a prose destination. Rejected: guessing what a chat meant caused
   this. `[seen]`
+
+## Decisions
+- Build, Oct 30, accepted at review: an empty `destination` never fell back to the root
+  `DECISIONS.md`. `read_staged` refuses a header with no `destination` ("no destination"), and
+  did before this change, so the fallback was dead code and is gone. `destination: DECISIONS.md`
+  is how a file names the root register. `[seen]`: smoke asserts both.
+- Build, Oct 30: `jig merge` refuses content committed after the review before M5 runs,
+  because its changed-since check sees the file first. M5 is shown on a plain `git merge`.

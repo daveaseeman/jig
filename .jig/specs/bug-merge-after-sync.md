@@ -99,3 +99,8 @@ Build after `bug-r6-take.md` or with it: both touch `reserved_refusals`.
   subnode (see `workflow.md`), which runs it in the scratch checkout and reports the exit code
   and output. The hubnode then marks the job gated or not. Whoever runs it, it is the same
   deterministic command.
+- Review, Oct 30: the gate's scratch checkout is a detached HEAD on no job, so its merge of
+  trunk made the job's own numbers look like takes. A detached HEAD that is not on trunk holds
+  the numbers of the jobs whose branch contains it. A detached HEAD on trunk holds nothing: a
+  commit there, then a fast-forward of trunk, would otherwise put a held number on trunk with
+  no hook. `[seen]`: the reviewer's repro is a smoke case that refuses.
