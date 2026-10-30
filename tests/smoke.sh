@@ -1087,6 +1087,36 @@ expect_pass sh -c "git tag | grep -qx v2.0.2 && test \"\$(git show v2.0.2:VERSIO
 msg="release: off trunk it refuses"
 git switch -q -c side && expect_refuse $J release; git switch -q main
 
+# ---------------------------------------------------------------- R6 takes and unique numbers
+R="$T/r6"; mkdir -p "$R" && cd "$R" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs src
+printf '# D\n\n## 1 One\n\n### 1.1 First\n' > docs/d.md
+printf 'SCHEMA_VERSION = 17\n' > src/storage.py && printf 'SCHEMA_VERSION = 17\n' > src/plain.py
+git add -A && git commit -qm init && $J init >/dev/null
+python3 - <<'EOF'
+import json; c = json.load(open('.jig/config.json'))
+c['reserve'] = {'section': {'pattern': r'^### (\d+)\.\d+', 'files': ['docs/**']},
+                'schema': {'pattern': r'SCHEMA_VERSION\s*=\s*(\d+)', 'files': ['src/storage.py'], 'unique': True},
+                'plain': {'pattern': r'SCHEMA_VERSION\s*=\s*(\d+)', 'files': ['src/plain.py']}}
+json.dump(c, open('.jig/config.json', 'w'), indent=2)
+EOF
+git add -A && git commit -qm config
+$J open N --owns 'src/**' --shares 'docs/**' >/dev/null && $J open S --reserve section=12 >/dev/null && git add -A && git commit -qm "open N S"
+cd "$R/.git/jig/worktrees/N"
+msg="R6 take: ### 1.2 under a section trunk has, with no reservation, is accepted"
+printf '\n### 1.2 Second\n' >> docs/d.md; git add -A; expect_pass git commit -qm rule
+msg="R6 take: a new page with ### 12.1, holding no section, is refused as taking section 12"
+printf '### 12.1 New\n' > docs/n.md; git add -A
+out=$($J check --staged 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'takes section 12, but this branch holds no section'" "$out"; undo
+msg="R6 unique: a second SCHEMA_VERSION = 17 where trunk has one is refused as 17 already exists"
+printf 'SCHEMA_VERSION = 17\n' >> src/storage.py; git add -A
+out=$($J check --staged 2>&1); expect_pass sh -c "! git commit -qm dup 2>/dev/null && echo \"\$0\" | grep -q 'schema 17 already exists'" "$out"; undo
+msg="R6 unique: without unique, the same duplicate is accepted and takes nothing"
+printf 'SCHEMA_VERSION = 17\n' >> src/plain.py; git add -A; expect_pass git commit -qm dup2
+cd "$R/.git/jig/worktrees/S"
+msg="R6 take: holding section 12, the page with ### 12.1 is accepted"
+printf '### 12.1 New\n' > docs/n.md; git add -A; expect_pass git commit -qm s12
+
 # ---------------------------------------------------------------- repos
 export JIG_CONFIG="$T/repos-cmd.json"
 RP="$T/rp"; mkdir -p "$RP" && cd "$RP" && git init -q -b main && git config user.email t@t && git config user.name t

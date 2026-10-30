@@ -60,9 +60,11 @@ Checked before every commit by a git hook, and by `jig check`.
 - **R5** The board is the hubnode's: `config.json` and `jobs.json` are edited on trunk only.
 - **R6** A scarce number belongs to the one job that reserved it. A change that makes a
   number matching a counter's `pattern` exist where trunk had none, and the branch doesn't
-  hold it, is refused; merging a job takes the numbers it holds. Editing or moving an existing
-  heading takes nothing. Two branches that each take migration step 17 corrupt the first
-  database that runs both.
+  hold it, is refused; merging a job takes the numbers it holds. A number trunk already has
+  is taken by nobody, however many times the change adds it: editing or moving a heading, or
+  adding a rule under an existing section, takes nothing. A counter marked `"unique"` also
+  refuses a change that adds a second match of one number. Two branches that each take
+  migration step 17 corrupt the first database that runs both.
 - **R7** A change adding a `WORKAROUND:` comment to code must stage `.jig/ledgers/WORKAROUNDS.md` too;
   its first row creates the file. jig's own `jig.py` quotes the marker and is not checked.
   Prose may quote the marker.
@@ -94,9 +96,16 @@ to find its numbers:
 
 ```json
 "reserve": {
-  "schema": {"pattern": "SCHEMA_VERSION\\s*=\\s*(\\d+)", "files": ["**/storage.py"]}
+  "section": {"pattern": "^### (\\d+)\\.\\d+", "files": ["docs/**/*.md"]},
+  "schema": {"pattern": "SCHEMA_VERSION\\s*=\\s*(\\d+)", "files": ["**/storage.py"], "unique": true}
 }
 ```
+
+A number is taken where trunk had no match for it, in any of the counter's files, and the
+change adds one. So `### 31.2` under a section 31 that trunk has takes nothing, and `### 32.1`
+takes section 32. `"unique": true` is for numbers that must also appear once: a second
+`SCHEMA_VERSION = 17` where trunk has one is refused as "17 already exists". It is off unless
+set, because a section number appears once per rule under it.
 
 `--reserve <counter>` hands the job max(the highest on trunk, the highest an open job
 holds) + 1, so two jobs open at once never get the same number. Nothing stores a "next":

@@ -38,7 +38,7 @@ BOARD_DEFAULTS = {
     "trunk": "main",
     "common": ["AGENTS.md", "docs/**", f"{DIR}/**"],
     "append_files": ["AGENTS.md", f"{DIR}/ledgers/**", "CHANGELOG.md"],
-    "reserve": {},         # counter: {"pattern": regex with one group, "files": [globs]}
+    "reserve": {},         # counter: {"pattern": regex with one group, "files": [globs], "unique": bool}
     "docmap": {},
     "not_docs": [],        # globs whose markdown ships as code; survey finds no home for it
     "release": {"artifacts": []},   # globs release.sh must produce; see `jig release`
@@ -334,29 +334,40 @@ def next_number(board: "Board", counter: str, spec: dict) -> int:
 def reserved_refusals(root: Path, board: "Board", holds: dict[str, set[str]],
                       who: str, staged: bool) -> list[str]:
     """R6. A scarce number (migration step, section number) belongs to one job.
-    A number is taken when the branch makes it exist where the base did not: the
-    pattern's matches are counted per file at the base and in the index, and only a
-    count that rose is a take. Editing or moving a heading nets to zero."""
+    A number is taken when the base has no match for it in the counter's files and the
+    index adds one. A second rule under a section the base already has takes nothing, and
+    editing or moving a heading nets to zero. A counter with "unique" also refuses a number
+    whose count rises past one: a second migration 17 is a collision of its own."""
     out: list[str] = []
-    trunk = board.trunk
+    at = base(board.trunk)
+    touched = git("diff", "--name-only", "--no-renames", at,
+                  *(["--cached"] if staged else [])).splitlines()
+    tree = git("ls-tree", "-r", "--name-only", at).splitlines()
     for counter, spec in (board.data.get("reserve") or {}).items():
         if not isinstance(spec, dict) or not spec.get("pattern"):
             continue                      # update refuses such a counter; nothing to match
         pat = re.compile(spec["pattern"], re.M)
         globs = spec.get("files") or ["**"]
         held = holds.get(counter)
+        files = {p for p in touched if p and matches(p, globs)}
+        # Counted over every file the counter covers at the base, so a number defined in a
+        # file this change doesn't touch is still one the base has.
         before: dict[str, int] = {}
         after: dict[str, int] = {}
-        touched = git("diff", "--name-only", "--no-renames", base(trunk),
-                      *(["--cached"] if staged else [])).splitlines()
-        files = [p for p in touched if p and matches(p, globs)]
+        for p in tree:
+            if p and matches(p, globs):
+                for m in pat.finditer(at_rev(at, p)):
+                    before[m.group(1)] = before.get(m.group(1), 0) + 1
+                    if p not in files:
+                        after[m.group(1)] = after.get(m.group(1), 0) + 1
         for p in files:
-            for m in pat.finditer(at_rev(base(trunk), p)):
-                before[m.group(1)] = before.get(m.group(1), 0) + 1
             for m in pat.finditer(in_index(p, staged)):
                 after[m.group(1)] = after.get(m.group(1), 0) + 1
         for got in sorted(after):
-            if after[got] <= before.get(got, 0):
+            if spec.get("unique") and after[got] > max(1, before.get(got, 0)):
+                out.append(f"R6 {counter} {got} already exists: a {counter} is unique, and this "
+                           f"change adds another")
+            if got in before:
                 continue
             if not held:
                 out.append(f"R6 this change takes {counter} {got}, but this branch holds no "
