@@ -22,8 +22,13 @@ That is a dry run. It changes nothing, and its exit code says what you have:
   repo: a file at an old path, an unknown board key, a hook jig didn't write, code that names
   a moved path.
 - **2, refused or blocked.** A refusal has a fix the user knows: merge each open job
-  (`jig merge`) or delete its entry from `.jig/jobs.json` on trunk, remove the extra worktrees,
-  give each counter a `pattern` and `files`, or update the plugin. A block means the layout is one
+  (`jig merge`) or delete its entry from `.jig/jobs.json` on trunk, give each counter a
+  `pattern` and `files`, move an untracked file out of a move's way, or update the plugin.
+  Each worktree line names its own command — `git worktree remove` for one that is there,
+  `repair` then `remove` for one that moved with the repo folder, `prune` for one that is gone,
+  look then delete for a folder git doesn't know. Before any `remove` or delete, show what is
+  uncommitted in it. Run each only on a yes; `update` runs none. A refusing dry run still prints
+  the plan below the refusal: show it too, so the user sees what follows the fix. A block means the layout is one
   jig doesn't recognize. Say why the update would fail, then draft the change to jig that
   would recognize it — which `LAYOUT` row, board default or `STEPS` entry to add, with a
   done-when the plugin owner can test — written the way `/jig:feedback` writes its report,
@@ -39,6 +44,9 @@ one's proposed edit and ask about each; make it only on a yes. `--apply` never t
 1. Fix the stale references in code with the user, in the same uncommitted change, until the
    check passes. Those are the repo's files: you edit them with the user; `jig.py` never does.
    Stale references in Markdown are worth fixing too — offer the list, don't sweep it unasked.
+   A warning that a moved file finds paths from its own location (`$0`, `BASH_SOURCE`,
+   `__file__`, `__dirname`) is code to fix the same way: its folder depth changed, so a
+   `/..` count in that line is off. Offer the edit.
 2. If `update` added `.jig/scripts/setup.sh`, fill it the way `/jig:init` does. Then name
    anything in the repo that already does its job by hand — a check script that borrows the
    main checkout's environment, `ln -s` steps in a skill — and offer to remove each once

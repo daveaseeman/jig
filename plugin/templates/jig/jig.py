@@ -2658,9 +2658,10 @@ def root_is_jigs(board_at: str, version: int) -> bool:
 
 def plan_moves(files: list[str], board_at: str, version: int, extra: list | None = None) -> dict:
     """Which tracked files LAYOUT moves, which tool files it retires, and the (old, new)
-    rows that apply. A row moves only when its new path is free: with both there, update
-    can't tell which is current, so it leaves both and says so. `extra` rows apply on any
-    layout: they come from what a file says, not where jig's folder is."""
+    rows that apply. A file moves only when its new path is free: with both there, update
+    can't tell which is current, so it leaves both and says so. A row applies when at least
+    one file moved. `extra` rows apply on any layout: they come from what a file says, not
+    where jig's folder is."""
     # A path under an old folder is jig's only while the board is in that folder: beside a
     # board at .jig/, a jig/ folder is the repo's own (a Python package, say).
     at_root = root_is_jigs(board_at, version)
@@ -2679,21 +2680,56 @@ def plan_moves(files: list[str], board_at: str, version: int, extra: list | None
                 retire += under
                 rows.append((old, new))
                 continue
-            free = (not any(t.startswith(new) for t in taken) if new.endswith("/")
-                    else new not in taken)
-            if not free:
-                warn.append(f"{old} and {new} both exist: both left as they are, not merged")
+            if not old.endswith("/"):
+                if new in taken:
+                    warn.append(f"{old} and {new} both exist: both left as they are, not merged")
+                    continue
+                moves[old] = new
+                taken.add(new)
+                rows.append((old, new))
                 continue
-            # specs/ and ledgers/ at root may hold the repo's own files too (JS spec tests):
-            # jig only ever put Markdown there.
-            if old.endswith("/") and not old.startswith(OLD_DIRS):
-                for f in [f for f in under if not f.endswith(".md")]:
+            # Units that move or stay together: a file alone, or a whole subfolder.
+            units = [[f] for f in under]
+            # specs/ and ledgers/ at root may hold the repo's own files too (JS spec tests).
+            # At the top level jig only ever put Markdown there, one spec per file, so each
+            # file is judged alone. A subfolder is one unit: with Markdown in it, it is task
+            # material and moves whole; without, it is the repo's and stays.
+            in_jigs = old.startswith(OLD_DIRS)
+            if not in_jigs:
+                top = [f for f in under if "/" not in f[len(old):]]
+                subs: dict[str, list[str]] = {}
+                for f in under:
+                    if f not in top:
+                        subs.setdefault(old + f[len(old):].split("/")[0] + "/", []).append(f)
+                units = [[f] for f in top if f.endswith(".md")]
+                for sub, held in subs.items():
+                    if any(f.endswith(".md") for f in held):
+                        units.append(held)
+                    else:
+                        top += held
+                for f in [f for f in top if not f.endswith(".md")]:
                     warn.append(f"{f} is in {old} but isn't Markdown, so it isn't jig's: left there")
-                under = [f for f in under if f.endswith(".md")]
-            for f in under:
-                moves[f] = new + f[len(old):] if old.endswith("/") else new
-            taken |= set(moves.values())
-            rows.append((old, new))
+            moved = False
+            for unit in units:
+                dest = {f: new + f[len(old):] for f in unit}
+                clash = [f for f in unit if dest[f] in taken]
+                sub = not in_jigs and "/" in unit[0][len(old):]
+                folder = old + unit[0][len(old):].split("/")[0] + "/" if sub else ""
+                if clash and sub:
+                    warn.append(f"{folder} and {new}{folder[len(old):]} both hold "
+                                f"{clash[0][len(folder):]}: the whole folder is left as it is, never split")
+                    continue
+                if clash:
+                    warn.append(f"{unit[0]} and {dest[unit[0]]} both exist: both left as they are, not merged")
+                    continue
+                if sub:
+                    warn.append(f"{folder} holds Markdown, so it moves whole to "
+                                f"{new}{folder[len(old):]}, its other files included: check it is jig's")
+                moves.update(dest)
+                taken |= set(dest.values())
+                moved = True
+            if moved:
+                rows.append((old, new))
     home = next((d for d in OLD_DIRS if board_at.startswith(d)), None)
     gone = [f for f in files if home and f in GONE]
     after = sorted((set(files) - set(moves) - set(retire) - set(gone)) | set(moves.values())
@@ -2763,10 +2799,13 @@ def rewrite_board(data: dict, files: list[str], plan: dict) -> tuple[dict, list[
         out = []
         for g in globs:
             ng = one(g)
+            # Files that stayed behind (a collision, a non-Markdown file) are still the glob's.
+            kept = ng != g and any(matches(f, [g]) for f in after)
             if ng != g:
-                edits.append(f"{label}: `{g}` → `{ng}`")
-            if ng not in out:
-                out.append(ng)
+                edits.append(f"{label}: `{g}` → `{ng}`" + (f", `{g}` kept: files stay there" if kept else ""))
+            for x in ([g] if kept else []) + [ng]:
+                if x not in out:
+                    out.append(x)
         # A folder that moved out from under a broad glob (jig/** over jig/docs/) is still
         # covered after the move. A file row adds nothing: jig's file left that folder.
         for o, n in folders:
@@ -2821,13 +2860,24 @@ def rewrite_board(data: dict, files: list[str], plan: dict) -> tuple[dict, list[
 
 def stale_references(root: Path, plan: dict, board_at: str) -> dict[str, list[tuple[int, str]]]:
     """Lines in the repo's own files that still name a path jig moved, keyed by where each
-    file will be after the moves. Matched at a path boundary: example.com/specs/ is not one."""
+    file will be after the moves. Matched at a path boundary: example.com/specs/ is not one.
+    A path that still exists after the moves is not stale: some files stayed. For a glob,
+    the path is its prefix up to the first wildcard."""
     olds = sorted({o for o, _ in plan["rows"]}
                   | {d for d in OLD_DIRS if any(o.startswith(d) for o, _ in plan["rows"])},
                   key=len, reverse=True)
     if not olds:
         return {}
-    pat = re.compile(r"(?<![\w/.-])(?:\./)?(?:" + "|".join(re.escape(o) for o in olds) + ")")
+    pat = re.compile(r"(?<![\w/.-])(?:\./)?((?:" + "|".join(re.escape(o) for o in olds)
+                     + r")[^\s'\"`<>()|,;:]*)")
+    there = set(plan["after"])
+
+    def stale(ref: str) -> bool:
+        path = re.split(r"[*?\[{]", ref)[0].rstrip(".")
+        if path in there:
+            return False
+        inside = path if path.endswith("/") else path + "/"
+        return not any(f.startswith(inside) for f in there)
     back = {n: o for o, n in plan["moves"].items()}
     skip = {CONFIG, JOBS, board_at, ".gitignore", *TOOL_FILES}
     out: dict[str, list[tuple[int, str]]] = {}
@@ -2840,7 +2890,8 @@ def stale_references(root: Path, plan: dict, board_at: str) -> dict[str, list[tu
             text = path.read_text()
         except (OSError, UnicodeDecodeError):
             continue
-        hits = [(i, line.strip()) for i, line in enumerate(text.splitlines(), 1) if pat.search(line)]
+        hits = [(i, line.strip()) for i, line in enumerate(text.splitlines(), 1)
+                if any(stale(m) for m in pat.findall(line))]
         if hits:
             out[f] = hits
     return out
@@ -2872,6 +2923,57 @@ def files_to_review(root: Path, plan: dict) -> list[tuple[str, str]]:
         else:
             out.append((".claude/skills/_skill-template/", "differs from the old template, "
                         "so it is the repo's now: left as it is"))
+    return out
+
+
+def worktree_refusals(root: Path, old_folders: tuple) -> list[str]:
+    """One line per worktree git records and per folder in an old worktrees folder, each with
+    the command for its case. A repo folder renamed under its worktrees leaves records whose
+    paths are gone and checkouts that moved with it: `remove` on such a record drops it and
+    strands the checkout, so it gets `repair` first. update runs none of these: removal needs
+    someone to look at uncommitted work."""
+    def shown(p: Path) -> str:
+        try:
+            return p.relative_to(root).as_posix()
+        except ValueError:
+            return str(p)
+
+    records: dict[str, Path] = {}
+    store = git_common() / "worktrees"
+    for rec in sorted(store.iterdir()) if store.is_dir() else []:
+        try:
+            records[rec.name] = Path((rec / "gitdir").read_text().strip()).parent
+        except OSError:
+            records[rec.name] = rec / "missing"
+    # A checkout's .git file names its record: `gitdir: <common>/worktrees/<id>`.
+    folders: dict[Path, str | None] = {}
+    for base in [root / f for f in old_folders] + [git_common() / "jig" / "worktrees"]:
+        for d in sorted(base.iterdir()) if base.is_dir() else []:
+            if not d.is_dir():
+                continue
+            try:
+                line = (d / ".git").read_text().strip()
+                folders[d] = Path(line[len("gitdir:"):].strip()).name if line.startswith("gitdir:") else None
+            except OSError:
+                folders[d] = None
+    out = []
+    claimed = set()
+    for rid, path in records.items():
+        if path.exists():
+            claimed.add(path.resolve())
+            out.append(f"worktree {shown(path)}: `git worktree remove {shown(path)}`")
+            continue
+        moved = [d for d, i in folders.items() if i == rid]
+        if moved:
+            claimed.add(moved[0].resolve())
+            out.append(f"worktree {shown(moved[0])} moved with the repo (git's record has {path}): "
+                       f"`git worktree repair {shown(moved[0])}`, then `git worktree remove {shown(moved[0])}`")
+        else:
+            out.append(f"worktree {path} is gone, but git still records it: `git worktree prune`")
+    for d, rid in folders.items():
+        old = any(d.parent == root / f.rstrip("/") for f in old_folders)
+        if old and d.resolve() not in claimed:
+            out.append(f"{shown(d)} is not a checkout git knows: look, then delete it")
     return out
 
 
@@ -2919,11 +3021,9 @@ def cmd_update(root: Path, args) -> int:
         refused.append(f"jobs are open: {', '.join(open_jobs)}. Merge each (`jig merge`), or close it "
                        f"by deleting its entry from {JOBS} on trunk, "
                        "first: update moves files their worktrees rely on")
-    extra = [l[len("worktree "):] for l in git("worktree", "list", "--porcelain").splitlines()
-             if l.startswith("worktree ")][1:]
-    if extra:
-        refused.append(f"worktrees besides the main checkout: {', '.join(extra)}. Remove each "
-                       "with `git worktree remove <path>`, then `git worktree prune`")
+    # Today's board is at .jig/ too, so .jig/worktrees/ is old only beside an older board.
+    old_ignores = OLD_IGNORES if board_at != CONFIG or version < STAMP else OLD_IGNORES[1:]
+    refused += worktree_refusals(root, old_ignores)
     # A tracked change mid-move would leave jig half-moved; a re-run must still see the old layout.
     dirty = git("status", "--porcelain", "--untracked-files=no")
 
@@ -2931,6 +3031,28 @@ def cmd_update(root: Path, args) -> int:
     new_board, edits, board_warn, gone = rewrite_board(data, files, plan)
     board_gone += gone
     warnings = plan["warn"] + board_warn
+    # plan_moves sees tracked files only; `git mv` onto an untracked one dies mid-apply, with
+    # the renames before it staged.
+    occupied = [f"{n} (from {o})" for o, n in plan["moves"].items()
+                if (root / n).exists() or (root / n).is_symlink()]
+    if occupied:
+        refused.append(f"untracked files where files would move: {', '.join(occupied)}. Look at "
+                       "each, move or delete it, then update again")
+    # A script that finds the repo from its own folder (`cd "$(dirname "$0")/.."`) counts
+    # levels, and a move that changes its depth breaks it. The line is the repo's to fix.
+    selfref = re.compile(r"\$0\b|\$\{0\}|BASH_SOURCE|__file__|__dirname")
+    for o, n in plan["moves"].items():
+        if n.endswith(".md") or o.count("/") == n.count("/"):
+            continue
+        try:
+            lines = (root / o).read_text().splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        hits = [f"{i}: {l.strip()}" for i, l in enumerate(lines, 1) if selfref.search(l)]
+        if hits:
+            warnings.append(f"{n} moves from {o}, {o.count('/')} folder(s) deep to "
+                            f"{n.count('/')}, and finds paths from its own location: "
+                            + "; ".join(hits))
     # With no stored next number, a counter's pattern is the only way to know what is taken.
     blind = [k for k, v in (new_board.get("reserve") or {}).items()
              if not (isinstance(v, dict) and v.get("pattern") and v.get("files"))]
@@ -2958,13 +3080,15 @@ def cmd_update(root: Path, args) -> int:
     warnings += [w for s in steps if s[2] is fold_ledger for w in ledger_warnings(root)]
     removed += board_gone
     ignore = root / ".gitignore"
-    # Today's board is at .jig/ too, so .jig/worktrees/ is old only beside an older board.
-    old_ignores = OLD_IGNORES if board_at != CONFIG or version < STAMP else OLD_IGNORES[1:]
     ignore_lines = ([l for l in ignore.read_text().splitlines() if l.strip() in old_ignores]
                     if ignore.exists() else [])
     untracked = [(o, n) for o, n in OLD_UNTRACKED if board_at.startswith("jig/")
                  and (root / o).is_dir() and any(f.is_file() and f.relative_to(root).as_posix() not in files
                                                  for f in (root / o).rglob("*"))]
+    warnings += [f"{f.relative_to(root).as_posix()} is untracked and "
+                 f"{n}{f.relative_to(root / o).as_posix()} exists: left where it is"
+                 for o, n in untracked for f in sorted((root / o).rglob("*"))
+                 if f.is_file() and (root / n / f.relative_to(root / o)).exists()]
     cache_line = [l for l in ignore.read_text().splitlines() if l.strip() == "jig/meta-cache/"] \
         if ignore.exists() and board_at.startswith("jig/") else []
     hooks_dir = git_common() / "hooks"
@@ -2997,7 +3121,10 @@ def cmd_update(root: Path, args) -> int:
               f"{data.get('version', 'none')}), but:", file=sys.stderr)
         for r in refused:
             print(f"  {r}", file=sys.stderr)
-        return 2
+        if args.apply:
+            return 2
+        # The plan still prints, so the fix and what follows it are read together.
+        sys.stderr.flush()
     if args.apply and dirty:
         print("refused: commit or stash tracked changes first; update moves files by name",
               file=sys.stderr)
@@ -3065,6 +3192,9 @@ def cmd_update(root: Path, args) -> int:
 
     if not args.apply:
         report()
+        if refused:
+            print("\nDry run: nothing changed, and --apply refuses until the above is fixed.")
+            return 2
         print("\nDry run: nothing changed. Run again with --apply to apply it; it stages and commits nothing.")
         return 1 if warnings else 0
 
