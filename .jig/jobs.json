@@ -1,7 +1,7 @@
 {
   "update-root": {
     "spec": ".jig/specs/update-root-specs.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/adopt/**"
@@ -17,7 +17,7 @@
   },
   "para-commands": {
     "spec": ".jig/specs/para-commands.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/retro/**",
