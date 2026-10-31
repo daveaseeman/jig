@@ -64,6 +64,7 @@ function compare ints: build them in one pass.
 - "Exist where none" with no `unique`. Rejected: it loses the duplicate-migration catch the
   count gave for free. `[seen]`: R6's own example is migration step 17.
 
-### Open
-- Should `unique` be on by default for a counter? The default today would be off. Then a
-  plain migration counter loses the duplicate catch until someone sets it.
+### Decisions
+- Oct 30, at review: `unique` is off unless a counter sets it. A section counter matches each
+  section number once per rule under it, so on by default would refuse the Documentation shape.
+  A migration counter sets `"unique": true`; the Reserved numbers example shows it.

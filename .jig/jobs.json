@@ -1,18 +1,1 @@
-{
-  "r6-merge": {
-    "spec": ".jig/specs/bug-merge-after-sync.md",
-    "state": "gated",
-    "after": [
-      "workflow"
-    ],
-    "owns": [],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh",
-      "README.md",
-      "plugin/skills/hubnode/SKILL.md"
-    ],
-    "reserved": {}
-  }
-}
+{}
