@@ -606,8 +606,10 @@ def run_setup(root: Path) -> None:
             pin = json.loads((root / PARA).read_text()).get("pin")
         except ValueError:
             pin = None
-        have = (cache / "PIN").read_text().split("\n")[0] if (cache / "PIN").exists() else None
-        if not cache.exists() or have != pin:
+        def at(c: Path) -> str | None:
+            return (c / "PIN").read_text().split("\n")[0] if (c / "PIN").exists() else None
+        # Copying a cache at some other pin would only trade one stale cache for another.
+        if (not cache.exists() or at(cache) != pin) and at(main_cache) == pin:
             shutil.rmtree(cache, ignore_errors=True)
             shutil.copytree(main_cache, cache)
     script = root / DIR / "scripts" / "setup.sh"
@@ -1214,7 +1216,9 @@ def cmd_gate(root: Path, args) -> int:
     commit = m.group(1) if m else branch
     para = load_para(trunk)
     if para is not None:
-        unready = unreleased_proposals(root, para, trunk, commit)
+        spec = re.search(r"^Spec: (\S+)", body, re.M)
+        unready = unreleased_proposals(root, para, trunk, commit,
+                                       [(job or {}).get("spec") or "", spec.group(1) if spec else ""])
         if unready:
             for u in unready:
                 print(u, file=sys.stderr)
@@ -2125,31 +2129,34 @@ def cmd_para_init(root: Path, args) -> int:
                                            path=args.location))
     agents = root / "AGENTS.md"
     loc = meta_checkout(root, para)
-    # A re-run's header comes from para.json alone, so it is written even with the metarepo
-    # out of reach; only the cache waits for it.
-    if loc is None and again and para.get("pin"):
-        path.write_text(json.dumps(para, indent=2) + "\n")
-        agents.write_text(with_header(agents.read_text() if agents.exists() else "# AGENTS.md\n",
-                                      para_header(para)))
-        print(f"warning: can't find {para['meta']} (`jig repos add meta` in its checkout): "
-              f"{CACHE}/ was not refreshed.", file=sys.stderr)
-        print(f"wrote {PARA} and the AGENTS.md header. Commit what changed on {Board.trunk_name(root)}.")
-        return 0
-    if loc is None:
+    # A first run needs the metarepo to check the pin against. A re-run's header comes from
+    # para.json alone, so it is written first, and only the cache waits for the metarepo.
+    if loc is None and not again:
         die(f"can't find {para['meta']}: run `jig repos add meta` in its checkout", 2)
     if not para.get("pin"):
+        if loc is None:
+            die(f"can't find {para['meta']} to pick a pin: run `jig repos add meta` in its checkout", 2)
         tags = released_tags(str(loc))
         if not tags:
             die(f"{para['meta']} has no release yet: run `jig release` there first", 2)
         para["pin"] = tags[-1]
     path.write_text(json.dumps(para, indent=2) + "\n")
-    fill_cache(root, loc, para["pin"])
-    ignore_line(root, f"{CACHE}/")
-    if loc.resolve().is_relative_to(root.resolve()):
-        ignore_line(root, f"{loc.resolve().relative_to(root.resolve()).as_posix()}/")
     agents.write_text(with_header(agents.read_text() if agents.exists() else "# AGENTS.md\n",
                                   para_header(para)))
-    print(f"wrote {PARA}, the AGENTS.md header, and {CACHE}/ at {para['pin']}.")
+    ignore_line(root, f"{CACHE}/")
+    if loc is not None and loc.resolve().is_relative_to(root.resolve()):
+        ignore_line(root, f"{loc.resolve().relative_to(root.resolve()).as_posix()}/")
+    pin = para["pin"]
+    if loc is None:
+        why = f"can't find {para['meta']} (`jig repos add meta` in its checkout)"
+    elif not git("rev-parse", "-q", "--verify", f"{pin}^{{commit}}", cwd=str(loc)):
+        why = f"{para['meta']} has no tag {pin} here (`git -C {loc} fetch --tags`, or check \"pin\")"
+    else:
+        why = ""
+        fill_cache(root, loc, pin)
+    if why:
+        print(f"warning: {why}: {CACHE}/ was not refreshed.", file=sys.stderr)
+    print(f"wrote {PARA}, the AGENTS.md header{'' if why else f', and {CACHE}/ at {pin}'}.")
     print(f"Commit {PARA}, AGENTS.md and .gitignore on {Board.trunk_name(root)}.")
     return 0
 
@@ -2173,16 +2180,35 @@ def proposal_in(loc: Path, branch: str, tag: str) -> bool:
         on_trunk = tip in git("rev-list", "--first-parent", tag, cwd=str(loc)).split()
         return not on_trunk and subprocess.run(["git", "merge-base", "--is-ancestor", tip, tag],
                                                cwd=loc, capture_output=True).returncode == 0
+    # git's own subject names the branch; `jig merge`'s names the job, whose board entry, read
+    # just before that merge deleted it, names the branch.
     named = re.compile(rf"^Merge branch '{re.escape(branch)}'( into \S+)?$")
-    return any(named.match(s) for s in git("log", "--merges", "--format=%s", tag, cwd=str(loc)).splitlines())
+    for line in git("log", "--merges", "--format=%H %s", tag, cwd=str(loc)).splitlines():
+        sha, _, subject = line.partition(" ")
+        if named.match(subject):
+            return True
+        job = re.match(r"^merge (\S+)$", subject)
+        if job:
+            try:
+                jobs = json.loads(git("show", f"{sha}^1:{JOBS}", cwd=str(loc)) or "{}")
+            except ValueError:
+                continue
+            entry = jobs.get(job.group(1)) if isinstance(jobs, dict) else None
+            if isinstance(entry, dict) and (entry.get("branch") or job.group(1)) == branch:
+                return True
+    return False
 
 
-def unreleased_proposals(root: Path, para: dict, trunk: str, commit: str) -> list[str]:
-    """Why the job at COMMIT can't merge yet: a spec it changed cites a metarepo proposal that
-    isn't in trunk's pinned release. Read at the commit, because the hubnode gates from trunk."""
-    specs = [p for p in git("diff", "--name-only", f"{trunk}...{commit}", "--",
-                            f"{DIR}/specs/").splitlines() if p.endswith(".md")]
-    cited = [(s, m) for s in specs for m in PROPOSAL.finditer(git("show", f"{commit}:{s}"))
+def unreleased_proposals(root: Path, para: dict, trunk: str, commit: str, named: list[str]) -> list[str]:
+    """Why the job at COMMIT can't merge yet: a spec it builds on cites a metarepo proposal that
+    isn't in trunk's pinned release. Its specs are the ones it changed and the ones the board
+    and its note name, which may sit on trunk already (`jig propose` there, then `jig open`).
+    Read at the commit, because the hubnode gates from trunk."""
+    changed = [p for p in git("diff", "--name-only", f"{trunk}...{commit}", "--",
+                              f"{DIR}/specs/").splitlines() if p.endswith(".md")]
+    specs = list(dict.fromkeys([*filter(None, named), *changed]))
+    cited = [(s, m) for s in specs
+             for m in PROPOSAL.finditer(git("show", f"{commit}:{s}") or git("show", f"{trunk}:{s}"))
              if m.group("branch")]
     if not cited:
         return []
@@ -2228,7 +2254,7 @@ def sync_meta(root: Path) -> int:
     latest = tags[-1] if tags else pin
     for spec in sorted((root / DIR / "specs").glob("*.md")):
         for m in PROPOSAL.finditer(spec.read_text()):
-            if m.group("branch"):
+            if m.group("branch") and m.group("meta") == name:
                 landed = proposal_in(loc, m.group("branch"), latest)
                 print(f"proposal {m.group('branch')} ({spec.relative_to(root)}): "
                       f"{'released by ' + latest if landed else 'not released'}")
