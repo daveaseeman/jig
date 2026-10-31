@@ -212,9 +212,19 @@ A job with uncommitted work is fine; its next commit is judged by whichever hook
 installed at that moment, and its ownership and numbers are the same under both.
 
 Then prune. A predecessor that never removed worktrees for merged jobs leaves dozens behind;
-`git worktree list` shows them. `git worktree remove <path>` for each whose branch is merged,
-then `git worktree prune`. Do this before cutting hooks over, so the cutover touches only
-live checkouts.
+`git worktree list` shows them. For each whose branch is merged, the command depends on what
+git sees, so look at uncommitted work first and pick by case:
+
+- Its path exists: `git worktree remove <path>`.
+- Its path is gone, but the checkout moved with a renamed repo folder (its `.git` file names
+  the record): `git worktree repair <folder>`, then `git worktree remove <folder>`. A bare
+  `remove` on the old path drops git's record and leaves the checkout on disk, where neither
+  command can reach it.
+- Its path is gone and no folder holds it: `git worktree prune`.
+- A folder in the predecessor's worktrees folder that git doesn't record, or that has no
+  `.git` file, is not a checkout git knows: look, then delete it by hand.
+
+Do this before cutting hooks over, so the cutover touches only live checkouts.
 
 ### 6.3 Cut the hooks over
 

@@ -455,7 +455,7 @@ git reset -q --hard HEAD~1
 msg="update: a worktree besides the main checkout refuses, naming it"
 git worktree add -q --detach "$T/up-extra" HEAD
 out=$($UP 2>&1); rc=$?
-expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'up-extra' && echo \"\$0\" | grep -q 'git worktree prune'" "$out"
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'git worktree remove .*up-extra'" "$out"
 git worktree remove "$T/up-extra"
 
 msg="update: --apply refuses with tracked changes, and changes nothing"
@@ -488,11 +488,11 @@ msg="update warning: a board key jig doesn't know is named"
 expect_pass sh -c "echo \"\$0\" | grep -q 'board key .extra. is not one jig knows'" "$out"
 msg="update warning: a .py file that names jig/lanes.json is named, with its line"
 expect_pass sh -c "echo \"\$0\" | grep -q 'tools/paths.py names a path jig moved' && echo \"\$0\" | grep -q '1: BOARD = \"jig/lanes.json\"'" "$out"
-msg="update warning: jig/specs/ and .jig/specs/ both exist, so neither moves"
-expect_pass sh -c "echo \"\$0\" | grep -q 'jig/specs/ and .jig/specs/ both exist'" "$out"
-msg="update warning: --apply proceeds; the extra file, both specs folders and the unknown key stay"
+msg="update: jig/specs/ beside .jig/specs/ is judged per file: _template.md moves, new.md stays"
+expect_pass sh -c "echo \"\$0\" | grep -q 'jig/specs/_template.md → .jig/specs/_template.md' && ! echo \"\$0\" | grep -q 'both exist'" "$out"
+msg="update warning: --apply proceeds; the extra file, .jig/specs/new.md and the unknown key stay"
 rc=$(code $UP --apply)
-expect_pass sh -c "test $rc = 0 && test -f jig/notes.txt && test -f jig/specs/_template.md && test -f .jig/specs/new.md && grep -q '\"extra\"' .jig/config.json"
+expect_pass sh -c "test $rc = 0 && test -f jig/notes.txt && test ! -e jig/specs/_template.md && test -f .jig/specs/_template.md && test -f .jig/specs/new.md && grep -q '\"extra\"' .jig/config.json"
 
 
 # Firmware, as eaec973's init set it up: docs/HARDWARE.md and the blank skill template.
@@ -1447,6 +1447,130 @@ json.dump(b, open('.jig/config.json', 'w'), indent=2)
 PY
 git add -A && git commit -qm "older config"
 expect_pass sh -c "$J update 2>&1 | grep -q 'reference_files: added'"
+
+# ---------------------------------------------------------------- update: per file, whole subfolders, worktrees
+# Each repo is the ai-dev fixture plus what the case adds, set up before its first commit.
+ax() {  # ax <dir> [setup command]: the fixture, the setup run in it, committed
+  mkdir -p "$1" && cp -R "$FX/ai-dev/repo/." "$1/" && cd "$1"
+  git init -q -b main && git config user.email t@t && git config user.name t
+  if [ -n "${2:-}" ]; then eval "$2"; fi
+  git add -A && git commit -qm init && cp -R "$FX/ai-dev/git/." .git/
+}
+mkf() { for f in "$@"; do mkdir -p "$(dirname "$f")" && printf 'x\n' > "$f"; done; }
+renamed() { git diff --cached -M --name-status | grep -q "^R100	$1	$2\$"; }
+
+ax "$T/pf-a" "mkf specs/a.md specs/b.md .jig/specs/b.md && printf 'See [specs/b.md](specs/b.md#top).\n' > docs/notes.md
+  sed -i.bak 's|\"AGENTS.md\",|\"AGENTS.md\", \"specs/**\",|' .aidev/lanes.json && rm .aidev/lanes.json.bak"
+out=$($UP 2>&1)
+msg="update per file: specs/b.md, also at .jig/specs/b.md, is warned once by name"
+expect_pass sh -c "test \"\$(echo \"\$0\" | grep -c 'specs/b.md and .jig/specs/b.md both exist')\" = 1" "$out"
+msg="update per file: a file naming specs/b.md, which stays, is not stale"
+expect_pass sh -c "! echo \"\$0\" | sed -n '/^Stale references/,/^\$/p' | grep -q docs/notes.md" "$out"
+$UP --apply >/dev/null 2>&1
+msg="update per file: --apply moves specs/a.md, leaves specs/b.md and .jig/specs/b.md as they were"
+expect_pass sh -c "$(declare -f renamed); renamed specs/a.md .jig/specs/a.md && test -f specs/b.md && git diff --quiet HEAD -- .jig/specs/b.md"
+msg="update per file: common keeps specs/** beside .jig/specs/**"
+expect_pass python3 -c "import json; c = json.load(open('.jig/config.json'))['common']; assert 'specs/**' in c and '.jig/specs/**' in c, c"
+
+MIXED="mkf specs/top.md specs/app.spec.js specs/suite/README.md specs/suite/t.rs specs/unit/x.spec.js specs/deep/t.rs specs/deep/a/n.md
+  printf 'Run specs/suite/t.rs\n' > docs/notes.md && printf 'Write specs/<task>.md first.\n' > docs/howto.md
+  mkdir -p tools && printf 'for f in specs/*.md; do :; done\n' > tools/each.sh && printf 'specs/**/*.spec.js\n' > tools/runner.txt"
+ax "$T/pf-b" "$MIXED
+  sed -i.bak 's|\"AGENTS.md\",|\"AGENTS.md\", \"specs/*.spec.js\",|' .aidev/lanes.json && rm .aidev/lanes.json.bak"
+out=$($UP 2>&1); rc=$?
+msg="update subfolders: the dry run exits 1, warning once each that specs/suite/ and specs/deep/ move whole"
+expect_pass sh -c "test $rc = 1 && test \"\$(echo \"\$0\" | grep -c 'specs/suite/ holds Markdown, so it moves whole')\" = 1 && test \"\$(echo \"\$0\" | grep -c 'specs/deep/ holds Markdown, so it moves whole')\" = 1" "$out"
+msg="update subfolders: specs/app.spec.js and specs/unit/ stay, each with the non-Markdown warning"
+expect_pass sh -c "echo \"\$0\" | grep -q 'specs/app.spec.js is in specs/ but isn.t Markdown' && echo \"\$0\" | grep -q 'specs/unit/x.spec.js is in specs/ but isn.t Markdown'" "$out"
+msg="update subfolders: a file naming specs/suite/t.rs, which moves, is stale"
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Stale references/,/^\$/p' | grep -q docs/notes.md" "$out"
+msg="update stale: specs/*.md and specs/<task>.md are stale though specs/ keeps files; specs/**/*.spec.js is not"
+expect_pass sh -c "s=\$(echo \"\$0\" | sed -n '/^Stale references/,/^\$/p'); echo \"\$s\" | grep -q tools/each.sh && echo \"\$s\" | grep -q docs/howto.md && ! echo \"\$s\" | grep -q tools/runner.txt" "$out"
+$UP --apply >/dev/null 2>&1
+msg="update: a common glob over files that all stayed, specs/*.spec.js, is left as it is"
+expect_pass python3 -c "import json; c = json.load(open('.jig/config.json'))['common']; assert 'specs/*.spec.js' in c and '.jig/specs/*.spec.js' not in c, c"
+msg="update subfolders: top.md, all of specs/suite/ and all of specs/deep/ move R100; the rest stays"
+expect_pass sh -c "$(declare -f renamed); for f in top.md suite/README.md suite/t.rs deep/t.rs deep/a/n.md; do renamed specs/\$f .jig/specs/\$f || exit 1; done; test -f specs/app.spec.js && test -f specs/unit/x.spec.js"
+
+ax "$T/pf-c" "$MIXED; mkf .jig/specs/suite/README.md"
+out=$($UP 2>&1)
+msg="update subfolders: a colliding file keeps all of specs/suite/ where it is, warned once"
+expect_pass sh -c "test \"\$(echo \"\$0\" | grep -c 'specs/suite/ and .jig/specs/suite/ both hold README.md')\" = 1 && ! echo \"\$0\" | grep -q '^  specs/suite/.* → ' && echo \"\$0\" | grep -q '^  specs/deep/t.rs → '" "$out"
+
+ax "$T/pf-d" "mkf ledgers/old/README.md ledgers/old/data.csv"
+$UP --apply >/dev/null 2>&1
+msg="update subfolders: ledgers/old/README.md and data.csv both move under .jig/ledgers/old/"
+expect_pass sh -c "$(declare -f renamed); renamed ledgers/old/README.md .jig/ledgers/old/README.md && renamed ledgers/old/data.csv .jig/ledgers/old/data.csv"
+
+ax "$T/pf-e" "printf '#!/bin/sh\ncd \"\$(dirname \"\$0\")/..\"\nexit 0\n' > scripts/check.sh"
+out=$($UP 2>&1); rc=$?
+msg="update depth: a moved script that finds paths from its own folder is warned with its line; exit 1"
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q '.jig/scripts/check.sh moves from scripts/check.sh.*2: cd \"\$(dirname \"\$0\")/..\"'" "$out"
+msg="update depth: no fixture's scripts raise it"
+hit=""
+for g in claude-lane ai-dev jig-0.2 dot-jig-v7; do
+  d="$T/dp-$g"; mkdir -p "$d" && cp -R "$FX/$g/repo/." "$d/"
+  (cd "$d" && git init -q -b main && git add -A && git -c user.email=t@t -c user.name=t commit -qm i \
+    && $UP 2>&1 | grep -q 'from its own location') && hit="$hit $g"
+done
+expect_pass test -z "$hit"
+
+ax "$T/pf-f"
+before=$(snap)
+mkf .jig/specs/alpha.md
+out=$($UP 2>&1); rc=$?
+msg="update: an untracked file where a file would move refuses the dry run, naming it"
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'untracked files where files would move: .jig/specs/alpha.md (from specs/alpha.md)'" "$out"
+msg="update: --apply refuses on it and stages no rename"
+rc=$(code $UP --apply)
+expect_pass sh -c "test $rc = 2 && test -z \"\$(git diff --cached --name-only)\" && test -f specs/alpha.md"
+
+wt() { git -c core.hooksPath=/dev/null worktree add -q "$@" 2>/dev/null; }
+ax "$T/wt-a"; wt -b l1 .aidev/worktrees/l1
+cd "$T" && mv wt-a wt-a2 && cd wt-a2
+out=$($UP 2>&1); rc=$?
+msg="update worktrees: one moved with the repo folder gets repair, and the refusing dry run still shows the moves"
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'git worktree repair .aidev/worktrees/l1., then .git worktree remove .aidev/worktrees/l1' && echo \"\$0\" | grep -q '^Moves'" "$out"
+msg="update worktrees: --apply refuses with the refusal only"
+out=$($UP --apply 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && ! echo \"\$0\" | grep -q '^Moves'" "$out"
+git worktree repair .aidev/worktrees/l1 >/dev/null 2>&1 && git worktree remove .aidev/worktrees/l1
+msg="update worktrees: after the printed commands, update applies, commits clean, and .aidev is gone"
+$UP --apply >/dev/null 2>&1
+expect_pass sh -c "git commit -qm update && test -z \"\$(git status --porcelain --untracked-files=all)\" && test ! -e .aidev"
+
+ax "$T/wt-b"; wt -b l1 .aidev/worktrees/l1
+cd "$T" && mv wt-b wt-b2 && cd wt-b2
+git worktree remove "$(git worktree list --porcelain | sed -n 's/^worktree //p' | sed -n 2p)" >/dev/null 2>&1
+ig=$(cksum < .gitignore)
+out=$($UP 2>&1)
+msg="update worktrees: once remove has dropped the record, the folder is not a checkout git knows"
+expect_pass sh -c "echo \"\$0\" | grep -q '.aidev/worktrees/l1 is not a checkout git knows: look, then delete it'" "$out"
+msg="update worktrees: --apply exits 2 and .gitignore is unchanged"
+rc=$(code $UP --apply)
+expect_pass sh -c "test $rc = 2 && test \"\$(cksum < .gitignore)\" = '$ig'"
+
+ax "$T/wt-c"; mkf .aidev/worktrees/x/f
+msg="update worktrees: a folder with no .git file refuses the dry run and --apply, naming it"
+out=$($UP 2>&1); rc=$?; rc2=$(code $UP --apply)
+expect_pass sh -c "test $rc = 2 && test $rc2 = 2 && echo \"\$0\" | grep -q '.aidev/worktrees/x is not a checkout git knows'" "$out"
+
+ax "$T/wt-d"; wt -b l1 "$T/wt-d-gone" && rm -rf "$T/wt-d-gone"
+msg="update worktrees: one whose folder was deleted by hand gets git worktree prune"
+expect_pass sh -c "$UP 2>&1 | grep -q 'wt-d-gone is gone, but git still records it: .git worktree prune.'"
+
+# R names a scratch repo by now (the R6 section); old() archives the jig repo itself.
+R="$(dirname "$(dirname "$P")")" old "$T/wt-e" eaec973 dot
+mkf .jig/worktrees/y/f
+msg="update worktrees: beside eaec973's board, a folder in .jig/worktrees/ refuses the same way"
+out=$($UP 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q '.jig/worktrees/y is not a checkout git knows'" "$out"
+
+R="$(dirname "$(dirname "$P")")" old "$T/st-a" 5d955a2 jig2
+mkdir -p .jig/staging && printf 'x\n' > jig/staging/pending.md && printf 'y\n' > .jig/staging/pending.md
+msg="update: an untracked staged file whose .jig/staging/ destination is taken refuses the dry run and --apply"
+out=$($UP 2>&1); rc=$?; rc2=$(code $UP --apply)
+expect_pass sh -c "test $rc = 2 && test $rc2 = 2 && echo \"\$0\" | grep -q 'untracked files where files would move: .jig/staging/pending.md (from jig/staging/pending.md)' && test -f jig/staging/pending.md" "$out"
 
 rm -rf "$T"
 exit $fail
