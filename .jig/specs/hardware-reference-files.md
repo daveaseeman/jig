@@ -76,6 +76,14 @@ Smoke and checks:
 - Always commit the binaries. Rejected: a public repo may not be allowed to redistribute vendor
   PDFs, so this is the repo's call. `[seen]`: the report's reasoning.
 
+## Decisions
+- The template's existing ESP32 examples stay: they are generic, and jig ships an `esp-idf`
+  skill. New examples use made-up parts (QX-100).
+- `ignore` covers PDFs in both homes, any case: `docs/hardware/*/**/*.[pP][dD][fF]`.
+- The `.gitignore` edit and the `reference_files` line are trunk files: in a job, the skill
+  hands both to the hubnode.
+- Until the open question below is settled, `/jig:hardware` asks.
+
 ## Open
 - `reference_files` defaults to unset, so the skill asks. Should `init` ask instead, for every
   repo with a Firmware section?

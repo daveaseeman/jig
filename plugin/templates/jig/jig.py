@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.parse
 from datetime import date
 from pathlib import Path
 
@@ -31,7 +32,7 @@ STATES = ["claimed", "building", "ready", "gated", "parked"]
 # The layout this copy of jig writes into the config's "version". Any change that adds a
 # LAYOUT row, a config default or an update STEP bumps it. Nothing branches on it except
 # update's refusal to take a newer repo back to an older jig.
-STAMP = 8
+STAMP = 9
 BOARD_DEFAULTS = {
     "version": STAMP,
     "name": "",            # init and update fill it with the folder name; staging's targets match it
@@ -42,6 +43,20 @@ BOARD_DEFAULTS = {
     "docmap": {},
     "not_docs": [],        # globs whose markdown ships as code; survey finds no home for it
     "release": {"artifacts": []},   # globs release.sh must produce; see `jig release`
+    # Whether a board's datasheets are committed ("commit") or gitignored ("ignore"). Left
+    # unset, the hardware skill asks on the repo's first board page: a public repo may not be
+    # allowed to redistribute vendor PDFs, so it's the repo's call.
+    "reference_files": "",
+}
+# Who runs each step, as numbers the tool maps to its own models and efforts. Tier 1 is the
+# tool's best model, a higher number a lesser one; effort 0 is its highest, each number up one
+# level lower. Effort 0 is left unused so a repo can raise any step. Overridden per repo by
+# config.json's "workflow", never per task: a model would be choosing its own budget.
+WORKFLOW_DEFAULTS = {
+    "spec":    {"tier": 2, "effort": 2},   # and decide, retro, a hardware page: the hubnode's
+    "execute": {"tier": 2, "effort": 3},   # and fix, in the session that executed
+    "review":  {"tier": 2, "effort": 1},   # always in a fresh context
+    "check":   {"tier": 3, "effort": 4},   # gate check, release run, survey: fixed commands
 }
 
 
@@ -124,7 +139,9 @@ class Board:
             if raw:
                 return cls(base, json.loads(raw), json.loads(git("show", f"{trunk}:{JOBS}") or "{}"))
         if not (base / CONFIG).exists():
-            die(f"no board at {CONFIG}. Run: jig init", 2)
+            old = old_board(base)
+            die(f"an older jig's board is at {old}: run /jig:update first" if old
+                else f"no board at {CONFIG}. Run: jig init", 2)
         jobs = base / JOBS
         return cls(base, json.loads((base / CONFIG).read_text()),
                    json.loads(jobs.read_text()) if jobs.exists() else {})
@@ -163,6 +180,60 @@ class Board:
             if self.branch(name) == branch:
                 return name, job
         return None, None
+
+
+# ------------------------------------------------------------------- workflow
+
+def workflow_steps(config: dict) -> tuple[dict, list[str]]:
+    """The steps in effect, and every way the override breaks the rules. Execute is judged
+    against the spec it builds from; review must be able to see more than the work it judges."""
+    steps = {k: dict(v) for k, v in WORKFLOW_DEFAULTS.items()}
+    over = config.get("workflow") or {}
+    if not isinstance(over, dict):
+        return steps, ["workflow: must map step names to {\"tier\": N, \"effort\": N}"]
+    bad = []
+    for step, vals in over.items():
+        if step not in steps:
+            bad.append(f"workflow.{step}: no such step; the steps are {', '.join(steps)}")
+            continue
+        if not isinstance(vals, dict):
+            bad.append(f"workflow.{step}: must be {{\"tier\": N, \"effort\": N}}")
+            continue
+        for k, v in vals.items():
+            least = {"tier": 1, "effort": 0}.get(k)
+            if least is None:
+                bad.append(f"workflow.{step}.{k}: only tier and effort are set")
+            elif type(v) is not int or v < least:
+                bad.append(f"workflow.{step}.{k}: {v!r} is not a whole number from {least} up")
+            else:
+                steps[step][k] = v
+    sp, ex, rv = steps["spec"], steps["execute"], steps["review"]
+    lower = " (a higher number is a lower effort)"
+    if ex["tier"] < sp["tier"]:
+        bad.append(f"workflow.execute: tier {ex['tier']} is above the spec's tier {sp['tier']}")
+    if ex["effort"] <= sp["effort"]:
+        bad.append(f"workflow.execute: effort {ex['effort']} is not below the spec's "
+                   f"effort {sp['effort']}{lower}")
+    if rv["tier"] > sp["tier"]:
+        bad.append(f"workflow.review: tier {rv['tier']} is below the spec's tier {sp['tier']}")
+    if rv["effort"] >= sp["effort"]:
+        bad.append(f"workflow.review: effort {rv['effort']} is not above the spec's "
+                   f"effort {sp['effort']}{lower}")
+    return steps, bad
+
+
+def cmd_workflow(root: Path, args) -> int:
+    """Print the steps in effect; refuse an override that breaks a rule."""
+    # The working tree's config, so the hubnode sees a refusal before committing the edit.
+    steps, bad = workflow_steps(Board.load(root, working_tree=True).data)
+    # Refused, nothing goes to stdout: a skill copying the steps into a spec must get none.
+    for b in bad:
+        print(b, file=sys.stderr)
+    if bad:
+        return 1
+    for step, v in steps.items():
+        print(f"{step}: tier {v['tier']}, effort {v['effort']}")
+    return 0
 
 
 # ---------------------------------------------------------------------- rules
@@ -228,6 +299,11 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     for f in (CONFIG, JOBS):
         if f in paths and branch != trunk:
             out.append(f"R5 the board is the hubnode's: {f} is edited on {trunk} only")
+    if CONFIG in paths and (raw := in_index(CONFIG, staged)):
+        try:
+            out += workflow_steps(json.loads(raw))[1]
+        except ValueError as e:
+            out.append(f"{CONFIG} is not JSON: {e}")
 
     # R7 a workaround needs its ledger row — job or not; code only, prose may quote it. Only
     # the marker right after a comment opener is the comment the rule names: a string or regex
@@ -409,7 +485,18 @@ def reserved_refusals(root: Path, board: "Board", holds: dict[str, set[int]],
     return out
 
 
+def old_board(root: Path) -> str | None:
+    """An older jig's board, at any path update knows how to move."""
+    return next((p for p in LAYOUT[0][1] if (root / p).exists()), None)
+
+
 def cmd_init(root: Path, args) -> int:
+    # A second board beside an old one is what update refuses as "two boards", and the hooks
+    # would run a trunk .jig/jig.py that doesn't exist yet: so nothing is written at all.
+    old = old_board(root)
+    if old:
+        die(f"refused: {old} is an older jig's board, and init would write a second one beside "
+            f"it. Run `jig update` (then --apply), commit, then run this same `jig init` again", 2)
     (root / DIR).mkdir(exist_ok=True)
     ensure_staging(root)
     path = root / CONFIG
@@ -473,6 +560,12 @@ def foreign_hooks() -> list[str]:
 
 
 def cmd_install_hooks(root: Path, args) -> int:
+    # The old board's hooks still work; these would run a trunk .jig/jig.py that isn't there.
+    # Update installs them itself, once the board has moved.
+    old = old_board(root)
+    if old:
+        die(f"refused: {old} is an older jig's board, and these hooks would replace its own with "
+            f"ones that check nothing. Run `jig update` (then --apply) instead: it installs them", 2)
     trunk = Board.trunk_name(root)
     common = git_common()
     hooks = common / "hooks"
@@ -904,9 +997,16 @@ def review_marker(root: Path) -> Path:
 
 
 def cmd_reviewed(root: Path, args) -> int:
-    """Record that HEAD has had its adversarial review. Called by the review skill."""
+    """Record that HEAD has had its adversarial review, and what it ran at. Called by the
+    review skill."""
+    if (args.tier is None) != (args.effort is None):
+        die("give --tier and --effort together")
+    if args.tier is not None and (args.tier < 1 or args.effort < 0):
+        die("tier counts from 1, effort from 0")
     head = git("rev-parse", "HEAD")
-    review_marker(root).write_text(head + "\n")
+    ran = {k: v for k, v in (("tier", args.tier), ("effort", args.effort), ("ran", args.ran))
+           if v is not None}
+    review_marker(root).write_text(head + "\n" + (json.dumps(ran) + "\n" if ran else ""))
     # Every review ever, for a metarepo's gate: a merge's second parent must be one of them.
     with open(git_common() / "jig" / "reviewed.log", "a") as log:
         log.write(head + "\n")
@@ -919,7 +1019,7 @@ NOTE = """# Handoff: {job}
 Commit: {head}
 Date: {today}
 Spec: {spec}
-
+{ran}
 ## Built
 <!-- what this delivers, in a few lines -->
 
@@ -981,8 +1081,8 @@ def cmd_handoff(root: Path, args) -> int:
         die("commit everything first: a handoff names one commit")
     head = git("rev-parse", "HEAD")
     marker = review_marker(root)
-    seen = marker.read_text().strip() if marker.exists() else ""
-    if seen != head:
+    lines = marker.read_text().splitlines() if marker.exists() else []
+    if not lines or lines[0].strip() != head:
         die("no adversarial review on record for this commit.\n"
             f"  Review {head[:12]}, then: python3 {DIR}/jig.py reviewed")
     (root / DIR / "handoffs").mkdir(parents=True, exist_ok=True)
@@ -992,8 +1092,14 @@ def cmd_handoff(root: Path, args) -> int:
     while path.exists():
         path = root / DIR / "handoffs" / f"{name}-{date.today().isoformat()}-{i}.md"
         i += 1
+    ran = json.loads(lines[1]) if len(lines) > 1 and lines[1].strip() else {}
+    # jig gate reads the Review line back against the spec's Workflow section.
+    ran_lines = (f"Review: tier {ran['tier']}, effort {ran['effort']}\n" if "tier" in ran
+                 else "Review: tier and effort not recorded\n")
+    if ran.get("ran"):
+        ran_lines += f"Ran: {ran['ran']}\n"
     path.write_text(NOTE.format(job=name, head=head, today=date.today().isoformat(),
-                                spec=args.spec or "(none)",
+                                spec=args.spec or "(none)", ran=ran_lines,
                                 foldin=foldin_lines(root, board, branch)))
     print(f"wrote {path.relative_to(root)}")
     if job is not None:
@@ -1027,6 +1133,33 @@ def cmd_reading_list(root: Path, args) -> int:
         for f in sorted(set(unowned)):
             print(f"  {f}")
     return 0
+
+
+def review_shortfall(root: Path, branch: str, name: str, note: str) -> str:
+    """What the note's review fell short of in the spec's Workflow section, or "". A warning
+    for now: it becomes a refusal only if weak reviews keep reaching the gate."""
+    # The board's spec before the note's, and trunk's copy before the branch's, so a branch
+    # can't edit what it is judged by. Only a spec trunk lacks (solo work) is read from the
+    # branch.
+    trunk_board = Board.load(root)
+    m = re.search(r"^Spec: (\S+)", note, re.M)
+    paths = [(trunk_board.jobs.get(name) or {}).get("spec") or "", m.group(1) if m else ""]
+    text = ""
+    for path in filter(None, paths):
+        text = git("show", f"{trunk_board.trunk}:{path}") or git("show", f"{branch}:{path}")
+        if text:
+            break
+    sec = re.search(r"^## Workflow\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+    asked = re.search(r"\breview: tier (\d+), effort (\d+)", sec.group(1)) if sec else None
+    if not asked:
+        return ""
+    want = f"the spec asks for tier {asked.group(1)}, effort {asked.group(2)}"
+    got = re.search(r"^Review: tier (\d+), effort (\d+)", note, re.M)
+    if not got:
+        return f"the review's tier and effort are not recorded; {want}"
+    if int(got.group(1)) > int(asked.group(1)) or int(got.group(2)) > int(asked.group(2)):
+        return f"review ran at tier {got.group(1)}, effort {got.group(2)}; {want}"
+    return ""
 
 
 def cmd_gate(root: Path, args) -> int:
@@ -1066,6 +1199,9 @@ def cmd_gate(root: Path, args) -> int:
     commit = m.group(1) if m else branch
     label = f"job {name}" if job is not None else name
     print(f"{label}: gate {commit[:12]} from {note} on {branch}")
+    weak = review_shortfall(root, branch, name, body)
+    if weak:
+        print(f"warning: {weak}", file=sys.stderr)
     # The commit the note names, never the job's live worktree, which may have moved on; and
     # trunk merged in the way `jig sync` merges it, so the gate checks the merge a sync makes.
     scratch = f"{worktrees_dir()}/gate-{name}"
@@ -1097,12 +1233,17 @@ def cmd_gate(root: Path, args) -> int:
 # --------------------------------------------------------------------- survey
 
 BOARD_PAGES = "docs/hardware/"
+# One folder per part, shared by every board page that uses it: one part sits on several
+# boards, and a per-board copy of its datasheet would drift.
+COMPONENTS = f"{BOARD_PAGES}components/"
 # Where each kind of document lives: a file by name, a folder by its trailing "/".
 DOC_HOMES = {
     "AGENTS.md": "rules, always loaded",
     "CLAUDE.md": "pointer to AGENTS.md",
     "README.md": "for people outside",
     "docs/": f"what the code is now; docs/<system>/<system>.md each system, {BOARD_PAGES}<board>.md each board",
+    COMPONENTS: "<part>/ one folder per part: its datasheets and notes, linked from board pages",
+    f"{BOARD_PAGES}<board>/": "one board's files that aren't its page (schematic, a snapshot of its definition)",
     f"{DIR}/specs/": "a task in flight",
     f"{DIR}/ledgers/": "WORKAROUNDS.md patches that are in the code; DEFERRED.md review findings that are not",
     f"{DIR}/staging/": "chat-born files waiting to be resolved (untracked)",
@@ -1182,6 +1323,48 @@ def board_like_json(root: Path, files: list[str]) -> list[str]:
     return out
 
 
+def board_pages(md: list[str]) -> list[str]:
+    """docs/hardware/<board>.md only. A note beside a datasheet, or a board's own folder of
+    files, is not a page."""
+    return [f for f in md if f.startswith(BOARD_PAGES) and "/" not in f[len(BOARD_PAGES):]]
+
+
+# Markdown link targets: inline `[t](target "title")` and reference definitions `[d]: target`.
+# A target may sit in <...> so it can hold spaces; a bare one with a space is accepted too,
+# because a board page is read by people, and a link that renders for them counts.
+MD_INLINE = re.compile(r"""\]\(\s*(<[^>]*>|[^)\n]*?)(?:\s+"[^"]*"|\s+'[^']*')?\s*\)""")
+MD_REFDEF = re.compile(r"""^ {0,3}\[[^\]]+\]:\s*(<[^>]*>|.*?)(?:\s+"[^"]*"|\s+'[^']*')?\s*$""", re.M)
+
+
+def link_targets(page: str, text: str) -> list[str]:
+    """Every local link in a page, as a repo-relative path. A leading / is the repo root."""
+    out = []
+    for raw in MD_INLINE.findall(text) + MD_REFDEF.findall(text):
+        target = urllib.parse.unquote(raw.strip().strip("<>").split("#")[0])
+        if not target or "://" in target or target.startswith("mailto:"):
+            continue
+        base = "" if target.startswith("/") else os.path.dirname(page)
+        out.append(os.path.normpath(os.path.join(base, target.lstrip("/"))))
+    return out
+
+
+def component_links(root: Path, files: list[str], pages: list[str]) -> tuple[list[str], list[tuple[str, str]]]:
+    """Files under COMPONENTS that no board page links, and links from board pages into
+    COMPONENTS that point at nothing on disk. Disk, not git: an ignored datasheet that was
+    fetched is present."""
+    linked, missing = set(), []
+    for page in pages:
+        text = (root / page).read_text(errors="replace") if (root / page).exists() else ""
+        for path in link_targets(page, text):
+            if not path.startswith(COMPONENTS):
+                continue
+            linked.add(path)
+            if not (root / path).exists() and (page, path) not in missing:
+                missing.append((page, path))
+    unlinked = [f for f in files if f.startswith(COMPONENTS) and f not in linked]
+    return unlinked, missing
+
+
 def cmd_survey(root: Path, args) -> int:
     files = tracked(root)
     md = [f for f in files if f.endswith(".md")]
@@ -1230,8 +1413,9 @@ def cmd_survey(root: Path, args) -> int:
     report["docmap_present"] = bool(board.get("docmap"))
     # The fold-in asks about a page only when docmap names it, so a board page left out
     # of docmap is never checked against the code that targets that board.
-    report["boards_unmapped"] = [f for f in md if f.startswith(BOARD_PAGES)
-                                 and f not in (board.get("docmap") or {})]
+    pages = board_pages(md)
+    report["boards_unmapped"] = [f for f in pages if f not in (board.get("docmap") or {})]
+    report["components_unlinked"], report["components_missing"] = component_links(root, files, pages)
     if args.json:
         print(json.dumps(report, indent=2))
         return 0
@@ -1276,6 +1460,16 @@ def cmd_survey(root: Path, args) -> int:
               "\nmatch the code. Map each to the code that targets its board:")
         for f in report["boards_unmapped"]:
             print(f"  {f}")
+    if report["components_unlinked"]:
+        print(f"\nFiles under {COMPONENTS} that no board page links: link each from the"
+              "\nComponents table of the page whose checks lean on it, or drop it:")
+        for f in report["components_unlinked"]:
+            print(f"  {f}")
+    if report["components_missing"]:
+        print("\nBoard pages linking a component file that doesn't exist: fetch it again from"
+              "\nthe source URL the page records, and check its hash:")
+        for page, target in report["components_missing"]:
+            print(f"  {page:<40} -> {target}")
     co = report["coordination"]
     print("\nHow parallel work is coordinated today (and what each maps to in jig):")
     for f in co["found"]:
@@ -1295,7 +1489,9 @@ def cmd_survey(root: Path, args) -> int:
                 co["open_branches"]]):
         print("  none found — a single-session repo; jobs need no setup until a second session starts")
     print("\nDoc homes: " + "; ".join(f"{k} = {v}" for k, v in DOC_HOMES.items()))
-    print("Run /jig:adopt to turn this into a migration plan.")
+    old = old_board(root)
+    print(f"An older jig's board is at {old}: run /jig:update first, not /jig:adopt or /jig:init."
+          if old else "Run /jig:adopt to turn this into a migration plan.")
     return 0
 
 # ------------------------------------------------------------------- metarepo
@@ -1391,7 +1587,7 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
     md = [p for p in paths if p.endswith(".md")]
     diff = git("diff", "-U0", base(trunk), *(["--cached"] if staged else []), "--", *md) if md else ""
     for m in rx.finditer(diff):
-        cells = [c.strip().lower() for c in m.group(1).split("|")]
+        cells = [c.lower() for c in table_cells(m.group(1))]
         if not (any(STATUS_CELL.fullmatch(c) for c in cells)
                 and any(re.fullmatch(r"\d{4}-\d{2}-\d{2}", c) for c in cells)):
             out.append(f"M2 a decision row needs a status ({'/'.join(DECISION_STATUSES)}) and a "
@@ -1770,9 +1966,13 @@ def cmd_repos(root: Path, args) -> int:
         repos[name] = {"path": str(path), "kind": kind}
         save_repos(repos)
         print(f"{name} ({kind}) → {path}")
-        if kind == "meta" and not (path / META).exists():
+        old = old_board(path) if kind in ("meta", "para") else None
+        if old:
+            print(f"  {old} is an older jig's board: run `jig update` there, commit, then "
+                  f"`jig init --{kind}{' <metarepo name>' if kind == 'para' else ''}`")
+        elif kind == "meta" and not (path / META).exists():
             print(f"  not a metarepo yet: run `jig init --meta` there")
-        if kind == "para" and not (path / PARA).exists():
+        elif kind == "para" and not (path / PARA).exists():
             print(f"  not a pararepo yet: run `jig init --para <metarepo name>` there")
         return 0
     if args.action == "rename":
@@ -2340,40 +2540,61 @@ STATUS_COLUMNS = ("what happened", "status")
 SEPARATOR = re.compile(r"^\|\s*:?-")      # |---|, | --- |, |:--|
 
 
-def split_ledger(text: str) -> tuple[list[str], list[list[str]], int]:
+def table_cells(line: str) -> list[str]:
+    """A GFM table row's cells, as GitHub reads them: `\\|` is a literal pipe, and a `|` in
+    backticks still splits."""
+    s = line.strip()
+    s = s[1:] if s.startswith("|") else s
+    s = s[:-1] if s.endswith("|") and not s.endswith("\\|") else s
+    return [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", s)]
+
+
+def split_ledger(text: str) -> tuple[list[str], list[list[str]], int, list[str]]:
     """A review ledger without its taken rows: the whole text kept, the tables that have a
-    status column (header, separator, untaken rows), and how many rows were dropped."""
-    lines, out, tables, dropped = text.splitlines(), [], [], 0
-    col = None
+    status column (header, separator, untaken rows), how many rows were dropped, and the rows
+    kept because their cell count isn't the header's."""
+    lines, out, tables, dropped, malformed = text.splitlines(), [], [], 0, []
+    col = width = None
     for i, line in enumerate(lines):
-        cells = [c.strip().lower() for c in line.strip().strip("|").split("|")]
+        cells = [c.lower() for c in table_cells(line)]
         if line.startswith("|") and i + 1 < len(lines) and SEPARATOR.match(lines[i + 1]):
             # A findings table names the finding before what happened to it; a status in the
             # first column is a tally of the statuses, not a finding.
             col = next((n for n, c in enumerate(cells) if c in STATUS_COLUMNS and n > 0), None)
+            width = len(cells)
             if col is not None:
                 tables.append([line, lines[i + 1]])
         elif not line.startswith("|"):
             col = None
         elif col is not None and not SEPARATOR.match(line):
-            if col < len(cells) and TAKEN.match(cells[col]):
+            # A row of another width has its status in some other cell, or none: a guess
+            # could drop an untaken finding, so it stays and is named.
+            if len(cells) != width:
+                malformed.append(f"{REVIEW_LEDGER}: row `{table_cells(line)[0]}` has {len(cells)} "
+                                 f"cells, its header {width}: kept, check it")
+            elif TAKEN.match(cells[col]):
                 dropped += 1
                 continue
             tables[-1].append(line)
         out.append(line)
-    return out, tables, dropped
+    return out, tables, dropped, malformed
 
 
 def ledger_step(root: Path) -> str:
-    _, tables, dropped = split_ledger((root / REVIEW_LEDGER).read_text(errors="replace"))
-    kept = sum(len(t) - 2 for t in tables)
+    _, tables, dropped, malformed = split_ledger((root / REVIEW_LEDGER).read_text(errors="replace"))
+    kept = sum(len(t) - 2 for t in tables) - len(malformed)
     return (f"{REVIEW_LEDGER} → {DEFERRED}: its {kept} untaken row{'s' if kept != 1 else ''} "
             f"(deferred, rejected, open) carry over, its {dropped} taken row"
-            f"{'s' if dropped != 1 else ''} are dropped, and the file is removed")
+            f"{'s' if dropped != 1 else ''} are dropped, {len(malformed)} malformed kept, and the "
+            f"file is removed")
+
+
+def ledger_warnings(root: Path) -> list[str]:
+    return split_ledger((root / REVIEW_LEDGER).read_text(errors="replace"))[3]
 
 
 def fold_ledger(root: Path, here: Path) -> None:
-    text, tables, _ = split_ledger((root / REVIEW_LEDGER).read_text(errors="replace"))
+    text, tables, _, _ = split_ledger((root / REVIEW_LEDGER).read_text(errors="replace"))
     dest = root / DEFERRED
     if dest.exists():
         body = dest.read_text().rstrip("\n") + f"\n\n## From {REVIEW_LEDGER}\n"
@@ -2734,6 +2955,7 @@ def cmd_update(root: Path, args) -> int:
     removed += [f"{g} (nothing of jig's replaces it)" for g in plan["gone"]]
     removed += [f"{REVIEW_LEDGER} (its untaken rows move to {DEFERRED})"
                 for s in steps if s[2] is fold_ledger]
+    warnings += [w for s in steps if s[2] is fold_ledger for w in ledger_warnings(root)]
     removed += board_gone
     ignore = root / ".gitignore"
     # Today's board is at .jig/ too, so .jig/worktrees/ is old only beside an older board.
@@ -2955,7 +3177,11 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--staged", action="store_true")
     sub.add_parser("job", help="print this branch's manifest")
     sub.add_parser("sync", help="merge trunk in, resolving append-only conflicts")
-    sub.add_parser("reviewed", help="record that HEAD has had its review")
+    rv = sub.add_parser("reviewed", help="record that HEAD has had its review")
+    rv.add_argument("--tier", type=int, help="the model tier the review ran at")
+    rv.add_argument("--effort", type=int, help="the effort it ran at")
+    rv.add_argument("--ran", help="what it ran on, in the tool's own words")
+    sub.add_parser("workflow", help="the steps in effect: each one's model tier and effort")
     h = sub.add_parser("handoff", help="write the handoff note for HEAD")
     h.add_argument("--spec", help="path to the spec this delivers")
     rl = sub.add_parser("reading-list", help="what to read before touching these files")
@@ -2998,6 +3224,7 @@ def main(argv: list[str] | None = None) -> int:
         "open": cmd_open, "reserve": cmd_reserve, "mark": cmd_mark, "merge": cmd_merge, "check": cmd_check,
         "job": cmd_job, "sync": cmd_sync, "reviewed": cmd_reviewed,
         "handoff": cmd_handoff, "gate": cmd_gate, "hook": cmd_hook,
+        "workflow": cmd_workflow,
         "survey": cmd_survey, "reading-list": cmd_reading_list, "update": cmd_update, "repos": cmd_repos, "staging": cmd_staging,
         "release": cmd_release, "para-sync": cmd_para_sync, "para-propose": cmd_para_propose,
     }[args.cmd]

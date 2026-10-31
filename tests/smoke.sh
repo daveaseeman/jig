@@ -372,7 +372,7 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
   expect_pass sh -c "grep -q 'git show main:.jig/jig.py' .git/hooks/pre-commit && ! ls .git/hooks/*.local && test -f .git/jig/enabled && test ! -e .git/aidev && ! grep -q worktrees .gitignore"
 
   msg="update $name: nothing tracked is left in jig/, .aidev/, specs/ or ledgers/; the config is stamped 8, with release.sh added"
-  expect_pass sh -c "test -z \"\$(git ls-files jig .aidev specs ledgers .jig/lanes.json)\" && ! grep -q payload .jig/config.json && grep -q '\"version\": 8' .jig/config.json && git ls-files --error-unmatch .jig/scripts/release.sh"
+  expect_pass sh -c "test -z \"\$(git ls-files jig .aidev specs ledgers .jig/lanes.json)\" && ! grep -q payload .jig/config.json && grep -q '\"version\": 9' .jig/config.json && git ls-files --error-unmatch .jig/scripts/release.sh"
 
   if [ -n "$had_setup" ]; then
     msg="update $name: its setup.sh moves to .jig/scripts/ untouched"
@@ -577,7 +577,7 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
       expect_pass sh -c "python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['trunk'] == 'main' and 'lanes' not in b and 'seen' not in b and 'main' not in b and 'next' not in b['reserve']['section'], b\" && test ! -e .claude/claude-lane && git diff --cached -M --name-status | grep -q '^R100.*old-2026-01-01.md'";;
     dot-jig-v7)
       msg="update $gen: the one-file board splits: config.json without jobs or log, an empty jobs.json, no lanes.json"
-      expect_pass sh -c "python3 -c \"import json; c = json.load(open('.jig/config.json')); assert c['version'] == 8 and not {'lanes', 'log'} & set(c) and json.load(open('.jig/jobs.json')) == {}, c\" && test ! -e .jig/lanes.json && echo \"\$0\" | grep -q 'board: lanes.old (merged)' && echo \"\$0\" | grep -q 'board: log'" "$out";;
+      expect_pass sh -c "python3 -c \"import json; c = json.load(open('.jig/config.json')); assert c['version'] == 9 and not {'lanes', 'log'} & set(c) and json.load(open('.jig/jobs.json')) == {}, c\" && test ! -e .jig/lanes.json && echo \"\$0\" | grep -q 'board: lanes.old (merged)' && echo \"\$0\" | grep -q 'board: log'" "$out";;
   esac
 
   msg="update $gen: a second update is up to date"
@@ -609,8 +609,8 @@ git add -A && git commit -qm init && $J init >/dev/null
 msg="init: config.json holds the settings, no jobs and no log; jobs.json is empty"
 expect_pass python3 -c "
 import json; c = json.load(open('.jig/config.json')); j = json.load(open('.jig/jobs.json'))
-assert sorted(c) == sorted(['version', 'name', 'trunk', 'common', 'append_files', 'reserve', 'docmap', 'not_docs', 'release']), c
-assert c['version'] == 8 and j == {}, (c, j)"
+assert sorted(c) == sorted(['version', 'name', 'trunk', 'common', 'append_files', 'reserve', 'docmap', 'not_docs', 'release', 'reference_files']), c
+assert c['version'] == 9 and j == {}, (c, j)"
 python3 - <<'EOF'
 import json; c = json.load(open('.jig/config.json'))
 c['reserve'] = {'section': {'pattern': r'^## (\d+) ', 'files': ['docs/**']}, 'loose': {}}
@@ -1265,6 +1265,188 @@ import importlib.util, sys; s = importlib.util.spec_from_file_location('j', '.ji
 assert j.repo_path('rp') is not None and j.repo_path('tools') is not None"
 msg="repos: the list marks this folder"
 expect_pass sh -c "$J repos | grep -q 'tools .*← here'"
+
+# ---------------------------------------------------------------- workflow
+WF="$T/wf"; mkdir -p "$WF" && cd "$WF" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && chmod +x .jig/scripts/*.sh && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+setwf() { python3 -c "import json, sys; c = json.load(open('.jig/config.json')); c['workflow'] = json.loads(sys.argv[1]); json.dump(c, open('.jig/config.json', 'w'), indent=2)" "$1"; }
+msg="workflow: prints jig's defaults, one step per line"
+expect_pass sh -c "$J workflow | grep -qx 'execute: tier 2, effort 3' && $J workflow | grep -qx 'review: tier 2, effort 1'"
+for rule in \
+  '{"execute": {"tier": 1}}|workflow.execute: tier 1 is above the spec.s tier 2' \
+  '{"execute": {"effort": 2}}|workflow.execute: effort 2 is not below the spec.s effort 2' \
+  '{"review": {"tier": 3}}|workflow.review: tier 3 is below the spec.s tier 2' \
+  '{"spec": {"effort": 1}}|workflow.review: effort 1 is not above the spec.s effort 1'; do
+  setwf "${rule%%|*}"
+  msg="workflow: $(echo "${rule%%|*}") is refused by jig workflow, naming the rule"
+  expect_pass sh -c "! $J workflow >/dev/null 2>&1 && $J workflow 2>&1 | grep -q '${rule#*|}' && test -z \"\$($J workflow 2>/dev/null)\""
+  msg="workflow: $(echo "${rule%%|*}") is refused by the commit hook"
+  git add -A; expect_refuse git commit -qm wf; undo
+done
+setwf '{"review": {"tier": 1, "effort": 0}}'
+msg="workflow: an override that keeps the rules is accepted by the hook"
+git add -A; expect_pass git commit -qm wf
+msg="workflow: the accepted override is the step in effect"
+expect_pass sh -c "$J workflow | grep -qx 'review: tier 1, effort 0'"
+
+mkdir -p .jig/specs && printf '# t\n\n## Workflow\nspec: tier 2, effort 2\nreview: tier 2, effort 1\n' > .jig/specs/t.md
+git add -A && git commit -qm spec && git switch -q -c g
+printf 'a\n' > notes.txt && git add -A && git commit -qm one
+msg="reviewed: --tier without --effort is refused"
+expect_refuse $J reviewed --tier 2
+$J reviewed --tier 2 --effort 2 --ran "model-x at level-y" >/dev/null && $J handoff --spec .jig/specs/t.md >/dev/null
+note=".jig/handoffs/g-$(date +%F).md"
+msg="handoff: the note carries the review's tier, effort and what it ran on"
+expect_pass sh -c "grep -qx 'Review: tier 2, effort 2' $note && grep -qx 'Ran: model-x at level-y' $note"
+sed -i.bak 's/^- \[ \]/- [x]/' "$note" && rm "$note.bak" && git add -A && git commit -qm note
+msg="gate: a review at a lower effort than the spec asks is warned about, not refused"
+out=$($J gate 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'warning: review ran at tier 2, effort 2; the spec asks for tier 2, effort 1'" "$out"
+msg="gate: the branch relaxing its spec's Workflow doesn't silence the warning: trunk's copy is read"
+sed -i.bak 's/review: tier 2, effort 1/review: tier 3, effort 4/' .jig/specs/t.md && rm .jig/specs/t.md.bak && git commit -qam relax
+expect_pass sh -c "$J gate 2>&1 | grep -q 'warning: review ran at tier 2, effort 2'"
+printf 'b\n' >> notes.txt && git commit -qam two
+$J reviewed --tier 1 --effort 1 >/dev/null && $J handoff --spec .jig/specs/t.md >/dev/null
+sed -i.bak 's/^- \[ \]/- [x]/' "$note" .jig/handoffs/g-$(date +%F)-2.md && rm .jig/handoffs/*.bak && git add -A && git commit -qm note2
+msg="gate: a review at the spec's settings or better gives no warning"
+out=$($J gate 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'from .jig/handoffs/g-.*-2.md on g' && ! echo \"\$0\" | grep -q warning" "$out"
+git switch -q main
+$J open k --spec .jig/specs/t.md --owns 'k/**' >/dev/null && git add -A && git commit -qm "open k"
+(cd .git/jig/worktrees/k && mkdir k && printf 'x\n' > k/x.txt && git add -A && git commit -qm x \
+  && $J reviewed >/dev/null && $J handoff >/dev/null && sed -i.bak 's/^- \[ \]/- [x]/' .jig/handoffs/k-*.md \
+  && rm .jig/handoffs/*.bak && git add -A && git commit -qm note)
+msg="gate: a note with no --spec is judged by the board's spec, and an unrecorded review is warned about"
+expect_pass sh -c "$J gate k 2>&1 | grep -q 'warning: the review.s tier and effort are not recorded; the spec asks for tier 2, effort 1'"
+
+
+# ---------------------------------------------------------------- init beside an old board
+# init must refuse in a repo whose board is at an older path: a second board blocks update,
+# and its hooks would run a trunk .jig/jig.py that isn't there yet.
+export JIG_CONFIG="$T/repos.json"     # the pararepo section's list, which names metarepo docs
+IJ="python3 $P/jig/jig.py"            # the plugin's copy: an old repo has no .jig/jig.py
+hooksnap() { find .git/hooks -type f | sort | xargs shasum 2>/dev/null; }
+for gen in ai-dev jig-0.2; do
+  d="$T/ib-$gen"; mkdir -p "$d" && cp -R "$FX/$gen/repo/." "$d/" && cd "$d"
+  git init -q -b main && git config user.email t@t && git config user.name t
+  git add -A && git commit -qm init && cp -R "$FX/$gen/git/." .git/
+  for form in "--para docs" "--meta" ""; do
+    msg="init ${form:-(plain)} beside $gen's board refuses, names jig update, and changes nothing"
+    had_jig=$(test -e .jig && echo y); before=$(hooksnap)
+    out=$($IJ init $form 2>&1); rc=$?
+    expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig update' && test -z \"\$(git status --porcelain)\" && test \"\$1\" = \"\$(find .git/hooks -type f | sort | xargs shasum 2>/dev/null)\" && test -z '$had_jig' -a ! -e .jig" "$out" "$before"
+  done
+  msg="init --para beside $gen's board gives the order: update, commit, then this same init again"
+  out=$($IJ init --para docs --contract 'src/**' 2>&1)
+  expect_pass sh -c "echo \"\$0\" | grep -q 'jig update.*commit, then run this same .jig init. again'" "$out"
+  msg="install-hooks beside $gen's board refuses; the old hooks and .git/jig/ stay as they were"
+  before=$(find .git/hooks .git/jig -type f 2>/dev/null | sort | xargs shasum); out=$($IJ install-hooks 2>&1); rc=$?
+  expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig update' && test \"\$1\" = \"\$(find .git/hooks .git/jig -type f 2>/dev/null | sort | xargs shasum)\"" "$out" "$before"
+  msg="survey and a board command beside $gen's board send it to update, not init or adopt"
+  sv=$($IJ survey 2>&1); st=$($IJ status 2>&1)
+  expect_pass sh -c "echo \"\$0\" | grep -q 'run /jig:update first, not /jig:adopt' && ! echo \"\$0\" | grep -q 'Run: jig init' && echo \"\$1\" | grep -q 'older jig.s board is at .*run /jig:update first'" "$sv" "$st"
+  msg="repos add para beside $gen's board says to run jig update, then jig init --para"
+  out=$($IJ repos add para --name ib-$gen 2>&1)
+  expect_pass sh -c "echo \"\$0\" | grep -q 'run .jig update. there, commit, then .jig init --para' && ! echo \"\$0\" | grep -q 'not a pararepo yet'" "$out"
+done
+msg="init --para after update and a commit succeeds, and the next update is up to date"
+$UP --apply >/dev/null 2>&1; git add -A && git commit -qm update >/dev/null 2>&1
+out=$($J init --para docs --contract 'src/**' 2>&1); rc=$?     # docs: the pararepo section's clone
+expect_pass sh -c "test $rc = 0 && test -f .jig/para.json && test \"\$($UP 2>&1)\" = 'up to date'" "$out"
+
+# ---------------------------------------------------------------- ledger rows of the wrong shape
+# A ledger row is cut on the pipes GitHub cuts on: \| is a literal pipe, a pipe in backticks
+# is not. A row whose cell count isn't its header's is kept and named, never guessed at.
+d="$T/lg"; mkdir -p "$d" && cp -R "$FX/ai-dev/repo/." "$d/" && cd "$d"
+git init -q -b main && git config user.email t@t && git config user.name t
+cat > docs/REVIEW_LEDGER.md <<'EOF'
+# Review ledger
+
+| id | review | finding | rank | what happened | reason |
+| --- | --- | --- | --- | --- | --- |
+| L-1 | a · own | name the loop | optional | taken | — |
+| L-2 | a · own | split on `a|b` | optional | taken | — |
+| L-3 | a · own | read a\|b as one | optional | taken | — |
+| L-4 | a · own | cache it | optional | deferred | later |
+EOF
+git add -A && git commit -qm init && cp -R "$FX/ai-dev/git/." .git/
+out=$($UP 2>&1)
+msg="ledger: the dry run names the 7-cell row in Warnings, kept"
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Warnings:/,/^\$/p' | grep -qF 'row \`L-2\` has 7 cells, its header 6: kept, check it'" "$out"
+msg="ledger: the step line counts what carries over, what is dropped, and the malformed row kept"
+expect_pass sh -c "echo \"\$0\" | grep -q 'its 1 untaken row .* carry over, its 2 taken rows are dropped, 1 malformed kept'" "$out"
+msg="ledger: the fold drops L-1 and L-3 (escaped pipe), and keeps L-2 and L-4"
+$UP --apply >/dev/null 2>&1
+expect_pass sh -c "f=.jig/ledgers/DEFERRED.md; grep -q '| L-2 ' \$f && grep -q '| L-4 ' \$f && ! grep -q '| L-1 ' \$f && ! grep -q '| L-3 ' \$f"
+msg="table_cells: \\| is one cell's literal pipe; a backtick pipe splits; outer pipes go"
+expect_pass python3 -c "
+import importlib.util; s = importlib.util.spec_from_file_location('j', '$P/jig/jig.py'); j = importlib.util.module_from_spec(s); s.loader.exec_module(j)
+assert j.table_cells(r'| a | b \| c | \`x|y\` |') == ['a', 'b | c', '\`x', 'y\`'], j.table_cells(r'| a | b \| c | \`x|y\` |')"
+
+# ---------------------------------------------------------------- hardware reference files
+HR="$T/hwref"
+mkdir -p "$HR" && cd "$HR" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs/hardware/components/pmic docs/hardware/watch main
+printf '# Watch\n\n| PMIC | QX-100 | power | [ds](components/pmic/qx-100.pdf) |\n' > docs/hardware/watch.md
+printf '%%PDF-fake\n' > docs/hardware/components/pmic/qx-100.pdf
+printf '# PMIC notes\n' > docs/hardware/components/pmic/notes.md
+printf '# Vendor definition\n' > docs/hardware/watch/vendor-definition.md
+printf 'int led = 2;\n' > main/app.c
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+hrsurvey() { python3 -c "
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+$1"; }
+
+msg="reference files: unmapped, only docs/hardware/<board>.md is a board page"
+expect_pass hrsurvey "assert r['boards_unmapped'] == ['docs/hardware/watch.md'], r['boards_unmapped']"
+
+python3 - <<'PY'
+import json; b = json.load(open('.jig/config.json'))
+b['docmap'] = {'docs/hardware/watch.md': ['main/**']}
+json.dump(b, open('.jig/config.json', 'w'), indent=2)
+PY
+git add -A && git commit -qm docmap
+msg="reference files: mapped, a component note and a board's folder are no board pages"
+expect_pass hrsurvey "assert r['boards_unmapped'] == [], r['boards_unmapped']"
+
+msg="reference files: a component file no board page links is reported, a linked one is not"
+expect_pass hrsurvey "assert r['components_unlinked'] == ['docs/hardware/components/pmic/notes.md'], r['components_unlinked']"
+
+mkdir -p docs/hardware/components/rtc docs/hardware/components/imu docs/hardware/components/buck docs/hardware/components/led
+for f in rtc/rtc.pdf "imu/imu rev b.pdf" buck/buck.pdf "led/led sheet.pdf"; do printf '%%PDF-fake\n' > "docs/hardware/components/$f"; done
+cat >> docs/hardware/watch.md <<'MD'
+| RTC | QX-20 | clock | [ds][rtc] |
+| IMU | QX-30 | motion | [ds](<components/imu/imu rev b.pdf> "rev B") |
+| Buck | QX-40 | rail | [ds](/docs/hardware/components/buck/buck.pdf) |
+| LED | QX-50 | status | [ds](components/led/led sheet.pdf) |
+
+[rtc]: components/rtc/rtc.pdf
+MD
+git add -A && git commit -qm "more link forms"
+msg="reference files: reference-style, <angle>, root-absolute and spaced links all count as links"
+expect_pass hrsurvey "assert r['components_unlinked'] == ['docs/hardware/components/pmic/notes.md'], r['components_unlinked']
+assert r['components_missing'] == [], r['components_missing']"
+
+printf '| LDO | QX-7 | rail | [ds](components/ldo/qx-7.pdf) |\n' >> docs/hardware/watch.md
+git add -A && git commit -qm "link a missing datasheet"
+msg="reference files: a board page linking a component file that doesn't exist is reported"
+expect_pass hrsurvey "assert r['components_missing'] == [['docs/hardware/watch.md', 'docs/hardware/components/ldo/qx-7.pdf']], r['components_missing']"
+
+msg="reference files: survey's Homes line names both new homes"
+expect_pass sh -c "$J survey | grep '^Doc homes: ' | grep -q 'docs/hardware/components/ = ' && $J survey | grep '^Doc homes: ' | grep -q 'docs/hardware/<board>/ = '"
+
+msg="reference files: init leaves reference_files unset, so /jig:hardware asks"
+expect_pass python3 -c "import json; assert json.load(open('.jig/config.json'))['reference_files'] == ''"
+
+msg="reference files: update adds reference_files to a config that lacks it"
+python3 - <<'PY'
+import json; b = json.load(open('.jig/config.json'))
+del b['reference_files']; b['version'] = 8
+json.dump(b, open('.jig/config.json', 'w'), indent=2)
+PY
+git add -A && git commit -qm "older config"
+expect_pass sh -c "$J update 2>&1 | grep -q 'reference_files: added'"
 
 rm -rf "$T"
 exit $fail

@@ -6,6 +6,11 @@ disable-model-invocation: true
 
 ## Before copying anything
 
+First, an older jig: if any of `.jig/lanes.json`, `jig/lanes.json`, `.aidev/lanes.json` or
+`.claude/claude-lane/manifests/board.json` exists, stop and recommend `/jig:update`. Copy
+nothing: a `.jig/` copied beside an old board blocks the update's moves, and `jig init`
+refuses there anyway. Once the update is committed, `jig init --meta` or `--para` can run.
+
 `init` is for a repo with nothing to reconcile. Stop and recommend `/jig:adopt` instead
 when the repo already has a shape of its own — any of:
 

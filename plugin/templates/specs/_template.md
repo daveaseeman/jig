@@ -19,3 +19,7 @@ One or two sentences. What should be true when this is done that isn't true now.
 
 ## Decisions
 - anything chosen during the work that someone would ask "why?" about later
+
+## Workflow
+<!-- `python3 .jig/jig.py workflow`'s output when this spec was written, as printed. The
+     repo's settings, not this task's: never edit a step here. -->
