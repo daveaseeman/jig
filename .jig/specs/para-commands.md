@@ -39,13 +39,17 @@ Smoke, in the pararepo section unless it says otherwise:
       releases `v0.2.0`: `jig sync` reports `v0.2.0 is out` and `meta: docs v0.1 → v0.2.0`, and
       the cache fills at `v0.1`.
 - [ ] **`jig gate` refuses a lane built on an unreleased proposal.**
-  - The lane's specs are the `.jig/specs/*.md` changed in `trunk...<commit>`, read at that
-    commit, where `<commit>` is the handoff note's `Commit:` that the gate already uses. They are
-    not found from HEAD, which is trunk when the hubnode runs the gate.
+  - The lane's specs are the board entry's spec, the note's `Spec:` line, and the
+    `.jig/specs/*.md` changed in `trunk...<commit>`, read at that commit (or trunk, for a spec
+    the commit lacks), where `<commit>` is the handoff note's `Commit:` that the gate already
+    uses. They are not found from HEAD, which is trunk when the hubnode runs the gate. A spec
+    proposed and committed on trunk before `jig open` counts though the diff has no spec.
   - The pin is trunk's `para.json` pin, because that is what lands.
   - A proposal is in the pin when its branch is an ancestor of the pin tag. If the branch ref
     is gone (deleted after merge), it counts when a merge commit reachable from the pin names
-    it in its subject.
+    it: git's `Merge branch '<branch>'`, or `jig merge`'s `merge <job>` where that job's entry,
+    just before the merge, names the branch. A branch with no commits of its own, sitting on
+    the metarepo's trunk, is not in any release.
 
   Cases, with a lane spec citing `meta: docs proposal <branch>`:
   - unreleased → refused, naming the proposal and the pin;
@@ -150,9 +154,10 @@ Smoke, in the pararepo section unless it says otherwise:
 - **Commit 2 needs no metarepo.** The header is generated from `para.json` alone, so a re-run
   of `init --para` writes it before it looks for the checkout. Offline, or on a machine whose
   `repos.json` doesn't list the metarepo, the header can still be fixed.
-- **The reminder for commit 2 comes from `jig sync` on trunk, not from `update`.** The hubnode
-  runs `jig sync` every session. Right after commit 1, `update` says "up to date", and the
-  update skill stops there.
+- **The reminder for commit 2 comes from `jig sync` on trunk and from the update skill, not
+  from `update`.** Right after commit 1, `update` says "up to date". The update skill's last
+  step, in a pararepo, runs `jig init --para` and commits only what it changed. The hubnode
+  runs `jig sync` every session, which catches a pararepo updated without the skill.
 - **A lane's cache follows its pin through `run_setup`.** `run_setup` already runs after every
   merge and copies the main checkout's cache. Widening it to copy whenever the pins differ
   needs no metarepo access. A second path through `fill_cache` would need it. The main

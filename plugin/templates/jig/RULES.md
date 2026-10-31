@@ -260,7 +260,7 @@ A set of repos can share one **metarepo**: docs only — definitions, decisions,
 Each **pararepo** (code, firmware, hardware) cites it at a released tag. The metarepo points;
 nothing copies it. Three rules do the work:
 
-1. A pararepo writes the metarepo only by branch, via `jig para-propose`.
+1. A pararepo writes the metarepo only by branch, via `jig propose`.
 2. The metarepo holds no code and no copied pararepo content.
 3. Only `jig release` tags, so a pin never names something that failed validation.
 
@@ -290,7 +290,10 @@ first-parent commit since the last release, and refuse any tag `jig release` did
 In a metarepo the release also turns `## Unreleased` into the version's heading, needs no
 `release.sh` steps, and defaults to `--minor`: minor for additions and clarifications, major
 for a rename or a reversed decision. A pararepo pins a release, never `main`, and bumps it in
-a commit of its own, `meta: <name> v0.3.0 → v0.4.0`, with `para-sync`'s report as the body.
+a commit of its own, `meta: <name> v0.3.0 → v0.4.0`, with the report `jig sync` prints on its
+trunk as the body. A two-part pin (`v0.3`), from before releases had three parts, keeps
+working: it sorts below `v0.3.0`. `jig gate` refuses a job whose spec cites a proposal that isn't in
+the pinned release.
 
 ## Release
 
@@ -324,12 +327,12 @@ jig mark <name> <state>     claimed|building|ready|gated|parked
 jig merge <name> [-m msg]   merge a job; its entry is deleted in the merge commit
 jig check [--staged]        run the rules here
 jig job                    this branch's manifest
-jig sync                    merge trunk in, append rule applied
+jig sync                    merge trunk in, append rule applied; on a pararepo's trunk, the metarepo
 jig reviewed [--tier N --effort N] [--ran text]   record that HEAD has been reviewed, and at what
 jig workflow                each step's model tier and effort in effect
 jig handoff [--spec path]   write the note for HEAD
 jig gate <name>             hubnode: verify, set up the scratch checkout, print its check
-jig para-sync / para-propose   pararepo: refresh and report / propose
+jig propose <spec> <slug>   pararepo: open a proposal branch on the metarepo
 ```
 
 ## Hooks are opt-in per checkout

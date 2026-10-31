@@ -519,7 +519,7 @@ def cmd_init(root: Path, args) -> int:
     # A metarepo or pararepo is a repo with one more file, so it is made by the same init.
     if getattr(args, "meta", False):
         return cmd_meta_init(root, args)
-    if getattr(args, "para", None):
+    if getattr(args, "para", None) is not None:
         args.meta = args.para
         return cmd_para_init(root, args)
     return rc
@@ -597,10 +597,21 @@ def run_setup(root: Path) -> None:
     trunk's: it judges nothing, and must match the files checked out. Its output goes to
     stderr so whoever made the checkout sees it. A failure is reported and fails nothing,
     because the checkout exists either way."""
-    # A pararepo's cache of the pinned metarepo docs is gitignored, so a new worktree has none.
+    # A pararepo's cache of the pinned metarepo docs is gitignored, so a new worktree has none,
+    # and a merge of trunk's pin bump leaves it at the old pin. The main checkout's is refilled
+    # before that bump is committed, so copying it needs no metarepo.
     cache, main_cache = root / CACHE, main_root() / CACHE
-    if (root / PARA).exists() and not cache.exists() and main_cache.exists() and cache != main_cache:
-        shutil.copytree(main_cache, cache)
+    if (root / PARA).exists() and main_cache.exists() and cache != main_cache:
+        try:
+            pin = json.loads((root / PARA).read_text()).get("pin")
+        except ValueError:
+            pin = None
+        def at(c: Path) -> str | None:
+            return (c / "PIN").read_text().split("\n")[0] if (c / "PIN").exists() else None
+        # Copying a cache at some other pin would only trade one stale cache for another.
+        if (not cache.exists() or at(cache) != pin) and at(main_cache) == pin:
+            shutil.rmtree(cache, ignore_errors=True)
+            shutil.copytree(main_cache, cache)
     script = root / DIR / "scripts" / "setup.sh"
     if not script.exists():
         return
@@ -910,9 +921,15 @@ def resolved_appends(text: str) -> tuple[str, bool]:
 def cmd_sync(root: Path, args) -> int:
     board = Board.load(root)
     trunk = board.trunk
-    name, job = board.job_for_branch(git("branch", "--show-current"))
+    branch = git("branch", "--show-current")
+    name, job = board.job_for_branch(branch)
+    # Sync brings in this checkout's upstream: trunk for a job, the metarepo for a pararepo's
+    # trunk. A plain repo's or a metarepo's trunk has nothing upstream.
+    if not name and branch == trunk and (root / PARA).exists():
+        return sync_meta(root)
     if not name:
         die("not on a job branch")
+    # Only the merge needs a clean tree; the metarepo step writes only the untracked cache.
     if git("status", "--porcelain"):
         die("commit or stash first: the tree is dirty")
     stuck = merge_trunk(board, root)
@@ -1197,6 +1214,15 @@ def cmd_gate(root: Path, args) -> int:
             return 1
     m = re.search(r"^Commit: (\w+)", body, re.M)
     commit = m.group(1) if m else branch
+    para = load_para(trunk)
+    if para is not None:
+        spec = re.search(r"^Spec: (\S+)", body, re.M)
+        unready = unreleased_proposals(root, para, trunk, commit,
+                                       [(job or {}).get("spec") or "", spec.group(1) if spec else ""])
+        if unready:
+            for u in unready:
+                print(u, file=sys.stderr)
+            return 1
     label = f"job {name}" if job is not None else name
     print(f"{label}: gate {commit[:12]} from {note} on {branch}")
     weak = review_shortfall(root, branch, name, body)
@@ -1847,12 +1873,10 @@ def cmd_release(root: Path, args) -> int:
 # of the pinned docs, never a copy committed here, and writes the metarepo only by branch.
 PARA = f"{DIR}/para.json"
 CACHE = f"{DIR}/meta-cache"
-# It still names `jig para-init`, which is now `jig init --para`: every pararepo's AGENTS.md
-# holds this line, and P1 on trunk's older checker refuses a commit that changes it.
-HEADER_BEGIN = f"<!-- jig:meta — generated from {PARA} by `jig para-init`; edit that, not this -->"
+HEADER_BEGIN = f"<!-- jig:meta — generated from {PARA} by `jig init --para`; edit that, not this -->"
 HEADER_END = "<!-- jig:meta end -->"
 # How a spec says what its contract change means for the metarepo: a proposal branch, or why none.
-PROPOSAL = re.compile(r"^\s*-?\s*meta: (?:none — \S.*|\S+ proposal (\S+))\s*$", re.M)
+PROPOSAL = re.compile(r"^\s*-?\s*meta: (?:none — \S.*|(?P<meta>\S+) proposal (?P<branch>\S+))\s*$", re.M)
 
 
 def load_para(trunk: str) -> dict | None:
@@ -1868,16 +1892,18 @@ def para_header(para: dict) -> str:
     return "\n".join([
         HEADER_BEGIN,
         f"- Shared definitions: metarepo `{para['meta']}` at `{para['pin']}`, read from "
-        f"`{CACHE}/` (`jig para-sync` refreshes it and reports newer releases).",
+        f"`{CACHE}/` (`jig sync` on trunk refreshes it and reports newer releases).",
         f"- Contract paths: {paths}. A change there needs a metarepo proposal "
-        "(`jig para-propose`) or `meta: none — <reason>` in its spec.",
-        "- The metarepo is written only by branch, via `jig para-propose`; nothing of it is copied here.",
+        "(`jig propose`) or `meta: none — <reason>` in its spec.",
+        "- The metarepo is written only by branch, via `jig propose`; nothing of it is copied here.",
         HEADER_END,
     ])
 
 
 def with_header(text: str, header: str) -> str:
-    block = re.compile(rf"^{re.escape(HEADER_BEGIN)}\n.*?^{re.escape(HEADER_END)}\n?", re.M | re.S)
+    # Any begin line, not just today's: the first one said "by `jig para-init`", and a header
+    # still carrying it must be replaced, not left beside a second block.
+    block = re.compile(rf"^<!-- jig:meta — .*?^{re.escape(HEADER_END)}\n?", re.M | re.S)
     if block.search(text):
         return block.sub(header + "\n", text, count=1)
     first, _, rest = text.partition("\n")
@@ -2069,7 +2095,7 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
                                      f"{DIR}/specs/").splitlines() if p.endswith(".md")}
         if not any(PROPOSAL.search(in_index(s, staged)) for s in specs):
             out.append(f"P2 {', '.join(touched)} is a contract path: a spec in this change "
-                       "needs `meta: <name> proposal <branch>` (`jig para-propose`) or "
+                       "needs `meta: <name> proposal <branch>` (`jig propose`) or "
                        "`meta: none — <reason>`")
     # P4 no contract change while a file for the metarepo waits unresolved
     waiting = [f.name for f in staged_files(main_root()) if read_staged(f)[0].get("target") == para.get("meta")]
@@ -2091,7 +2117,8 @@ def cmd_para_init(root: Path, args) -> int:
     """`jig init --para <metarepo>`. Run again, it regenerates the header and cache from
     para.json."""
     path = root / PARA
-    para = json.loads(path.read_text()) if path.exists() else {
+    again = path.exists()
+    para = json.loads(path.read_text()) if again else {
         "meta": args.meta, "pin": getattr(args, "pin", None), "defer_until": None,
         "contract_paths": getattr(args, "contract", None) or []}
     para.pop("location", None)          # an older para.json: where it lives is repos.json's
@@ -2100,23 +2127,36 @@ def cmd_para_init(root: Path, args) -> int:
     if getattr(args, "location", None):
         cmd_repos(root, argparse.Namespace(action="add", kind="meta", name=para["meta"],
                                            path=args.location))
+    agents = root / "AGENTS.md"
     loc = meta_checkout(root, para)
-    if loc is None:
+    # A first run needs the metarepo to check the pin against. A re-run's header comes from
+    # para.json alone, so it is written first, and only the cache waits for the metarepo.
+    if loc is None and not again:
         die(f"can't find {para['meta']}: run `jig repos add meta` in its checkout", 2)
     if not para.get("pin"):
+        if loc is None:
+            die(f"can't find {para['meta']} to pick a pin: run `jig repos add meta` in its checkout", 2)
         tags = released_tags(str(loc))
         if not tags:
             die(f"{para['meta']} has no release yet: run `jig release` there first", 2)
         para["pin"] = tags[-1]
     path.write_text(json.dumps(para, indent=2) + "\n")
-    fill_cache(root, loc, para["pin"])
-    ignore_line(root, f"{CACHE}/")
-    if loc.resolve().is_relative_to(root.resolve()):
-        ignore_line(root, f"{loc.resolve().relative_to(root.resolve()).as_posix()}/")
-    agents = root / "AGENTS.md"
     agents.write_text(with_header(agents.read_text() if agents.exists() else "# AGENTS.md\n",
                                   para_header(para)))
-    print(f"wrote {PARA}, the AGENTS.md header, and {CACHE}/ at {para['pin']}.")
+    ignore_line(root, f"{CACHE}/")
+    if loc is not None and loc.resolve().is_relative_to(root.resolve()):
+        ignore_line(root, f"{loc.resolve().relative_to(root.resolve()).as_posix()}/")
+    pin = para["pin"]
+    if loc is None:
+        why = f"can't find {para['meta']} (`jig repos add meta` in its checkout)"
+    elif not git("rev-parse", "-q", "--verify", f"{pin}^{{commit}}", cwd=str(loc)):
+        why = f"{para['meta']} has no tag {pin} here (`git -C {loc} fetch --tags`, or check \"pin\")"
+    else:
+        why = ""
+        fill_cache(root, loc, pin)
+    if why:
+        print(f"warning: {why}: {CACHE}/ was not refreshed.", file=sys.stderr)
+    print(f"wrote {PARA}, the AGENTS.md header{'' if why else f', and {CACHE}/ at {pin}'}.")
     print(f"Commit {PARA}, AGENTS.md and .gitignore on {Board.trunk_name(root)}.")
     return 0
 
@@ -2129,10 +2169,75 @@ def terms_changed(loc: Path, old: str, new: str) -> list[str]:
     return list(dict.fromkeys(found))
 
 
-def cmd_para_sync(root: Path, args) -> int:
-    para = json.loads((root / PARA).read_text()) if (root / PARA).exists() else None
-    if para is None:
-        die(f"no {PARA}: run `jig init --para <metarepo name>`", 2)
+def proposal_in(loc: Path, branch: str, tag: str) -> bool:
+    """Whether a proposal is in a release: its branch is an ancestor of the tag, or, the branch
+    deleted after its merge, a merge reachable from the tag names it. M4 makes every change to
+    the metarepo's trunk a merge, and git's default subject names the branch."""
+    tip = git("rev-parse", "-q", "--verify", f"refs/heads/{branch}^{{commit}}", cwd=str(loc))
+    if tip:
+        # A proposal `jig propose` just made sits on the metarepo's trunk with nothing of its
+        # own, so it is an ancestor of every later tag. M4 keeps a real one off that line.
+        on_trunk = tip in git("rev-list", "--first-parent", tag, cwd=str(loc)).split()
+        return not on_trunk and subprocess.run(["git", "merge-base", "--is-ancestor", tip, tag],
+                                               cwd=loc, capture_output=True).returncode == 0
+    # git's own subject names the branch; `jig merge`'s names the job, whose board entry, read
+    # just before that merge deleted it, names the branch.
+    named = re.compile(rf"^Merge branch '{re.escape(branch)}'( into \S+)?$")
+    for line in git("log", "--merges", "--format=%H %s", tag, cwd=str(loc)).splitlines():
+        sha, _, subject = line.partition(" ")
+        if named.match(subject):
+            return True
+        job = re.match(r"^merge (\S+)$", subject)
+        if job:
+            try:
+                jobs = json.loads(git("show", f"{sha}^1:{JOBS}", cwd=str(loc)) or "{}")
+            except ValueError:
+                continue
+            entry = jobs.get(job.group(1)) if isinstance(jobs, dict) else None
+            if isinstance(entry, dict) and (entry.get("branch") or job.group(1)) == branch:
+                return True
+    return False
+
+
+def unreleased_proposals(root: Path, para: dict, trunk: str, commit: str, named: list[str]) -> list[str]:
+    """Why the job at COMMIT can't merge yet: a spec it builds on cites a metarepo proposal that
+    isn't in trunk's pinned release. Its specs are the ones it changed and the ones the board
+    and its note name, which may sit on trunk already (`jig propose` there, then `jig open`).
+    Read at the commit, because the hubnode gates from trunk."""
+    changed = [p for p in git("diff", "--name-only", f"{trunk}...{commit}", "--",
+                              f"{DIR}/specs/").splitlines() if p.endswith(".md")]
+    specs = list(dict.fromkeys([*filter(None, named), *changed]))
+    cited = [(s, m) for s in specs
+             for m in PROPOSAL.finditer(git("show", f"{commit}:{s}") or git("show", f"{trunk}:{s}"))
+             if m.group("branch")]
+    if not cited:
+        return []
+    name, pin = para.get("meta", ""), para.get("pin", "")
+    loc = meta_checkout(root, para)
+    out = []
+    for spec, m in cited:
+        what = f"{spec} cites proposal {m.group('branch')}"
+        if m.group("meta") != name:
+            out.append(f"{what} on {m.group('meta')}, but this repo's metarepo is {name}")
+        elif loc is None:
+            out.append(f"{what}, and {name} can't be reached to check it (see `jig repos`)")
+        elif not proposal_in(loc, m.group("branch"), pin):
+            later = [t for t in released_tags(str(loc)) if version_key(t) > version_key(pin)
+                     and proposal_in(loc, m.group("branch"), t)]
+            out.append(f"{what}, released in {name} {later[0]} but this repo pins {pin}: bump the pin "
+                       "(`jig sync` on trunk says how), then `jig sync` the job" if later else
+                       f"{what}, which is not in {name} {pin}, the pin, nor in any release: "
+                       "it merges once it's released and pinned")
+    return out
+
+
+def sync_meta(root: Path) -> int:
+    """`jig sync` on a pararepo's trunk: refresh the cache, report what moved upstream."""
+    para = json.loads((root / PARA).read_text())
+    agents = root / "AGENTS.md"
+    if para_header(para) not in (agents.read_text() if agents.exists() else ""):
+        print("the AGENTS.md header is out of date: run `jig init --para`, and commit only what "
+              "it changed")
     until = para.get("defer_until")
     if until and date.today().isoformat() < until:
         return 0
@@ -2149,10 +2254,9 @@ def cmd_para_sync(root: Path, args) -> int:
     latest = tags[-1] if tags else pin
     for spec in sorted((root / DIR / "specs").glob("*.md")):
         for m in PROPOSAL.finditer(spec.read_text()):
-            if m.group(1):
-                landed = subprocess.run(["git", "merge-base", "--is-ancestor", m.group(1), latest],
-                                        cwd=loc, capture_output=True).returncode == 0
-                print(f"proposal {m.group(1)} ({spec.relative_to(root)}): "
+            if m.group("branch") and m.group("meta") == name:
+                landed = proposal_in(loc, m.group("branch"), latest)
+                print(f"proposal {m.group('branch')} ({spec.relative_to(root)}): "
                       f"{'released by ' + latest if landed else 'not released'}")
     if version_key(latest) <= version_key(pin):
         print(f"{name} {pin} is the latest release")
@@ -2170,10 +2274,11 @@ def cmd_para_sync(root: Path, args) -> int:
     return 0
 
 
-def cmd_para_propose(root: Path, args) -> int:
+def cmd_propose(root: Path, args) -> int:
     para = json.loads((root / PARA).read_text()) if (root / PARA).exists() else None
     if para is None:
-        die(f"no {PARA}: run `jig init --para <metarepo name>`", 2)
+        die(f"not a pararepo (no {PARA}): a proposal is a pararepo's branch on its metarepo. "
+            "`jig init --para <metarepo name>` makes this one", 2)
     loc = meta_checkout(root, para)
     if loc is None:
         die(f"can't find {para['meta']}: run `jig repos add meta` in its checkout", 2)
@@ -2438,7 +2543,7 @@ def forward(root: Path, path: Path, head: dict) -> int:
     shutil.move(str(path), dest)
     print(f"forwarded {path.name} to {target}'s {STAGING}/; resolve it in a session there.")
     if para and target == para.get("meta"):
-        print(f"If a spec here depends on it: jig para-propose <spec> <slug>.")
+        print(f"If a spec here depends on it: jig propose <spec> <slug>.")
     return 0
 
 
@@ -3280,7 +3385,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="make this repo a metarepo: docs only, released by tag")
     i.add_argument("--name", help="with --meta: the metarepo's name (default: the folder)")
     i.add_argument("--prefix", help="with --meta: decision id prefix (default D-)")
-    i.add_argument("--para", metavar="METAREPO", help="cite this metarepo at a released tag")
+    i.add_argument("--para", metavar="METAREPO", nargs="?", const="",
+                   help="cite this metarepo at a released tag; alone, regenerate from para.json")
     i.add_argument("--location", help="with --para: the metarepo's checkout, recorded in repos.json")
     i.add_argument("--pin", help="with --para: the release to cite (default: the latest)")
     i.add_argument("--contract", nargs="*", help="with --para: globs whose changes need a metarepo proposal")
@@ -3313,7 +3419,7 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("check", help="run the rules here")
     c.add_argument("--staged", action="store_true")
     sub.add_parser("job", help="print this branch's manifest")
-    sub.add_parser("sync", help="merge trunk in, resolving append-only conflicts")
+    sub.add_parser("sync", help="bring in the upstream: trunk on a job; the metarepo on a pararepo's trunk")
     rv = sub.add_parser("reviewed", help="record that HEAD has had its review")
     rv.add_argument("--tier", type=int, help="the model tier the review ran at")
     rv.add_argument("--effort", type=int, help="the effort it ran at")
@@ -3334,8 +3440,7 @@ def main(argv: list[str] | None = None) -> int:
     bump.add_argument("--patch", action="store_true", help="the default, except in a metarepo")
     bump.add_argument("--version", help="X.Y.Z: the first release, or a jump")
     rl_.add_argument("--force", action="store_true", help="release though files are staged")
-    sub.add_parser("para-sync", help="refresh the cache; report newer metarepo releases")
-    pp = sub.add_parser("para-propose", help="open a proposal branch on the metarepo for a spec")
+    pp = sub.add_parser("propose", help="pararepo: open a proposal branch on the metarepo for a spec")
     pp.add_argument("spec")
     pp.add_argument("slug")
     st = sub.add_parser("staging", help="list staged files, or resolve or drop one")
@@ -3363,7 +3468,7 @@ def main(argv: list[str] | None = None) -> int:
         "handoff": cmd_handoff, "gate": cmd_gate, "hook": cmd_hook,
         "workflow": cmd_workflow,
         "survey": cmd_survey, "reading-list": cmd_reading_list, "update": cmd_update, "repos": cmd_repos, "staging": cmd_staging,
-        "release": cmd_release, "para-sync": cmd_para_sync, "para-propose": cmd_para_propose,
+        "release": cmd_release, "propose": cmd_propose,
     }[args.cmd]
     return fn(root, args)
 

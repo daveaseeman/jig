@@ -863,9 +863,9 @@ git add -f .jig/meta-cache/DECISIONS.md; expect_refuse git commit -qm cache; git
 msg="para P3: staging the metarepo checkout is refused"
 git add -f mrclone 2>/dev/null; expect_refuse git commit -qm clone; git reset -q
 
-msg="para-propose: a branch on the metarepo, the id in the spec, the metarepo's main untouched"
+msg="propose: a branch on the metarepo, the id in the spec, the metarepo's main untouched"
 mainbefore=$(git -C mrclone rev-parse main)
-$J para-propose .jig/specs/x.md fmt >/dev/null
+$J propose .jig/specs/x.md fmt >/dev/null
 expect_pass sh -c "git -C mrclone rev-parse -q --verify refs/heads/propose/pr-fmt && grep -q 'meta: docs proposal propose/pr-fmt' .jig/specs/x.md && test \"\$(git -C mrclone rev-parse main)\" = '$mainbefore' && test \"\$(git -C mrclone branch --show-current)\" = main"
 git add -A && git commit -qm "specs: proposal"
 
@@ -880,9 +880,9 @@ python3 .jig/jig.py staging drop meta-note.md >/dev/null
 msg="para P4: once it is resolved, the same commit is accepted"
 expect_pass git commit -qm "api: more"
 
-msg="para: a new worktree gets the main checkout's cache; para-propose there names the repo, not the folder"
+msg="para: a new worktree gets the main checkout's cache; propose there names the repo, not the folder"
 git worktree add -q --detach "$T/pr-job" HEAD 2>/dev/null
-(cd "$T/pr-job" && $J para-propose .jig/specs/x.md lanefix >/dev/null)
+(cd "$T/pr-job" && $J propose .jig/specs/x.md lanefix >/dev/null)
 expect_pass sh -c "test -f '$T/pr-job/.jig/meta-cache/DECISIONS.md' && git -C mrclone rev-parse -q --verify refs/heads/propose/pr-lanefix"
 git worktree remove --force "$T/pr-job"
 
@@ -893,23 +893,23 @@ cd "$MR" && git switch -q -c d1 && printf '| D-001 | ids are numbers | accepted 
 printf -- '- D-001\n' >> CHANGELOG.md && git add -A && git commit -qm "D-001: ids" && $J reviewed >/dev/null
 git switch -q main && git merge -q --no-ff --no-edit d1 2>/dev/null && $J release >/dev/null
 cd "$PR" && printf 'D-001 is how ids work\n' > api/ids.md && git add api/ids.md && git commit -qm "api: ids" >/dev/null 2>&1
-msg="para-sync: after a release it reports the change in this repo's terms and proposes the bump; the pin stays"
-out=$($J para-sync 2>&1)
+msg="sync on a pararepo trunk: after a release it reports the change in this repo's terms and proposes the bump; the pin stays"
+out=$($J sync 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'docs v0.2.0 is out' && echo \"\$0\" | grep -q 'D-001: used in api/ids.md' && echo \"\$0\" | grep -q 'meta: docs v0.1.0 → v0.2.0' && grep -q '\"pin\": \"v0.1.0\"' .jig/para.json" "$out"
 
 msg="repos: lists each repo and flags a path that no longer exists"
 mv mrclone ../mrclone-away; out=$($J repos 2>&1); mv ../mrclone-away mrclone
 expect_pass sh -c "echo \"\$0\" | grep -q 'docs .*(missing)'" "$out"
 
-msg="para-sync: offline, it reads the cache and says so"
-mv mrclone ../mrclone-away; out=$($J para-sync 2>&1); mv ../mrclone-away mrclone
+msg="sync on a pararepo trunk: offline, it reads the cache and says so"
+mv mrclone ../mrclone-away; out=$($J sync 2>&1); mv ../mrclone-away mrclone
 expect_pass sh -c "echo \"\$0\" | grep -q \"can't reach docs\" && echo \"\$0\" | grep -q 'reading the cache (v0.1'" "$out"
 
-msg="para-sync: with defer_until in the future it prints nothing; on or after it, the full report"
+msg="sync on a pararepo trunk: with defer_until in the future it prints nothing; on or after it, the full report"
 python3 -c "import json; p = json.load(open('.jig/para.json')); p['defer_until'] = '2999-01-01'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
-quiet=$($J para-sync 2>&1)
+quiet=$($J sync 2>&1)
 python3 -c "import json; p = json.load(open('.jig/para.json')); p['defer_until'] = '2000-01-01'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
-loud=$($J para-sync 2>&1)
+loud=$($J sync 2>&1)
 expect_pass sh -c "test -z \"\$0\" && echo \"\$1\" | grep -q 'v0.2.0 is out'" "$quiet" "$loud"
 git checkout -q -- .jig/para.json
 msg="update: a pararepo's generated header is left as it is (trunk's older checker would refuse a change)"
@@ -1571,6 +1571,165 @@ mkdir -p .jig/staging && printf 'x\n' > jig/staging/pending.md && printf 'y\n' >
 msg="update: an untracked staged file whose .jig/staging/ destination is taken refuses the dry run and --apply"
 out=$($UP 2>&1); rc=$?; rc2=$(code $UP --apply)
 expect_pass sh -c "test $rc = 2 && test $rc2 = 2 && echo \"\$0\" | grep -q 'untracked files where files would move: .jig/staging/pending.md (from jig/staging/pending.md)' && test -f jig/staging/pending.md" "$out"
+
+# ---------------------------------------------------------------- pararepo commands are the standard ones
+# Self-contained: its own metarepo, pararepos and repos.json. $R was reused above, so the jig
+# repo is found again from $P.
+JR="$(cd "$P/../.." && pwd)"
+export JIG_CONFIG="$T/pc-repos.json"
+pcnew() {  # pcnew <dir>: a git repo with the template copied in, nothing committed
+  mkdir -p "$1" && cd "$1" && git init -q -b main && git config user.email t@t && git config user.name t
+  cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" .; }
+pcfold() { sed -i.bak -e 's/^- \[ \]/- [x]/' -e 's/___/smoke/g' .jig/handoffs/*.md && rm .jig/handoffs/*.bak; }
+setjson() {  # setjson <file> <key> <value>
+  python3 -c "import json,sys; f=sys.argv[1]; d=json.load(open(f)); d[sys.argv[2]]=sys.argv[3]; json.dump(d, open(f,'w'), indent=2)" "$@"; }
+
+PM="$T/pm"; pcnew "$PM" && git add -A && git commit -qm init
+$J init --meta --name pm >/dev/null && git add -A && git commit -qm meta-init && $J release >/dev/null
+PL="$T/pl"; pcnew "$PL" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+
+msg="sync: on trunk in a plain repo it is still refused: nothing is upstream"
+out=$(cd "$PL" && $J sync 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'not on a job branch'" "$out"
+msg="sync: on trunk in a metarepo it is still refused"
+out=$(cd "$PM" && $J sync 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'not on a job branch'" "$out"
+msg="propose: in a plain repo or a metarepo it refuses, naming jig init --para"
+a=$(cd "$PL" && $J propose x.md s 2>&1); b=$(cd "$PM" && $J propose x.md s 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'jig init --para' && echo \"\$1\" | grep -q 'jig init --para'" "$a" "$b"
+msg="repos add: meta without meta.json offers jig init --meta; para without para.json offers jig init --para"
+a=$(cd "$PL" && $J repos add meta --name plm 2>&1); b=$(cd "$PL" && $J repos add para --name plp 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'jig init --meta' && echo \"\$1\" | grep -q 'jig init --para'" "$a" "$b"
+
+msg="update: a metarepo with no release.sh gets one with no TODO line, and jig release runs"
+PN="$T/pn"; pcnew "$PN" && git add -A && git commit -qm init
+$J init --meta --name pn >/dev/null && git rm -qf .jig/scripts/release.sh && git add -A && git commit -qm meta-init
+python3 "$P/jig/jig.py" update --apply >/dev/null 2>&1; git commit -qm "TOOL: update"
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test -f .jig/scripts/release.sh && ! grep -q 'TODO: release protocol' .jig/scripts/release.sh && test $rc = 0 && ! echo \"\$0\" | grep -q '/jig:release'" "$out"
+
+# A pararepo citing pm, with the metarepo's own checkout as its location: proposals land there.
+PA="$T/pa"; pcnew "$PA" && mkdir -p api && printf 'x=1\n' > api/a.py
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para pm --location "$PM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
+msg="para header: names jig sync and jig propose, no para- command"
+expect_pass sh -c "grep -q 'jig sync' AGENTS.md && grep -q 'jig propose' AGENTS.md && ! grep -qE 'para-(init|sync|propose)' AGENTS.md"
+$J open G1 --spec .jig/specs/g.md --owns 'api/**' '.jig/specs/g.md' >/dev/null
+$J open G2 --spec .jig/specs/n.md --owns '.jig/specs/n.md' 'src/**' >/dev/null && git add -A && git commit -qm "open G1 G2"
+GW="$PA/.git/jig/worktrees/G1"
+(cd "$GW" && mkdir -p .jig/specs && printf '# g\n\n## Decisions\n' > .jig/specs/g.md && $J propose .jig/specs/g.md g >/dev/null \
+  && printf 'y=2\n' >> api/a.py && git add -A && git commit -qm "api: g" && $J reviewed >/dev/null \
+  && $J handoff --spec .jig/specs/g.md >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note G1")
+gate_ok() { out=$($J gate "$1" 2>&1); rc=$?; git worktree remove --force ".git/jig/worktrees/gate-$1" 2>/dev/null; return $rc; }
+
+msg="gate: a job citing an unreleased proposal is refused, naming the proposal and the pin"
+out=$($J gate G1 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'propose/pa-g' && echo \"\$0\" | grep -q 'v0.1.0' && test ! -d .git/jig/worktrees/gate-G1" "$out"
+git worktree remove --force .git/jig/worktrees/gate-G1 2>/dev/null
+
+(cd "$PM" && git switch -q propose/pa-g && printf '\n## gee\n' >> GLOSSARY.md && printf -- '- gee\n' >> CHANGELOG.md \
+  && git add -A && git commit -qm "GLOSSARY: gee" && $J reviewed >/dev/null && git switch -q main \
+  && git merge -q --no-ff --no-edit propose/pa-g && $J release >/dev/null)
+msg="gate: released after the pin, it is refused, saying to bump the pin"
+out=$($J gate G1 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'v0.2.0' && echo \"\$0\" | grep -q 'bump the pin'" "$out"
+
+msg="sync on a pararepo trunk: the stale-header note stays quiet while the header is current"
+out=$($J sync 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'pm v0.2.0 is out' && ! echo \"\$0\" | grep -q 'header is out of date'" "$out"
+setjson .jig/para.json pin v0.2.0 && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: pm v0.1.0 → v0.2.0"
+msg="sync on a pararepo job: after trunk bumps the pin it merges trunk, and the job's cache follows, metarepo unreachable"
+mv "$PM" "$T/pm-away"; (cd "$GW" && $J sync >/dev/null 2>&1); mv "$T/pm-away" "$PM"
+expect_pass sh -c "head -1 '$GW/.jig/meta-cache/PIN' | grep -qx v0.2.0 && grep -q '\"pin\": \"v0.2.0\"' '$GW/.jig/para.json'"
+
+msg="gate: a proposal in the pinned release passes"
+expect_pass gate_ok G1
+git -C "$PM" branch -q -d propose/pa-g
+msg="gate: and still passes once the proposal branch is deleted, found by its merge commit"
+expect_pass gate_ok G1
+msg="sync on a pararepo trunk: a proposal whose branch was deleted after its release reads released by"
+mkdir -p .jig/specs && printf '# r\n\n- meta: pm proposal propose/pa-g\n' > .jig/specs/r.md
+out=$($J sync 2>&1); rm .jig/specs/r.md
+expect_pass sh -c "echo \"\$0\" | grep -q 'proposal propose/pa-g (.jig/specs/r.md): released by v0.2.0'" "$out"
+msg="gate: metarepo unreachable and a spec cites a proposal: refused, naming the metarepo"
+mv "$PM" "$T/pm-away"; out=$($J gate G1 2>&1); rc=$?; mv "$T/pm-away" "$PM"
+git worktree remove --force .git/jig/worktrees/gate-G1 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"pm can't be reached\"" "$out"
+
+NW="$PA/.git/jig/worktrees/G2"
+(cd "$NW" && mkdir -p .jig/specs src && printf '# n\n\n## Decisions\n- meta: none — internal\n' > .jig/specs/n.md \
+  && printf 'z=1\n' > src/z.py && git add -A && git commit -qm "n" && $J reviewed >/dev/null \
+  && $J handoff --spec .jig/specs/n.md >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note G2")
+msg="gate: a meta: none spec needs no metarepo"
+mv "$PM" "$T/pm-away"; gate_ok G2; rc=$?; mv "$T/pm-away" "$PM"
+expect_pass test $rc = 0
+(cd "$NW" && printf -- '- meta: other proposal propose/pa-x\n' >> .jig/specs/n.md && git add -A && git commit -qm "n: cites other" \
+  && $J reviewed >/dev/null && $J handoff --spec .jig/specs/n.md >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note G2 again")
+msg="gate: a proposal naming another metarepo than para.json's is refused as the wrong metarepo"
+out=$($J gate G2 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"on other, but this repo's metarepo is pm\"" "$out"
+
+# A spec proposed and committed on trunk, then given to a job that changes no spec.
+mkdir -p .jig/specs && printf '# t\n\n## Decisions\n' > .jig/specs/t.md && $J propose .jig/specs/t.md t >/dev/null
+git add .jig/specs/t.md && git commit -qm "specs: t" && $J open G3 --spec .jig/specs/t.md --owns 'lib/**' >/dev/null && git add -A && git commit -qm "open G3"
+TW="$PA/.git/jig/worktrees/G3"
+(cd "$TW" && mkdir -p lib && printf 'w=1\n' > lib/w.py && git add -A && git commit -qm w && $J reviewed >/dev/null \
+  && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note G3")
+msg="gate: a job whose board spec is on trunk and cites an unreleased proposal is refused, though its diff has no spec"
+out=$($J gate G3 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-G3 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'propose/pa-t'" "$out"
+# The metarepo lands that proposal as a job, by `jig merge`, releases, and deletes the branch.
+(cd "$PM" && $J open tj --branch propose/pa-t --owns GLOSSARY.md CHANGELOG.md >/dev/null && git add -A && git commit -qm "TOOL: open tj" \
+  && cd .git/jig/worktrees/propose/pa-t && printf '\n## tee\n' >> GLOSSARY.md && printf -- '- tee\n' >> CHANGELOG.md \
+  && git add -A && git commit -qm "GLOSSARY: tee" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
+  && git add -A && git commit -qm "TOOL: note tj" && cd "$PM" && $J merge tj >/dev/null && $J release >/dev/null \
+  && git worktree remove --force .git/jig/worktrees/propose/pa-t && git branch -q -D propose/pa-t)
+setjson .jig/para.json pin v0.3.0 && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: pm v0.2.0 → v0.3.0"
+msg="gate: a proposal landed by jig merge, its branch deleted, is found by the merge's job and passes"
+expect_pass sh -c "git -C '$PM' log -1 --merges --format=%s v0.3.0 | grep -qx 'merge tj' && ! git -C '$PM' rev-parse -q --verify refs/heads/propose/pa-t >/dev/null" 
+gate_ok G3; rc=$?; expect_pass test $rc = 0
+msg="init --para: a metarepo clone without the pinned tag still gets the header written; the cache waits, exit 0"
+setjson .jig/para.json pin v9.9.9 && out=$($J init --para 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'no tag v9.9.9' && grep -q 'at \`v9.9.9\`' AGENTS.md && head -1 .jig/meta-cache/PIN | grep -qx v0.3.0" "$out"
+git checkout -q -- .jig/para.json AGENTS.md
+
+# Two-part pins: a metarepo whose first release was tagged by hand as v0.1.
+TP="$T/tp"; pcnew "$TP" && git add -A && git commit -qm init && $J init --meta --name tp >/dev/null
+printf '\n## v0.1 — 2026-10-01\n- first\n' >> CHANGELOG.md && git add -A && git commit -qm meta-init && git tag v0.1
+PT="$T/pt"; pcnew "$PT" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para tp --location "$TP" --pin v0.1 >/dev/null && git add -A && git commit -qm "init --para"
+(cd "$TP" && git switch -q -c d1 && printf '| D-001 | ids are numbers | accepted | 2026-10-29 |\n' >> DECISIONS.md \
+  && printf -- '- D-001\n' >> CHANGELOG.md && git add -A && git commit -qm "D-001: ids" && $J reviewed >/dev/null \
+  && git switch -q main && git merge -q --no-ff --no-edit d1 && $J release >/dev/null)
+msg="sync: a pararepo pinned at a hand-made v0.1 sees v0.2.0, proposes the bump, and caches v0.1"
+out=$($J sync 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'tp v0.2.0 is out' && echo \"\$0\" | grep -q 'meta: tp v0.1 → v0.2.0' && head -1 .jig/meta-cache/PIN | grep -qx v0.1" "$out"
+
+# Header migration: a pararepo set up by the v0.3.1 checker, before these commands moved.
+PH="$T/ph"; pcnew "$PH" && git -C "$JR" show v0.3.1:plugin/templates/jig/jig.py > .jig/jig.py && mkdir -p api && printf 'x=1\n' > api/a.py
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para pm --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
+msg="header migration: the fixture's header names jig para-init"
+expect_pass grep -q 'jig para-init' AGENTS.md
+python3 "$P/jig/jig.py" update --apply >/dev/null 2>&1
+msg="header migration: the update commit is accepted, and leaves AGENTS.md alone"
+expect_pass sh -c "git commit -qm update && grep -q 'jig para-init' AGENTS.md"
+msg="header migration: sync on trunk says the header is out of date, naming jig init --para"
+out=$($J sync 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'the AGENTS.md header is out of date' && echo \"\$0\" | grep -q 'jig init --para'" "$out"
+$J init --para >/dev/null 2>&1
+msg="header migration: init --para changes only AGENTS.md (and para.json), and that commit is accepted"
+expect_pass sh -c "test -z \"\$(git status --porcelain | grep -vE ' (AGENTS.md|.jig/para.json)\$')\" && git add -u && git commit -qm 'header'"
+msg="header migration: afterwards no para- command, one jig:meta block, and sync is quiet about it"
+out=$($J sync 2>&1)
+expect_pass sh -c "test \"\$(grep -cE 'para-(init|sync|propose)' AGENTS.md)\" = 0 && test \"\$(grep -c 'jig:meta —' AGENTS.md)\" = 1 && ! echo \"\$0\" | grep -q 'header is out of date'" "$out"
+
+msg="header offline: with the metarepo gone from repos.json, init --para rewrites the header, says the cache wasn't refreshed, exits 0"
+cp "$JIG_CONFIG" "$T/pc-repos.bak"
+python3 -c "import json,sys; f=sys.argv[1]; d=json.load(open(f)); d.pop('pm'); json.dump(d, open(f,'w'))" "$JIG_CONFIG"
+sed -i.bak 's/by `jig init --para`/by `jig para-init`/; s/`jig propose`/`jig para-propose`/g' AGENTS.md && rm AGENTS.md.bak
+out=$($J init --para 2>&1); rc=$?; mv "$T/pc-repos.bak" "$JIG_CONFIG"
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'was not refreshed' && test \"\$(grep -c 'jig:meta —' AGENTS.md)\" = 1 && git diff --quiet -- AGENTS.md" "$out"
 
 rm -rf "$T"
 exit $fail
