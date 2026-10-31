@@ -36,7 +36,7 @@ without Claude Code.
   checks the files it promised came out, and tags `vX.Y.Z`. The first time, `/jig:release`
   asks you what the repo builds and writes the script with you.
 - **Repos that share decisions stay in sync.** A *metarepo* holds definitions and decisions; each
-  *pararepo* cites it at a released tag, and `para-sync` reports when a newer release lands.
+  *pararepo* cites it at a released tag, and `jig sync` on its trunk reports when a newer release lands.
 - **It's portable.** The repo half is one stdlib Python file, some JSON and POSIX hooks. You can
   run every command by hand, and any other agent tool can call the same ones.
 

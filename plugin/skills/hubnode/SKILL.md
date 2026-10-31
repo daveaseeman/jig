@@ -20,7 +20,8 @@ handoff or when blocked.
    say nothing. A plan: one line, "the repo is behind the plugin's layout: run /jig:update".
    Refused or blocked: one line with its first reason.
 4. `jig staging`: if anything is staged, one line with the count and kinds (`/jig:stage` resolves them).
-5. In a pararepo (`.jig/para.json`), `jig para-sync`; report a newer release in one line.
+5. In a pararepo (`.jig/para.json`), `jig sync` on trunk; report a newer release, and a
+   header it says is out of date, in one line each.
 6. `jig workflow`, and read `${CLAUDE_PLUGIN_ROOT}/tiers.json`. Say what you run on:
    `running <model> at <effort>`, from your own system prompt. If that is below the `spec`
    step's, say so in one line — the owner chose your session, and jig can't change it.
@@ -60,8 +61,9 @@ its own settings. A mismatch stops it: tell the owner, don't brief it.
 
 ## Opening a job
 
-1. Read the spec. In a pararepo, refuse a job whose spec cites a proposal `para-sync`
-   reports as not released: it would build on a decision the metarepo hasn't made.
+1. Read the spec. In a pararepo, refuse a job whose spec cites a proposal `jig sync`'s
+   report calls not released: it would build on a decision the metarepo hasn't made. This
+   is the early warning; `jig gate` refuses it for good.
    Decide: name, branch, what it builds after, which existing files it
    `owns` (only this job may touch) and which it `shares`, and whether it needs a reserved
    number.
@@ -74,7 +76,8 @@ its own settings. A mismatch stops it: tell the owner, don't brief it.
 
 ## Gating a handoff
 
-1. `jig mark <name> ready`, then `jig gate <name>`. It refuses on R8 and on a missing note.
+1. `jig mark <name> ready`, then `jig gate <name>`. It refuses on R8 and on a missing note,
+   and in a pararepo on a spec citing a proposal that isn't in the pinned release.
 2. `jig gate` sets up a detached scratch checkout of the commit the note names, with trunk
    merged in as `jig sync` would, and prints the check to run there. Don't run it in this
    session: start a session at the `check` step's settings to run it in the scratch checkout.
