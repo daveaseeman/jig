@@ -2798,7 +2798,9 @@ def rewrite_board(data: dict, files: list[str], plan: dict) -> tuple[dict, list[
             return globs
         out = []
         for g in globs:
-            ng = one(g)
+            # Only a glob whose files moved follows them: one over files that all stayed (a
+            # repo's specs/*.spec.js) would point at nothing in jig's folder.
+            ng = one(g) if any(matches(f, [g]) for f in [*moves, *plan["retire"]]) else g
             # Files that stayed behind (a collision, a non-Markdown file) are still the glob's.
             kept = ng != g and any(matches(f, [g]) for f in after)
             if ng != g:
@@ -2861,22 +2863,27 @@ def rewrite_board(data: dict, files: list[str], plan: dict) -> tuple[dict, list[
 def stale_references(root: Path, plan: dict, board_at: str) -> dict[str, list[tuple[int, str]]]:
     """Lines in the repo's own files that still name a path jig moved, keyed by where each
     file will be after the moves. Matched at a path boundary: example.com/specs/ is not one.
-    A path that still exists after the moves is not stale: some files stayed. For a glob,
-    the path is its prefix up to the first wildcard."""
+    A glob (or a `<placeholder>` path) is stale when a file that moved matches it. A file
+    or a bare folder is stale when it no longer exists after the moves: a folder some files
+    stayed in is still there."""
     olds = sorted({o for o, _ in plan["rows"]}
                   | {d for d in OLD_DIRS if any(o.startswith(d) for o, _ in plan["rows"])},
                   key=len, reverse=True)
     if not olds:
         return {}
+    # `]` and `#` end a path, so a Markdown link's text and anchor are not part of it.
     pat = re.compile(r"(?<![\w/.-])(?:\./)?((?:" + "|".join(re.escape(o) for o in olds)
-                     + r")[^\s'\"`<>()|,;:]*)")
+                     + r")[^\s'\"`()|,;:\]#]*)")
     there = set(plan["after"])
 
     def stale(ref: str) -> bool:
-        path = re.split(r"[*?\[{]", ref)[0].rstrip(".")
-        if path in there:
+        ref = re.sub(r"<[^<>/]*>", "*", ref).split(">")[0].split("<")[0].rstrip(".")
+        if re.search(r"[*?]", ref):
+            # A folder that keeps a .gitkeep is still there, but `specs/*.md` names its moved files.
+            return any(matches(o, [ref]) for o in plan["moves"])
+        if ref in there:
             return False
-        inside = path if path.endswith("/") else path + "/"
+        inside = ref if ref.endswith("/") else ref + "/"
         return not any(f.startswith(inside) for f in there)
     back = {n: o for o, n in plan["moves"].items()}
     skip = {CONFIG, JOBS, board_at, ".gitignore", *TOOL_FILES}
@@ -3035,12 +3042,9 @@ def cmd_update(root: Path, args) -> int:
     # the renames before it staged.
     occupied = [f"{n} (from {o})" for o, n in plan["moves"].items()
                 if (root / n).exists() or (root / n).is_symlink()]
-    if occupied:
-        refused.append(f"untracked files where files would move: {', '.join(occupied)}. Look at "
-                       "each, move or delete it, then update again")
     # A script that finds the repo from its own folder (`cd "$(dirname "$0")/.."`) counts
     # levels, and a move that changes its depth breaks it. The line is the repo's to fix.
-    selfref = re.compile(r"\$0\b|\$\{0\}|BASH_SOURCE|__file__|__dirname")
+    selfref = re.compile(r"\$0\b|\$\{0\}|BASH_SOURCE|__file__|__FILE__|__dir__|__dirname|import\.meta\.url")
     for o, n in plan["moves"].items():
         if n.endswith(".md") or o.count("/") == n.count("/"):
             continue
@@ -3085,10 +3089,13 @@ def cmd_update(root: Path, args) -> int:
     untracked = [(o, n) for o, n in OLD_UNTRACKED if board_at.startswith("jig/")
                  and (root / o).is_dir() and any(f.is_file() and f.relative_to(root).as_posix() not in files
                                                  for f in (root / o).rglob("*"))]
-    warnings += [f"{f.relative_to(root).as_posix()} is untracked and "
-                 f"{n}{f.relative_to(root / o).as_posix()} exists: left where it is"
+    # A staged file left in jig/staging/ would sit where jig no longer reads.
+    occupied += [f"{n}{f.relative_to(root / o).as_posix()} (from {f.relative_to(root).as_posix()})"
                  for o, n in untracked for f in sorted((root / o).rglob("*"))
                  if f.is_file() and (root / n / f.relative_to(root / o)).exists()]
+    if occupied:
+        refused.append(f"untracked files where files would move: {', '.join(occupied)}. Look at "
+                       "each, move or delete it, then update again")
     cache_line = [l for l in ignore.read_text().splitlines() if l.strip() == "jig/meta-cache/"] \
         if ignore.exists() and board_at.startswith("jig/") else []
     hooks_dir = git_common() / "hooks"

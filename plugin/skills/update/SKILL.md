@@ -45,7 +45,7 @@ one's proposed edit and ask about each; make it only on a yes. `--apply` never t
    check passes. Those are the repo's files: you edit them with the user; `jig.py` never does.
    Stale references in Markdown are worth fixing too — offer the list, don't sweep it unasked.
    A warning that a moved file finds paths from its own location (`$0`, `BASH_SOURCE`,
-   `__file__`, `__dirname`) is code to fix the same way: its folder depth changed, so a
+   `__file__`, `__dirname`, `import.meta.url`, ...) is code to fix the same way: its folder depth changed, so a
    `/..` count in that line is off. Offer the edit.
 2. If `update` added `.jig/scripts/setup.sh`, fill it the way `/jig:init` does. Then name
    anything in the repo that already does its job by hand — a check script that borrows the

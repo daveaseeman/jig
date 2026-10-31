@@ -1459,7 +1459,7 @@ ax() {  # ax <dir> [setup command]: the fixture, the setup run in it, committed
 mkf() { for f in "$@"; do mkdir -p "$(dirname "$f")" && printf 'x\n' > "$f"; done; }
 renamed() { git diff --cached -M --name-status | grep -q "^R100	$1	$2\$"; }
 
-ax "$T/pf-a" "mkf specs/a.md specs/b.md .jig/specs/b.md && printf 'See specs/b.md.\n' > docs/notes.md
+ax "$T/pf-a" "mkf specs/a.md specs/b.md .jig/specs/b.md && printf 'See [specs/b.md](specs/b.md#top).\n' > docs/notes.md
   sed -i.bak 's|\"AGENTS.md\",|\"AGENTS.md\", \"specs/**\",|' .aidev/lanes.json && rm .aidev/lanes.json.bak"
 out=$($UP 2>&1)
 msg="update per file: specs/b.md, also at .jig/specs/b.md, is warned once by name"
@@ -1473,8 +1473,10 @@ msg="update per file: common keeps specs/** beside .jig/specs/**"
 expect_pass python3 -c "import json; c = json.load(open('.jig/config.json'))['common']; assert 'specs/**' in c and '.jig/specs/**' in c, c"
 
 MIXED="mkf specs/top.md specs/app.spec.js specs/suite/README.md specs/suite/t.rs specs/unit/x.spec.js specs/deep/t.rs specs/deep/a/n.md
-  printf 'Run specs/suite/t.rs\n' > docs/notes.md"
-ax "$T/pf-b" "$MIXED"
+  printf 'Run specs/suite/t.rs\n' > docs/notes.md && printf 'Write specs/<task>.md first.\n' > docs/howto.md
+  mkdir -p tools && printf 'for f in specs/*.md; do :; done\n' > tools/each.sh && printf 'specs/**/*.spec.js\n' > tools/runner.txt"
+ax "$T/pf-b" "$MIXED
+  sed -i.bak 's|\"AGENTS.md\",|\"AGENTS.md\", \"specs/*.spec.js\",|' .aidev/lanes.json && rm .aidev/lanes.json.bak"
 out=$($UP 2>&1); rc=$?
 msg="update subfolders: the dry run exits 1, warning once each that specs/suite/ and specs/deep/ move whole"
 expect_pass sh -c "test $rc = 1 && test \"\$(echo \"\$0\" | grep -c 'specs/suite/ holds Markdown, so it moves whole')\" = 1 && test \"\$(echo \"\$0\" | grep -c 'specs/deep/ holds Markdown, so it moves whole')\" = 1" "$out"
@@ -1482,7 +1484,11 @@ msg="update subfolders: specs/app.spec.js and specs/unit/ stay, each with the no
 expect_pass sh -c "echo \"\$0\" | grep -q 'specs/app.spec.js is in specs/ but isn.t Markdown' && echo \"\$0\" | grep -q 'specs/unit/x.spec.js is in specs/ but isn.t Markdown'" "$out"
 msg="update subfolders: a file naming specs/suite/t.rs, which moves, is stale"
 expect_pass sh -c "echo \"\$0\" | sed -n '/^Stale references/,/^\$/p' | grep -q docs/notes.md" "$out"
+msg="update stale: specs/*.md and specs/<task>.md are stale though specs/ keeps files; specs/**/*.spec.js is not"
+expect_pass sh -c "s=\$(echo \"\$0\" | sed -n '/^Stale references/,/^\$/p'); echo \"\$s\" | grep -q tools/each.sh && echo \"\$s\" | grep -q docs/howto.md && ! echo \"\$s\" | grep -q tools/runner.txt" "$out"
 $UP --apply >/dev/null 2>&1
+msg="update: a common glob over files that all stayed, specs/*.spec.js, is left as it is"
+expect_pass python3 -c "import json; c = json.load(open('.jig/config.json'))['common']; assert 'specs/*.spec.js' in c and '.jig/specs/*.spec.js' not in c, c"
 msg="update subfolders: top.md, all of specs/suite/ and all of specs/deep/ move R100; the rest stays"
 expect_pass sh -c "$(declare -f renamed); for f in top.md suite/README.md suite/t.rs deep/t.rs deep/a/n.md; do renamed specs/\$f .jig/specs/\$f || exit 1; done; test -f specs/app.spec.js && test -f specs/unit/x.spec.js"
 
@@ -1559,6 +1565,12 @@ mkf .jig/worktrees/y/f
 msg="update worktrees: beside eaec973's board, a folder in .jig/worktrees/ refuses the same way"
 out=$($UP 2>&1); rc=$?
 expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q '.jig/worktrees/y is not a checkout git knows'" "$out"
+
+R="$(dirname "$(dirname "$P")")" old "$T/st-a" 5d955a2 jig2
+mkdir -p .jig/staging && printf 'x\n' > jig/staging/pending.md && printf 'y\n' > .jig/staging/pending.md
+msg="update: an untracked staged file whose .jig/staging/ destination is taken refuses the dry run and --apply"
+out=$($UP 2>&1); rc=$?; rc2=$(code $UP --apply)
+expect_pass sh -c "test $rc = 2 && test $rc2 = 2 && echo \"\$0\" | grep -q 'untracked files where files would move: .jig/staging/pending.md (from jig/staging/pending.md)' && test -f jig/staging/pending.md" "$out"
 
 rm -rf "$T"
 exit $fail
