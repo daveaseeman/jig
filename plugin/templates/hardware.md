@@ -1,6 +1,6 @@
 # <Board name>
 
-Defined from: TODO (the definition's file path, or "pasted YYYY-MM-DD")
+Defined from: TODO (the definition's file path and the first 12 hex of its sha256, or "pasted YYYY-MM-DD"; a URL needs a commit or a hash too, since the page behind it changes)
 
 <!-- jig's board template. Filled from a hardware definition, then checked against the code;
      the code alone can't say what the board is. Before code for this board passes the gate,
@@ -14,9 +14,12 @@ Defined from: TODO (the definition's file path, or "pasted YYYY-MM-DD")
 - [ ] Power rail can supply the peak draw (camera, radio, display backlight together)
 
 ## Components
-| Component | Part | Role | Notes |
-|---|---|---|---|
-| TODO | TODO (e.g. ESP32-S3-WROOM-1 N16R8) | TODO (e.g. processor, display, radio, sensor) | TODO (e.g. 16MB flash, 8MB PSRAM) |
+<!-- Datasheet: a relative link to the file under components/<part>/ · its source URL · the date
+     retrieved · the first 12 hex of its sha256. E.g. for a made-up part QX-100: a link to
+     components/qx-100/qx-100.pdf · https://example.com/qx-100.pdf · 2026-01-15 · 3f2a9c01b7de -->
+| Component | Part | Role | Datasheet | Notes |
+|---|---|---|---|---|
+| TODO | TODO (e.g. ESP32-S3-WROOM-1 N16R8) | TODO (e.g. processor, display, radio, sensor) | TODO | TODO (e.g. 16MB flash, 8MB PSRAM) |
 
 ## Board
 - Board:       TODO (e.g. ESP32-S3-DevKitC-1, or "custom rev B")

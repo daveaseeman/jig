@@ -24,8 +24,8 @@ identical; only the coordination disappears.
 ## The board
 
 Two files on trunk, written only by the hubnode. `.jig/config.json` holds what rarely
-changes: `trunk`, `common`, `append_files`, `reserve`, `docmap`, `not_docs`, `release` and the
-layout's `version`. `.jig/jobs.json` holds the open jobs, nothing else. Per job:
+changes: `trunk`, `common`, `append_files`, `reserve`, `docmap`, `not_docs`, `release`,
+`reference_files` and the layout's `version`. `.jig/jobs.json` holds the open jobs, nothing else. Per job:
 
 | Key | Meaning |
 |---|---|
@@ -136,6 +136,17 @@ code. A `docmap` entry ties each page to the code that targets its board, so eve
 that changes that code asks whether the page still matches. Code that runs on a board does
 not pass the gate without a page that matches it; for that code, "no page needed" is not an
 answer.
+
+Only `docs/hardware/<board>.md` is a board page. The files a page leans on have two homes
+beside it: `docs/hardware/components/<part>/`, one folder per part with its datasheets and
+notes, shared by every board that uses the part; and `docs/hardware/<board>/`, one board's
+files that aren't its page (a schematic, a snapshot of its definition). The page's Components
+table links each datasheet with its source URL, the date it was retrieved and the first 12
+hex digits of its sha256, so a check names the exact document it was made against. Whether
+the binaries are committed is the repo's call, `reference_files` in the config: `commit`, or
+`ignore` with `docs/hardware/*/**/*.[pP][dD][fF]` in `.gitignore`, covering both homes, and
+the URL and hash on the page to fetch it again. `jig survey` reports a component file no board page links, and a link
+to one that doesn't exist.
 
 ## Fold-in
 

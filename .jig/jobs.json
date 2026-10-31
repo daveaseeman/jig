@@ -14,23 +14,5 @@
       "plugin/skills/hubnode/SKILL.md"
     ],
     "reserved": {}
-  },
-  "hardware-ref": {
-    "spec": ".jig/specs/hardware-reference-files.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/templates/hardware.md",
-      "plugin/skills/hardware/**",
-      "plugin/skills/adopt/**",
-      "plugin/templates/AGENTS.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh",
-      "README.md"
-    ],
-    "reserved": {}
   }
 }
