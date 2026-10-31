@@ -134,7 +134,9 @@ class Board:
             if raw:
                 return cls(base, json.loads(raw), json.loads(git("show", f"{trunk}:{JOBS}") or "{}"))
         if not (base / CONFIG).exists():
-            die(f"no board at {CONFIG}. Run: jig init", 2)
+            old = old_board(base)
+            die(f"an older jig's board is at {old}: run /jig:update first" if old
+                else f"no board at {CONFIG}. Run: jig init", 2)
         jobs = base / JOBS
         return cls(base, json.loads((base / CONFIG).read_text()),
                    json.loads(jobs.read_text()) if jobs.exists() else {})
@@ -436,7 +438,18 @@ def reserved_refusals(root: Path, board: "Board", holds: dict[str, set[str]],
     return out
 
 
+def old_board(root: Path) -> str | None:
+    """An older jig's board, at any path update knows how to move."""
+    return next((p for p in LAYOUT[0][1] if (root / p).exists()), None)
+
+
 def cmd_init(root: Path, args) -> int:
+    # A second board beside an old one is what update refuses as "two boards", and the hooks
+    # would run a trunk .jig/jig.py that doesn't exist yet: so nothing is written at all.
+    old = old_board(root)
+    if old:
+        die(f"refused: {old} is an older jig's board, and init would write a second one beside "
+            f"it. Run `jig update` (then --apply), commit, then run this same `jig init` again", 2)
     (root / DIR).mkdir(exist_ok=True)
     ensure_staging(root)
     path = root / CONFIG
@@ -500,6 +513,12 @@ def foreign_hooks() -> list[str]:
 
 
 def cmd_install_hooks(root: Path, args) -> int:
+    # The old board's hooks still work; these would run a trunk .jig/jig.py that isn't there.
+    # Update installs them itself, once the board has moved.
+    old = old_board(root)
+    if old:
+        die(f"refused: {old} is an older jig's board, and these hooks would replace its own with "
+            f"ones that check nothing. Run `jig update` (then --apply) instead: it installs them", 2)
     trunk = Board.trunk_name(root)
     common = git_common()
     hooks = common / "hooks"
@@ -1279,7 +1298,9 @@ def cmd_survey(root: Path, args) -> int:
                 co["open_branches"]]):
         print("  none found — a single-session repo; jobs need no setup until a second session starts")
     print("\nDoc homes: " + "; ".join(f"{k} = {v}" for k, v in DOC_HOMES.items()))
-    print("Run /jig:adopt to turn this into a migration plan.")
+    old = old_board(root)
+    print(f"An older jig's board is at {old}: run /jig:update first, not /jig:adopt or /jig:init."
+          if old else "Run /jig:adopt to turn this into a migration plan.")
     return 0
 
 # ------------------------------------------------------------------- metarepo
@@ -1364,7 +1385,7 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
     md = [p for p in paths if p.endswith(".md")]
     diff = git("diff", "-U0", base(trunk), *(["--cached"] if staged else []), "--", *md) if md else ""
     for m in rx.finditer(diff):
-        cells = [c.strip().lower() for c in m.group(1).split("|")]
+        cells = [c.lower() for c in table_cells(m.group(1))]
         if not (any(STATUS_CELL.fullmatch(c) for c in cells)
                 and any(re.fullmatch(r"\d{4}-\d{2}-\d{2}", c) for c in cells)):
             out.append(f"M2 a decision row needs a status ({'/'.join(DECISION_STATUSES)}) and a "
@@ -1742,9 +1763,13 @@ def cmd_repos(root: Path, args) -> int:
         repos[name] = {"path": str(path), "kind": kind}
         save_repos(repos)
         print(f"{name} ({kind}) → {path}")
-        if kind == "meta" and not (path / META).exists():
+        old = old_board(path) if kind in ("meta", "para") else None
+        if old:
+            print(f"  {old} is an older jig's board: run `jig update` there, commit, then "
+                  f"`jig init --{kind}{' <metarepo name>' if kind == 'para' else ''}`")
+        elif kind == "meta" and not (path / META).exists():
             print(f"  not a metarepo yet: run `jig init --meta` there")
-        if kind == "para" and not (path / PARA).exists():
+        elif kind == "para" and not (path / PARA).exists():
             print(f"  not a pararepo yet: run `jig init --para <metarepo name>` there")
         return 0
     if args.action == "rename":
@@ -2299,40 +2324,61 @@ STATUS_COLUMNS = ("what happened", "status")
 SEPARATOR = re.compile(r"^\|\s*:?-")      # |---|, | --- |, |:--|
 
 
-def split_ledger(text: str) -> tuple[list[str], list[list[str]], int]:
+def table_cells(line: str) -> list[str]:
+    """A GFM table row's cells, as GitHub reads them: `\\|` is a literal pipe, and a `|` in
+    backticks still splits."""
+    s = line.strip()
+    s = s[1:] if s.startswith("|") else s
+    s = s[:-1] if s.endswith("|") and not s.endswith("\\|") else s
+    return [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", s)]
+
+
+def split_ledger(text: str) -> tuple[list[str], list[list[str]], int, list[str]]:
     """A review ledger without its taken rows: the whole text kept, the tables that have a
-    status column (header, separator, untaken rows), and how many rows were dropped."""
-    lines, out, tables, dropped = text.splitlines(), [], [], 0
-    col = None
+    status column (header, separator, untaken rows), how many rows were dropped, and the rows
+    kept because their cell count isn't the header's."""
+    lines, out, tables, dropped, malformed = text.splitlines(), [], [], 0, []
+    col = width = None
     for i, line in enumerate(lines):
-        cells = [c.strip().lower() for c in line.strip().strip("|").split("|")]
+        cells = [c.lower() for c in table_cells(line)]
         if line.startswith("|") and i + 1 < len(lines) and SEPARATOR.match(lines[i + 1]):
             # A findings table names the finding before what happened to it; a status in the
             # first column is a tally of the statuses, not a finding.
             col = next((n for n, c in enumerate(cells) if c in STATUS_COLUMNS and n > 0), None)
+            width = len(cells)
             if col is not None:
                 tables.append([line, lines[i + 1]])
         elif not line.startswith("|"):
             col = None
         elif col is not None and not SEPARATOR.match(line):
-            if col < len(cells) and TAKEN.match(cells[col]):
+            # A row of another width has its status in some other cell, or none: a guess
+            # could drop an untaken finding, so it stays and is named.
+            if len(cells) != width:
+                malformed.append(f"{REVIEW_LEDGER}: row `{table_cells(line)[0]}` has {len(cells)} "
+                                 f"cells, its header {width}: kept, check it")
+            elif TAKEN.match(cells[col]):
                 dropped += 1
                 continue
             tables[-1].append(line)
         out.append(line)
-    return out, tables, dropped
+    return out, tables, dropped, malformed
 
 
 def ledger_step(root: Path) -> str:
-    _, tables, dropped = split_ledger((root / REVIEW_LEDGER).read_text(errors="replace"))
-    kept = sum(len(t) - 2 for t in tables)
+    _, tables, dropped, malformed = split_ledger((root / REVIEW_LEDGER).read_text(errors="replace"))
+    kept = sum(len(t) - 2 for t in tables) - len(malformed)
     return (f"{REVIEW_LEDGER} → {DEFERRED}: its {kept} untaken row{'s' if kept != 1 else ''} "
             f"(deferred, rejected, open) carry over, its {dropped} taken row"
-            f"{'s' if dropped != 1 else ''} are dropped, and the file is removed")
+            f"{'s' if dropped != 1 else ''} are dropped, {len(malformed)} malformed kept, and the "
+            f"file is removed")
+
+
+def ledger_warnings(root: Path) -> list[str]:
+    return split_ledger((root / REVIEW_LEDGER).read_text(errors="replace"))[3]
 
 
 def fold_ledger(root: Path, here: Path) -> None:
-    text, tables, _ = split_ledger((root / REVIEW_LEDGER).read_text(errors="replace"))
+    text, tables, _, _ = split_ledger((root / REVIEW_LEDGER).read_text(errors="replace"))
     dest = root / DEFERRED
     if dest.exists():
         body = dest.read_text().rstrip("\n") + f"\n\n## From {REVIEW_LEDGER}\n"
@@ -2693,6 +2739,7 @@ def cmd_update(root: Path, args) -> int:
     removed += [f"{g} (nothing of jig's replaces it)" for g in plan["gone"]]
     removed += [f"{REVIEW_LEDGER} (its untaken rows move to {DEFERRED})"
                 for s in steps if s[2] is fold_ledger]
+    warnings += [w for s in steps if s[2] is fold_ledger for w in ledger_warnings(root)]
     removed += board_gone
     ignore = root / ".gitignore"
     # Today's board is at .jig/ too, so .jig/worktrees/ is old only beside an older board.
