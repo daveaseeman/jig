@@ -1,7 +1,7 @@
 {
   "r6-merge": {
     "spec": ".jig/specs/bug-merge-after-sync.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [
       "workflow"
     ],
