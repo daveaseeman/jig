@@ -1968,5 +1968,12 @@ out=$($J sync 2>&1)
 msg="sync: a lowercase decision_prefix's dec-1 is reported, used in api/one.md and not in api/twelve.md"
 expect_pass sh -c "echo \"\$0\" | grep -q 'dec-1: used in api/one.md\$'" "$out"
 
+# Hardware: a datasheet whose name holds parentheses.
+FK="$T/fu-hw"; pcnew "$FK" && mkdir -p docs/hardware/components/rtc && printf '%%PDF-fake\n' > 'docs/hardware/components/rtc/qx-20(rev1).pdf'
+printf '# Watch\n\n| RTC | QX-20 | time | [ds](components/rtc/qx-20(rev1).pdf) |\n' > docs/hardware/watch.md
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+msg="survey: components/rtc/qx-20(rev1).pdf, linked bare, is neither missing nor unlinked"
+expect_pass hrsurvey "assert r['components_missing'] == [] and r['components_unlinked'] == [], r"
+
 rm -rf "$T"
 exit $fail

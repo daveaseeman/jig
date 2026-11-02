@@ -30,8 +30,9 @@ the code always matches it, and the check at the gate would catch nothing.
      only a URL, the cell holds the URL, the date and "not saved", and no hash: there is no
      file to hash.
    - **Committed or ignored.** Read `reference_files` in `.jig/config.json`. Unset (`""`, or
-     absent), this is the repo's first board page: ask once whether reference binaries are
-     committed (`commit`) or ignored (`ignore`). A public repo may not be allowed to
+     absent): ask once whether reference binaries are committed (`commit`) or ignored
+     (`ignore`). Unset doesn't mean no pages yet: after `jig update` an older repo is unset
+     with pages already there. A public repo may not be allowed to
      redistribute vendor PDFs, so don't pick for it. On `ignore`, `.gitignore` gains
      `docs/hardware/*/**/*.[pP][dD][fF]`, which covers both homes, and any PDF already
      committed there leaves the index with `git rm --cached` (the file stays on disk); the page

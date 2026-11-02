@@ -44,8 +44,8 @@ BOARD_DEFAULTS = {
     "not_docs": [],        # globs whose markdown ships as code; survey finds no home for it
     "release": {"artifacts": []},   # globs release.sh must produce; see `jig release`
     # Whether a board's datasheets are committed ("commit") or gitignored ("ignore"). Left
-    # unset, the hardware skill asks on the repo's first board page: a public repo may not be
-    # allowed to redistribute vendor PDFs, so it's the repo's call.
+    # unset, the hardware skill asks once, the next time it writes a page: a public repo may
+    # not be allowed to redistribute vendor PDFs, so it's the repo's call.
     "reference_files": "",
 }
 # Who runs each step, as numbers the tool maps to its own models and efforts. Tier 1 is the
@@ -1391,7 +1391,9 @@ def board_pages(md: list[str]) -> list[str]:
 # Markdown link targets: inline `[t](target "title")` and reference definitions `[d]: target`.
 # A target may sit in <...> so it can hold spaces; a bare one with a space is accepted too,
 # because a board page is read by people, and a link that renders for them counts.
-MD_INLINE = re.compile(r"""\]\(\s*(<[^>]*>|[^)\n]*?)(?:\s+"[^"]*"|\s+'[^']*')?\s*\)""")
+# A bare target may hold one level of balanced parentheses, as CommonMark allows: a vendor's
+# `qx-20(rev1).pdf` is one file, not `qx-20(rev1`.
+MD_INLINE = re.compile(r"""\]\(\s*(<[^>]*>|(?:[^()\n]|\([^()\n]*\))*?)(?:\s+"[^"]*"|\s+'[^']*')?\s*\)""")
 MD_REFDEF = re.compile(r"""^ {0,3}\[[^\]]+\]:\s*(<[^>]*>|.*?)(?:\s+"[^"]*"|\s+'[^']*')?\s*$""", re.M)
 
 
