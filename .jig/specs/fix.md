@@ -25,10 +25,10 @@ root cause at a time. Every staged file dropped anywhere leaves a recorded reaso
       path. It never writes to `$TMPDIR`, and it still changes nothing in the reporting repo.
 - [ ] `jig staging` also lists `~/.config/jig/feedback/`. `resolve` and `drop` act on files there
       too.
-- [ ] `jig staging drop <file> --why "<reason>"` requires the reason. It appends a row to
-      `.jig/ledgers/DROPPED.md` (date, file, kind, from or source, reason) and deletes the file.
-      The first row creates the ledger from the plugin's template. Smoke: a drop without `--why`
-      is refused, and one with it writes the row.
+- [ ] `jig staging drop <file> ["<reason>"]` appends a row to `.jig/ledgers/DROPPED.md` (date,
+      file, kind, from or source, reason) and deletes the file. The reason is the quoted text
+      after the file name, with no flag. Without it, the row says `(no reason given)`. The first
+      row creates the ledger from the plugin's template. Smoke: both forms write their row.
 - [ ] `resolve` on `kind: feedback` works like a user story: it needs a spec carrying
       `Source: <source> (staged as <file>)`.
 - [ ] `/jig:fix`, a skill run in the jig repo:
@@ -68,6 +68,8 @@ root cause at a time. Every staged file dropped anywhere leaves a recorded reaso
 ## Decisions
 - This reverses release.md's "drop records nothing". The owner's reason: a reason can't hurt, and
   `/jig:fix` drops reports for reasons the owner may want to overrule later.
+- Owner, Nov 2: the reason is positional (`drop <file> "<reason>"`), not a flag, and optional. A
+  drop with no reason still leaves a row. `/jig:fix` always gives one.
 
 ## Workflow
 spec: tier 2, effort 2
