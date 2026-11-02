@@ -2025,5 +2025,25 @@ msg="feedback: a report in the fallback folder drops from there, and nothing is 
 before=$(git rev-parse HEAD)
 expect_pass sh -c "$J staging drop r2.md && test ! -e '$T/fb/feedback/r2.md' && test \"\$(git rev-parse HEAD)\" = '$before'"
 
+FJ="$T/fb2/jig"; pcnew "$FJ" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+fbj() { fb "$@" && sed -i.bak 's/^target: this$/target: jig/' "$1/$2" && rm "$1/$2.bak"; }
+msg="feedback: in a repo named jig, a target: jig report in the fallback waits for a spec carrying its mark, then resolves"
+fbj "$T/fb/feedback" r3.md widget
+out=$($J staging resolve r3.md 2>&1); rc=$?
+mkdir -p .jig/specs && printf '# Fix\n\nSource: chat r3.md (staged as r3.md)\n' > .jig/specs/fix-r3.md
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'a report resolves into a spec' && $J staging resolve r3.md && test ! -e '$T/fb/feedback/r3.md'" "$out"
+
+FR="$T/fb-rel"; pcnew "$FR" && git add -A && git commit -qm init && $J init --meta --name fr >/dev/null && git add -A && git commit -qm meta-init
+fb "$T/fb/feedback" other.md widget && sed -i.bak 's/^target: this$/target: elsewhere/' "$T/fb/feedback/other.md" && rm "$T/fb/feedback/other.md.bak"
+fb "$T/fb/feedback" mine.md widget && sed -i.bak 's/^target: this$/target: fr/' "$T/fb/feedback/mine.md" && rm "$T/fb/feedback/mine.md.bak"
+msg="feedback: release refuses while a report for this repo waits in the fallback, naming it and not another repo's"
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'release waits while 1 file.*mine.md' && ! echo \"\$0\" | grep -q other.md && ! git tag | grep -q ." "$out"
+msg="feedback: once it's dropped, the release goes through beside the other repo's report"
+expect_pass sh -c "$J staging drop mine.md >/dev/null && $J release >/dev/null && git tag | grep -q ."
+rm "$T/fb/feedback/other.md"
+msg="feedback: jig repos prints where tool reports wait"
+expect_pass sh -c "$J repos | grep -q 'tool reports wait in .*/fb/feedback while'"
+
 rm -rf "$T"
 exit $fail

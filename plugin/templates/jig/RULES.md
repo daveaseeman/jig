@@ -266,8 +266,9 @@ A report on jig itself is `kind: feedback`, staged in the jig repo, whose header
 it waits in `feedback/` beside the repos list instead; `jig staging` lists that folder too, and
 resolves or drops files from it. A report resolves like a story: into a spec carrying its source.
 
-While anything is staged, `jig release` refuses; `--force` releases anyway and names the staged
-files in the release commit. Commits, pushes and gates don't look at staging. A chat needs access to `~/.config/jig/` (where
+While anything is staged, a report for this repo in that `feedback/` folder included,
+`jig release` refuses; `--force` releases anyway and names the staged files in the release
+commit. Commits, pushes and gates don't look at staging. A chat needs access to `~/.config/jig/` (where
 `jig repos` keeps paths) and then to one repo's `.jig/staging/`, nothing more.
 
 ## Metarepo and pararepos

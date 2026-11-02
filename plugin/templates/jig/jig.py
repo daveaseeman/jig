@@ -1859,7 +1859,7 @@ def cmd_release(root: Path, args) -> int:
         die(f"the release protocol isn't defined ({missing}): run /jig:release, which asks what "
             f"this repo builds and ships and fills in {RELEASE} and release.artifacts", 2)
     problems = meta_problems(root, meta, trunk) if meta else []
-    left = staged_files(main_root())
+    left = release_waits_for()
     if not args.force:
         problems += staged_refusal("the release")
     if problems:
@@ -2089,6 +2089,7 @@ def cmd_repos(root: Path, args) -> int:
         print(f"  {name:<24} {e['kind']:<5} {e['path']}{missing}{'   ← here' if name in mine else ''}")
     if not repos:
         print(f"no repos in {repos_file()}: jig repos add repo|meta|para")
+    print(f"tool reports wait in {feedback_dir()} while no repo in this list is named jig")
     return 0
 
 
@@ -2447,13 +2448,26 @@ def staged_summary(root: Path) -> str:
         f"{kinds.count(k)} {k}" for k in dict.fromkeys(kinds))
 
 
+def fallback_files() -> list[Path]:
+    d = feedback_dir()
+    return sorted(d.glob("*.md")) if d.is_dir() else []
+
+
+def release_waits_for() -> list[Path]:
+    """The main checkout's staging, since staged files are never committed, and any report in
+    the fallback folder aimed at this repo: it is staged here in all but location."""
+    names = this_repo_names(main_root())
+    return staged_files(main_root()) + [f for f in fallback_files()
+                                        if read_staged(f)[0].get("target") in names]
+
+
 def staged_refusal(what: str) -> list[str]:
-    """Release waits while anything is staged: the main checkout's folder, since staged files
-    are never committed. Reading it only refuses more, so a branch can't weaken it."""
-    files = staged_files(main_root())
+    """Release waits while anything is staged. Reading it only refuses more, so a branch can't
+    weaken it."""
+    files = release_waits_for()
     return [f"{what} waits while {len(files)} file{'s' if len(files) > 1 else ''} sit in "
-            f"{STAGING}: {', '.join(f.name for f in files)}. Resolve or drop each "
-            f"(`jig staging resolve` / `drop`), or force it"] if files else []
+            f"{STAGING} or {feedback_dir()}: {', '.join(f.name for f in files)}. Resolve or "
+            f"drop each (`jig staging resolve` / `drop`), or force it"] if files else []
 
 
 def this_repo_names(root: Path) -> set[str]:
@@ -2480,14 +2494,15 @@ def decision_id(cell: str) -> str:
 def cmd_staging(root: Path, args) -> int:
     if args.action not in ("resolve", "drop"):
         files = staged_files(root)
-        waiting = sorted(feedback_dir().glob("*.md")) if feedback_dir().is_dir() else []
+        waiting = fallback_files()
         if not files and not waiting:
             print(f"nothing staged in {STAGING}")
             return 0
         if files:
             print(staged_summary(root))
         if waiting:
-            print(f"{len(waiting)} waiting in {feedback_dir()} (the jig repo isn't in repos.json):")
+            why = "" if repo_path("jig") else " (the jig repo isn't in repos.json)"
+            print(f"{len(waiting)} waiting in {feedback_dir()}{why}:")
         bad = False
         for f in files + waiting:
             head, _, problems = read_staged(f)

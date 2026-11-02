@@ -11,8 +11,10 @@ hook output, and the skill involved.
 
 Then:
 
-1. Write the report as a staged file, `feedback-<repo>-<date>.md`. One section per issue,
-   each with the five steps and a "done when" the plugin owner can test. Its header:
+1. Write the report as a staged file, `feedback-<repo>-<date>-<slug>.md`, the slug a few words
+   naming the issue. Never overwrite a staged file: if the name is taken, pick another slug.
+   One section per issue, each with the five steps and a "done when" the plugin owner can
+   test. Its header:
 
    ```yaml
    ---
@@ -30,7 +32,8 @@ Then:
 
 2. Find the jig repo with `python3 .jig/jig.py repos` (it needs only `~/.config/jig/`). If an
    entry is named `jig`, write the file into `<its path>/.jig/staging/` — ask for access to
-   exactly that folder. If not, write it into `~/.config/jig/feedback/`. Never a temp folder:
+   exactly that folder. If not, write it into the `feedback/` folder beside your repos list
+   (`jig repos` prints where; `~/.config/jig/feedback/` by default). Never a temp folder:
    reports there were lost when it was cleared.
 3. Print the path. The report waits there until `/jig:fix` runs in the jig repo.
 4. Stop. Do not edit `.jig/jig.py` or `.jig/RULES.md`, do not add a `WORKAROUND:` or a ledger row, do not commit.

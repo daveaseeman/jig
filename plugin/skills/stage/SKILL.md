@@ -19,8 +19,8 @@ status: staged
 ```
 
 A `feedback` file, written by `/jig:feedback`, also carries `from:` (the reporting repo) and
-`jig_version:`. When the jig repo isn't registered it waits in `~/.config/jig/feedback/`, which
-`jig staging` lists too.
+`jig_version:`. When the jig repo isn't registered it waits in the `feedback/` folder beside your
+repos list (`jig repos` prints where), which `jig staging` lists too.
 
 ## Staging a file
 
