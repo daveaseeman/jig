@@ -10,9 +10,11 @@ repo="${CLAUDE_PROJECT_DIR:-$PWD}"
 cd "$repo" 2>/dev/null || exit 0
 gitdir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0
 [ -f "$gitdir/jig/enabled" ] || exit 0
-# jig's own copy runs through bash, so a lost executable bit can't switch it off. The older
-# paths must still be executable: a root scripts/check.sh may be the repo's own, not jig's.
-[ -f "$repo/.jig/scripts/check.sh" ] && exec bash "$repo/.jig/scripts/check.sh"
+# jig's own copy runs as itself when executable, so a repo may write it in any language;
+# through bash when not, so a lost executable bit can't switch it off. The older paths must
+# still be executable: a root scripts/check.sh may be the repo's own, not jig's.
+s="$repo/.jig/scripts/check.sh"
+if [ -f "$s" ]; then [ -x "$s" ] && exec "$s"; exec bash "$s"; fi
 for s in "$repo/jig/scripts/check.sh" "$repo/scripts/check.sh"; do
   [ -x "$s" ] && exec "$s"
 done

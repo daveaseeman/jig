@@ -125,14 +125,17 @@ Smoke, one case per numbered finding that has a behavior, plus:
 ## Touches
 - `plugin/templates/jig/jig.py`:
   - `cmd_update`'s worktree scan, untracked leftovers and stale references
-  - M5 and the pre-push hook
+  - M3 (deletions and rename sources), M4 and M5 on a detached trunk, the pre-push hook and
+    the hook template (stdin shared with a `.local` hook)
   - `cmd_merge`, `changed_since`, `cmd_gate`
   - `reserved_refusals`
   - `bare_path` and decisions resolve
-  - `cmd_propose`, `forward`, M2's message, `terms_changed` and the usage grep
+  - `cmd_propose`, `forward`, M2's message, `terms_changed`, the usage grep and `decision_rows`
   - `MD_INLINE`
 - `plugin/scripts/check.sh`, `format.sh`.
-- `plugin/templates/jig/RULES.md`: Reserved numbers, the reversal sentence, git 2.38.
+- `plugin/templates/jig/RULES.md`: Reserved numbers (unique working alone, section rule
+  numbers), the reversal sentence, git 2.38 and the merge refusal (Handoff, gate, merge), the
+  staging destination, the M4 and M5 rows, the pre-push sentence.
 - `plugin/skills/hardware/SKILL.md`, `tests/smoke.sh`.
 
 Build after `entry-globs` merges: it also changes M3, `cmd_merge` and the metarepo paths.

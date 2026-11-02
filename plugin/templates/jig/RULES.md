@@ -106,7 +106,12 @@ A number is taken where trunk had no match for it, in any of the counter's files
 change adds one. So `### 31.2` under a section 31 that trunk has takes nothing, and `### 32.1`
 takes section 32. `"unique": true` is for numbers that must also appear once: a second
 `SCHEMA_VERSION = 17` where trunk has one is refused as "17 already exists". It is off unless
-set, because a section number appears once per rule under it.
+set, because a section number appears once per rule under it. It applies working alone too,
+with no job open: there is nobody to take a number from, but a second 17 still breaks.
+
+A section's rule numbers (`### 31.2`) belong to whoever holds the section. R6 counts whole
+numbers, so within a section trunk already has, nothing stops two jobs adding the same rule
+number: give each job its own section, or settle it at the merge.
 
 `--reserve <counter>` hands the job max(the highest on trunk, the highest an open job
 holds) + 1, so two jobs open at once never get the same number. `jig reserve <job> <counter>`
@@ -202,8 +207,11 @@ else stops with the files named, and a person resolves it.
 3. **The hubnode merges** with `jig merge <job>`, which deletes the job's entry in the merge
    commit itself, then syncs the clean jobs. A job synced since its note still merges: only
    the job's own commits count as changes since the check, and what a sync's resolution
-   carries beyond what `jig sync` would make of it. Either refuses until it is handed off
-   again. What the merge touched in shared files goes in that commit's message (`-m`).
+   carries beyond what `jig sync` would make of it (this replay needs git 2.38 or later).
+   Either refuses until it is handed off again. A job that wasn't synced and conflicts with
+   trunk in an `append_files` file is refused with "`jig sync` the job, then merge": the sync
+   resolves the appends as the gate did and stops on anything else. A job whose only
+   conflicts were appends needs no new handoff after it. What the merge touched in shared files goes in that commit's message (`-m`).
    `--subject <text>` puts text before it: the subject becomes `<text>: merge <job>`, for a
    repo whose subjects lead with ids.
 
@@ -244,8 +252,9 @@ bug in the spec or the approach: investigate it, don't start a fourth.
 user story. It is never committed, and nothing in it is decided — read it for context, never
 cite it. Each file's header names its `target` (a repo name, or `this`), `kind`, `change`
 (`new` or `update`), `destination` inside the target, and `source`. A destination is a bare
-path: a spec, doc or decisions file whose destination carries anything else (`docs/DECISIONS.md,
-on branch x`) is refused, never guessed at.
+path, with no space and no `:`, `,` or `;`: a spec, doc or decisions file whose destination
+carries anything else (`docs/DECISIONS.md, on branch x`, `see docs/x.md`) is refused, never
+guessed at. In a metarepo, decisions land only in a register `entry_files` names.
 
 `jig staging resolve <file>` lands it: a new spec or doc is written with its source; an
 update, a story's spec, or decisions with other content wait until the work is done and the
@@ -268,7 +277,8 @@ nothing copies it. Three rules do the work:
 
 A question that binds the pararepos gets its decision row when it is asked, with status
 `open`, so it can be cited before it is answered. The same row then moves to `proposed`, then
-`accepted` or `rejected`; a reversed decision is marked `superseded` and released as a major.
+`accepted` or `rejected`; a reversed decision is marked `superseded` (or `rejected`, when an accepted one is withdrawn)
+and released as a major.
 
 Each side's gates are on only when its file is on trunk: `.jig/meta.json` or `.jig/para.json`.
 `jig init --meta` and `jig init --para <metarepo>` write them; every other command reads them and
@@ -284,8 +294,8 @@ under `.jig/` counts, whatever the globs say.
 | M1 | a source file outside `.jig/` in the metarepo |
 | M2 | a decision row (`| D-001 | … |`) without a status cell (open, proposed, accepted, superseded or rejected, optionally with a note in parentheses or `by D-…`) and a `YYYY-MM-DD` date |
 | M3 | an entry file changed without a line in `CHANGELOG.md` |
-| M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted) |
-| M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk |
+| M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted); a detached HEAD at trunk, or behind it, is trunk |
+| M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`) |
 | P1 | an `AGENTS.md` header that differs from what `.jig/para.json` generates |
 | P2 | a contract-path change with no spec saying `meta: <name> proposal <branch>` or `meta: none — <reason>` |
@@ -294,6 +304,8 @@ under `.jig/` counts, whatever the globs say.
 
 A fast-forward runs no hook, so a metarepo's release and its pre-push re-check every
 first-parent commit since the last release, and refuse any tag `jig release` didn't make.
+Pre-push judges the commit pushed to the remote's trunk, which may not be the local trunk's;
+a chained `pre-push.local` hook gets the same pushed refs.
 In a metarepo the release also turns `## Unreleased` into the version's heading, needs no
 `release.sh` steps, and defaults to `--minor`: minor for additions and clarifications, major
 for a rename or a reversed decision. A pararepo pins a release, never `main`, and bumps it in

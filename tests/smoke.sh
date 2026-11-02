@@ -1808,5 +1808,193 @@ EK="$T/ek"; pcnew "$EK" && git add -A && git commit -qm init && $J init >/dev/nu
 $J init --para ej --location "$EJ" >/dev/null 2>&1
 expect_pass sh -c "test -f .jig/meta-cache/p.md && test -z \"\$(find .jig/meta-cache -path '*/.jig/*')\""
 
+# ---------------------------------------------------------------- report-fixes follow-up
+# What eight /jig:bug evaluations found around the report-born fixes. Each repo is its own.
+
+# update: a worktree for a branch with `/` sits a level deeper than its worktrees folder.
+ax "$T/fu-1"; wt -b feat/x .aidev/worktrees/feat/x && printf 'wip\n' > .aidev/worktrees/feat/x/wip.txt
+cd "$T" && mv fu-1 fu-1b && cd fu-1b
+out=$($UP 2>&1)
+msg="update worktrees: a moved feat/x checkout gets repair then remove, and feat/ is not called a stray"
+expect_pass sh -c "echo \"\$0\" | grep -q 'git worktree repair .aidev/worktrees/feat/x., then .git worktree remove .aidev/worktrees/feat/x' && ! echo \"\$0\" | grep -q 'worktrees/feat is not a checkout'" "$out"
+msg="update worktrees: the advice works when followed: repair, then remove refuses the uncommitted file, which survives"
+git worktree repair .aidev/worktrees/feat/x >/dev/null 2>&1; rc=$(code git worktree remove .aidev/worktrees/feat/x)
+expect_pass sh -c "test $rc != 0 && test -f .aidev/worktrees/feat/x/wip.txt && git worktree list | grep -q 'fu-1b/.aidev/worktrees/feat/x'"
+msg="update worktrees: once the work is committed, remove succeeds"
+(cd .aidev/worktrees/feat/x && git add -A && git -c core.hooksPath=/dev/null commit -qm wip)
+expect_pass git worktree remove .aidev/worktrees/feat/x
+mkf .aidev/worktrees/feat/junk/f && wt -b feat/y .aidev/worktrees/feat/y
+msg="update worktrees: beside a checkout, a folder with none in it is named by its own path"
+expect_pass sh -c "$UP 2>&1 | grep -q '.aidev/worktrees/feat/junk is not a checkout git knows'"
+
+# update: what a whole subfolder's move leaves behind, and references the old checks missed.
+ax "$T/fu-2" "mkf specs/suite/README.md specs/app.spec.js && printf 'specs/suite/.cache/\n' >> .gitignore
+  mkdir -p tools && printf 'cat \"\$(dirname \"\$0\")/../specs/suite/README.md\"\n' > tools/r.sh"
+mkf specs/suite/notes.txt specs/suite/.cache/a
+out=$($UP 2>&1)
+msg="update leftovers: the dry run names specs/suite/'s untracked notes.txt and ignored .cache/"
+expect_pass sh -c "echo \"\$0\" | grep -q 'specs/suite/ moves, but files git doesn.t track stay in it: specs/suite/.cache/, specs/suite/notes.txt'" "$out"
+msg="update stale: .gitignore's specs/suite/.cache/ is stale; its .aidev/worktrees/ line, which update removes, is not"
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Stale references/,/^\$/p' | grep -q '2: specs/suite/.cache/' && ! echo \"\$0\" | sed -n '/^Stale references/,/^\$/p' | grep -q '1: .aidev/worktrees/'" "$out"
+msg="update stale: \$(dirname \"\$0\")/../specs/suite/README.md is stale"
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Stale references/,/^\$/p' | grep -q 'tools/r.sh'" "$out"
+
+# M5 and pre-push: a detached checkout at trunk is trunk.
+FM="$T/fu-m5"; pcnew "$FM" && git add -A && git commit -qm init && $J init --meta --name fm >/dev/null \
+  && git add -A && git commit -qm meta-init && $J release >/dev/null
+git init -q --bare "$T/fu-m5.git" && git remote add origin "$T/fu-m5.git" && git push -q origin main 2>/dev/null
+git switch -q -c ub && printf '\n## grain\n' >> GLOSSARY.md && printf -- '- grain\n' >> CHANGELOG.md \
+  && git add -A && git commit -qm "GLOSSARY: grain" && git checkout -q --detach main
+msg="M5: on a detached HEAD at main, a merge of an unreviewed branch is refused"
+out=$(git merge --no-ff --no-edit ub 2>&1); rc=$?; git merge --abort 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'M5 '" "$out"
+msg="pre-push: git push origin HEAD:main of that merge, made with the hooks off, is refused"
+git -c core.hooksPath=/dev/null merge -q --no-ff --no-edit ub
+expect_refuse git push -q origin HEAD:main
+msg="pre-push: still refused with a chained pre-push.local that reads all of stdin first"
+printf '#!/bin/sh
+cat >/dev/null
+' > .git/hooks/pre-push.local && chmod +x .git/hooks/pre-push.local
+expect_refuse git push -q origin HEAD:main
+rm .git/hooks/pre-push.local
+git checkout -q main
+
+# jig merge: an unsynced job with a conflict in an append file is sent to jig sync.
+FS="$T/fu-sync"; pcnew "$FS" && printf '# Changelog\n' > CHANGELOG.md && printf 'base\n' > common.txt && git add -A && git commit -qm init \
+  && $J init >/dev/null && git add -A && git commit -qm board
+for j in K L M; do $J open $j --shares CHANGELOG.md common.txt >/dev/null; done; git add -A && git commit -qm "open K L M"
+for j in K L M; do
+  ( cd "$FS/.git/jig/worktrees/$j" && printf -- '- %s\n' "$j" >> CHANGELOG.md && printf 'x=1\n' > "$j.py" \
+    && { [ $j = L ] || printf '%s\n' "$j" > common.txt; } && git add -A \
+    && git commit -qm "$j" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $j" )
+done
+msg="gate: an executable check.sh is printed as ./.jig/scripts/check.sh, with git worktree remove --force"
+out=$($J gate L 2>&1); git worktree remove --force .git/jig/worktrees/gate-L 2>/dev/null
+expect_pass sh -c "echo \"\$0\" | grep -q '&& ./.jig/scripts/check.sh' && echo \"\$0\" | grep -q 'git worktree remove --force .git/jig/worktrees/gate-L'" "$out"
+chmod -x .jig/scripts/check.sh && git add .jig/scripts/check.sh && git commit -qm "check.sh not executable"
+msg="gate: a check.sh that isn't executable is printed as bash ./.jig/scripts/check.sh"
+out=$($J gate L 2>&1); git worktree remove --force .git/jig/worktrees/gate-L 2>/dev/null
+expect_pass sh -c "echo \"\$0\" | grep -q '&& bash ./.jig/scripts/check.sh'" "$out"
+$J merge K >/dev/null 2>&1
+msg="merge: L, unsynced, conflicts only in CHANGELOG.md: refused, naming jig sync, with trunk left clean"
+out=$($J merge L 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig sync. the job, then merge' && ! git rev-parse -q --verify MERGE_HEAD && test -z \"\$(git status --porcelain --untracked-files=no)\" && grep -q '\"L\"' .jig/jobs.json" "$out"
+msg="merge: M conflicts in CHANGELOG.md and common.txt: refused, naming jig sync and only the append file"
+out=$($J merge M 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'append files (CHANGELOG.md): .jig sync.' && ! git rev-parse -q --verify MERGE_HEAD && grep -q '\"M\"' .jig/jobs.json" "$out"
+msg="merge: M's sync resolves CHANGELOG.md and stops on common.txt"
+out=$(cd "$FS/.git/jig/worktrees/M" && $J sync 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^  common.txt' && ! echo \"\$0\" | grep -q '^  CHANGELOG.md'" "$out"
+(cd "$FS/.git/jig/worktrees/M" && git merge --abort)
+(cd "$FS/.git/jig/worktrees/L" && $J sync >/dev/null 2>&1)
+SHIM="$T/fu-shim"; mkdir -p "$SHIM" && realgit=$(command -v git)
+printf '#!/bin/sh\n[ "$1" = version ] && { echo "git version 2.30.0"; exit 0; }\nfor a in "$@"; do [ "$a" = --write-tree ] && exit 129; done\nexec %s "$@"\n' "$realgit" > "$SHIM/git" && chmod +x "$SHIM/git"
+msg="merge: with a git older than 2.38, a synced job is refused, saying 2.38 is needed"
+out=$(PATH="$SHIM:$PATH" $J merge L 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'needs git 2.38'" "$out"
+msg="merge: once synced, L merges with no new handoff"
+expect_pass sh -c "$J merge L && ! grep -q '\"L\"' .jig/jobs.json && grep -q '^- K' CHANGELOG.md && grep -q '^- L' CHANGELOG.md"
+
+# The plugin's hooks: a repo's check.sh may be in another language.
+FH="$T/fu-hook"; pcnew "$FH" && git add -A && git commit -qm init && $J init >/dev/null
+printf '#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n' > .jig/scripts/check.sh && cp .jig/scripts/check.sh .jig/scripts/format.sh
+chmod +x .jig/scripts/check.sh .jig/scripts/format.sh
+msg="plugin hook: an executable Python check.sh that exits 0 lets the Stop hook exit 0, and format.sh runs too"
+expect_pass sh -c "CLAUDE_PROJECT_DIR='$FH' bash '$P/../scripts/check.sh' && CLAUDE_PROJECT_DIR='$FH' bash '$P/../scripts/format.sh'"
+
+# R6 "unique" with no job open, and the edit and move cases under a dotted counter.
+FU="$T/fu-r6"; pcnew "$FU" && printf 'SCHEMA_VERSION = 17\n' > storage.py && git add -A && git commit -qm init && $J init >/dev/null
+board "b['reserve'] = {'schema': {'pattern': r'SCHEMA_VERSION\s*=\s*(\d+)', 'files': ['**/*.py'], 'unique': True}, 'section': {'pattern': r'^### (\d+)\.\d+', 'files': ['docs/**']}}"
+mkdir -p docs/a && printf '# A\n\n### 1.1 One\n\n### 2.1 Two\n' > docs/a/a.md && git add -A && git commit -qm board
+git switch -q -c feat
+msg="R6 unique: no job open, a second SCHEMA_VERSION = 17 on a branch is refused"
+printf 'SCHEMA_VERSION = 17\n' > other.py; git add -A; expect_refuse git commit -qm s2; undo
+msg="R6 unique: no job open, a new SCHEMA_VERSION = 18 needs no reservation"
+printf 'SCHEMA_VERSION = 18\n' > other.py; git add -A; expect_pass git commit -qm s3
+git switch -q main && $J open S --reserve section >/dev/null && git add -A && git commit -qm "open S"
+cd "$FU/.git/jig/worktrees/S"
+msg="R6 dotted: editing ### 2.1's text takes nothing"
+sed -i.bak 's/### 2.1 Two/### 2.1 Two renamed/' docs/a/a.md && rm docs/a/a.md.bak; git add -A; expect_pass git commit -qm e1
+msg="R6 dotted: moving the page takes nothing"
+mkdir -p docs/b && git mv docs/a/a.md docs/b/b.md; expect_pass git commit -qm mv
+msg="R6 dotted: ### 1.2 under section 1, which trunk has, takes nothing"
+printf '\n### 1.2 More\n' >> docs/b/b.md; git add -A; expect_pass git commit -qm e2
+msg="R6 dotted: ### 4.1, not held (S holds 3), is refused"
+printf '\n### 4.1 Four\n' >> docs/b/b.md; git add -A; expect_refuse git commit -qm e3; undo
+msg="R6 dotted: ### 3.1, held, is accepted"
+printf '\n### 3.1 Three\n' >> docs/b/b.md; git add -A; expect_pass git commit -qm e4
+
+# Staging: a destination with prose in it, a register in a new folder, a misspelt register.
+FT="$T/fu-st"; pcnew "$FT" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+msg="staging: decisions destination 'the register in docs/DECISIONS.md' is refused as not a path, with no traceback"
+stage p1.md this decisions new 'the register in docs/DECISIONS.md' '| D-001 | x | accepted | 2026-11-02 |\n'
+out=$($J staging resolve p1.md 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"isn't a path\" && ! echo \"\$0\" | grep -q Traceback && test ! -e docs/DECISIONS.md" "$out"
+msg="staging: doc destination 'see docs/x.md' is refused as not a path, and writes no file"
+stage p2.md this doc new 'see docs/x.md'
+out=$($J staging resolve p2.md 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"isn't a path\" && test ! -e 'see docs/x.md'" "$out"
+msg="staging: the bare path docs/x.md resolves"
+stage p2.md this doc new docs/x.md; expect_pass sh -c "$J staging resolve p2.md && test -f docs/x.md"
+msg="staging: decisions staged as new into docs/reg/DECISIONS.md, a folder that doesn't exist, makes it"
+stage p1.md this decisions new docs/reg/DECISIONS.md '| D-001 | x | accepted | 2026-11-02 |\n'
+expect_pass sh -c "$J staging resolve p1.md && grep -q 'D-001' docs/reg/DECISIONS.md"
+FV="$T/fu-stm"; pcnew "$FV" && git add -A && git commit -qm init && $J init --meta --name fv >/dev/null && git add -A && git commit -qm meta-init
+msg="staging: in a metarepo, a decisions destination entry_files doesn't name (DECISION.md) is refused"
+stage p3.md this decisions new DECISION.md '| D-001 | x | accepted | 2026-11-02 |\n'
+out=$($J staging resolve p3.md 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'entry_files' && test ! -e DECISION.md" "$out"
+msg="staging: in a metarepo, destination DECISIONS.md resolves"
+stage p3.md this decisions new DECISIONS.md '| D-001 | x | accepted | 2026-11-02 |\n'
+expect_pass sh -c "$J staging resolve p3.md && grep -q 'D-001' DECISIONS.md"
+
+# Advice in an old-layout repo names jig update first.
+R="$JR" old "$T/fu-old" 5d955a2 jig2
+msg="propose: in an old-layout repo it names jig update first"
+out=$(python3 "$P/jig/jig.py" propose jig/specs/x.md s 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'older jig layout (jig/lanes.json): run .jig update. first'" "$out"
+export JIG_CONFIG="$T/fu-repos.json"
+FW="$T/fu-fw"; pcnew "$FW" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J repos add oldrepo "$T/fu-old" >/dev/null
+msg="staging: forwarding to a repo on an older layout names jig update there"
+stage f1.md oldrepo doc new docs/x.md
+out=$($J staging resolve f1.md 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'older jig layout (jig/lanes.json): run .jig update. there' && test -f .jig/staging/f1.md" "$out"
+
+# Decisions: M2's message, M3 on a cited file renamed away or deleted, sync's terms by the prefix.
+FD="$T/fu-dec"; pcnew "$FD" && git add -A && git commit -qm init && $J init --meta --name fd --prefix dec- >/dev/null \
+  && git add -A && git commit -qm meta-init && $J release >/dev/null
+git switch -q -c m2 && printf '| dec-1 | x | accepted, owner | 2026-11-02 |\n' >> DECISIONS.md && printf -- '- dec-1\n' >> CHANGELOG.md && git add -A
+msg="M2: 'accepted, owner' is refused, and the refusal says the note goes in parentheses"
+out=$(git commit -qm "DECISIONS: dec-1" 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'exactly a status.*(note)'" "$out"
+sed -i.bak 's/accepted, owner/accepted (owner)/' DECISIONS.md && rm DECISIONS.md.bak && git add -A && git commit -qm "DECISIONS: dec-1" \
+  && $J reviewed >/dev/null && git switch -q main && git merge -q --no-ff --no-edit m2 && $J release >/dev/null
+git switch -q -c m3 && mkdir -p old && git mv GLOSSARY.md old/GLOSSARY.md
+msg="M3: GLOSSARY.md renamed out of entry_files, with no changelog line, is refused"
+expect_refuse git commit -qm "GLOSSARY: move"
+git mv old/GLOSSARY.md GLOSSARY.md && git rm -q GLOSSARY.md
+msg="M3: GLOSSARY.md deleted, with no changelog line, is refused"
+expect_refuse git commit -qm "GLOSSARY: drop"
+git reset -q --hard && git switch -q main
+FE="$T/fu-para"; pcnew "$FE" && mkdir -p api && printf 'x=1\n' > api/a.py && printf 'see dec-12\n' > api/twelve.md && printf 'see dec-1.\n' > api/one.md && printf 'two grains\n' > api/g.md \
+  && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para fd --location "$FD" >/dev/null 2>&1 && git add -A && git commit -qm "init --para"
+(cd "$FD" && git switch -q -c m4 && sed -i.bak 's/| dec-1 | x |/| dec-1 | y |/' DECISIONS.md && rm DECISIONS.md.bak && printf -- '- dec-1 y\n' >> CHANGELOG.md \
+  && printf '\n## grain\n' >> GLOSSARY.md \
+  && git add -A && git commit -qm "DECISIONS: dec-1 y" && $J reviewed >/dev/null && git switch -q main && git merge -q --no-ff --no-edit m4 && $J release >/dev/null)
+out=$($J sync 2>&1)
+msg="sync: a lowercase decision_prefix's dec-1 is reported, used in api/one.md and not in api/twelve.md"
+expect_pass sh -c "echo \"\$0\" | grep -q 'dec-1: used in api/one.md\$'" "$out"
+msg="sync: a glossary heading still counts an inflected use (grain in 'grains')"
+expect_pass sh -c "echo \"\$0\" | grep -q 'grain: used in api/g.md'" "$out"
+
+# Hardware: a datasheet whose name holds parentheses.
+FK="$T/fu-hw"; pcnew "$FK" && mkdir -p docs/hardware/components/rtc && printf '%%PDF-fake\n' > 'docs/hardware/components/rtc/qx-20(rev1).pdf'
+printf '# Watch\n\n| RTC | QX-20 | time | [ds](components/rtc/qx-20(rev1).pdf) |\n' > docs/hardware/watch.md
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+msg="survey: components/rtc/qx-20(rev1).pdf, linked bare, is neither missing nor unlinked"
+expect_pass hrsurvey "assert r['components_missing'] == [] and r['components_unlinked'] == [], r"
+
 rm -rf "$T"
 exit $fail
