@@ -17,7 +17,7 @@
   },
   "sync-buffer": {
     "spec": ".jig/specs/sync-buffer.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/spec/**",
