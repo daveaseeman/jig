@@ -3118,7 +3118,9 @@ def left_behind(root: Path, files: list[str], plan: dict, handled: list[str]) ->
                 if any(path.startswith(h) for h in handled):
                     dirs.remove(sub)
                 elif not any(f.startswith(path) for f in tracked_set):
-                    stay.append(path)   # wholly untracked: named once, not file by file
+                    # Wholly untracked: named once, not file by file. An empty one moves nothing.
+                    if any(names for _, _, names in os.walk(root / path)):
+                        stay.append(path)
                     dirs.remove(sub)
             stay += sorted(rel + n for n in names if rel + n not in tracked_set)
         if stay:
@@ -3332,7 +3334,7 @@ def cmd_update(root: Path, args) -> int:
                  if f.is_file() and (root / n / f.relative_to(root / o)).exists()]
     warnings += left_behind(root, files, plan, [o for o, _ in OLD_UNTRACKED] + list(old_ignores))
     if occupied:
-        refused.append(f"untracked files where files would move:{', '.join(occupied)}. Look at "
+        refused.append(f"untracked files where files would move: {', '.join(occupied)}. Look at "
                        "each, move or delete it, then update again")
     cache_line = [l for l in ignore.read_text().splitlines() if l.strip() == "jig/meta-cache/"] \
         if ignore.exists() and board_at.startswith("jig/") else []
