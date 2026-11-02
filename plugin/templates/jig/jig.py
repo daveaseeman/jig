@@ -1667,12 +1667,17 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
         cells = [c.lower() for c in table_cells(m.group(1))]
         if not (any(STATUS_CELL.fullmatch(c) for c in cells)
                 and any(re.fullmatch(r"\d{4}-\d{2}-\d{2}", c) for c in cells)):
-            out.append(f"M2 a decision row needs a status ({'/'.join(DECISION_STATUSES)}) and a "
-                       f"date (YYYY-MM-DD): {m.group(0)[1:].strip()}")
-    # M3 a change to what pararepos cite is recorded where they will read it
-    if any(is_entry(p, entry) for p in paths) and CHANGELOG not in paths:
-        out.append(f"M3 {', '.join(p for p in paths if is_entry(p, entry))} changed: add a line to "
-                   f"{CHANGELOG} under ## Unreleased")
+            out.append(f"M2 a decision row needs a Status cell that is exactly a status "
+                       f"({'/'.join(DECISION_STATUSES)}), optionally `(note)` or "
+                       f"`by {meta['decision_prefix']}…`, and a date (YYYY-MM-DD): "
+                       f"{m.group(0)[1:].strip()}")
+    # M3 a change to what pararepos cite is recorded where they will read it. A cited file
+    # deleted, or renamed out of the entry set, is a change too: pararepos lose it.
+    gone = git("diff", "--name-only", "--diff-filter=D", "--no-renames", base(trunk),
+               *(["--cached"] if staged else [])).splitlines()
+    cited = [p for p in dict.fromkeys(paths + gone) if p and is_entry(p, entry)]
+    if cited and CHANGELOG not in paths:
+        out.append(f"M3 {', '.join(cited)} changed: add a line to {CHANGELOG} under ## Unreleased")
     # M4 nothing lands on main except merges; jig's own bookkeeping (the board, handoffs) is
     # the exception, since the hubnode keeps it on trunk
     if branch == trunk and paths and not all(p.startswith(f"{DIR}/") for p in paths):
@@ -2215,9 +2220,15 @@ def cmd_para_init(root: Path, args) -> int:
 
 
 def terms_changed(loc: Path, old: str, new: str) -> list[str]:
-    """Decision ids and glossary headings that changed between two releases."""
+    """Decision ids and glossary headings that changed between two releases. Ids are matched
+    by the metarepo's own decision_prefix, which may be lowercase."""
     diff = git("diff", old, new, "--", ".", f":!{CHANGELOG}", cwd=str(loc))
-    found = re.findall(r"^[+-]\s*\|\s*([A-Z][A-Z0-9]*-\d+)\s*\|", diff, re.M)
+    try:
+        prefix = json.loads(git("show", f"{new}:{META}", cwd=str(loc)) or "{}").get("decision_prefix")
+    except ValueError:
+        prefix = None
+    ids = re.escape(prefix or META_DEFAULTS["decision_prefix"]) + r"\d+"
+    found = re.findall(rf"^[+-]\s*\|\s*({ids})\s*\|", diff, re.M)
     found += re.findall(r"^[+-]#{2,3} (.+?)\s*$", diff, re.M)
     return list(dict.fromkeys(found))
 
@@ -2319,7 +2330,8 @@ def sync_meta(root: Path) -> int:
     print("Changed, in this repo's terms:")
     for term in terms_changed(loc, pin, latest):
         # jig's own files (the rulebook's examples, the cache) are not the repo's use of a term.
-        users = [f for f in git("grep", "-l", "-F", "--", term).splitlines()
+        # Whole words only: D-1 is not a use of D-12.
+        users = [f for f in git("grep", "-l", "-F", "-w", "--", term).splitlines()
                  if not f.startswith(f"{DIR}/")]
         print(f"  {term}: " + (f"used in {', '.join(users)}" if users else "not used here"))
     print(f"\nTo take it: set \"pin\" to \"{latest}\" in {PARA}, run `jig init --para {name}`, and commit "

@@ -1943,5 +1943,30 @@ stage f1.md oldrepo doc new docs/x.md
 out=$($J staging resolve f1.md 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'older jig layout (jig/lanes.json): run .jig update. there' && test -f .jig/staging/f1.md" "$out"
 
+# Decisions: M2's message, M3 on a cited file renamed away or deleted, sync's terms by the prefix.
+FD="$T/fu-dec"; pcnew "$FD" && git add -A && git commit -qm init && $J init --meta --name fd --prefix dec- >/dev/null \
+  && git add -A && git commit -qm meta-init && $J release >/dev/null
+git switch -q -c m2 && printf '| dec-1 | x | accepted, owner | 2026-11-02 |\n' >> DECISIONS.md && printf -- '- dec-1\n' >> CHANGELOG.md && git add -A
+msg="M2: 'accepted, owner' is refused, and the refusal says the note goes in parentheses"
+out=$(git commit -qm "DECISIONS: dec-1" 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'exactly a status.*(note)'" "$out"
+sed -i.bak 's/accepted, owner/accepted (owner)/' DECISIONS.md && rm DECISIONS.md.bak && git add -A && git commit -qm "DECISIONS: dec-1" \
+  && $J reviewed >/dev/null && git switch -q main && git merge -q --no-ff --no-edit m2 && $J release >/dev/null
+git switch -q -c m3 && mkdir -p old && git mv GLOSSARY.md old/GLOSSARY.md
+msg="M3: GLOSSARY.md renamed out of entry_files, with no changelog line, is refused"
+expect_refuse git commit -qm "GLOSSARY: move"
+git mv old/GLOSSARY.md GLOSSARY.md && git rm -q GLOSSARY.md
+msg="M3: GLOSSARY.md deleted, with no changelog line, is refused"
+expect_refuse git commit -qm "GLOSSARY: drop"
+git reset -q --hard && git switch -q main
+FE="$T/fu-para"; pcnew "$FE" && mkdir -p api && printf 'x=1\n' > api/a.py && printf 'see dec-12\n' > api/twelve.md && printf 'see dec-1.\n' > api/one.md \
+  && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para fd --location "$FD" >/dev/null 2>&1 && git add -A && git commit -qm "init --para"
+(cd "$FD" && git switch -q -c m4 && sed -i.bak 's/| dec-1 | x |/| dec-1 | y |/' DECISIONS.md && rm DECISIONS.md.bak && printf -- '- dec-1 y\n' >> CHANGELOG.md \
+  && git add -A && git commit -qm "DECISIONS: dec-1 y" && $J reviewed >/dev/null && git switch -q main && git merge -q --no-ff --no-edit m4 && $J release >/dev/null)
+out=$($J sync 2>&1)
+msg="sync: a lowercase decision_prefix's dec-1 is reported, used in api/one.md and not in api/twelve.md"
+expect_pass sh -c "echo \"\$0\" | grep -q 'dec-1: used in api/one.md\$'" "$out"
+
 rm -rf "$T"
 exit $fail

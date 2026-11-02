@@ -276,7 +276,8 @@ nothing copies it. Three rules do the work:
 
 A question that binds the pararepos gets its decision row when it is asked, with status
 `open`, so it can be cited before it is answered. The same row then moves to `proposed`, then
-`accepted` or `rejected`; a reversed decision is marked `superseded` and released as a major.
+`accepted` or `rejected`; a reversed decision is marked `superseded` (or `rejected`, when an accepted one is withdrawn)
+and released as a major.
 
 Each side's gates are on only when its file is on trunk: `.jig/meta.json` or `.jig/para.json`.
 `jig init --meta` and `jig init --para <metarepo>` write them; every other command reads them and
