@@ -1877,5 +1877,12 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'needs git 2.38'" "$o
 msg="merge: once synced, L merges with no new handoff"
 expect_pass sh -c "$J merge L && ! grep -q '\"L\"' .jig/jobs.json && grep -q '^- K' CHANGELOG.md && grep -q '^- L' CHANGELOG.md"
 
+# The plugin's hooks: a repo's check.sh may be in another language.
+FH="$T/fu-hook"; pcnew "$FH" && git add -A && git commit -qm init && $J init >/dev/null
+printf '#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n' > .jig/scripts/check.sh && cp .jig/scripts/check.sh .jig/scripts/format.sh
+chmod +x .jig/scripts/check.sh .jig/scripts/format.sh
+msg="plugin hook: an executable Python check.sh that exits 0 lets the Stop hook exit 0, and format.sh runs too"
+expect_pass sh -c "CLAUDE_PROJECT_DIR='$FH' bash '$P/../scripts/check.sh' && CLAUDE_PROJECT_DIR='$FH' bash '$P/../scripts/format.sh'"
+
 rm -rf "$T"
 exit $fail
