@@ -93,6 +93,10 @@ gap, eleven should-fix and nine optional, grouped by the code they touch.
     so a lowercase `decision_prefix` is never reported, and `D-1` counts as a use of `D-12`.
     Fix: build the pattern from `decision_prefix`, and match on word boundaries.
 
+20a. Optional (found reviewing `entry-globs`). M3 reads `changed_paths` with `ACMRT`, so a cited
+    file renamed out of the entry set changes it with no changelog line asked. Fix: count a
+    rename's source and a deletion as changes to the entry set.
+
 ### Hardware (from hardware-reference-files)
 20. **Should-fix. A bare link target stops at the first `)`.** `[seen]`:
     `components/rtc/qx-20(rev1).pdf` is reported both missing and unlinked. Fix: allow one level
