@@ -986,7 +986,7 @@ msg="staging: a decision id already in the register is refused as new"
 stage r.md this decisions new docs/decisions.md '| D-001 | again | accepted | 2026-10-29 |\n'
 expect_refuse $J staging resolve r.md; rm .jig/staging/r.md
 
-msg="staging: drop deletes the file and leaves the board alone"
+msg="staging: drop deletes the file and records nothing"
 stage q.md this doc new docs/q.md
 expect_pass sh -c "$J staging drop q.md && test ! -e .jig/staging/q.md && ! grep -q q.md .jig/config.json .jig/jobs.json && test -z \"\$(git status --porcelain -- .jig/config.json .jig/jobs.json)\""
 git add -A && git commit -qm landed
@@ -1996,7 +1996,7 @@ git add -A && git commit -qm init && $J init >/dev/null && git add -A && git com
 msg="survey: components/rtc/qx-20(rev1).pdf, linked bare, is neither missing nor unlinked"
 expect_pass hrsurvey "assert r['components_missing'] == [] and r['components_unlinked'] == [], r"
 
-# ---------------------------------------------------------------- feedback and drop's record
+# ---------------------------------------------------------------- feedback
 export JIG_CONFIG="$T/fb/repos.json"      # its feedback/ fallback sits beside it, never the user's
 FB="$T/fb-jig"; pcnew "$FB" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 fb() {  # fb <dir> <file> [from]: a feedback report, with a from: line when given one
@@ -2021,25 +2021,9 @@ msg="feedback: the fallback folder beside repos.json is listed"
 fb "$T/fb/feedback" r2.md gadget
 expect_pass sh -c "$J staging | grep -q 'r2.md: new feedback.*from gadget'"
 
+msg="feedback: a report in the fallback folder drops from there, and nothing is committed"
 before=$(git rev-parse HEAD)
-printf 'x\n' > kept.txt && git add kept.txt
-msg="drop: with a reason, a fallback report is deleted and an empty STAGING commit carries the reason"
-$J staging drop r2.md "fixed by abc123" >/dev/null
-expect_pass sh -c "test ! -e '$T/fb/feedback/r2.md' && test \"\$(git log -1 --format=%s)\" = 'STAGING: dropped r2.md (feedback, from gadget): fixed by abc123' && test \"\$(git rev-parse HEAD^)\" = '$before' && test -z \"\$(git diff --name-only HEAD^ HEAD)\""
-msg="drop: a change staged beforehand stays staged and out of the commit"
-expect_pass sh -c "test \"\$(git diff --cached --name-only)\" = kept.txt && ! git show --name-only --format= HEAD | grep -q kept.txt"
-git reset -q kept.txt && rm kept.txt
-msg="drop: without a reason, the subject ends (no reason given), naming the source when there's no from"
-stage q2.md this doc new docs/q2.md
-$J staging drop q2.md >/dev/null
-expect_pass sh -c "test \"\$(git log -1 --format=%s)\" = 'STAGING: dropped q2.md (doc, from chat q2.md): (no reason given)' && test \"\$(git log --grep '^STAGING: dropped' --format=%s | wc -l | tr -d ' ')\" = 2"
-
-FM="$T/fb-meta"; pcnew "$FM" && git add -A && git commit -qm init && $J init --meta --name fm >/dev/null && git add -A && git commit -qm meta-init
-stage m2.md this doc new GUIDE.md
-$J staging drop m2.md "not wanted" >/dev/null
-msg="drop: in a metarepo, the drop commit passes the history check (release goes through)"
-out=$($J release 2>&1); rc=$?
-expect_pass sh -c "test $rc = 0 && git log --format=%s | grep -q '^STAGING: dropped m2.md' && ! echo \"\$0\" | grep -q 'without a reviewed merge'" "$out"
+expect_pass sh -c "$J staging drop r2.md && test ! -e '$T/fb/feedback/r2.md' && test \"\$(git rev-parse HEAD)\" = '$before'"
 
 rm -rf "$T"
 exit $fail

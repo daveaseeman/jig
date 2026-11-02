@@ -5,15 +5,15 @@ Source: cowork session 2026-11-02 (Dave + Claude) (staged as 2026-11-02-feedback
 ## Intent
 A `/jig:feedback` report never sits in a temp folder again: it's staged into the jig repo as
 `kind: feedback`, where `jig release` waits for it. `/jig:fix` works through what's there, one
-root cause at a time. Every staged file dropped anywhere leaves a recorded reason.
+root cause at a time, and shows the reason for every report it drops.
 
 ## Givens
 - `[seen]` Reports were lost twice to a cleared `$TMPDIR` (Oct 30–Nov 2). One came back only by
   hand.
 - `[seen]` Staging already finds another repo through `repos.json`, forwards into its
   `.jig/staging/`, and `jig release` refuses while anything is staged.
-- `[seen]` `jig staging drop` deletes and records nothing (release.md). Owner, Nov 2: drop now
-  records a reason: "can't hurt".
+- `[seen]` `jig staging drop` deletes and records nothing (release.md). It stays that way (owner,
+  Nov 2, see Decisions).
 - `[seen]` `KINDS` is `spec, doc, decisions, user-story`, and `read_staged` refuses any other.
 
 ## Done when
@@ -25,18 +25,7 @@ root cause at a time. Every staged file dropped anywhere leaves a recorded reaso
       path. It never writes to `$TMPDIR`, and it still changes nothing in the reporting repo.
 - [ ] `jig staging` also lists `~/.config/jig/feedback/`. `resolve` and `drop` act on files there
       too.
-- [ ] `jig staging drop <file> ["<reason>"]` deletes the file and records the drop as an empty
-      commit:
-      - its subject is `STAGING: dropped <file> (<kind>, from <from or source>): <reason>`
-      - the reason is the quoted text after the file name, with no flag; without it the subject
-        ends `(no reason given)`
-      - it's written with plumbing (`commit-tree` on HEAD's tree, `update-ref`), so the index and
-        any staged changes are untouched
-
-      `git log --grep '^STAGING: dropped'` lists every drop. Smoke covers:
-      - both forms make their commit
-      - a change staged beforehand stays staged and out of the commit
-      - in a metarepo, the commit passes the history check
+- [ ] `jig staging drop <file>` still deletes the file and records nothing, from either folder.
 - [ ] `resolve` on `kind: feedback` works like a user story: it needs a spec carrying
       `Source: <source> (staged as <file>)`.
 - [ ] `/jig:fix`, a skill run in the jig repo:
@@ -46,10 +35,11 @@ root cause at a time. Every staged file dropped anywhere leaves a recorded reaso
   3. Decide by `/jig:bug`'s fourth step:
      - a correction becomes a spec through `/jig:spec`, carrying the Source line for every report
        in the group
-     - a workaround for one repo is dropped with that reason, plus what the repo should do instead
+     - a workaround for one repo is dropped, saying why and what the repo should do instead
      - already fixed is dropped, naming the commit
      - anything it can't reproduce stays staged, with what's missing
-  4. Show each decision as it goes. It doesn't wait for the owner between reports.
+  4. Show each decision as it goes, with its reason. It doesn't wait for the owner between
+     reports.
 - [ ] Smoke passes, and the validator passes.
 
 ## Out of scope
@@ -57,11 +47,11 @@ root cause at a time. Every staged file dropped anywhere leaves a recorded reaso
 - Any registry beyond `repos.json`.
 
 ## Touches
-- `marketing/FEATURES.md`: rows for `kind: feedback`, `/jig:fix` and drop's commit, before code.
-- `plugin/templates/jig/jig.py`: `KINDS`, header keys, `cmd_staging` (`drop --why`, the
-  fallback folder).
+- `marketing/FEATURES.md`: rows for `kind: feedback` and `/jig:fix`, before code.
+- `plugin/templates/jig/jig.py`: `KINDS`, header keys, `cmd_staging` (the fallback folder).
 - `plugin/templates/jig/RULES.md`: Staging.
 - Skills: `feedback`, `stage`, a new `fix`.
+- `plugin/.claude-plugin/plugin.json`: `fix` in the description.
 - `tests/smoke.sh`.
 
 ## Alternatives considered
@@ -71,15 +61,18 @@ root cause at a time. Every staged file dropped anywhere leaves a recorded reaso
   (workarounds, deferred findings, the sync buffer). A drop is history, and git keeps history.
   `[seen]`, Nov 2.
 - Record a drop in the next commit's message. Rejected: staged files are untracked, so a drop may
-  never be followed by a commit. The empty commit is that commit. `[seen]`
+  never be followed by a commit. `[seen]`
+- Record a drop as an empty `STAGING: dropped …` commit. Built, then reverted by the owner, Nov 2:
+  drop stays as it was. `[seen]`
 - A new folder for feedback in the jig repo. Rejected: staging already gives it a durable home,
   and the release refusal. `[seen]`
 
 ## Decisions
-- This reverses release.md's "drop records nothing". The owner's reason: a reason can't hurt, and
-  `/jig:fix` drops reports for reasons the owner may want to overrule later.
-- Owner, Nov 2: the reason is positional (`drop <file> "<reason>"`), not a flag, and optional.
-  `/jig:fix` always gives one. The record is an empty commit, not a ledger.
+- Owner, Nov 2: drop records nothing, as release.md had it; the empty-commit record was reverted
+  ("lets just drop without commit, keep it as it was before"). `/jig:fix` gives each drop's
+  reason in what it shows, and nowhere else.
+- `jig_version:` is carried and unchecked: requiring it would refuse reports from repos that
+  can't name their version. `/jig:fix` reads it to spot "already fixed in a later version".
 
 ## Workflow
 spec: tier 2, effort 2

@@ -47,8 +47,7 @@ Write it into the target's `.jig/staging/`, found with `jig repos` (needs only
   there.
 - **another repo's**: `resolve` forwards it into that repo's `.jig/staging/`; it is resolved
   in a session there.
-- **not wanted**: show it, ask, then `jig staging drop <file> "<reason>"`. The drop is recorded
-  as an empty `STAGING: dropped …` commit on HEAD, carrying the reason; anything you had staged
-  in git stays staged and out of it.
+- **not wanted**: show it, ask, then `jig staging drop <file>`. Nothing records it: it was
+  never committed.
 
 Resolve one file per step and show the result before the next.

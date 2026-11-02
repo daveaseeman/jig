@@ -2510,9 +2510,10 @@ def cmd_staging(root: Path, args) -> int:
     if not path.exists():
         die(f"no {args.file} in {STAGING} or {feedback_dir()}", 2)
     if args.action == "drop":
-        return drop(path, args.reason)
-    if args.reason:
-        die("only drop takes a reason", 2)
+        # A staged file was never committed, so a record of dropping it would point at nothing.
+        path.unlink()
+        print(f"dropped {path.name}")
+        return 0
     head, body, problems = read_staged(path)
     if problems:
         die(f"{path.name}: {'; '.join(problems)}", 2)
@@ -2609,25 +2610,6 @@ def cmd_staging(root: Path, args) -> int:
     else:
         out.write_text(body.rstrip("\n") + f"\n\n---\n{mark}\n")
     return done(f"written to {dest}")
-
-
-def drop(path: Path, reason: str | None) -> int:
-    """Delete a staged file and record why as an empty commit on HEAD. The file was never in
-    git, and a drop may never be followed by a commit, so the drop makes its own. Plumbing
-    reuses HEAD's tree: the index, and anything staged in it, stays as it was."""
-    head, _, _ = read_staged(path)
-    origin = head.get("from") or head.get("source") or "?"
-    why = " ".join((reason or "").split()) or "(no reason given)"
-    subject = f"STAGING: dropped {path.name} ({head.get('kind') or '?'}, from {origin}): {why}"
-    repo = str(main_root())
-    parent = git("rev-parse", "--verify", "-q", "HEAD", cwd=repo)
-    if not parent:
-        die("no commit yet to record the drop on: commit once, then drop again", 2)
-    commit = git("commit-tree", f"{parent}^{{tree}}", "-p", parent, "-m", subject, check=True, cwd=repo)
-    git("update-ref", "-m", "jig staging drop", "HEAD", commit, parent, check=True, cwd=repo)
-    path.unlink()
-    print(f"dropped {path.name}: {commit[:12]} {subject}")
-    return 0
 
 
 def decision_rows(body: str, root: Path) -> list[str]:
@@ -3637,7 +3619,6 @@ def main(argv: list[str] | None = None) -> int:
     st = sub.add_parser("staging", help="list staged files, or resolve or drop one")
     st.add_argument("action", nargs="?", choices=["resolve", "drop"])
     st.add_argument("file", nargs="?")
-    st.add_argument("reason", nargs="?", help="drop: why, recorded in the drop's commit")
     rp = sub.add_parser("repos", help="list, or add to, where your repos live (user config)")
     rp.add_argument("action", nargs="?", choices=["add", "rename"])
     rp.add_argument("kind", nargs="?", help="add: repo, meta or para; rename: the new name")

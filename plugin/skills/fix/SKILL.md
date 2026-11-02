@@ -16,13 +16,13 @@ investigation. Elsewhere, stop and say where to run it.
    - **a correction**: write the spec through `/jig:spec`, carrying the line
      `Source: <source> (staged as <file name>)` for every report in the group. Then
      `jig staging resolve <file>` for each.
-   - **a workaround for one repo**: `jig staging drop <file> "<why> - <what that repo should do
-     instead>"`.
-   - **already fixed**: `jig staging drop <file> "fixed by <commit>"`, naming the commit.
+   - **a workaround for one repo**: `jig staging drop <file>`, saying why and what that repo
+     should do instead.
+   - **already fixed**: `jig staging drop <file>`, naming the commit that fixed it.
    - **can't reproduce**: leave it staged, and say what's missing to reproduce it.
 4. **Show** each decision as you make it: the group, the reports in it, the decision and its
-   one-line reason. Don't wait for the owner between reports; the specs and the
-   `STAGING: dropped` commits are what they review, and a drop can be overruled from its reason.
+   one-line reason. Don't wait for the owner between reports. A drop records nothing, so its
+   reason lives only in what you show: the owner overrules it from there.
 
-Every drop gives a reason. Nothing here edits the reporting repo: it gets the fix through
-`/jig:update`.
+Every drop gives its reason as you make it. Nothing here edits the reporting repo: it gets
+the fix through `/jig:update`.
