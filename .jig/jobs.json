@@ -1,1 +1,18 @@
-{}
+{
+  "fix": {
+    "spec": ".jig/specs/fix.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/feedback/**",
+      "plugin/skills/stage/**"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "plugin/.claude-plugin/plugin.json"
+    ],
+    "reserved": {}
+  }
+}

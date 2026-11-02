@@ -19,7 +19,7 @@ last handoff is the `Commit:` of the note `jig gate` names, not the last note by
 the task's spec, and `AGENTS.md`. Not the conversation, not your reasoning. The reviewer
 evaluates the result on its own terms.
 
-Its job is to find the reason this change is wrong. Five questions:
+Its job is to find the reason this change is wrong. Its questions:
 
 1. Does every "done when" item have evidence? Name it, or it isn't done.
 2. Did anything change outside "touches" / "out of scope"?
@@ -28,8 +28,11 @@ Its job is to find the reason this change is wrong. Five questions:
    tagged `[seen]`? An empty slot, or an `[assumed]` reason the fix depends on, is blocking.
 5. What would make this fail that the author didn't consider? One concrete scenario, or say
    there isn't one.
-6. In a pararepo: does it change a contract path without a metarepo proposal, or with a
-   `meta: none` reason that doesn't hold?
+6. In a pararepo: does it change a contract path without a buffer row, a metarepo
+   proposal, or a `meta: none` reason that holds? Does a buffer row say what the code now does?
+7. In a metarepo: does a changed claim still stand, in other words, anywhere the spec didn't
+   list (Every copy)? Does older text it contradicts still read as current, Accepted or not
+   (Newer wins)?
 
 A file in `.jig/staging/` is not decided; a finding that rests on one says so.
 

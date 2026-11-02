@@ -33,6 +33,15 @@ python3 .jig/jig.py release            # --minor, --major, or --version X.Y.Z fo
 - **a step failed**: tracked files are back as they were, and nothing is tagged. Show the
   output, fix the cause with the user, run it again.
 
+## In a pararepo
+
+Before the build, the release puts every `Open` row of `.jig/ledgers/BUFFER.md` into one
+metarepo proposal: a `propose/<repo>-buffer-vX.Y.Z` branch there, and a spec here listing the
+rows, committed with the release. With no open row it just releases. If the metarepo can't be
+reached, it refuses: register it with `jig repos add meta` in its checkout. After the release,
+the change is written on that branch by the metarepo's own process; `jig sync` on trunk closes the
+rows once the metarepo releases it.
+
 ## After
 
 Report the tag and the artifacts it printed. Pushing (`git push --follow-tags`) and

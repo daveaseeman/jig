@@ -304,7 +304,7 @@ under `.jig/` counts, whatever the globs say.
 | M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`) |
 | P1 | an `AGENTS.md` header that differs from what `.jig/para.json` generates |
-| P2 | a contract-path change with no spec saying `meta: <name> proposal <branch>` or `meta: none — <reason>` |
+| P2 | a contract-path change with none of: a row added or changed in `.jig/ledgers/BUFFER.md` in the same commit, or a spec saying `meta: buffered <row id>`, `meta: <name> proposal <branch>` or `meta: none — <reason>`. Also, in `BUFFER.md`: a state other than `Open` or `Closed`, a repeated id, an `Open` row deleted, or one closed by any commit but `jig sync`'s |
 | P4 | a contract-path change while a file targeting the metarepo is staged |
 | P3 | the metarepo's cache (`.jig/meta-cache/`) or its checkout committed into the pararepo |
 
@@ -319,6 +319,32 @@ a commit of its own, `meta: <name> v0.3.0 → v0.4.0`, with the report `jig sync
 trunk as the body. A two-part pin (`v0.3`), from before releases had three parts, keeps
 working: it sorts below `v0.3.0`. `jig gate` refuses a job whose spec cites a proposal that isn't in
 the pinned release.
+
+**The sync buffer.** A pararepo may work ahead of its metarepo: change what a metarepo claim
+describes, as often as testing needs, and commit and push each change. Every such difference
+is a row in `.jig/ledgers/BUFFER.md` (the first row creates it from jig's ledger template): the
+claim at the pin, what this repo does now, who decided, and a state, `Open` or `Closed`. A change
+of mind edits the row. `jig release` in the pararepo, before its build, puts every `Open` row
+no proposal carries yet, as it stands, into one metarepo proposal (`jig propose --buffer`, also
+run by hand): one branch, and a spec here that lists and copies the rows under `## Buffer rows`.
+A row edited after it was proposed goes again in the next one. When the metarepo releases a
+proposal, `jig sync` on the pararepo's trunk makes the pin commit itself: it moves the pin to
+that release and marks `Closed` the rows the proposal carried that are unchanged since, in one
+commit `meta: <name> v0.3.0 → v0.4.0` (or, when the pin already holds the release, `meta:
+<name> v0.4.0: close B1`). Rows added or edited after the proposal stay `Open` for the next one.
+`jig sync` also names each file here that a decision at the pin cites and `contract_paths`
+doesn't cover; adding it is the hubnode's call.
+
+Two rules for the metarepo's own pages:
+
+- **Newer wins.** A later decision, or a pararepo page a decision makes the authority, overrides
+  older page text it contradicts, whether or not that text is marked Accepted. The update gives
+  the new text with its source, and keeps an old "Accepted (who, date)" only on what it still
+  covers. A decision row changes only when the stale claim is one: it is marked
+  `superseded by` the newer. A page update needs no new sign-off: the decision behind it is
+  already the owner's.
+- **Every copy.** A metarepo spec that changes a claim lists every place that states it, found
+  by meaning, not only by its words, and its done-when covers each one.
 
 ## Release
 
@@ -358,6 +384,7 @@ jig workflow                each step's model tier and effort in effect
 jig handoff [--spec path]   write the note for HEAD
 jig gate <name>             hubnode: verify, set up the scratch checkout, print its check
 jig propose <spec> <slug>   pararepo: open a proposal branch on the metarepo
+jig propose --buffer [slug]  pararepo: every Open row of the sync buffer, in one proposal
 ```
 
 ## Hooks are opt-in per checkout
