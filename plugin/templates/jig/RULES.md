@@ -204,6 +204,8 @@ else stops with the files named, and a person resolves it.
    the job's own commits count as changes since the check, and what a sync's resolution
    carries beyond what `jig sync` would make of it. Either refuses until it is handed off
    again. What the merge touched in shared files goes in that commit's message (`-m`).
+   `--subject <text>` puts text before it: the subject becomes `<text>: merge <job>`, for a
+   repo whose subjects lead with ids.
 
 ## Workflow
 
@@ -272,6 +274,10 @@ Each side's gates are on only when its file is on trunk: `.jig/meta.json` or `.j
 `jig init --meta` and `jig init --para <metarepo>` write them; every other command reads them and
 does what that kind of repo needs.
 
+`entry_files` in `meta.json` lists what pararepos cite: what a release counts, what M3 asks a
+changelog line for, and what a pararepo caches. Its entries are globs, matched the way `owns`
+is: a folder of pages goes in as `docs/**/*.md`, and a new page there needs no edit.
+
 | Gate | Refuses |
 |---|---|
 | M1 | a source file outside `.jig/` in the metarepo |
@@ -324,7 +330,7 @@ jig install-hooks           rewrite the hooks
 jig status                  jobs, states, distance from trunk, dirt
 jig open <name> --spec … --owns … --shares … --after … --reserve schema
 jig mark <name> <state>     claimed|building|ready|gated|parked
-jig merge <name> [-m msg]   merge a job; its entry is deleted in the merge commit
+jig merge <name> [-m msg] [--subject text]   merge a job; its entry is deleted in the merge commit
 jig check [--staged]        run the rules here
 jig job                    this branch's manifest
 jig sync                    merge trunk in, append rule applied; on a pararepo's trunk, the metarepo

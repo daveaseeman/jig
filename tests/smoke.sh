@@ -1731,5 +1731,59 @@ sed -i.bak 's/by `jig init --para`/by `jig para-init`/; s/`jig propose`/`jig par
 out=$($J init --para 2>&1); rc=$?; mv "$T/pc-repos.bak" "$JIG_CONFIG"
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'was not refreshed' && test \"\$(grep -c 'jig:meta —' AGENTS.md)\" = 1 && git diff --quiet -- AGENTS.md" "$out"
 
+# ---------------------------------------------------------------- entry_files take globs; merge --subject
+# A metarepo whose pages are a glob, so a new page needs no meta.json edit.
+setentry() { python3 -c "import json,sys; f='.jig/meta.json'; d=json.load(open(f)); d['entry_files']=sys.argv[1:]; json.dump(d, open(f,'w'), indent=2)" "$@"; }
+emerge() {  # emerge <branch> <subject> <file>...: commit the staged change on a branch, review it, merge it into main
+  b=$1 s=$2; shift 2; git switch -q -c "$b" && git add -- "$@" && git commit -qm "$s" && $J reviewed >/dev/null \
+    && git switch -q main && git merge -q --no-ff --no-edit "$b"; }
+EM="$T/em"; pcnew "$EM" && mkdir -p products/x && printf '# a\n' > products/a.md && printf '# b\n' > products/x/b.md && printf 'n\n' > notes.md
+$J init --meta --name em >/dev/null && setentry DECISIONS.md 'products/**/*.md' && git add -A && git commit -qm meta-init && $J release >/dev/null
+printf 'more\n' >> products/a.md && printf -- '- a\n' >> CHANGELOG.md
+msg="entry globs: a change to products/a.md (directly under the glob's folder) releases the next minor"
+emerge ea "PRODUCTS: a" products/a.md CHANGELOG.md; out=$($J release --minor 2>&1)
+expect_pass sh -c "git rev-parse -q --verify refs/tags/v0.2.0 >/dev/null" "$out"
+printf 'more\n' >> products/x/b.md && printf -- '- b\n' >> CHANGELOG.md
+msg="entry globs: a change to products/x/b.md releases the next minor"
+emerge eb "PRODUCTS: b" products/x/b.md CHANGELOG.md; $J release --minor >/dev/null 2>&1
+expect_pass git rev-parse -q --verify refs/tags/v0.3.0
+git switch -q -c em3
+msg="entry globs: M3 refuses a change to products/a.md with no changelog line"
+printf 'x\n' >> products/a.md; git add -A; expect_refuse git commit -qm "PRODUCTS: no line"; undo
+msg="entry globs: M3 takes a change to notes.md, which no glob names, with no line"
+printf 'x\n' >> notes.md; git add -A; expect_pass git commit -qm "NOTES: n"
+git switch -q main
+printf '# b top\n' > products/b.md && printf -- '- new page b\n' >> CHANGELOG.md
+msg="entry globs: a new products/b.md needs no meta.json edit; the next release counts it"
+emerge ec "PRODUCTS: new b" products/b.md CHANGELOG.md; $J release >/dev/null 2>&1
+expect_pass sh -c "git rev-parse -q --verify refs/tags/v0.4.0 >/dev/null && git diff --quiet v0.1.0 HEAD -- .jig/meta.json"
+
+msg="entry globs: a metarepo whose entry_files are all globs makes its first release from them"
+EG="$T/eg"; pcnew "$EG" && mkdir -p products && printf '# a\n' > products/a.md
+$J init --meta --name eg >/dev/null && setentry 'products/**/*.md' && git add -A && git commit -qm meta-init
+out=$($J release 2>&1); expect_pass sh -c "git rev-parse -q --verify refs/tags/v0.1.0 >/dev/null" "$out"
+
+EP="$T/ep"; pcnew "$EP" && mkdir -p api && printf 'x=1\n' > api/a.py
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para em --location "$EM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
+msg="entry globs: init --para caches products/a.md and products/b.md as files, and no file named for a folder"
+expect_pass sh -c "test \"\$(cd .jig/meta-cache && find . -type f | sort | tr '\n' ' ')\" = './CHANGELOG.md ./DECISIONS.md ./PIN ./products/a.md ./products/b.md ./products/x/b.md '"
+
+# A proposal landed by `jig merge --subject`, its branch then deleted: the gate still finds it.
+mkdir -p .jig/specs && printf '# t\n\n## Decisions\n' > .jig/specs/t.md && $J propose .jig/specs/t.md t >/dev/null
+git add .jig/specs/t.md && git commit -qm "specs: t" && $J open E1 --spec .jig/specs/t.md --owns 'lib/**' >/dev/null && git add -A && git commit -qm "open E1"
+(cd "$EP/.git/jig/worktrees/E1" && mkdir -p lib && printf 'w=1\n' > lib/w.py && git add -A && git commit -qm w && $J reviewed >/dev/null \
+  && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note E1")
+(cd "$EM" && $J open J --branch propose/ep-t --owns products/t.md CHANGELOG.md >/dev/null && git add -A && git commit -qm "TOOL: open J" \
+  && cd .git/jig/worktrees/propose/ep-t && printf '# t\n' > products/t.md && printf -- '- t\n' >> CHANGELOG.md \
+  && git add -A && git commit -qm "PRODUCTS: t" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
+  && git add -A && git commit -qm "TOOL: note J" && cd "$EM" && $J merge J --subject "D-001: land J" >/dev/null && $J release >/dev/null \
+  && git worktree remove --force .git/jig/worktrees/propose/ep-t && git branch -q -D propose/ep-t)
+msg="merge --subject: the subject is '<text>: merge J'"
+expect_pass sh -c "git -C '$EM' log -1 --merges --format=%s v0.5.0 | grep -qx 'D-001: land J: merge J'"
+setjson .jig/para.json pin v0.5.0 && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: em v0.4.0 → v0.5.0"
+msg="merge --subject: the gate's fallback still finds job J by its merge after its branch is deleted"
+gate_ok E1; rc=$?; expect_pass test $rc = 0
+
 rm -rf "$T"
 exit $fail
