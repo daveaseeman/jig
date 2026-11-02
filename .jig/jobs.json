@@ -1,7 +1,7 @@
 {
   "followup": {
     "spec": ".jig/specs/report-fixes-followup.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
