@@ -28,7 +28,6 @@ changes don't have to be proposed, merged and released one at a time.
 others:
 - `WORKAROUNDS.md`: patches that are in the code
 - `DEFERRED.md`: review findings not taken
-- `DROPPED.md` (from `fix.md`): staged files dropped, and why
 
 It's tracked, append-friendly, and its first row creates it from the plugin's template. One row
 per metarepo claim the pararepo has moved away from:
