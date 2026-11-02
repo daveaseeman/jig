@@ -21,7 +21,14 @@ handoff or when blocked.
    Refused or blocked: one line with its first reason.
 4. `jig staging`: if anything is staged, one line with the count and kinds (`/jig:stage` resolves them).
 5. In a pararepo (`.jig/para.json`), `jig sync` on trunk; report a newer release, and a
-   header it says is out of date, in one line each.
+   header it says is out of date, in one line each; a pin it moved and the buffer rows it
+   closed, and each file it says is cited but not a contract path, in one line each.
+   In a metarepo (`.jig/meta.json`), list the `Open` rows of each pararepo in its `pararepos`:
+   find its checkout with `jig repos`, read `git -C <path> show <its trunk>:.jig/ledgers/BUFFER.md`,
+   and report each row's id and claim. Beside them, name this repo's unreleased buffer
+   proposals (`git branch --no-merged <trunk> --list 'propose/<pararepo>-*'`) and the rows each
+   carries (the `## Buffer rows` of the pararepo's spec that names the branch). Read-only: rows
+   reach this repo only as a proposal.
 6. `jig workflow`, and read `${CLAUDE_PLUGIN_ROOT}/tiers.json`. Say what you run on:
    `running <model> at <effort>`, from your own system prompt. If that is below the `spec`
    step's, say so in one line — the owner chose your session, and jig can't change it.

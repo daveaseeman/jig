@@ -14,22 +14,5 @@
       "plugin/.claude-plugin/plugin.json"
     ],
     "reserved": {}
-  },
-  "sync-buffer": {
-    "spec": ".jig/specs/sync-buffer.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/skills/spec/**",
-      "plugin/skills/review/**",
-      "plugin/skills/release/**"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh",
-      "plugin/skills/hubnode/SKILL.md"
-    ],
-    "reserved": {}
   }
 }

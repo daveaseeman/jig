@@ -1996,5 +1996,101 @@ git add -A && git commit -qm init && $J init >/dev/null && git add -A && git com
 msg="survey: components/rtc/qx-20(rev1).pdf, linked bare, is neither missing nor unlinked"
 expect_pass hrsurvey "assert r['components_missing'] == [] and r['components_unlinked'] == [], r"
 
+
+# ---------------------------------------------------------------- sync buffer
+# A metarepo whose decision cites the pararepo's UI doc, and a pararepo working ahead of it.
+SM="$T/sb-meta"; pcnew "$SM" && git add -A && git commit -qm init && $J init --meta --name sbm >/dev/null
+printf '| D-001 | the list shows ids (`sb-para/docs/ui.md`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
+printf '| D-002 | the other app has a page (`other-para/docs/x.md`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
+git add -A && git commit -qm meta-init && $J release >/dev/null
+SP="$T/sb-para"; pcnew "$SP" && mkdir -p api docs && printf 'x=1\n' > api/a.py && printf '# UI\n' > docs/ui.md && printf '# X\n' > docs/x.md && printf 'dist/\n' > .gitignore
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para sbm --location "$SM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
+sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
+printf 'mkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/release.sh
+board "b['release'] = {'artifacts': ['dist/app-*.zip']}" && git add -A && git commit -qm "release protocol"
+sbprops() { git -C "$SM" branch --list 'propose/*' | wc -l | tr -d ' '; }
+brow() { printf '| %s | DECISIONS.md § D-001: %s | api/a.py, %s (%s) | owner, 2026-11-02 | %s |\n' "$@"; }
+sbland() {  # sbland <proposal branch> <term>: the metarepo writes it, merges and releases
+  (cd "$SM" && git switch -q "$1" && printf '\n## %s\n' "$2" >> GLOSSARY.md && printf -- '- %s\n' "$2" >> CHANGELOG.md \
+    && git add -A && git commit -qm "GLOSSARY: $2" && $J reviewed >/dev/null && git switch -q main \
+    && git merge -q --no-ff --no-edit "$1" && $J release >/dev/null); }
+sbbump() { setjson .jig/para.json pin "$1" && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: sbm → $1"; }
+
+msg="buffer: a pararepo release with no buffer opens no proposal branch"
+$J release --version 0.9.0 >/dev/null 2>&1; expect_pass sh -c "git tag | grep -qx v0.9.0 && test $(sbprops) = 0"
+msg="buffer P2: a contract-path change with no buffer row and no spec answer is refused"
+printf 'y=2\n' >> api/a.py && git add -A; expect_refuse git commit -qm "api: y"
+msg="buffer P2: with a row added to BUFFER.md in the same commit it is accepted"
+mkdir -p .jig/ledgers && cp "$P/ledgers/BUFFER.md" .jig/ledgers/BUFFER.md && brow B1 'ids shown' 'names shown' 'first try' Open >> .jig/ledgers/BUFFER.md
+git add -A; expect_pass git commit -qm "api: y"
+msg="buffer P2: a spec with meta: buffered B1 answers it too"
+mkdir -p .jig/specs && printf '# b\n\n- meta: buffered B1\n' > .jig/specs/b.md && printf 'z=3\n' >> api/a.py && git add -A; expect_pass git commit -qm "api: z"
+msg="buffer P2: meta: buffered naming a row the ledger doesn't have is refused"
+printf '# c\n\n- meta: buffered B9\n' > .jig/specs/c.md && printf 'w=4\n' >> api/a.py && git add -A; expect_refuse git commit -qm "api: w"; undo
+msg="buffer P2: a row whose state is neither Open nor Closed is refused"
+brow B2 x y z Settling >> .jig/ledgers/BUFFER.md && git add -A; expect_refuse git commit -qm "buffer: B2"; undo
+msg="buffer P2: a second row with an id already taken is refused"
+brow B1 'ids hidden' 'ids shown' 'twin' Open >> .jig/ledgers/BUFFER.md && printf 'w=4\n' >> api/a.py && git add -A; expect_refuse git commit -qm "api: w"; undo
+msg="buffer P2: an Open row closed by hand, in a commit that changes a contract path, is refused"
+sed -i.bak 's/| Open |$/| Closed |/' .jig/ledgers/BUFFER.md && rm .jig/ledgers/BUFFER.md.bak && printf 'w=4\n' >> api/a.py && git add -A; expect_refuse git commit -qm "api: w"; undo
+msg="buffer P2: an Open row deleted, or the whole ledger, is refused"
+sed -i.bak '/^| B1 /d' .jig/ledgers/BUFFER.md && rm .jig/ledgers/BUFFER.md.bak && git add -A && git commit -qm "buffer: drop B1" >/dev/null 2>&1; a=$?; undo
+git rm -q .jig/ledgers/BUFFER.md && printf 'w=4\n' >> api/a.py && git add -A && git commit -qm "api: w" >/dev/null 2>&1; b=$?; undo
+expect_pass test "$a$b" = 11
+msg="buffer P2: a change of mind that edits the row is accepted, and no metarepo branch exists"
+sed -i.bak 's/names shown/both shown/' .jig/ledgers/BUFFER.md && rm .jig/ledgers/BUFFER.md.bak && printf 'y=5\n' >> api/a.py && git add -A
+expect_pass sh -c "git commit -qm 'api: both' && test \$(git -C '$SM' branch --list 'propose/*' | wc -l) = 0"
+msg="buffer P2: meta: none — <reason> and a proposal still answer it"
+printf '# n\n\n- meta: none — internal\n' > .jig/specs/n.md && printf 'v=6\n' >> api/a.py && git add -A && git commit -qm "api: v" >/dev/null 2>&1; a=$?
+printf '# p\n\n- meta: sbm proposal propose/sb-para-p\n' > .jig/specs/p.md && printf 'u=7\n' >> api/a.py && git add -A && git commit -qm "api: u" >/dev/null 2>&1; b=$?
+git rm -q .jig/specs/n.md .jig/specs/p.md .jig/specs/b.md && git commit -qm "specs: done"
+expect_pass test "$a$b" = 00
+msg="buffer: pushing with open rows succeeds"
+git init -q --bare "$T/sb-remote.git" && git remote add origin "$T/sb-remote.git"; expect_pass git push -q origin main
+brow B2 'ids sorted' 'unsorted' 'second try' Open >> .jig/ledgers/BUFFER.md && printf 't=8\n' >> api/a.py && git add -A && git commit -qm "api: t"
+msg="buffer: jig release with two Open rows opens one metarepo proposal whose spec, in the release, lists both"
+out=$($J release --version 1.0.0 2>&1)
+expect_pass sh -c "test \$(git -C '$SM' branch --list 'propose/*' | wc -l) = 1 && git -C '$SM' rev-parse -q --verify refs/heads/propose/sb-para-buffer-v1.0.0 >/dev/null && git show v1.0.0:.jig/specs/buffer-v1.0.0.md | grep -qx -- '- B1' && git show v1.0.0:.jig/specs/buffer-v1.0.0.md | grep -qx -- '- B2' && grep -q 'meta: sbm proposal propose/sb-para-buffer-v1.0.0' .jig/specs/buffer-v1.0.0.md && test -z \"\$(git status --porcelain)\"" "$out"
+msg="buffer: the rows stay Open after the proposal"
+expect_pass sh -c "test \$(grep -c '| Open |\$' .jig/ledgers/BUFFER.md) = 2"
+brow B3 'ids paged' 'scrolled' 'third try' Open >> .jig/ledgers/BUFFER.md && printf 's=9\n' >> api/a.py && git add -A && git commit -qm "api: s"
+(cd "$SM" && git switch -q propose/sb-para-buffer-v1.0.0 && sed -i.bak 's/the list shows ids/the list shows ids and names, sorted/' DECISIONS.md && rm DECISIONS.md.bak \
+  && printf -- '- D-001: ids and names, sorted\n' >> CHANGELOG.md && git add -A && git commit -qm "D-001: ids and names" && $J reviewed >/dev/null \
+  && git switch -q main && git merge -q --no-ff --no-edit propose/sb-para-buffer-v1.0.0 && $J release >/dev/null)
+msg="buffer: after the metarepo releases it, jig sync moves the pin and closes B1 and B2 in one commit; B3 stays Open"
+before=$(git rev-parse HEAD); out=$($J sync 2>&1)
+expect_pass sh -c "test \"\$(git rev-list --count $before..HEAD)\" = 1 && git log -1 --format=%s | grep -qx 'meta: sbm v0.1.0 → v0.2.0' && grep -q '\"pin\": \"v0.2.0\"' .jig/para.json && grep -q 'at \`v0.2.0\`' AGENTS.md && grep -q '^| B1 .*| Closed |\$' .jig/ledgers/BUFFER.md && grep -q '^| B2 .*| Closed |\$' .jig/ledgers/BUFFER.md && grep -q '^| B3 .*| Open |\$' .jig/ledgers/BUFFER.md && test \"\$(git show --name-only --format= HEAD | sort | tr '\n' ' ')\" = '.jig/ledgers/BUFFER.md .jig/para.json AGENTS.md ' && test -z \"\$(git status --porcelain)\" && head -1 .jig/meta-cache/PIN | grep -qx v0.2.0" "$out"
+msg="buffer: jig sync reports a pararepo path a metarepo decision cites that contract_paths doesn't cover, and not one it covers or another repo's"
+expect_pass sh -c "echo \"\$0\" | grep -q 'docs/ui.md is cited by D-001 and is not a contract path' && ! echo \"\$0\" | grep -q 'api/a.py is cited' && ! echo \"\$0\" | grep -q 'docs/x.md is cited'" "$out"
+msg="buffer P2: meta: buffered naming a Closed row is refused"
+printf '# c\n\n- meta: buffered B1\n' > .jig/specs/c.md && printf 'w=4\n' >> api/a.py && git add -A; expect_refuse git commit -qm "api: w"; undo
+msg="buffer: a second sync moves nothing"
+before=$(git rev-parse HEAD); out=$($J sync 2>&1)
+expect_pass sh -c "test \"\$(git rev-parse HEAD)\" = $before && echo \"\$0\" | grep -q 'sbm v0.2.0 is the latest release'" "$out"
+msg="buffer: propose --buffer by hand puts B3, the one Open row, in its own proposal"
+out=$($J propose --buffer later 2>&1)
+expect_pass sh -c "git -C '$SM' rev-parse -q --verify refs/heads/propose/sb-para-later >/dev/null && grep -qx -- '- B3' .jig/specs/later.md && ! grep -qx -- '- B1' .jig/specs/later.md" "$out"
+git add .jig/specs/later.md && git commit -qm "specs: later"
+msg="buffer: a release whose Open rows a proposal already carries unchanged opens no branch, and needs no metarepo"
+mv "$SM" "$T/sb-away"; $J release --version 1.0.1 >/dev/null 2>&1; rc=$?; mv "$T/sb-away" "$SM"
+expect_pass sh -c "test $rc = 0 && git tag | grep -qx v1.0.1 && test \$(git -C '$SM' branch --list 'propose/*' | wc -l) = 2"
+sed -i.bak 's/scrolled (third try)/scrolled, then paged (fourth try)/' .jig/ledgers/BUFFER.md && rm .jig/ledgers/BUFFER.md.bak && printf 'r=10\n' >> api/a.py && git add -A && git commit -qm "api: r"
+sbland propose/sb-para-later later
+msg="buffer: a row edited after its proposal stays Open when that proposal releases; sync commits nothing"
+before=$(git rev-parse HEAD); out=$($J sync 2>&1)
+expect_pass sh -c "test \"\$(git rev-parse HEAD)\" = $before && grep -q '^| B3 .*| Open |\$' .jig/ledgers/BUFFER.md && echo \"\$0\" | grep -q 'sbm v0.3.0 is out'" "$out"
+sbbump v0.3.0
+msg="buffer: the edited row goes again in the next release's proposal"
+$J release --version 1.0.2 >/dev/null 2>&1
+expect_pass sh -c "git -C '$SM' rev-parse -q --verify refs/heads/propose/sb-para-buffer-v1.0.2 >/dev/null && grep -qx -- '- B3' .jig/specs/buffer-v1.0.2.md && grep -q 'fourth try' .jig/specs/buffer-v1.0.2.md"
+sbland propose/sb-para-buffer-v1.0.2 again && sbbump v0.4.0
+msg="buffer: with the pin bumped by hand past the release, sync still closes the row, in one commit, the pin where it is"
+before=$(git rev-parse HEAD); out=$($J sync 2>&1)
+expect_pass sh -c "test \"\$(git rev-list --count $before..HEAD)\" = 1 && git log -1 --format=%s | grep -qx 'meta: sbm v0.4.0: close B3' && grep -q '^| B3 .*| Closed |\$' .jig/ledgers/BUFFER.md && grep -q '\"pin\": \"v0.4.0\"' .jig/para.json && test -z \"\$(git status --porcelain)\"" "$out"
+msg="buffer: a release with every row Closed opens no branch"
+n=$(git -C "$SM" branch --list 'propose/*' | wc -l); $J release --version 1.0.3 >/dev/null 2>&1
+expect_pass sh -c "git tag | grep -qx v1.0.3 && test \$(git -C '$SM' branch --list 'propose/*' | wc -l) = $n"
+
 rm -rf "$T"
 exit $fail
