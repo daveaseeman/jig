@@ -24,7 +24,7 @@ doesn't stop it.
 Owner, Nov 2: keep `contract_paths` and the proposal. This only adds a buffer to work in, so
 changes don't have to be proposed, merged and released one at a time.
 
-**The buffer is a ledger:** `.jig/ledgers/SYNC_BUFFER.md` in the pararepo. It sits beside the
+**The buffer is a ledger:** `.jig/ledgers/BUFFER.md` in the pararepo. It sits beside the
 others:
 - `WORKAROUNDS.md`: patches that are in the code
 - `DEFERRED.md`: review findings not taken
@@ -40,7 +40,7 @@ unrelated: it quiets `jig sync`'s report until a date.
 
 **P2 gains a third answer: buffered.** A contract-path change is accepted when one of these comes
 with it:
-- a row added to or changed in `SYNC_BUFFER.md` in the same commit (like R7 with
+- a row added to or changed in `BUFFER.md` in the same commit (like R7 with
   `WORKAROUNDS.md`)
 - a spec line `meta: buffered <row id>`, beside the existing `none — <reason>` and proposal
 
@@ -89,7 +89,7 @@ pararepo's first buffer row, so it rides in the next proposal. (The story's ques
 ## Done when
 Smoke, in a metarepo plus pararepo fixture:
 - [ ] A contract-path change with no buffer row and no spec answer is refused by P2. With a row
-      added to `SYNC_BUFFER.md` in the same commit, it's accepted. So is a spec with
+      added to `BUFFER.md` in the same commit, it's accepted. So is a spec with
       `meta: buffered B1`.
 - [ ] A second change to the same behavior that edits the row is accepted. No metarepo branch
       exists afterwards.
@@ -115,7 +115,7 @@ Smoke, in a metarepo plus pararepo fixture:
   - `para_rules` (P2's buffered answer) and `PROPOSAL`
   - `cmd_propose --buffer`, `cmd_release`'s pararepo step
   - `cmd_sync` (closing rows in the pin commit; uncovered cited paths)
-- `plugin/templates/ledgers/SYNC_BUFFER.md` (new).
+- `plugin/templates/ledgers/BUFFER.md` (new).
 - `plugin/templates/jig/RULES.md`: P2, Newer wins, Every copy.
 - Skills: `hubnode` (session start in a metarepo), `spec` and `review` (Every copy), `release`
   (the pararepo's buffer step).
