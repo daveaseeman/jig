@@ -59,9 +59,9 @@ same list would then mean two things.
 The defaults don't change. `init --meta` writes a comment in `meta.json`'s place in RULES saying
 pages go in as globs (`docs/**/*.md`).
 
-`jig merge --subject "<text>"` sets the subject. jig keeps ` merge <job>` at its end, so the
-gate's fallback still finds the job: `E-045, E-044: merge walyt-alpha-mapping` matches
-`merge (\S+)$`.
+`jig merge --subject "<text>"` sets the subject. jig keeps ` merge <job>` at its end, and the
+gate's fallback (`proposal_in`) matches `(?:^|: )merge (\S+)$` in place of `^merge (\S+)$`, so
+it still finds the job: `E-045, E-044: merge walyt-alpha-mapping` names `walyt-alpha-mapping`.
 
 The hubnode skill's `jig workflow` step: when the command doesn't exist, the repo's `.jig/` is
 older than the plugin, so the skill says "run /jig:update first" and stops.
@@ -90,7 +90,7 @@ Smoke, in a metarepo fixture with `entry_files: ["DECISIONS.md", "products/**/*.
 
 ### Touches
 `plugin/templates/jig/jig.py` (`cmd_release`, `meta_rules` M3, `fill_cache`, `cmd_merge`, the
-merge parser), `plugin/templates/jig/RULES.md`, `plugin/skills/hubnode/SKILL.md`,
+merge parser, `proposal_in`'s merge-subject regex), `plugin/templates/jig/RULES.md`, `plugin/skills/hubnode/SKILL.md`,
 `tests/smoke.sh`, and a `marketing/FEATURES.md` row for `--subject`.
 
 ### Alternatives considered
@@ -116,3 +116,10 @@ merge parser), `plugin/templates/jig/RULES.md`, `plugin/skills/hubnode/SKILL.md`
 - Evaluated with `/jig:bug`, Nov 2. Every given the fix depends on is now `[seen]`. That
   changed the correction: the spec first had the release check pass globs to `git diff` as
   pathspecs, and that would have missed every page directly under its folder.
+- Review round 1, Nov 2: the Correction first said the old `^merge (\S+)$` already matched a
+  `--subject` merge; it doesn't (anchored at the start), so `proposal_in`'s regex changed and is
+  in Touches. Also from the review: one `is_entry` check (entry_paths, M3, the release filter)
+  never counts anything under `.jig/`, since a `**/*.md` would otherwise make M3 ask trunk
+  bookkeeping for a changelog line M4 refuses; the release diff runs `--no-renames`, so a cited
+  file moved out of the set still counts; `ls-tree` and the release diff run with
+  `core.quotePath=false`, so a non-ASCII page name reaches the glob.

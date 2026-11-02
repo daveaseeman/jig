@@ -25,6 +25,8 @@ handoff or when blocked.
 6. `jig workflow`, and read `${CLAUDE_PLUGIN_ROOT}/tiers.json`. Say what you run on:
    `running <model> at <effort>`, from your own system prompt. If that is below the `spec`
    step's, say so in one line — the owner chose your session, and jig can't change it.
+   If `jig workflow` isn't a command, the repo's `.jig/` is older than the plugin: say "run
+   /jig:update first" and stop.
 7. Work in this order: open the jobs asked for, gate the handoffs waiting, sync the rest.
 
 ## Who runs each step
@@ -92,7 +94,9 @@ its own settings. A mismatch stops it: tell the owner, don't brief it.
    checking that it happened and that the result matches the spec.
 5. `jig mark <name> gated`, commit `jobs.json`, then on the owner's word
    `jig merge <name> -m "shared files: ..."`. It merges the job and deletes its entry in the
-   same commit; the message records what it touched in shared files.
+   same commit; the message records what it touched in shared files. In a repo whose
+   subjects lead with ids, add `--subject "<ids>: <what>"`: the subject becomes
+   `<ids>: <what>: merge <name>`.
 
 ## After a merge
 
