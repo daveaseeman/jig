@@ -298,7 +298,7 @@ under `.jig/` counts, whatever the globs say.
 | M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`) |
 | P1 | an `AGENTS.md` header that differs from what `.jig/para.json` generates |
-| P2 | a contract-path change with none of: a row added or changed in `.jig/ledgers/BUFFER.md` in the same commit, or a spec saying `meta: buffered <row id>`, `meta: <name> proposal <branch>` or `meta: none — <reason>`; a buffer row whose state isn't `Open` or `Closed` |
+| P2 | a contract-path change with none of: a row added or changed in `.jig/ledgers/BUFFER.md` in the same commit, or a spec saying `meta: buffered <row id>`, `meta: <name> proposal <branch>` or `meta: none — <reason>`. Also, in `BUFFER.md`: a state other than `Open` or `Closed`, a repeated id, an `Open` row deleted, or one closed by any commit but `jig sync`'s |
 | P4 | a contract-path change while a file targeting the metarepo is staged |
 | P3 | the metarepo's cache (`.jig/meta-cache/`) or its checkout committed into the pararepo |
 
@@ -318,11 +318,14 @@ the pinned release.
 describes, as often as testing needs, and commit and push each change. Every such difference
 is a row in `.jig/ledgers/BUFFER.md` (the first row creates it from jig's ledger template): the
 claim at the pin, what this repo does now, who decided, and a state, `Open` or `Closed`. A change
-of mind edits the row. `jig release` in the pararepo, before its build, puts every `Open` row into
-one metarepo proposal (`jig propose --buffer`, also run by hand): one branch, and a spec here
-that lists the rows by id under `## Buffer rows`. When the metarepo releases it, `jig sync` on
-the pararepo's trunk moves the pin to that release and marks those rows `Closed`, in one commit
-`meta: <name> v0.3.0 → v0.4.0`; rows added after the proposal stay `Open` for the next one.
+of mind edits the row. `jig release` in the pararepo, before its build, puts every `Open` row
+no proposal carries yet, as it stands, into one metarepo proposal (`jig propose --buffer`, also
+run by hand): one branch, and a spec here that lists and copies the rows under `## Buffer rows`.
+A row edited after it was proposed goes again in the next one. When the metarepo releases a
+proposal, `jig sync` on the pararepo's trunk makes the pin commit itself: it moves the pin to
+that release and marks `Closed` the rows the proposal carried that are unchanged since, in one
+commit `meta: <name> v0.3.0 → v0.4.0` (or, when the pin already holds the release, `meta:
+<name> v0.4.0: close B1`). Rows added or edited after the proposal stay `Open` for the next one.
 `jig sync` also names each file here that a decision at the pin cites and `contract_paths`
 doesn't cover; adding it is the hubnode's call.
 
