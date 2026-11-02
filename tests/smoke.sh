@@ -1930,5 +1930,18 @@ msg="staging: in a metarepo, destination DECISIONS.md resolves"
 stage p3.md this decisions new DECISIONS.md '| D-001 | x | accepted | 2026-11-02 |\n'
 expect_pass sh -c "$J staging resolve p3.md && grep -q 'D-001' DECISIONS.md"
 
+# Advice in an old-layout repo names jig update first.
+R="$JR" old "$T/fu-old" 5d955a2 jig2
+msg="propose: in an old-layout repo it names jig update first"
+out=$(python3 "$P/jig/jig.py" propose jig/specs/x.md s 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'older jig layout (jig/lanes.json): run .jig update. first'" "$out"
+export JIG_CONFIG="$T/fu-repos.json"
+FW="$T/fu-fw"; pcnew "$FW" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J repos add oldrepo "$T/fu-old" >/dev/null
+msg="staging: forwarding to a repo on an older layout names jig update there"
+stage f1.md oldrepo doc new docs/x.md
+out=$($J staging resolve f1.md 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'older jig layout (jig/lanes.json): run .jig update. there' && test -f .jig/staging/f1.md" "$out"
+
 rm -rf "$T"
 exit $fail

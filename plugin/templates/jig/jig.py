@@ -2329,6 +2329,10 @@ def sync_meta(root: Path) -> int:
 
 def cmd_propose(root: Path, args) -> int:
     para = json.loads((root / PARA).read_text()) if (root / PARA).exists() else None
+    if para is None and (old := old_board(root)):
+        # init refuses an older layout too, so naming it here would send someone in a circle.
+        die(f"this repo is on an older jig layout ({old}): run `jig update` first; then, if it "
+            "isn't a pararepo yet, `jig init --para <metarepo name>`", 2)
     if para is None:
         die(f"not a pararepo (no {PARA}): a proposal is a pararepo's branch on its metarepo. "
             "`jig init --para <metarepo name>` makes this one", 2)
@@ -2580,9 +2584,11 @@ def forward(root: Path, path: Path, head: dict) -> int:
         die(f"{target} isn't this repo and isn't in {repos_file()}: "
             f"jig repos add {target} <path>", 2)
     there = Path(there)
+    if old := old_board(there):
+        die(f"{target} at {there} is on an older jig layout ({old}): run `jig update` there "
+            "first, then resolve again", 2)
     if not (there / DIR).is_dir():
-        older = " (it has jig/: run `jig update` there first)" if (there / "jig" / "lanes.json").exists() else ""
-        die(f"{target} is listed at {there}, but that isn't a jig repo (no {DIR}/){older}: fix it "
+        die(f"{target} is listed at {there}, but that isn't a jig repo (no {DIR}/): fix it "
             f"with `jig repos add {target} <path>`", 2)
     me = Board.load(root, working_tree=True).data.get("name") or main_root().name
     para = json.loads((root / PARA).read_text()) if (root / PARA).exists() else None
