@@ -10,13 +10,17 @@ decided until it is resolved: read it for context, never cite it as decided.
 ---
 staged: true
 target: <repo name from `jig repos`, or "this">
-kind: spec | doc | decisions | user-story
+kind: spec | doc | decisions | user-story | feedback
 change: new | update
 destination: <inside the target: a path if known, else a filename, else a description>
 source: <session / date / author>
 status: staged
 ---
 ```
+
+A `feedback` file, written by `/jig:feedback`, also carries `from:` (the reporting repo) and
+`jig_version:`. When the jig repo isn't registered it waits in `~/.config/jig/feedback/`, which
+`jig staging` lists too.
 
 ## Staging a file
 
@@ -39,9 +43,12 @@ Write it into the target's `.jig/staging/`, found with `jig repos` (needs only
   the commit without it.
 - **user-story**: run `/jig:spec` with the story as input — a new spec, or an amendment to
   the spec it extends — carrying `Source: <source> (staged as <file name>)`. Then `resolve`.
+- **feedback**: work through it with `/jig:fix` in the jig repo. Elsewhere, `resolve` forwards it
+  there.
 - **another repo's**: `resolve` forwards it into that repo's `.jig/staging/`; it is resolved
   in a session there.
-- **not wanted**: show it, ask, then `jig staging drop <file>`. Nothing records it: it was
-  never committed.
+- **not wanted**: show it, ask, then `jig staging drop <file> "<reason>"`. The drop is recorded
+  as an empty `STAGING: dropped …` commit on HEAD, carrying the reason; anything you had staged
+  in git stays staged and out of it.
 
 Resolve one file per step and show the result before the next.

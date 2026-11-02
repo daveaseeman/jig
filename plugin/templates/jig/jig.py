@@ -2393,8 +2393,14 @@ def cmd_propose(root: Path, args) -> int:
 # Where a chat drops a file meant for this repo, or another. Untracked: nothing in it is
 # authoritative, and it can reach a contract only through `jig staging resolve`.
 STAGING = f"{DIR}/staging"
-KINDS = ("spec", "doc", "decisions", "user-story")
+KINDS = ("spec", "doc", "decisions", "user-story", "feedback")
 HEADER_KEYS = ("staged", "target", "kind", "change", "destination", "source", "status")
+
+
+def feedback_dir() -> Path:
+    """Where a tool report waits when the jig repo isn't in repos.json: beside that list, so
+    it survives a cleared temp folder and the same `jig staging` finds it from any repo."""
+    return repos_file().parent / "feedback"
 
 
 def staged_files(root: Path) -> list[Path]:
@@ -2417,6 +2423,8 @@ def read_staged(path: Path) -> tuple[dict, str, list[str]]:
     bad = [f"no {k}" for k in HEADER_KEYS if not head.get(k)]
     if head.get("kind") and head["kind"] not in KINDS:
         bad.append(f"kind {head['kind']!r} is not one of {', '.join(KINDS)}")
+    if head.get("kind") == "feedback" and not head.get("from"):
+        bad.append("no from: a report names the repo it came from")
     if head.get("change") and head["change"] not in ("new", "update"):
         bad.append(f"change {head['change']!r} is not new or update")
     if head.get("staged") and head["staged"] != "true":
@@ -2472,15 +2480,20 @@ def decision_id(cell: str) -> str:
 def cmd_staging(root: Path, args) -> int:
     if args.action not in ("resolve", "drop"):
         files = staged_files(root)
-        if not files:
+        waiting = sorted(feedback_dir().glob("*.md")) if feedback_dir().is_dir() else []
+        if not files and not waiting:
             print(f"nothing staged in {STAGING}")
             return 0
-        print(staged_summary(root))
+        if files:
+            print(staged_summary(root))
+        if waiting:
+            print(f"{len(waiting)} waiting in {feedback_dir()} (the jig repo isn't in repos.json):")
         bad = False
-        for f in files:
+        for f in files + waiting:
             head, _, problems = read_staged(f)
+            origin = f", from {head['from']}" if head.get("from") else ""
             print(f"  {f.name}: {head.get('change', '?')} {head.get('kind', '?')} for "
-                  f"{head.get('target', '?')} → {head.get('destination', '?')}")
+                  f"{head.get('target', '?')} → {head.get('destination', '?')}{origin}")
             for p in problems:
                 print(f"      {p}")
                 bad = True
@@ -2488,15 +2501,18 @@ def cmd_staging(root: Path, args) -> int:
 
     if not args.file:
         die(f"which file? jig staging {args.action} <file>", 2)
-    # Staged files live in the main checkout only: they are never committed into a job.
-    path = main_root() / STAGING / Path(args.file).name
+    # Staged files live in the main checkout only: they are never committed into a job. A
+    # report whose jig repo wasn't registered waits in the fallback folder instead.
+    name = Path(args.file).name
+    path = main_root() / STAGING / name
     if not path.exists():
-        die(f"no {args.file} in {STAGING}", 2)
+        path = feedback_dir() / name
+    if not path.exists():
+        die(f"no {args.file} in {STAGING} or {feedback_dir()}", 2)
     if args.action == "drop":
-        # A staged file was never committed, so a record of dropping it would point at nothing.
-        path.unlink()
-        print(f"dropped {path.name}")
-        return 0
+        return drop(path, args.reason)
+    if args.reason:
+        die("only drop takes a reason", 2)
     head, body, problems = read_staged(path)
     if problems:
         die(f"{path.name}: {'; '.join(problems)}", 2)
@@ -2523,11 +2539,12 @@ def cmd_staging(root: Path, args) -> int:
         f = inside(rel)
         return f.exists() and mark in f.read_text(errors="replace")
 
-    if kind == "user-story":
+    if kind in ("user-story", "feedback"):
         specs = [s for s in (root / DIR / "specs").glob("*.md") if mark in s.read_text()]
         if not specs:
             how = "write a new spec" if change == "new" else "amend the spec it extends"
-            die(f"a story resolves into a spec: {how} under {DIR}/specs/ from it, carrying "
+            what = "a story" if kind == "user-story" else "a report"
+            die(f"{what} resolves into a spec: {how} under {DIR}/specs/ from it, carrying "
                 f"`{mark}`, then resolve again", 1)
         return done(f"carried by {specs[0].relative_to(root)}")
     if kind in ("spec", "doc") and not bare_path(dest):
@@ -2592,6 +2609,25 @@ def cmd_staging(root: Path, args) -> int:
     else:
         out.write_text(body.rstrip("\n") + f"\n\n---\n{mark}\n")
     return done(f"written to {dest}")
+
+
+def drop(path: Path, reason: str | None) -> int:
+    """Delete a staged file and record why as an empty commit on HEAD. The file was never in
+    git, and a drop may never be followed by a commit, so the drop makes its own. Plumbing
+    reuses HEAD's tree: the index, and anything staged in it, stays as it was."""
+    head, _, _ = read_staged(path)
+    origin = head.get("from") or head.get("source") or "?"
+    why = " ".join((reason or "").split()) or "(no reason given)"
+    subject = f"STAGING: dropped {path.name} ({head.get('kind') or '?'}, from {origin}): {why}"
+    repo = str(main_root())
+    parent = git("rev-parse", "--verify", "-q", "HEAD", cwd=repo)
+    if not parent:
+        die("no commit yet to record the drop on: commit once, then drop again", 2)
+    commit = git("commit-tree", f"{parent}^{{tree}}", "-p", parent, "-m", subject, check=True, cwd=repo)
+    git("update-ref", "-m", "jig staging drop", "HEAD", commit, parent, check=True, cwd=repo)
+    path.unlink()
+    print(f"dropped {path.name}: {commit[:12]} {subject}")
+    return 0
 
 
 def decision_rows(body: str, root: Path) -> list[str]:
@@ -3601,6 +3637,7 @@ def main(argv: list[str] | None = None) -> int:
     st = sub.add_parser("staging", help="list staged files, or resolve or drop one")
     st.add_argument("action", nargs="?", choices=["resolve", "drop"])
     st.add_argument("file", nargs="?")
+    st.add_argument("reason", nargs="?", help="drop: why, recorded in the drop's commit")
     rp = sub.add_parser("repos", help="list, or add to, where your repos live (user config)")
     rp.add_argument("action", nargs="?", choices=["add", "rename"])
     rp.add_argument("kind", nargs="?", help="add: repo, meta or para; rename: the new name")

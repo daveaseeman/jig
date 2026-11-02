@@ -259,7 +259,15 @@ guessed at. In a metarepo, decisions land only in a register `entry_files` names
 `jig staging resolve <file>` lands it: a new spec or doc is written with its source; an
 update, a story's spec, or decisions with other content wait until the work is done and the
 source is in it; a file for another repo moves into that repo's staging, found through
-`jig repos`. `jig staging drop <file>` deletes it and records nothing: it was never committed.
+`jig repos`. `jig staging drop <file> ["<reason>"]` deletes it and records the drop as an
+empty commit on HEAD, `STAGING: dropped <file> (<kind>, from <origin>): <reason>`, or
+`(no reason given)`. It is written with `git commit-tree` and `update-ref`, so the index and
+anything staged stay as they were; `git log --grep '^STAGING: dropped'` lists every drop.
+
+A report on jig itself is `kind: feedback`, staged in the jig repo, whose header also names
+`from` (the reporting repo, required) and `jig_version`. When the jig repo isn't in `jig repos`,
+it waits in `feedback/` beside the repos list instead; `jig staging` lists that folder too, and
+resolves or drops files from it. A report resolves like a story: into a spec carrying its source.
 
 While anything is staged, `jig release` refuses; `--force` releases anyway and names the staged
 files in the release commit. Commits, pushes and gates don't look at staging. A chat needs access to `~/.config/jig/` (where
