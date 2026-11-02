@@ -653,7 +653,15 @@ def cmd_hook(root: Path, args) -> int:
             print(f"jig: {r}", file=sys.stderr)
         return 1 if refusals else 0
     if name == "pre-push":
-        problems = meta_problems(root, meta, board.trunk) if meta else []
+        # git names what is pushed on stdin: `<local ref> <sha> <remote ref> <sha>`. What goes
+        # to the remote's trunk is judged, not the local trunk: `git push origin HEAD:main`
+        # from a detached checkout sends a commit the local ref never had.
+        pushed = [l.split()[1] for l in (sys.stdin.read().splitlines() if meta else [])
+                  if len(l.split()) == 4 and l.split()[2] == f"refs/heads/{board.trunk}"
+                  and set(l.split()[1]) != {"0"}]
+        problems = []
+        for rev in pushed or ([""] if meta else []):
+            problems += [p for p in meta_problems(root, meta, board.trunk, rev) if p not in problems]
         for p in problems:
             print(f"jig: refused: {p}", file=sys.stderr)
         return 1 if problems else 0
@@ -850,11 +858,19 @@ def cmd_merge(root: Path, args) -> int:
     del board.jobs[name]
     board.save()
     git("add", "--", JOBS, check=True)
+    conflicted = git("diff", "--name-only", "--diff-filter=U").splitlines()
+    appends = board.data.get("append_files", [])
+    if p.returncode and conflicted and all(matches(f, appends) for f in conflicted):
+        # The gate already resolved these the way sync does; resolving them here by hand
+        # could come out differently. A synced job merges with no new handoff.
+        git("merge", "--abort")
+        die(f"merging {branch} conflicts only in append files ({', '.join(conflicted)}): "
+            f"`jig sync` the job, then merge again")
     if p.returncode:
         print(f"conflicts merging {branch}; {name}'s entry is already deleted in the index. "
               f"Resolve these, `git add` each, `git commit`, then run {DIR}/scripts/setup.sh:",
               file=sys.stderr)
-        for f in git("diff", "--name-only", "--diff-filter=U").splitlines():
+        for f in conflicted:
             print(f"  {f}", file=sys.stderr)
         return 1
     commit = ["git", "commit", "-q", "--no-edit"] if merging else \
@@ -970,6 +986,11 @@ def merge_trunk(board: "Board", here: Path) -> list[str] | None:
     return []
 
 
+def git_version() -> tuple[int, ...]:
+    m = re.search(r"(\d+)\.(\d+)", git("version"))
+    return (int(m.group(1)), int(m.group(2))) if m else (0, 0)
+
+
 def blob(rev: str, path: str) -> str:
     return subprocess.run(["git", "show", f"{rev}:{path}"], capture_output=True, text=True).stdout
 
@@ -991,6 +1012,9 @@ def changed_since(commit: str, branch: str, board: "Board") -> list[str]:
                                capture_output=True, text=True)
             tree, *conflicted = p.stdout.splitlines() or [""]
             if p.returncode not in (0, 1) or not tree:
+                if git_version() < (2, 38):
+                    die(f"comparing a synced job needs git 2.38 or later (`git merge-tree "
+                        f"--write-tree`); this is git {'.'.join(map(str, git_version()))}")
                 # No replay to compare with: everything the merge changed counts as the job's.
                 tree, conflicted = parents[0], []
             files = []
@@ -1248,8 +1272,9 @@ def cmd_gate(root: Path, args) -> int:
         return 1
     print(f"{scratch} holds {commit[:12]} with {trunk} merged in. Run the project checks there; "
           "jig never runs them:\n")
-    print(f"  cd {scratch} && ./{DIR}/scripts/check.sh")
-    print(f"  cd - && git worktree remove {scratch}\n")
+    print(f"  cd {scratch} && bash ./{DIR}/scripts/check.sh")
+    # --force: setup.sh ran there and may have left untracked files (a venv, a build).
+    print(f"  cd - && git worktree remove --force {scratch}\n")
     if job is not None:
         print(f"Then: jig mark {name} gated, and on the owner's word: jig merge {name}")
     else:
@@ -1617,9 +1642,12 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
             out.append(f"M1 a metarepo holds no code: {p}")
     if merging:
         # M5 main takes only merges of reviewed branches. A job's sync of trunk, and the
-        # gate's scratch merge, are merges into something else.
-        done = reviewed_commits() if branch == trunk else set()
-        for c in (merging if branch == trunk else []):
+        # gate's scratch merge, are merges into something else. A detached HEAD at trunk
+        # (or behind it) is trunk all the same: `git push origin HEAD:main` lands its merge.
+        into_trunk = branch == trunk or (not branch and subprocess.run(
+            ["git", "merge-base", "--is-ancestor", "HEAD", trunk], capture_output=True).returncode == 0)
+        done = reviewed_commits() if into_trunk else set()
+        for c in (merging if into_trunk else []):
             if not counts_reviewed(c, done, board):
                 out.append(f"M5 {c[:12]} has no review on record: review it on its branch "
                            f"(`jig reviewed`), then merge")
@@ -1658,9 +1686,10 @@ def check_subject(msg_file: str, meta: dict) -> list[str]:
             f"GLOSSARY: …): {subject!r}"]
 
 
-def meta_problems(root: Path, meta: dict, trunk: str) -> list[str]:
+def meta_problems(root: Path, meta: dict, trunk: str, rev: str = "") -> list[str]:
     """What makes the metarepo's history unreleasable. Shared by release and pre-push,
-    because a fast-forward runs no hook and a hand-made tag skips the release."""
+    because a fast-forward runs no hook and a hand-made tag skips the release. REV is the
+    commit to judge as trunk, when it isn't trunk's ref: what a push sends to it."""
     out: list[str] = []
     pat = re.compile(meta["tag_pattern"])
     tags = [t for t in git("tag", "--list").splitlines() if pat.match(t)]
@@ -1673,7 +1702,7 @@ def meta_problems(root: Path, meta: dict, trunk: str) -> list[str]:
             out.append(f"tag {t} was not made by jig release: its {CHANGELOG} has no "
                        f"`## {t} — <date>` heading. Delete it (`git tag -d {t}`)")
     last = latest_tag(released)
-    rng = f"{last}..{trunk}" if last else trunk
+    rng = f"{last}..{rev or trunk}" if last else rev or trunk
     done = reviewed_commits()
     board = Board.load(root)
     for line in git("rev-list", "--first-parent", "--parents", rng).splitlines():

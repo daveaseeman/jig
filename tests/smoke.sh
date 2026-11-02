@@ -1839,5 +1839,43 @@ expect_pass sh -c "echo \"\$0\" | sed -n '/^Stale references/,/^\$/p' | grep -q 
 msg="update stale: \$(dirname \"\$0\")/../specs/suite/README.md is stale"
 expect_pass sh -c "echo \"\$0\" | sed -n '/^Stale references/,/^\$/p' | grep -q 'tools/r.sh'" "$out"
 
+# M5 and pre-push: a detached checkout at trunk is trunk.
+FM="$T/fu-m5"; pcnew "$FM" && git add -A && git commit -qm init && $J init --meta --name fm >/dev/null \
+  && git add -A && git commit -qm meta-init && $J release >/dev/null
+git init -q --bare "$T/fu-m5.git" && git remote add origin "$T/fu-m5.git" && git push -q origin main 2>/dev/null
+git switch -q -c ub && printf '\n## grain\n' >> GLOSSARY.md && printf -- '- grain\n' >> CHANGELOG.md \
+  && git add -A && git commit -qm "GLOSSARY: grain" && git checkout -q --detach main
+msg="M5: on a detached HEAD at main, a merge of an unreviewed branch is refused"
+out=$(git merge --no-ff --no-edit ub 2>&1); rc=$?; git merge --abort 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'M5 '" "$out"
+msg="pre-push: git push origin HEAD:main of that merge, made with the hooks off, is refused"
+git -c core.hooksPath=/dev/null merge -q --no-ff --no-edit ub
+expect_refuse git push -q origin HEAD:main
+git checkout -q main
+
+# jig merge: an unsynced job whose only conflict is an append file is sent to jig sync.
+FS="$T/fu-sync"; pcnew "$FS" && printf '# Changelog\n' > CHANGELOG.md && git add -A && git commit -qm init \
+  && $J init >/dev/null && git add -A && git commit -qm board
+for j in K L; do $J open $j --shares CHANGELOG.md >/dev/null; done; git add -A && git commit -qm "open K L"
+for j in K L; do
+  ( cd "$FS/.git/jig/worktrees/$j" && printf -- '- %s\n' "$j" >> CHANGELOG.md && printf 'x=1\n' > "$j.py" && git add -A \
+    && git commit -qm "$j" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $j" )
+done
+msg="gate: prints bash ./.jig/scripts/check.sh and git worktree remove --force"
+out=$($J gate L 2>&1); git worktree remove --force .git/jig/worktrees/gate-L 2>/dev/null
+expect_pass sh -c "echo \"\$0\" | grep -q 'bash ./.jig/scripts/check.sh' && echo \"\$0\" | grep -q 'git worktree remove --force .git/jig/worktrees/gate-L'" "$out"
+$J merge K >/dev/null 2>&1
+msg="merge: L, unsynced, conflicts only in CHANGELOG.md: refused, naming jig sync, with trunk left clean"
+out=$($J merge L 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig sync. the job, then merge' && ! git rev-parse -q --verify MERGE_HEAD && test -z \"\$(git status --porcelain --untracked-files=no)\" && grep -q '\"L\"' .jig/jobs.json" "$out"
+(cd "$FS/.git/jig/worktrees/L" && $J sync >/dev/null 2>&1)
+SHIM="$T/fu-shim"; mkdir -p "$SHIM" && realgit=$(command -v git)
+printf '#!/bin/sh\n[ "$1" = version ] && { echo "git version 2.30.0"; exit 0; }\nfor a in "$@"; do [ "$a" = --write-tree ] && exit 129; done\nexec %s "$@"\n' "$realgit" > "$SHIM/git" && chmod +x "$SHIM/git"
+msg="merge: with a git older than 2.38, a synced job is refused, saying 2.38 is needed"
+out=$(PATH="$SHIM:$PATH" $J merge L 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'needs git 2.38'" "$out"
+msg="merge: once synced, L merges with no new handoff"
+expect_pass sh -c "$J merge L && ! grep -q '\"L\"' .jig/jobs.json && grep -q '^- K' CHANGELOG.md && grep -q '^- L' CHANGELOG.md"
+
 rm -rf "$T"
 exit $fail
