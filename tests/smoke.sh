@@ -1996,7 +1996,6 @@ git add -A && git commit -qm init && $J init >/dev/null && git add -A && git com
 msg="survey: components/rtc/qx-20(rev1).pdf, linked bare, is neither missing nor unlinked"
 expect_pass hrsurvey "assert r['components_missing'] == [] and r['components_unlinked'] == [], r"
 
-
 # ---------------------------------------------------------------- sync buffer
 # A metarepo whose decision cites the pararepo's UI doc, and a pararepo working ahead of it.
 SM="$T/sb-meta"; pcnew "$SM" && git add -A && git commit -qm init && $J init --meta --name sbm >/dev/null
@@ -2091,6 +2090,55 @@ expect_pass sh -c "test \"\$(git rev-list --count $before..HEAD)\" = 1 && git lo
 msg="buffer: a release with every row Closed opens no branch"
 n=$(git -C "$SM" branch --list 'propose/*' | wc -l); $J release --version 1.0.3 >/dev/null 2>&1
 expect_pass sh -c "git tag | grep -qx v1.0.3 && test \$(git -C '$SM' branch --list 'propose/*' | wc -l) = $n"
+
+# ---------------------------------------------------------------- feedback
+export JIG_CONFIG="$T/fb/repos.json"      # its feedback/ fallback sits beside it, never the user's
+FB="$T/fb-jig"; pcnew "$FB" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+fb() {  # fb <dir> <file> [from]: a feedback report, with a from: line when given one
+  mkdir -p "$1" && printf -- '---\nstaged: true\ntarget: this\nkind: feedback\nchange: new\ndestination: a fix in jig\nsource: chat %s\n%bjig_version: abc123\nstatus: staged\n---\n# R\n' \
+    "$2" "${3:+from: $3\n}" > "$1/$2"; }
+
+msg="feedback: a report without from: is refused by the list"
+fb .jig/staging nofrom.md
+out=$($J staging 2>&1); rc=$?
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q 'no from'" "$out"
+rm .jig/staging/nofrom.md
+msg="feedback: a report with from: lists as feedback, naming where it came from"
+fb .jig/staging r1.md widget
+out=$($J staging 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'r1.md: new feedback for this.*from widget'" "$out"
+msg="feedback: resolve waits for a spec carrying its Source line, then resolves"
+out=$($J staging resolve r1.md 2>&1); rc=$?
+mkdir -p .jig/specs && printf '# Fix\n\nSource: chat r1.md (staged as r1.md)\n' > .jig/specs/fix-r1.md
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'a report resolves into a spec' && $J staging resolve r1.md && test ! -e .jig/staging/r1.md" "$out"
+
+msg="feedback: the fallback folder beside repos.json is listed"
+fb "$T/fb/feedback" r2.md gadget
+expect_pass sh -c "$J staging | grep -q 'r2.md: new feedback.*from gadget'"
+
+msg="feedback: a report in the fallback folder drops from there, and nothing is committed"
+before=$(git rev-parse HEAD)
+expect_pass sh -c "$J staging drop r2.md && test ! -e '$T/fb/feedback/r2.md' && test \"\$(git rev-parse HEAD)\" = '$before'"
+
+FJ="$T/fb2/jig"; pcnew "$FJ" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+fbj() { fb "$@" && sed -i.bak 's/^target: this$/target: jig/' "$1/$2" && rm "$1/$2.bak"; }
+msg="feedback: in a repo named jig, a target: jig report in the fallback waits for a spec carrying its mark, then resolves"
+fbj "$T/fb/feedback" r3.md widget
+out=$($J staging resolve r3.md 2>&1); rc=$?
+mkdir -p .jig/specs && printf '# Fix\n\nSource: chat r3.md (staged as r3.md)\n' > .jig/specs/fix-r3.md
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'a report resolves into a spec' && $J staging resolve r3.md && test ! -e '$T/fb/feedback/r3.md'" "$out"
+
+FR="$T/fb-rel"; pcnew "$FR" && git add -A && git commit -qm init && $J init --meta --name fr >/dev/null && git add -A && git commit -qm meta-init
+fb "$T/fb/feedback" other.md widget && sed -i.bak 's/^target: this$/target: elsewhere/' "$T/fb/feedback/other.md" && rm "$T/fb/feedback/other.md.bak"
+fb "$T/fb/feedback" mine.md widget && sed -i.bak 's/^target: this$/target: fr/' "$T/fb/feedback/mine.md" && rm "$T/fb/feedback/mine.md.bak"
+msg="feedback: release refuses while a report for this repo waits in the fallback, naming it and not another repo's"
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'release waits while 1 file.*mine.md' && ! echo \"\$0\" | grep -q other.md && ! git tag | grep -q ." "$out"
+msg="feedback: once it's dropped, the release goes through beside the other repo's report"
+expect_pass sh -c "$J staging drop mine.md >/dev/null && $J release >/dev/null && git tag | grep -q ."
+rm "$T/fb/feedback/other.md"
+msg="feedback: jig repos prints where tool reports wait"
+expect_pass sh -c "$J repos | grep -q 'tool reports wait in .*/fb/feedback while'"
 
 rm -rf "$T"
 exit $fail

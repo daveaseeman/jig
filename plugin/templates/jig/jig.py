@@ -1859,7 +1859,7 @@ def cmd_release(root: Path, args) -> int:
         die(f"the release protocol isn't defined ({missing}): run /jig:release, which asks what "
             f"this repo builds and ships and fills in {RELEASE} and release.artifacts", 2)
     problems = meta_problems(root, meta, trunk) if meta else []
-    left = staged_files(main_root())
+    left = release_waits_for()
     if not args.force:
         problems += staged_refusal("the release")
     if problems:
@@ -2139,6 +2139,7 @@ def cmd_repos(root: Path, args) -> int:
         print(f"  {name:<24} {e['kind']:<5} {e['path']}{missing}{'   ← here' if name in mine else ''}")
     if not repos:
         print(f"no repos in {repos_file()}: jig repos add repo|meta|para")
+    print(f"tool reports wait in {feedback_dir()} while no repo in this list is named jig")
     return 0
 
 
@@ -2601,8 +2602,14 @@ def buffer_proposal(root: Path, para: dict, loc: Path, slug: str) -> tuple[Path,
 # Where a chat drops a file meant for this repo, or another. Untracked: nothing in it is
 # authoritative, and it can reach a contract only through `jig staging resolve`.
 STAGING = f"{DIR}/staging"
-KINDS = ("spec", "doc", "decisions", "user-story")
+KINDS = ("spec", "doc", "decisions", "user-story", "feedback")
 HEADER_KEYS = ("staged", "target", "kind", "change", "destination", "source", "status")
+
+
+def feedback_dir() -> Path:
+    """Where a tool report waits when the jig repo isn't in repos.json: beside that list, so
+    it survives a cleared temp folder and the same `jig staging` finds it from any repo."""
+    return repos_file().parent / "feedback"
 
 
 def staged_files(root: Path) -> list[Path]:
@@ -2625,6 +2632,8 @@ def read_staged(path: Path) -> tuple[dict, str, list[str]]:
     bad = [f"no {k}" for k in HEADER_KEYS if not head.get(k)]
     if head.get("kind") and head["kind"] not in KINDS:
         bad.append(f"kind {head['kind']!r} is not one of {', '.join(KINDS)}")
+    if head.get("kind") == "feedback" and not head.get("from"):
+        bad.append("no from: a report names the repo it came from")
     if head.get("change") and head["change"] not in ("new", "update"):
         bad.append(f"change {head['change']!r} is not new or update")
     if head.get("staged") and head["staged"] != "true":
@@ -2647,13 +2656,26 @@ def staged_summary(root: Path) -> str:
         f"{kinds.count(k)} {k}" for k in dict.fromkeys(kinds))
 
 
+def fallback_files() -> list[Path]:
+    d = feedback_dir()
+    return sorted(d.glob("*.md")) if d.is_dir() else []
+
+
+def release_waits_for() -> list[Path]:
+    """The main checkout's staging, since staged files are never committed, and any report in
+    the fallback folder aimed at this repo: it is staged here in all but location."""
+    names = this_repo_names(main_root())
+    return staged_files(main_root()) + [f for f in fallback_files()
+                                        if read_staged(f)[0].get("target") in names]
+
+
 def staged_refusal(what: str) -> list[str]:
-    """Release waits while anything is staged: the main checkout's folder, since staged files
-    are never committed. Reading it only refuses more, so a branch can't weaken it."""
-    files = staged_files(main_root())
+    """Release waits while anything is staged. Reading it only refuses more, so a branch can't
+    weaken it."""
+    files = release_waits_for()
     return [f"{what} waits while {len(files)} file{'s' if len(files) > 1 else ''} sit in "
-            f"{STAGING}: {', '.join(f.name for f in files)}. Resolve or drop each "
-            f"(`jig staging resolve` / `drop`), or force it"] if files else []
+            f"{STAGING} or {feedback_dir()}: {', '.join(f.name for f in files)}. Resolve or "
+            f"drop each (`jig staging resolve` / `drop`), or force it"] if files else []
 
 
 def this_repo_names(root: Path) -> set[str]:
@@ -2680,15 +2702,21 @@ def decision_id(cell: str) -> str:
 def cmd_staging(root: Path, args) -> int:
     if args.action not in ("resolve", "drop"):
         files = staged_files(root)
-        if not files:
+        waiting = fallback_files()
+        if not files and not waiting:
             print(f"nothing staged in {STAGING}")
             return 0
-        print(staged_summary(root))
+        if files:
+            print(staged_summary(root))
+        if waiting:
+            why = "" if repo_path("jig") else " (the jig repo isn't in repos.json)"
+            print(f"{len(waiting)} waiting in {feedback_dir()}{why}:")
         bad = False
-        for f in files:
+        for f in files + waiting:
             head, _, problems = read_staged(f)
+            origin = f", from {head['from']}" if head.get("from") else ""
             print(f"  {f.name}: {head.get('change', '?')} {head.get('kind', '?')} for "
-                  f"{head.get('target', '?')} → {head.get('destination', '?')}")
+                  f"{head.get('target', '?')} → {head.get('destination', '?')}{origin}")
             for p in problems:
                 print(f"      {p}")
                 bad = True
@@ -2696,10 +2724,14 @@ def cmd_staging(root: Path, args) -> int:
 
     if not args.file:
         die(f"which file? jig staging {args.action} <file>", 2)
-    # Staged files live in the main checkout only: they are never committed into a job.
-    path = main_root() / STAGING / Path(args.file).name
+    # Staged files live in the main checkout only: they are never committed into a job. A
+    # report whose jig repo wasn't registered waits in the fallback folder instead.
+    name = Path(args.file).name
+    path = main_root() / STAGING / name
     if not path.exists():
-        die(f"no {args.file} in {STAGING}", 2)
+        path = feedback_dir() / name
+    if not path.exists():
+        die(f"no {args.file} in {STAGING} or {feedback_dir()}", 2)
     if args.action == "drop":
         # A staged file was never committed, so a record of dropping it would point at nothing.
         path.unlink()
@@ -2731,11 +2763,12 @@ def cmd_staging(root: Path, args) -> int:
         f = inside(rel)
         return f.exists() and mark in f.read_text(errors="replace")
 
-    if kind == "user-story":
+    if kind in ("user-story", "feedback"):
         specs = [s for s in (root / DIR / "specs").glob("*.md") if mark in s.read_text()]
         if not specs:
             how = "write a new spec" if change == "new" else "amend the spec it extends"
-            die(f"a story resolves into a spec: {how} under {DIR}/specs/ from it, carrying "
+            what = "a story" if kind == "user-story" else "a report"
+            die(f"{what} resolves into a spec: {how} under {DIR}/specs/ from it, carrying "
                 f"`{mark}`, then resolve again", 1)
         return done(f"carried by {specs[0].relative_to(root)}")
     if kind in ("spec", "doc") and not bare_path(dest):

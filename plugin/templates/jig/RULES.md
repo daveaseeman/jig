@@ -261,8 +261,14 @@ update, a story's spec, or decisions with other content wait until the work is d
 source is in it; a file for another repo moves into that repo's staging, found through
 `jig repos`. `jig staging drop <file>` deletes it and records nothing: it was never committed.
 
-While anything is staged, `jig release` refuses; `--force` releases anyway and names the staged
-files in the release commit. Commits, pushes and gates don't look at staging. A chat needs access to `~/.config/jig/` (where
+A report on jig itself is `kind: feedback`, staged in the jig repo, whose header also names
+`from` (the reporting repo, required) and `jig_version`. When the jig repo isn't in `jig repos`,
+it waits in `feedback/` beside the repos list instead; `jig staging` lists that folder too, and
+resolves or drops files from it. A report resolves like a story: into a spec carrying its source.
+
+While anything is staged, a report for this repo in that `feedback/` folder included,
+`jig release` refuses; `--force` releases anyway and names the staged files in the release
+commit. Commits, pushes and gates don't look at staging. A chat needs access to `~/.config/jig/` (where
 `jig repos` keeps paths) and then to one repo's `.jig/staging/`, nothing more.
 
 ## Metarepo and pararepos
