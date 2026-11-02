@@ -24,8 +24,8 @@ identical; only the coordination disappears.
 ## The board
 
 Two files on trunk, written only by the hubnode. `.jig/config.json` holds what rarely
-changes: `trunk`, `common`, `append_files`, `reserve`, `docmap`, `not_docs`, `release` and the
-layout's `version`. `.jig/jobs.json` holds the open jobs, nothing else. Per job:
+changes: `trunk`, `common`, `append_files`, `reserve`, `docmap`, `not_docs`, `release`,
+`reference_files` and the layout's `version`. `.jig/jobs.json` holds the open jobs, nothing else. Per job:
 
 | Key | Meaning |
 |---|---|
@@ -60,9 +60,12 @@ Checked before every commit by a git hook, and by `jig check`.
 - **R5** The board is the hubnode's: `config.json` and `jobs.json` are edited on trunk only.
 - **R6** A scarce number belongs to the one job that reserved it. A change that makes a
   number matching a counter's `pattern` exist where trunk had none, and the branch doesn't
-  hold it, is refused; merging a job takes the numbers it holds. Editing or moving an existing
-  heading takes nothing. Two branches that each take migration step 17 corrupt the first
-  database that runs both.
+  hold it, is refused; merging a job takes the numbers it holds, and so does the gate's
+  scratch checkout of it (a detached HEAD off trunk); a detached trunk holds nothing. Numbers compare as numbers: `D-002` is 2. A number trunk already has
+  is taken by nobody, however many times the change adds it: editing or moving a heading, or
+  adding a rule under an existing section, takes nothing. A counter marked `"unique"` also
+  refuses a change that adds a second match of one number. Two branches that each take
+  migration step 17 corrupt the first database that runs both.
 - **R7** A change adding a `WORKAROUND:` comment to code must stage `.jig/ledgers/WORKAROUNDS.md` too;
   its first row creates the file. jig's own `jig.py` quotes the marker and is not checked.
   Prose may quote the marker.
@@ -83,7 +86,7 @@ Conventions so two jobs rarely meet in one hunk:
 - Append, never edit, shared prose. A change to someone else's section is a note in yours.
 - A file of one's own: new routes in your own handler registered by one line; new state in
   your own module; new tests in your own file; a new fixture as a new file.
-- Scarce numbers come from the board (`--reserve`), never from looking at what seems free.
+- Scarce numbers come from the board (`--reserve`, `jig reserve`), never from looking at what seems free.
   Two branches that both take migration 17 corrupt the first database that runs both.
 
 ## Reserved numbers
@@ -94,12 +97,20 @@ to find its numbers:
 
 ```json
 "reserve": {
-  "schema": {"pattern": "SCHEMA_VERSION\\s*=\\s*(\\d+)", "files": ["**/storage.py"]}
+  "section": {"pattern": "^### (\\d+)\\.\\d+", "files": ["docs/**/*.md"]},
+  "schema": {"pattern": "SCHEMA_VERSION\\s*=\\s*(\\d+)", "files": ["**/storage.py"], "unique": true}
 }
 ```
 
+A number is taken where trunk had no match for it, in any of the counter's files, and the
+change adds one. So `### 31.2` under a section 31 that trunk has takes nothing, and `### 32.1`
+takes section 32. `"unique": true` is for numbers that must also appear once: a second
+`SCHEMA_VERSION = 17` where trunk has one is refused as "17 already exists". It is off unless
+set, because a section number appears once per rule under it.
+
 `--reserve <counter>` hands the job max(the highest on trunk, the highest an open job
-holds) + 1, so two jobs open at once never get the same number. Nothing stores a "next":
+holds) + 1, so two jobs open at once never get the same number. `jig reserve <job> <counter>`
+hands an open job another by the same rule; it then holds a list. Nothing stores a "next":
 the files say what is taken, and a counter without `pattern` and `files` is refused.
 
 A job holding step N lists the job holding N−1 in `after`, so they merge in order: a
@@ -137,6 +148,17 @@ that changes that code asks whether the page still matches. Code that runs on a 
 not pass the gate without a page that matches it; for that code, "no page needed" is not an
 answer.
 
+Only `docs/hardware/<board>.md` is a board page. The files a page leans on have two homes
+beside it: `docs/hardware/components/<part>/`, one folder per part with its datasheets and
+notes, shared by every board that uses the part; and `docs/hardware/<board>/`, one board's
+files that aren't its page (a schematic, a snapshot of its definition). The page's Components
+table links each datasheet with its source URL, the date it was retrieved and the first 12
+hex digits of its sha256, so a check names the exact document it was made against. Whether
+the binaries are committed is the repo's call, `reference_files` in the config: `commit`, or
+`ignore` with `docs/hardware/*/**/*.[pP][dD][fF]` in `.gitignore`, covering both homes, and
+the URL and hash on the page to fetch it again. `jig survey` reports a component file no board page links, and a link
+to one that doesn't exist.
+
 ## Fold-in
 
 Code and the page that documents it move together, or the page starts lying. `jig handoff`
@@ -167,23 +189,61 @@ else stops with the files named, and a person resolves it.
    (`jig reviewed`), then `jig handoff` writes a note naming that exact commit. Fill every
    heading, commit the note with the work, tell the hubnode the job and the commit.
    A job may hand off several times.
-2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it runs the checks **against the commit the note names, in a detached
-   scratch checkout** — never the job's live worktree, which the subnode may still be building in.
+2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it sets
+   up a **detached scratch checkout of the commit the note names**, with trunk merged in the
+   way `jig sync` merges it, and prints the check to run there and the cleanup. It never runs
+   the check: whoever runs it runs the same command. Never the job's live worktree, which the
+   subnode may still be building in.
    The hooks set that checkout up with `.jig/scripts/setup.sh`, when it is added and again
    after its merge of trunk, so the checks run in an environment built from the job's own
    manifests.
    That means a merge runs the merged-in `setup.sh`: review a change to it like any other
    code, because the next merge executes it.
 3. **The hubnode merges** with `jig merge <job>`, which deletes the job's entry in the merge
-   commit itself, then syncs the clean jobs. What the merge touched in shared files goes in
-   that commit's message (`-m`).
+   commit itself, then syncs the clean jobs. A job synced since its note still merges: only
+   the job's own commits count as changes since the check, and what a sync's resolution
+   carries beyond what `jig sync` would make of it. Either refuses until it is handed off
+   again. What the merge touched in shared files goes in that commit's message (`-m`).
+
+## Workflow
+
+The hubnode writes specs, talks with the owner and decides. The work goes to sessions it
+starts, each at a model tier and an effort the owner set, never one a model picks for
+itself.
+
+| Step | Who | Tier | Effort | An override must keep |
+|---|---|---|---|---|
+| `spec`: spec, decide, retro, hardware page | hubnode | 2 | 2 | — |
+| `execute`: execute, fix | a subnode it starts | 2 | 3 | tier no better than spec's; effort lower |
+| `review` | a subnode, always a fresh context | 2 | 1 | tier no worse than spec's; effort higher |
+| `check`: gate check, release run, survey | a subnode it starts | 3 | 4 | nothing: fixed commands |
+
+Tier 1 is the best model the tool has; a higher number is a lesser model. Effort 0 is the
+tool's highest; each number up is one level lower. The defaults leave effort 0 free, so a
+repo can raise any step. Which model and level a number means is the tool's business, not
+`.jig/`'s.
+
+`jig workflow` prints the steps in effect. A repo overrides them in `config.json`:
+`"workflow": {"review": {"tier": 1, "effort": 0}}`. An override that breaks the last column
+is refused by `jig workflow` and by the commit hook. There is no per-task override: a task
+that needs other settings means the owner changes the config.
+
+A spec's `## Workflow` section is `jig workflow`'s output when it was written. The review
+records the review step's configured settings (`jig reviewed --tier N --effort N --ran
+"..."`), the handoff note carries them, and `jig gate` warns when they are a worse tier or a
+lower effort than the spec asks. So the warning catches a review recorded without them, or a
+config changed after the spec was written; it can't see a review that actually ran weaker
+than it was set to. A fix goes back to the session that executed. A third round that doesn't converge is a
+bug in the spec or the approach: investigate it, don't start a fourth.
 
 ## Staging
 
 `.jig/staging/` is where a chat drops a file meant for a repo: a spec, a doc, decision rows, a
 user story. It is never committed, and nothing in it is decided — read it for context, never
 cite it. Each file's header names its `target` (a repo name, or `this`), `kind`, `change`
-(`new` or `update`), `destination` inside the target, and `source`.
+(`new` or `update`), `destination` inside the target, and `source`. A destination is a bare
+path: a spec, doc or decisions file whose destination carries anything else (`docs/DECISIONS.md,
+on branch x`) is refused, never guessed at.
 
 `jig staging resolve <file>` lands it: a new spec or doc is written with its source; an
 update, a story's spec, or decisions with other content wait until the work is done and the
@@ -200,7 +260,7 @@ A set of repos can share one **metarepo**: docs only — definitions, decisions,
 Each **pararepo** (code, firmware, hardware) cites it at a released tag. The metarepo points;
 nothing copies it. Three rules do the work:
 
-1. A pararepo writes the metarepo only by branch, via `jig para-propose`.
+1. A pararepo writes the metarepo only by branch, via `jig propose`.
 2. The metarepo holds no code and no copied pararepo content.
 3. Only `jig release` tags, so a pin never names something that failed validation.
 
@@ -218,7 +278,7 @@ does what that kind of repo needs.
 | M2 | a decision row (`| D-001 | … |`) without a status cell (open, proposed, accepted, superseded or rejected, optionally with a note in parentheses or `by D-…`) and a `YYYY-MM-DD` date |
 | M3 | an entry file changed without a line in `CHANGELOG.md` |
 | M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted) |
-| M5 | a merge of a commit `jig reviewed` never recorded |
+| M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`) |
 | P1 | an `AGENTS.md` header that differs from what `.jig/para.json` generates |
 | P2 | a contract-path change with no spec saying `meta: <name> proposal <branch>` or `meta: none — <reason>` |
@@ -230,7 +290,10 @@ first-parent commit since the last release, and refuse any tag `jig release` did
 In a metarepo the release also turns `## Unreleased` into the version's heading, needs no
 `release.sh` steps, and defaults to `--minor`: minor for additions and clarifications, major
 for a rename or a reversed decision. A pararepo pins a release, never `main`, and bumps it in
-a commit of its own, `meta: <name> v0.3.0 → v0.4.0`, with `para-sync`'s report as the body.
+a commit of its own, `meta: <name> v0.3.0 → v0.4.0`, with the report `jig sync` prints on its
+trunk as the body. A two-part pin (`v0.3`), from before releases had three parts, keeps
+working: it sorts below `v0.3.0`. `jig gate` refuses a job whose spec cites a proposal that isn't in
+the pinned release.
 
 ## Release
 
@@ -255,6 +318,7 @@ jig update [--apply]        bring the repo to the current jig layout (dry run wi
 jig staging [resolve|drop <file>]   list staged files, or land / drop one
 jig repos [add repo|meta|para | rename <new>]  where your repos live (user config)
 jig open ... --reserve K    allocate scarce counter K to this job
+jig reserve <job> <K>       hubnode: give an open job the next number of counter K too
 jig reading-list <paths>    what to read before touching these files
 jig install-hooks           rewrite the hooks
 jig status                  jobs, states, distance from trunk, dirt
@@ -263,11 +327,12 @@ jig mark <name> <state>     claimed|building|ready|gated|parked
 jig merge <name> [-m msg]   merge a job; its entry is deleted in the merge commit
 jig check [--staged]        run the rules here
 jig job                    this branch's manifest
-jig sync                    merge trunk in, append rule applied
-jig reviewed                record that HEAD has been reviewed
+jig sync                    merge trunk in, append rule applied; on a pararepo's trunk, the metarepo
+jig reviewed [--tier N --effort N] [--ran text]   record that HEAD has been reviewed, and at what
+jig workflow                each step's model tier and effort in effect
 jig handoff [--spec path]   write the note for HEAD
-jig gate <name>             hubnode: verify, then print the gate commands
-jig para-sync / para-propose   pararepo: refresh and report / propose
+jig gate <name>             hubnode: verify, set up the scratch checkout, print its check
+jig propose <spec> <slug>   pararepo: open a proposal branch on the metarepo
 ```
 
 ## Hooks are opt-in per checkout
