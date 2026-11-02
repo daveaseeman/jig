@@ -1212,7 +1212,7 @@ done
 printf -- '- trunk\n' >> CHANGELOG.md && git commit -qam "trunk appends"
 msg="gate: with an append conflict between trunk and the note commit, the scratch checkout has trunk merged and no conflict, and the check is printed"
 out=$($J gate K 2>&1); s=.git/jig/worktrees/gate-K
-expect_pass sh -c "echo \"\$0\" | grep -q 'cd $s && bash ./.jig/scripts/check.sh' && test \"\$(git -C $s rev-list --parents -n1 HEAD | wc -w | tr -d ' ')\" = 3 && test -z \"\$(git -C $s status --porcelain)\" && ! grep -q '^<<<<<<<' $s/CHANGELOG.md && grep -q '^- K' $s/CHANGELOG.md && grep -q '^- trunk' $s/CHANGELOG.md" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -q 'cd $s && ./.jig/scripts/check.sh' && test \"\$(git -C $s rev-list --parents -n1 HEAD | wc -w | tr -d ' ')\" = 3 && test -z \"\$(git -C $s status --porcelain)\" && ! grep -q '^<<<<<<<' $s/CHANGELOG.md && grep -q '^- K' $s/CHANGELOG.md && grep -q '^- trunk' $s/CHANGELOG.md" "$out"
 git worktree remove --force "$s"
 for j in K L M; do ( cd "$MS/.git/jig/worktrees/$j" && [ $j = M ] || $J sync >/dev/null 2>&1 ); done
 ( cd "$MS/.git/jig/worktrees/M" && git -c merge.conflictStyle=diff3 merge -q main >/dev/null 2>&1
@@ -1851,23 +1851,41 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'M5 '" "$out"
 msg="pre-push: git push origin HEAD:main of that merge, made with the hooks off, is refused"
 git -c core.hooksPath=/dev/null merge -q --no-ff --no-edit ub
 expect_refuse git push -q origin HEAD:main
+msg="pre-push: still refused with a chained pre-push.local that reads all of stdin first"
+printf '#!/bin/sh
+cat >/dev/null
+' > .git/hooks/pre-push.local && chmod +x .git/hooks/pre-push.local
+expect_refuse git push -q origin HEAD:main
+rm .git/hooks/pre-push.local
 git checkout -q main
 
-# jig merge: an unsynced job whose only conflict is an append file is sent to jig sync.
-FS="$T/fu-sync"; pcnew "$FS" && printf '# Changelog\n' > CHANGELOG.md && git add -A && git commit -qm init \
+# jig merge: an unsynced job with a conflict in an append file is sent to jig sync.
+FS="$T/fu-sync"; pcnew "$FS" && printf '# Changelog\n' > CHANGELOG.md && printf 'base\n' > common.txt && git add -A && git commit -qm init \
   && $J init >/dev/null && git add -A && git commit -qm board
-for j in K L; do $J open $j --shares CHANGELOG.md >/dev/null; done; git add -A && git commit -qm "open K L"
-for j in K L; do
-  ( cd "$FS/.git/jig/worktrees/$j" && printf -- '- %s\n' "$j" >> CHANGELOG.md && printf 'x=1\n' > "$j.py" && git add -A \
+for j in K L M; do $J open $j --shares CHANGELOG.md common.txt >/dev/null; done; git add -A && git commit -qm "open K L M"
+for j in K L M; do
+  ( cd "$FS/.git/jig/worktrees/$j" && printf -- '- %s\n' "$j" >> CHANGELOG.md && printf 'x=1\n' > "$j.py" \
+    && { [ $j = L ] || printf '%s\n' "$j" > common.txt; } && git add -A \
     && git commit -qm "$j" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $j" )
 done
-msg="gate: prints bash ./.jig/scripts/check.sh and git worktree remove --force"
+msg="gate: an executable check.sh is printed as ./.jig/scripts/check.sh, with git worktree remove --force"
 out=$($J gate L 2>&1); git worktree remove --force .git/jig/worktrees/gate-L 2>/dev/null
-expect_pass sh -c "echo \"\$0\" | grep -q 'bash ./.jig/scripts/check.sh' && echo \"\$0\" | grep -q 'git worktree remove --force .git/jig/worktrees/gate-L'" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -q '&& ./.jig/scripts/check.sh' && echo \"\$0\" | grep -q 'git worktree remove --force .git/jig/worktrees/gate-L'" "$out"
+chmod -x .jig/scripts/check.sh && git add .jig/scripts/check.sh && git commit -qm "check.sh not executable"
+msg="gate: a check.sh that isn't executable is printed as bash ./.jig/scripts/check.sh"
+out=$($J gate L 2>&1); git worktree remove --force .git/jig/worktrees/gate-L 2>/dev/null
+expect_pass sh -c "echo \"\$0\" | grep -q '&& bash ./.jig/scripts/check.sh'" "$out"
 $J merge K >/dev/null 2>&1
 msg="merge: L, unsynced, conflicts only in CHANGELOG.md: refused, naming jig sync, with trunk left clean"
 out=$($J merge L 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig sync. the job, then merge' && ! git rev-parse -q --verify MERGE_HEAD && test -z \"\$(git status --porcelain --untracked-files=no)\" && grep -q '\"L\"' .jig/jobs.json" "$out"
+msg="merge: M conflicts in CHANGELOG.md and common.txt: refused, naming jig sync and only the append file"
+out=$($J merge M 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'append files (CHANGELOG.md): .jig sync.' && ! git rev-parse -q --verify MERGE_HEAD && grep -q '\"M\"' .jig/jobs.json" "$out"
+msg="merge: M's sync resolves CHANGELOG.md and stops on common.txt"
+out=$(cd "$FS/.git/jig/worktrees/M" && $J sync 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^  common.txt' && ! echo \"\$0\" | grep -q '^  CHANGELOG.md'" "$out"
+(cd "$FS/.git/jig/worktrees/M" && git merge --abort)
 (cd "$FS/.git/jig/worktrees/L" && $J sync >/dev/null 2>&1)
 SHIM="$T/fu-shim"; mkdir -p "$SHIM" && realgit=$(command -v git)
 printf '#!/bin/sh\n[ "$1" = version ] && { echo "git version 2.30.0"; exit 0; }\nfor a in "$@"; do [ "$a" = --write-tree ] && exit 129; done\nexec %s "$@"\n' "$realgit" > "$SHIM/git" && chmod +x "$SHIM/git"
@@ -1959,14 +1977,17 @@ git mv old/GLOSSARY.md GLOSSARY.md && git rm -q GLOSSARY.md
 msg="M3: GLOSSARY.md deleted, with no changelog line, is refused"
 expect_refuse git commit -qm "GLOSSARY: drop"
 git reset -q --hard && git switch -q main
-FE="$T/fu-para"; pcnew "$FE" && mkdir -p api && printf 'x=1\n' > api/a.py && printf 'see dec-12\n' > api/twelve.md && printf 'see dec-1.\n' > api/one.md \
+FE="$T/fu-para"; pcnew "$FE" && mkdir -p api && printf 'x=1\n' > api/a.py && printf 'see dec-12\n' > api/twelve.md && printf 'see dec-1.\n' > api/one.md && printf 'two grains\n' > api/g.md \
   && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 $J init --para fd --location "$FD" >/dev/null 2>&1 && git add -A && git commit -qm "init --para"
 (cd "$FD" && git switch -q -c m4 && sed -i.bak 's/| dec-1 | x |/| dec-1 | y |/' DECISIONS.md && rm DECISIONS.md.bak && printf -- '- dec-1 y\n' >> CHANGELOG.md \
+  && printf '\n## grain\n' >> GLOSSARY.md \
   && git add -A && git commit -qm "DECISIONS: dec-1 y" && $J reviewed >/dev/null && git switch -q main && git merge -q --no-ff --no-edit m4 && $J release >/dev/null)
 out=$($J sync 2>&1)
 msg="sync: a lowercase decision_prefix's dec-1 is reported, used in api/one.md and not in api/twelve.md"
 expect_pass sh -c "echo \"\$0\" | grep -q 'dec-1: used in api/one.md\$'" "$out"
+msg="sync: a glossary heading still counts an inflected use (grain in 'grains')"
+expect_pass sh -c "echo \"\$0\" | grep -q 'grain: used in api/g.md'" "$out"
 
 # Hardware: a datasheet whose name holds parentheses.
 FK="$T/fu-hw"; pcnew "$FK" && mkdir -p docs/hardware/components/rtc && printf '%%PDF-fake\n' > 'docs/hardware/components/rtc/qx-20(rev1).pdf'

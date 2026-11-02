@@ -534,10 +534,14 @@ def cmd_init(root: Path, args) -> int:
 HOOK = """#!/bin/sh
 # jig hook ({dir}/jig.py). Delete to disable; `jig install-hooks` rewrites it.
 # Runs TRUNK's copy of the checker, so a branch cannot weaken its own rules.
-[ -x "$0.local" ] && {{ "$0.local" "$@" || exit $?; }}
+# git hands pre-push the pushed refs on stdin, once: read here, a chained .local hook
+# (git-lfs) and jig each get them, where the first reader would otherwise take them all.
+if [ {name} = pre-push ]; then refs=$(cat); fi
+feed() {{ if [ {name} = pre-push ]; then printf '%s\n' "$refs" | "$@"; else "$@"; fi; }}
+[ -x "$0.local" ] && {{ feed "$0.local" "$@" || exit $?; }}
 copy=$(mktemp "${{TMPDIR:-/tmp}}/jig.XXXXXX") || exit 0
 git show {trunk}:{dir}/jig.py > "$copy" 2>/dev/null || {{ rm -f "$copy"; exit 0; }}
-python3 "$copy" hook {name} "$@"
+feed python3 "$copy" hook {name} "$@"
 status=$?
 rm -f "$copy"
 exit $status
@@ -861,17 +865,18 @@ def cmd_merge(root: Path, args) -> int:
     merging = bool(git("rev-parse", "-q", "--verify", "MERGE_HEAD"))
     if p.returncode and not merging:
         die(f"git merge {branch}: {(p.stderr or p.stdout).strip()}")
+    conflicted = git("diff", "--name-only", "--diff-filter=U").splitlines()
+    appends = [f for f in conflicted if matches(f, board.data.get("append_files", []))]
+    if p.returncode and appends:
+        # The gate resolved these the way sync does; by hand on trunk they could come out
+        # differently. Sync resolves them in the job and stops on the rest; a job whose only
+        # conflicts were appends merges after it with no new handoff.
+        git("merge", "--abort")
+        die(f"merging {branch} conflicts in append files ({', '.join(appends)}): "
+            f"`jig sync` the job, then merge again")
     del board.jobs[name]
     board.save()
     git("add", "--", JOBS, check=True)
-    conflicted = git("diff", "--name-only", "--diff-filter=U").splitlines()
-    appends = board.data.get("append_files", [])
-    if p.returncode and conflicted and all(matches(f, appends) for f in conflicted):
-        # The gate already resolved these the way sync does; resolving them here by hand
-        # could come out differently. A synced job merges with no new handoff.
-        git("merge", "--abort")
-        die(f"merging {branch} conflicts only in append files ({', '.join(conflicted)}): "
-            f"`jig sync` the job, then merge again")
     if p.returncode:
         print(f"conflicts merging {branch}; {name}'s entry is already deleted in the index. "
               f"Resolve these, `git add` each, `git commit`, then run {DIR}/scripts/setup.sh:",
@@ -1278,7 +1283,9 @@ def cmd_gate(root: Path, args) -> int:
         return 1
     print(f"{scratch} holds {commit[:12]} with {trunk} merged in. Run the project checks there; "
           "jig never runs them:\n")
-    print(f"  cd {scratch} && bash ./{DIR}/scripts/check.sh")
+    # As the hooks run it: itself when executable (any language), through bash when not.
+    check = f"./{DIR}/scripts/check.sh"
+    print(f"  cd {scratch} && {'' if os.access(where / check, os.X_OK) else 'bash '}{check}")
     # --force: setup.sh ran there and may have left untracked files (a venv, a build).
     print(f"  cd - && git worktree remove --force {scratch}\n")
     if job is not None:
@@ -1644,18 +1651,19 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
     branch = git("branch", "--show-current")
     paths = changed_paths(trunk, staged)
     merging = merging_commits()
+    # A detached HEAD at trunk (or behind it) is trunk all the same: `git push origin
+    # HEAD:main` lands what is committed there.
+    on_trunk = branch == trunk or (not branch and subprocess.run(
+        ["git", "merge-base", "--is-ancestor", "HEAD", trunk], capture_output=True).returncode == 0)
     # M1 docs only: the checker and its scripts live in .jig/, like any jig repo's
     for p in paths:
         if p.endswith(SRC_EXT) and not p.startswith(f"{DIR}/"):
             out.append(f"M1 a metarepo holds no code: {p}")
     if merging:
         # M5 main takes only merges of reviewed branches. A job's sync of trunk, and the
-        # gate's scratch merge, are merges into something else. A detached HEAD at trunk
-        # (or behind it) is trunk all the same: `git push origin HEAD:main` lands its merge.
-        into_trunk = branch == trunk or (not branch and subprocess.run(
-            ["git", "merge-base", "--is-ancestor", "HEAD", trunk], capture_output=True).returncode == 0)
-        done = reviewed_commits() if into_trunk else set()
-        for c in (merging if into_trunk else []):
+        # gate's scratch merge, are merges into something else.
+        done = reviewed_commits() if on_trunk else set()
+        for c in (merging if on_trunk else []):
             if not counts_reviewed(c, done, board):
                 out.append(f"M5 {c[:12]} has no review on record: review it on its branch "
                            f"(`jig reviewed`), then merge")
@@ -1682,7 +1690,7 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
         out.append(f"M3 {', '.join(cited)} changed: add a line to {CHANGELOG} under ## Unreleased")
     # M4 nothing lands on main except merges; jig's own bookkeeping (the board, handoffs) is
     # the exception, since the hubnode keeps it on trunk
-    if branch == trunk and paths and not all(p.startswith(f"{DIR}/") for p in paths):
+    if on_trunk and paths and not all(p.startswith(f"{DIR}/") for p in paths):
         out.append(f"M4 {trunk} takes only merges of reviewed branches: commit on a branch")
     return out
 
@@ -2221,16 +2229,20 @@ def cmd_para_init(root: Path, args) -> int:
     return 0
 
 
+def decision_ids(loc: Path, rev: str) -> str:
+    """A regex for the metarepo's decision ids at REV, from its decision_prefix."""
+    try:
+        meta = {**META_DEFAULTS, **json.loads(git("show", f"{rev}:{META}", cwd=str(loc)) or "{}")}
+    except ValueError:
+        meta = META_DEFAULTS
+    return re.escape(meta["decision_prefix"]) + r"\d+"
+
+
 def terms_changed(loc: Path, old: str, new: str) -> list[str]:
     """Decision ids and glossary headings that changed between two releases. Ids are matched
     by the metarepo's own decision_prefix, which may be lowercase."""
     diff = git("diff", old, new, "--", ".", f":!{CHANGELOG}", cwd=str(loc))
-    try:
-        prefix = json.loads(git("show", f"{new}:{META}", cwd=str(loc)) or "{}").get("decision_prefix")
-    except ValueError:
-        prefix = None
-    ids = re.escape(prefix or META_DEFAULTS["decision_prefix"]) + r"\d+"
-    found = re.findall(rf"^[+-]\s*\|\s*({ids})\s*\|", diff, re.M)
+    found = re.findall(rf"^[+-]\s*\|\s*({decision_ids(loc, new)})\s*\|", diff, re.M)
     found += re.findall(r"^[+-]#{2,3} (.+?)\s*$", diff, re.M)
     return list(dict.fromkeys(found))
 
@@ -2332,8 +2344,9 @@ def sync_meta(root: Path) -> int:
     print("Changed, in this repo's terms:")
     for term in terms_changed(loc, pin, latest):
         # jig's own files (the rulebook's examples, the cache) are not the repo's use of a term.
-        # Whole words only: D-1 is not a use of D-12.
-        users = [f for f in git("grep", "-l", "-F", "-w", "--", term).splitlines()
+        # An id as a whole word: D-1 is not a use of D-12. A heading's term may be inflected.
+        whole = ["-w"] if re.fullmatch(decision_ids(loc, latest), term) else []
+        users = [f for f in git("grep", "-l", "-F", *whole, "--", term).splitlines()
                  if not f.startswith(f"{DIR}/")]
         print(f"  {term}: " + (f"used in {', '.join(users)}" if users else "not used here"))
     print(f"\nTo take it: set \"pin\" to \"{latest}\" in {PARA}, run `jig init --para {name}`, and commit "
@@ -2583,7 +2596,10 @@ def cmd_staging(root: Path, args) -> int:
 
 def decision_rows(body: str, root: Path) -> list[str]:
     meta = root / META
-    known = json.loads(meta.read_text() or "{}").get("decision_prefix") if meta.exists() else None
+    # A metarepo's ids are its decision_prefix, defaulted like everywhere else; a plain repo's
+    # register has no configured prefix, so any uppercase one is taken.
+    known = ({**META_DEFAULTS, **json.loads(meta.read_text() or "{}")}["decision_prefix"]
+             if meta.exists() else None)
     prefix = re.escape(known) if known else r"[A-Z][A-Z0-9]*-"
     rx = re.compile(rf"^\s*\|\s*{prefix}\d+\s*\|")
     return [l.rstrip() for l in body.splitlines() if rx.match(l)]
@@ -3190,7 +3206,10 @@ def worktree_refusals(root: Path, old_folders: tuple) -> list[str]:
             except OSError:
                 folders[d] = None
             return True
-        subs = [s for s in sorted(d.iterdir()) if s.is_dir() and not s.is_symlink()]
+        try:
+            subs = [s for s in sorted(d.iterdir()) if s.is_dir() and not s.is_symlink()]
+        except OSError:
+            return False                  # unreadable: reported as no checkout, to look at
         found = {s: scan(s) for s in subs}
         if not any(found.values()):
             return False

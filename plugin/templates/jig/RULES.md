@@ -209,8 +209,9 @@ else stops with the files named, and a person resolves it.
    the job's own commits count as changes since the check, and what a sync's resolution
    carries beyond what `jig sync` would make of it (this replay needs git 2.38 or later).
    Either refuses until it is handed off again. A job that wasn't synced and conflicts with
-   trunk only in `append_files` is refused with "`jig sync` the job, then merge": the sync
-   resolves it as the gate did, and needs no new handoff. What the merge touched in shared files goes in that commit's message (`-m`).
+   trunk in an `append_files` file is refused with "`jig sync` the job, then merge": the sync
+   resolves the appends as the gate did and stops on anything else. A job whose only
+   conflicts were appends needs no new handoff after it. What the merge touched in shared files goes in that commit's message (`-m`).
    `--subject <text>` puts text before it: the subject becomes `<text>: merge <job>`, for a
    repo whose subjects lead with ids.
 
@@ -293,7 +294,7 @@ under `.jig/` counts, whatever the globs say.
 | M1 | a source file outside `.jig/` in the metarepo |
 | M2 | a decision row (`| D-001 | … |`) without a status cell (open, proposed, accepted, superseded or rejected, optionally with a note in parentheses or `by D-…`) and a `YYYY-MM-DD` date |
 | M3 | an entry file changed without a line in `CHANGELOG.md` |
-| M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted) |
+| M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted); a detached HEAD at trunk, or behind it, is trunk |
 | M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`) |
 | P1 | an `AGENTS.md` header that differs from what `.jig/para.json` generates |
@@ -303,7 +304,8 @@ under `.jig/` counts, whatever the globs say.
 
 A fast-forward runs no hook, so a metarepo's release and its pre-push re-check every
 first-parent commit since the last release, and refuse any tag `jig release` didn't make.
-Pre-push judges the commit pushed to the remote's trunk, which may not be the local trunk's.
+Pre-push judges the commit pushed to the remote's trunk, which may not be the local trunk's;
+a chained `pre-push.local` hook gets the same pushed refs.
 In a metarepo the release also turns `## Unreleased` into the version's heading, needs no
 `release.sh` steps, and defaults to `--minor`: minor for additions and clarifications, major
 for a rename or a reversed decision. A pararepo pins a release, never `main`, and bumps it in
