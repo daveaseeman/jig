@@ -1808,5 +1808,36 @@ EK="$T/ek"; pcnew "$EK" && git add -A && git commit -qm init && $J init >/dev/nu
 $J init --para ej --location "$EJ" >/dev/null 2>&1
 expect_pass sh -c "test -f .jig/meta-cache/p.md && test -z \"\$(find .jig/meta-cache -path '*/.jig/*')\""
 
+# ---------------------------------------------------------------- report-fixes follow-up
+# What eight /jig:bug evaluations found around the report-born fixes. Each repo is its own.
+
+# update: a worktree for a branch with `/` sits a level deeper than its worktrees folder.
+ax "$T/fu-1"; wt -b feat/x .aidev/worktrees/feat/x && printf 'wip\n' > .aidev/worktrees/feat/x/wip.txt
+cd "$T" && mv fu-1 fu-1b && cd fu-1b
+out=$($UP 2>&1)
+msg="update worktrees: a moved feat/x checkout gets repair then remove, and feat/ is not called a stray"
+expect_pass sh -c "echo \"\$0\" | grep -q 'git worktree repair .aidev/worktrees/feat/x., then .git worktree remove .aidev/worktrees/feat/x' && ! echo \"\$0\" | grep -q 'worktrees/feat is not a checkout'" "$out"
+msg="update worktrees: the advice works when followed: repair, then remove refuses the uncommitted file, which survives"
+git worktree repair .aidev/worktrees/feat/x >/dev/null 2>&1; rc=$(code git worktree remove .aidev/worktrees/feat/x)
+expect_pass sh -c "test $rc != 0 && test -f .aidev/worktrees/feat/x/wip.txt && git worktree list | grep -q 'fu-1b/.aidev/worktrees/feat/x'"
+msg="update worktrees: once the work is committed, remove succeeds"
+(cd .aidev/worktrees/feat/x && git add -A && git -c core.hooksPath=/dev/null commit -qm wip)
+expect_pass git worktree remove .aidev/worktrees/feat/x
+mkf .aidev/worktrees/feat/junk/f && wt -b feat/y .aidev/worktrees/feat/y
+msg="update worktrees: beside a checkout, a folder with none in it is named by its own path"
+expect_pass sh -c "$UP 2>&1 | grep -q '.aidev/worktrees/feat/junk is not a checkout git knows'"
+
+# update: what a whole subfolder's move leaves behind, and references the old checks missed.
+ax "$T/fu-2" "mkf specs/suite/README.md specs/app.spec.js && printf 'specs/suite/.cache/\n' >> .gitignore
+  mkdir -p tools && printf 'cat \"\$(dirname \"\$0\")/../specs/suite/README.md\"\n' > tools/r.sh"
+mkf specs/suite/notes.txt specs/suite/.cache/a
+out=$($UP 2>&1)
+msg="update leftovers: the dry run names specs/suite/'s untracked notes.txt and ignored .cache/"
+expect_pass sh -c "echo \"\$0\" | grep -q 'specs/suite/ moves, but files git doesn.t track stay in it: specs/suite/.cache/, specs/suite/notes.txt'" "$out"
+msg="update stale: .gitignore's specs/suite/.cache/ is stale; its .aidev/worktrees/ line, which update removes, is not"
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Stale references/,/^\$/p' | grep -q '2: specs/suite/.cache/' && ! echo \"\$0\" | sed -n '/^Stale references/,/^\$/p' | grep -q '1: .aidev/worktrees/'" "$out"
+msg="update stale: \$(dirname \"\$0\")/../specs/suite/README.md is stale"
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Stale references/,/^\$/p' | grep -q 'tools/r.sh'" "$out"
+
 rm -rf "$T"
 exit $fail

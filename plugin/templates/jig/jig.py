@@ -2994,9 +2994,11 @@ def stale_references(root: Path, plan: dict, board_at: str) -> dict[str, list[tu
                   key=len, reverse=True)
     if not olds:
         return {}
-    # `]` and `#` end a path, so a Markdown link's text and anchor are not part of it.
-    pat = re.compile(r"(?<![\w/.-])(?:\./)?((?:" + "|".join(re.escape(o) for o in olds)
-                     + r")[^\s'\"`()|,;:\]#]*)")
+    # `]` and `#` end a path, so a Markdown link's text and anchor are not part of it. A
+    # path may start `/` (a .gitignore anchor) or `../` after a folder, as in
+    # `$(dirname "$0")/../specs/x.md`; after `example.com/` it is a URL, not a path.
+    pat = re.compile(r"(?:(?<![\w/.-])(?:\./|/)?|(?<![\w.-])(?:\.\./)+)((?:"
+                     + "|".join(re.escape(o) for o in olds) + r")[^\s'\"`()|,;:\]#]*)")
     there = set(plan["after"])
 
     def stale(ref: str) -> bool:
@@ -3009,7 +3011,9 @@ def stale_references(root: Path, plan: dict, board_at: str) -> dict[str, list[tu
         inside = ref if ref.endswith("/") else ref + "/"
         return not any(f.startswith(inside) for f in there)
     back = {n: o for o, n in plan["moves"].items()}
-    skip = {CONFIG, JOBS, board_at, ".gitignore", *TOOL_FILES}
+    skip = {CONFIG, JOBS, board_at, *TOOL_FILES}
+    # update rewrites these .gitignore lines itself.
+    own_ignores = {*OLD_IGNORES, "jig/meta-cache/"}
     out: dict[str, list[tuple[int, str]]] = {}
     for f in plan["after"]:
         # Handoff notes anywhere — jig's or another tool's — record what was true then.
@@ -3021,9 +3025,42 @@ def stale_references(root: Path, plan: dict, board_at: str) -> dict[str, list[tu
         except (OSError, UnicodeDecodeError):
             continue
         hits = [(i, line.strip()) for i, line in enumerate(text.splitlines(), 1)
-                if any(stale(m) for m in pat.findall(line))]
+                if any(stale(m) for m in pat.findall(line))
+                and not (f == ".gitignore" and line.strip() in own_ignores)]
         if hits:
             out[f] = hits
+    return out
+
+
+def left_behind(root: Path, files: list[str], plan: dict, handled: list[str]) -> list[str]:
+    """One warning per folder whose tracked files all move but which holds untracked or
+    ignored files: `git mv` takes only what git tracks, so those stay in a folder that
+    otherwise empties. `handled` are folders update deals with apart from this."""
+    after, tracked_set = plan["after"], set(files)
+    emptied = set()
+    for o in plan["moves"]:
+        parts = o.split("/")[:-1]
+        for i in range(1, len(parts) + 1):
+            d = "/".join(parts[:i]) + "/"
+            if not any(f.startswith(d) for f in after):
+                emptied.add(d)
+                break
+    out = []
+    for d in sorted(emptied):
+        stay = []
+        for here, dirs, names in os.walk(root / d):
+            rel = Path(here).relative_to(root).as_posix() + "/"
+            for sub in sorted(dirs):
+                path = rel + sub + "/"
+                if any(path.startswith(h) for h in handled):
+                    dirs.remove(sub)
+                elif not any(f.startswith(path) for f in tracked_set):
+                    stay.append(path)   # wholly untracked: named once, not file by file
+                    dirs.remove(sub)
+            stay += sorted(rel + n for n in names if rel + n not in tracked_set)
+        if stay:
+            out.append(f"{d} moves, but files git doesn't track stay in it: {', '.join(sorted(stay))}. "
+                       "Move or delete each, or the folder stays with only them")
     return out
 
 
@@ -3075,16 +3112,30 @@ def worktree_refusals(root: Path, old_folders: tuple) -> list[str]:
             records[rec.name] = Path((rec / "gitdir").read_text().strip()).parent
         except OSError:
             records[rec.name] = rec / "missing"
-    # A checkout's .git file names its record: `gitdir: <common>/worktrees/<id>`.
+    # A checkout's .git file names its record: `gitdir: <common>/worktrees/<id>`. A branch
+    # with `/` puts its checkout a level deeper (`feat/x`), so the search goes down until it
+    # finds a checkout; reporting `feat` itself would lead someone to delete the checkout.
     folders: dict[Path, str | None] = {}
-    for base in [root / f for f in old_folders] + [git_common() / "jig" / "worktrees"]:
-        for d in sorted(base.iterdir()) if base.is_dir() else []:
-            if not d.is_dir():
-                continue
+
+    def scan(d: Path) -> bool:
+        if (d / ".git").exists():
             try:
                 line = (d / ".git").read_text().strip()
                 folders[d] = Path(line[len("gitdir:"):].strip()).name if line.startswith("gitdir:") else None
             except OSError:
+                folders[d] = None
+            return True
+        subs = [s for s in sorted(d.iterdir()) if s.is_dir() and not s.is_symlink()]
+        found = {s: scan(s) for s in subs}
+        if not any(found.values()):
+            return False
+        # Beside a checkout, a folder with none in it is reported by its own name.
+        folders.update({s: None for s, f in found.items() if not f})
+        return True
+
+    for base in [root / f for f in old_folders] + [git_common() / "jig" / "worktrees"]:
+        for d in sorted(base.iterdir()) if base.is_dir() else []:
+            if d.is_dir() and not scan(d):
                 folders[d] = None
     out = []
     claimed = set()
@@ -3101,7 +3152,7 @@ def worktree_refusals(root: Path, old_folders: tuple) -> list[str]:
         else:
             out.append(f"worktree {path} is gone, but git still records it: `git worktree prune`")
     for d, rid in folders.items():
-        old = any(d.parent == root / f.rstrip("/") for f in old_folders)
+        old = any((root / f.rstrip("/")) in d.parents for f in old_folders)
         if old and d.resolve() not in claimed:
             out.append(f"{shown(d)} is not a checkout git knows: look, then delete it")
     return out
@@ -3216,8 +3267,9 @@ def cmd_update(root: Path, args) -> int:
     occupied += [f"{n}{f.relative_to(root / o).as_posix()} (from {f.relative_to(root).as_posix()})"
                  for o, n in untracked for f in sorted((root / o).rglob("*"))
                  if f.is_file() and (root / n / f.relative_to(root / o)).exists()]
+    warnings += left_behind(root, files, plan, [o for o, _ in OLD_UNTRACKED] + list(old_ignores))
     if occupied:
-        refused.append(f"untracked files where files would move: {', '.join(occupied)}. Look at "
+        refused.append(f"untracked files where files would move:{', '.join(occupied)}. Look at "
                        "each, move or delete it, then update again")
     cache_line = [l for l in ignore.read_text().splitlines() if l.strip() == "jig/meta-cache/"] \
         if ignore.exists() and board_at.startswith("jig/") else []
