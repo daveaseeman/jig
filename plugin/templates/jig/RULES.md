@@ -106,7 +106,12 @@ A number is taken where trunk had no match for it, in any of the counter's files
 change adds one. So `### 31.2` under a section 31 that trunk has takes nothing, and `### 32.1`
 takes section 32. `"unique": true` is for numbers that must also appear once: a second
 `SCHEMA_VERSION = 17` where trunk has one is refused as "17 already exists". It is off unless
-set, because a section number appears once per rule under it.
+set, because a section number appears once per rule under it. It applies working alone too,
+with no job open: there is nobody to take a number from, but a second 17 still breaks.
+
+A section's rule numbers (`### 31.2`) belong to whoever holds the section. R6 counts whole
+numbers, so within a section trunk already has, nothing stops two jobs adding the same rule
+number: give each job its own section, or settle it at the merge.
 
 `--reserve <counter>` hands the job max(the highest on trunk, the highest an open job
 holds) + 1, so two jobs open at once never get the same number. `jig reserve <job> <counter>`

@@ -344,8 +344,10 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
                 for k, v in held_numbers(l).items():
                     held.setdefault(k, set()).update(v)
                 who = f"job {n}"
-    if job is not None or board.open_jobs():
-        out += reserved_refusals(root, board, held, who, staged)
+    # Working alone the numbers are yours, but a second migration 17 still breaks a database:
+    # "unique" applies with no jobs open too.
+    out += reserved_refusals(root, board, held, who, staged,
+                             takes=job is not None or bool(board.open_jobs()))
 
     if job is None:
         if branch and branch != trunk and board.open_jobs():
@@ -428,21 +430,25 @@ def next_number(board: "Board", counter: str, spec: dict) -> int:
 
 
 def reserved_refusals(root: Path, board: "Board", holds: dict[str, set[int]],
-                      who: str, staged: bool) -> list[str]:
+                      who: str, staged: bool, takes: bool = True) -> list[str]:
     """R6. A scarce number (migration step, section number) belongs to one job.
     A number is taken when the base has no match for it in the counter's files and the
     index adds one. A second rule under a section the base already has takes nothing, and
     editing or moving a heading nets to zero. A counter with "unique" also refuses a number
     whose count rises past one: a second migration 17 is a collision of its own. Numbers
-    compare as ints, so D-002 is the 2 a job holds; a refusal shows the text it matched."""
+    compare as ints, so D-002 is the 2 a job holds; a refusal shows the text it matched.
+    With TAKES false (no job open, so nobody to collide with) only "unique" is checked."""
     out: list[str] = []
+    # A counter without a pattern matches nothing; update refuses one.
+    counters = {k: v for k, v in (board.data.get("reserve") or {}).items()
+                if isinstance(v, dict) and v.get("pattern") and (takes or v.get("unique"))}
+    if not counters:
+        return out
     at = base(board.trunk)
     touched = git("diff", "--name-only", "--no-renames", at,
                   *(["--cached"] if staged else [])).splitlines()
     tree = git("ls-tree", "-r", "--name-only", at).splitlines()
-    for counter, spec in (board.data.get("reserve") or {}).items():
-        if not isinstance(spec, dict) or not spec.get("pattern"):
-            continue                      # update refuses such a counter; nothing to match
+    for counter, spec in counters.items():
         pat = re.compile(spec["pattern"], re.M)
         globs = spec.get("files") or ["**"]
         held = holds.get(counter)
@@ -474,7 +480,7 @@ def reserved_refusals(root: Path, board: "Board", holds: dict[str, set[int]],
                 out.append(f"R6 {counter} {got} already exists: a {counter} is unique, and this "
                            f"change adds another" if n in before else
                            f"R6 {counter} {got} appears twice in this change: a {counter} is unique")
-            if n in before:
+            if n in before or not takes:
                 continue
             if not held:
                 out.append(f"R6 this change takes {counter} {got}, but this branch holds no "

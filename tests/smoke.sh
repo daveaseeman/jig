@@ -1884,5 +1884,27 @@ chmod +x .jig/scripts/check.sh .jig/scripts/format.sh
 msg="plugin hook: an executable Python check.sh that exits 0 lets the Stop hook exit 0, and format.sh runs too"
 expect_pass sh -c "CLAUDE_PROJECT_DIR='$FH' bash '$P/../scripts/check.sh' && CLAUDE_PROJECT_DIR='$FH' bash '$P/../scripts/format.sh'"
 
+# R6 "unique" with no job open, and the edit and move cases under a dotted counter.
+FU="$T/fu-r6"; pcnew "$FU" && printf 'SCHEMA_VERSION = 17\n' > storage.py && git add -A && git commit -qm init && $J init >/dev/null
+board "b['reserve'] = {'schema': {'pattern': r'SCHEMA_VERSION\s*=\s*(\d+)', 'files': ['**/*.py'], 'unique': True}, 'section': {'pattern': r'^### (\d+)\.\d+', 'files': ['docs/**']}}"
+mkdir -p docs/a && printf '# A\n\n### 1.1 One\n\n### 2.1 Two\n' > docs/a/a.md && git add -A && git commit -qm board
+git switch -q -c feat
+msg="R6 unique: no job open, a second SCHEMA_VERSION = 17 on a branch is refused"
+printf 'SCHEMA_VERSION = 17\n' > other.py; git add -A; expect_refuse git commit -qm s2; undo
+msg="R6 unique: no job open, a new SCHEMA_VERSION = 18 needs no reservation"
+printf 'SCHEMA_VERSION = 18\n' > other.py; git add -A; expect_pass git commit -qm s3
+git switch -q main && $J open S --reserve section >/dev/null && git add -A && git commit -qm "open S"
+cd "$FU/.git/jig/worktrees/S"
+msg="R6 dotted: editing ### 2.1's text takes nothing"
+sed -i.bak 's/### 2.1 Two/### 2.1 Two renamed/' docs/a/a.md && rm docs/a/a.md.bak; git add -A; expect_pass git commit -qm e1
+msg="R6 dotted: moving the page takes nothing"
+mkdir -p docs/b && git mv docs/a/a.md docs/b/b.md; expect_pass git commit -qm mv
+msg="R6 dotted: ### 1.2 under section 1, which trunk has, takes nothing"
+printf '\n### 1.2 More\n' >> docs/b/b.md; git add -A; expect_pass git commit -qm e2
+msg="R6 dotted: ### 4.1, not held (S holds 3), is refused"
+printf '\n### 4.1 Four\n' >> docs/b/b.md; git add -A; expect_refuse git commit -qm e3; undo
+msg="R6 dotted: ### 3.1, held, is accepted"
+printf '\n### 3.1 Three\n' >> docs/b/b.md; git add -A; expect_pass git commit -qm e4
+
 rm -rf "$T"
 exit $fail
