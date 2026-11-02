@@ -1537,19 +1537,26 @@ META_DEFAULTS = {
 DECISION_STATUSES = ("open", "proposed", "accepted", "superseded", "rejected")
 # The Status cell, whole: a word alone, with a note in parentheses, or "superseded by D-12".
 # Whole-cell, because a Decision cell often starts with a status word ("Open question: …").
-def entry_paths(rev: str, cwd: str | None = None) -> list[str]:
-    """The tracked files at rev that its meta.json's entry_files name. entry_files are jig's
-    globs, never git pathspecs: git's `**` misses a file directly under the folder."""
-    meta = {**META_DEFAULTS, **json.loads(git("show", f"{rev}:{META}", cwd=cwd) or "{}")}
-    return [f for f in git("ls-tree", "-r", "--name-only", rev, cwd=cwd).splitlines()
-            if matches(f, meta["entry_files"])]
-
-
 STATUS_CELL = re.compile(rf"(?:{'|'.join(DECISION_STATUSES)})(?:\s*\(.*\)|\s+by\s+\S+)?")
 # A commit's subject starts with the ids it touches (D-022: …, GLOSSARY: …), so git log is
 # the decision index.
 SUBJECT_IDS = re.compile(r"^[A-Z][A-Z0-9_-]*(?:, ?[A-Z][A-Z0-9_-]*)*: \S")
 CHANGELOG = "CHANGELOG.md"
+
+
+def is_entry(path: str, entry_files: list[str]) -> bool:
+    """entry_files are jig's globs, never git pathspecs: git's `**` misses a file directly
+    under the folder. jig's own files never count, or a `**/*.md` would make M3 ask the
+    hubnode's trunk bookkeeping for a changelog line that M4 then refuses on trunk."""
+    return not path.startswith(f"{DIR}/") and matches(path, entry_files)
+
+
+def entry_paths(rev: str, cwd: str | None = None) -> list[str]:
+    """The tracked files at rev that its meta.json's entry_files name."""
+    meta = {**META_DEFAULTS, **json.loads(git("show", f"{rev}:{META}", cwd=cwd) or "{}")}
+    # Unquoted, so a non-ASCII name reaches the glob as itself.
+    names = git("-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", rev, cwd=cwd)
+    return [f for f in names.splitlines() if is_entry(f, meta["entry_files"])]
 
 
 def load_meta(trunk: str) -> dict | None:
@@ -1629,8 +1636,8 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
             out.append(f"M2 a decision row needs a status ({'/'.join(DECISION_STATUSES)}) and a "
                        f"date (YYYY-MM-DD): {m.group(0)[1:].strip()}")
     # M3 a change to what pararepos cite is recorded where they will read it
-    if any(matches(p, entry) for p in paths) and CHANGELOG not in paths:
-        out.append(f"M3 {', '.join(p for p in paths if matches(p, entry))} changed: add a line to "
+    if any(is_entry(p, entry) for p in paths) and CHANGELOG not in paths:
+        out.append(f"M3 {', '.join(p for p in paths if is_entry(p, entry))} changed: add a line to "
                    f"{CHANGELOG} under ## Unreleased")
     # M4 nothing lands on main except merges; jig's own bookkeeping (the board, handoffs) is
     # the exception, since the hubnode keeps it on trunk
@@ -1812,8 +1819,10 @@ def cmd_release(root: Path, args) -> int:
     pat = re.compile(meta["tag_pattern"] if meta else r"^v\d+\.\d+(\.\d+)?$")
     last = latest_tag([t for t in git("tag", "--list").splitlines() if pat.match(t)])
     if meta:
-        changed = [f for f in git("diff", "--name-only", last, "HEAD").splitlines()
-                   if matches(f, meta["entry_files"])] if last else entry_paths("HEAD")
+        # No rename detection: a cited file moved out of the set still changed what is cited.
+        changed = [f for f in git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
+                                  last, "HEAD").splitlines()
+                   if is_entry(f, meta["entry_files"])] if last else entry_paths("HEAD")
         if not changed:
             die(f"nothing to release: no entry file changed since {last}", 2)
     version = next_version(last, args, meta)

@@ -276,7 +276,8 @@ does what that kind of repo needs.
 
 `entry_files` in `meta.json` lists what pararepos cite: what a release counts, what M3 asks a
 changelog line for, and what a pararepo caches. Its entries are globs, matched the way `owns`
-is: a folder of pages goes in as `docs/**/*.md`, and a new page there needs no edit.
+is: a folder of pages goes in as `docs/**/*.md`, and a new page there needs no edit. Nothing
+under `.jig/` counts, whatever the globs say.
 
 | Gate | Refuses |
 |---|---|

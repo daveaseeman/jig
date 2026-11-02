@@ -94,7 +94,9 @@ its own settings. A mismatch stops it: tell the owner, don't brief it.
    checking that it happened and that the result matches the spec.
 5. `jig mark <name> gated`, commit `jobs.json`, then on the owner's word
    `jig merge <name> -m "shared files: ..."`. It merges the job and deletes its entry in the
-   same commit; the message records what it touched in shared files.
+   same commit; the message records what it touched in shared files. In a repo whose
+   subjects lead with ids, add `--subject "<ids>: <what>"`: the subject becomes
+   `<ids>: <what>: merge <name>`.
 
 ## After a merge
 

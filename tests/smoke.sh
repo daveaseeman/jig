@@ -1785,5 +1785,28 @@ setjson .jig/para.json pin v0.5.0 && $J init --para >/dev/null 2>&1 && git add -
 msg="merge --subject: the gate's fallback still finds job J by its merge after its branch is deleted"
 gate_ok E1; rc=$?; expect_pass test $rc = 0
 
+msg="entry globs: a non-ASCII page name under the glob is counted by the release"
+cd "$EG" && printf '# c\n' > "products/café.md" && printf -- '- café\n' >> CHANGELOG.md
+emerge en "PRODUCTS: café" "products/café.md" CHANGELOG.md; $J release >/dev/null 2>&1
+expect_pass git rev-parse -q --verify refs/tags/v0.2.0
+
+msg="entry globs: a cited file moved out of the exact entry_files still counts for the release"
+ER="$T/er"; pcnew "$ER" && $J init --meta --name er >/dev/null && git add -A && git commit -qm meta-init && $J release >/dev/null
+git switch -q -c mv && mkdir -p docs && git mv GLOSSARY.md docs/GLOSSARY.md && printf -- '- moved\n' >> CHANGELOG.md \
+  && git add -A && git commit -qm "GLOSSARY: move" && $J reviewed >/dev/null && git switch -q main && git merge -q --no-ff --no-edit mv
+$J release >/dev/null 2>&1; expect_pass git rev-parse -q --verify refs/tags/v0.2.0
+
+# A glob that would reach into .jig/: jig's own files still never count.
+EJ="$T/ej"; pcnew "$EJ" && printf '# p\n' > p.md
+$J init --meta --name ej >/dev/null && setentry '**/*.md' && git add -A && git commit -qm meta-init && $J release >/dev/null
+msg="entry globs: with '**/*.md', a .jig/ file committed on trunk needs no changelog line"
+mkdir -p .jig/specs && printf '# s\n' > .jig/specs/s.md && git add -A; expect_pass git commit -qm "TOOL: spec s"
+msg="entry globs: with '**/*.md', a .jig/ change alone is nothing to release"
+out=$($J release 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'nothing to release'" "$out"
+msg="entry globs: with '**/*.md', a pararepo's cache holds no .jig/ file"
+EK="$T/ek"; pcnew "$EK" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para ej --location "$EJ" >/dev/null 2>&1
+expect_pass sh -c "test -f .jig/meta-cache/p.md && test -z \"\$(find .jig/meta-cache -path '*/.jig/*')\""
+
 rm -rf "$T"
 exit $fail
