@@ -1,7 +1,7 @@
 {
   "entry-globs": {
     "spec": ".jig/specs/bug-meta-entry-globs.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
