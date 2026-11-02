@@ -251,8 +251,9 @@ bug in the spec or the approach: investigate it, don't start a fourth.
 user story. It is never committed, and nothing in it is decided — read it for context, never
 cite it. Each file's header names its `target` (a repo name, or `this`), `kind`, `change`
 (`new` or `update`), `destination` inside the target, and `source`. A destination is a bare
-path: a spec, doc or decisions file whose destination carries anything else (`docs/DECISIONS.md,
-on branch x`) is refused, never guessed at.
+path, with no space and no `:`, `,` or `;`: a spec, doc or decisions file whose destination
+carries anything else (`docs/DECISIONS.md, on branch x`, `see docs/x.md`) is refused, never
+guessed at. In a metarepo, decisions land only in a register `entry_files` names.
 
 `jig staging resolve <file>` lands it: a new spec or doc is written with its source; an
 update, a story's spec, or decisions with other content wait until the work is done and the

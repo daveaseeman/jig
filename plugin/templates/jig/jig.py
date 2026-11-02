@@ -2428,8 +2428,9 @@ def this_repo_names(root: Path) -> set[str]:
 
 
 def bare_path(dest: str) -> bool:
-    """A header's destination is a path and nothing else: prose after it is never guessed at."""
-    return dest.endswith(".md") and not re.search(r"[,;]", dest)
+    """A header's destination is a path and nothing else: prose around it is never guessed at.
+    A space counts as prose: "see docs/x.md" would otherwise land as a file of that name."""
+    return dest.endswith(".md") and not re.search(r"[\s:,;]", dest)
 
 
 def decision_id(cell: str) -> str:
@@ -2502,8 +2503,14 @@ def cmd_staging(root: Path, args) -> int:
         die(f"destination {dest!r} isn't a path yet: find the page, put its path in the header, "
             "then resolve again", 1)
     if kind == "decisions" and not bare_path(dest):
-        die(f"destination {dest!r} in the header isn't a bare path: put only the register's "
+        die(f"destination {dest!r} in the header isn't a path: put only the register's "
             "path in `destination:`, then resolve again", 1)
+    if kind == "decisions" and (root / META).exists():
+        # A misspelt register (DECISION.md) would start a second one nobody cites.
+        entry = {**META_DEFAULTS, **json.loads((root / META).read_text() or "{}")}["entry_files"]
+        if not is_entry(dest, entry):
+            die(f"destination {dest} isn't a register {META}'s entry_files name "
+                f"({', '.join(entry)}): fix the header, or add it there first", 1)
     if kind == "spec" and not dest.startswith(f"{DIR}/specs/"):
         dest = f"{DIR}/specs/{Path(dest).name}"
     if change == "update":
@@ -2536,6 +2543,7 @@ def cmd_staging(root: Path, args) -> int:
         dupes = [r.split("|")[1].strip() for r in rows if decision_id(r.split("|")[1]) in have]
         if dupes:
             die(f"{', '.join(dupes)} already in {reg.name}: stage it as `change: update`", 1)
+        reg.parent.mkdir(parents=True, exist_ok=True)
         reg.write_text(text.rstrip("\n") + "\n" + "\n".join(rows) + "\n")
         ids = ", ".join(r.split("|")[1].strip() for r in rows)
         # In a metarepo, M3 refuses the commit until CHANGELOG.md says so: that's its rule to

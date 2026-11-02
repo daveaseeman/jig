@@ -1906,5 +1906,29 @@ printf '\n### 4.1 Four\n' >> docs/b/b.md; git add -A; expect_refuse git commit -
 msg="R6 dotted: ### 3.1, held, is accepted"
 printf '\n### 3.1 Three\n' >> docs/b/b.md; git add -A; expect_pass git commit -qm e4
 
+# Staging: a destination with prose in it, a register in a new folder, a misspelt register.
+FT="$T/fu-st"; pcnew "$FT" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+msg="staging: decisions destination 'the register in docs/DECISIONS.md' is refused as not a path, with no traceback"
+stage p1.md this decisions new 'the register in docs/DECISIONS.md' '| D-001 | x | accepted | 2026-11-02 |\n'
+out=$($J staging resolve p1.md 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"isn't a path\" && ! echo \"\$0\" | grep -q Traceback && test ! -e docs/DECISIONS.md" "$out"
+msg="staging: doc destination 'see docs/x.md' is refused as not a path, and writes no file"
+stage p2.md this doc new 'see docs/x.md'
+out=$($J staging resolve p2.md 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"isn't a path\" && test ! -e 'see docs/x.md'" "$out"
+msg="staging: the bare path docs/x.md resolves"
+stage p2.md this doc new docs/x.md; expect_pass sh -c "$J staging resolve p2.md && test -f docs/x.md"
+msg="staging: decisions staged as new into docs/reg/DECISIONS.md, a folder that doesn't exist, makes it"
+stage p1.md this decisions new docs/reg/DECISIONS.md '| D-001 | x | accepted | 2026-11-02 |\n'
+expect_pass sh -c "$J staging resolve p1.md && grep -q 'D-001' docs/reg/DECISIONS.md"
+FV="$T/fu-stm"; pcnew "$FV" && git add -A && git commit -qm init && $J init --meta --name fv >/dev/null && git add -A && git commit -qm meta-init
+msg="staging: in a metarepo, a decisions destination entry_files doesn't name (DECISION.md) is refused"
+stage p3.md this decisions new DECISION.md '| D-001 | x | accepted | 2026-11-02 |\n'
+out=$($J staging resolve p3.md 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'entry_files' && test ! -e DECISION.md" "$out"
+msg="staging: in a metarepo, destination DECISIONS.md resolves"
+stage p3.md this decisions new DECISIONS.md '| D-001 | x | accepted | 2026-11-02 |\n'
+expect_pass sh -c "$J staging resolve p3.md && grep -q 'D-001' DECISIONS.md"
+
 rm -rf "$T"
 exit $fail
