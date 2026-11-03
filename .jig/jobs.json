@@ -1,1 +1,16 @@
-{}
+{
+  "smoke-isolation": {
+    "spec": ".jig/specs/bug-smoke-isolation.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [],
+    "shares": [
+      "tests/smoke.sh",
+      "plugin/skills/review/SKILL.md",
+      "plugin/skills/bug/SKILL.md",
+      "plugin/skills/verify/SKILL.md",
+      "plugin/skills/hubnode/SKILL.md"
+    ],
+    "reserved": {}
+  }
+}
