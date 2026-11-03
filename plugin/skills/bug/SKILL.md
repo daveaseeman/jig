@@ -16,6 +16,8 @@ Everything known about the problem. Tag each line:
 
 Every `[assumed]` given the fix depends on gets converted before step 5: go read the log, run the thing, or ask one question. If it can't be converted, say so and treat it as a risk, not a fact.
 
+Reproducing in a throwaway repo? There, set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched.
+
 ## 3. One layer up
 - Is there a sibling path (another mode, caller, handler) that does the same job? Does it have this problem?
 - If not — what's structurally different?

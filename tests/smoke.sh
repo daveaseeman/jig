@@ -1,8 +1,23 @@
 #!/usr/bin/env bash
 # End-to-end check of the rules in a throwaway repo: one job in a worktree, the hooks
 # installed from the template. Every case prints PASS or the refusal it expected.
+# Runs are independent and safe to start at the same time: each touches only its own temp
+# folder, and the last case proves the user's real jig config was left alone.
 set -u
+# Listing and hash of every file under a folder; empty when it doesn't exist.
+cfg_state() { python3 - "$1" <<'PY'
+import hashlib, os, sys
+for d, _, fs in sorted(os.walk(sys.argv[1])):
+    print(d)
+    for f in sorted(fs):
+        p = os.path.join(d, f); print(p, hashlib.sha256(open(p, 'rb').read()).hexdigest())
+PY
+}
+REAL_CFG="$HOME/.config/jig"; real_before=$(cfg_state "$REAL_CFG")
 T=$(mktemp -d "${TMPDIR:-/tmp}/jig-smoke.XXXXXX")
+# Once, before any jig command, so every section and any fragment copied out of this file
+# writes user-level state into the run's folder. Sections below still set their own lists.
+export JIG_CONFIG="$T/repos.json" XDG_CONFIG_HOME="$T/config"
 P="$(cd "$(dirname "$0")/.." && pwd)/plugin/templates"
 J="python3 .jig/jig.py"
 fail=0
@@ -2139,6 +2154,12 @@ expect_pass sh -c "$J staging drop mine.md >/dev/null && $J release >/dev/null &
 rm "$T/fb/feedback/other.md"
 msg="feedback: jig repos prints where tool reports wait"
 expect_pass sh -c "$J repos | grep -q 'tool reports wait in .*/fb/feedback while'"
+
+msg="isolation: the user's real jig config folder is unchanged by the run"
+real_after=$(cfg_state "$REAL_CFG")
+expect_pass test "$real_after" = "$real_before"
+# Another session's real jig work can change it too; the diff shows which file did.
+[ "$real_after" = "$real_before" ] || diff <(echo "$real_before") <(echo "$real_after")
 
 rm -rf "$T"
 exit $fail

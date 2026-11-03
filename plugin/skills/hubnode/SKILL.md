@@ -93,6 +93,10 @@ its own settings. A mismatch stops it: tell the owner, don't brief it.
    Not the job's worktree — the subnode may still be building there. It reports the exit
    code and output; you read it. `jig gate` warns when the review ran weaker than the spec's
    Workflow section: say so to the owner before the merge.
+   Its brief says: in any throwaway repo, set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched. Smoke runs need no waiting on each
+   other; each uses only its own temp folder. The run's output always goes to
+   `$(git rev-parse --git-common-dir)/jig/gate-<name>.out`, outside `worktrees/`, which the next
+   gate removes; a failure nobody can reproduce is reported with that path, so it can be read.
 3. Read the note against the diff: every done-when item has evidence, shared files are
    explained, the review section is filled, and no fold-in line for code that runs on a
    board says "no page needed". A miss goes back to the subnode as a note, never

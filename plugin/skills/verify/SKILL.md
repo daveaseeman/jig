@@ -15,5 +15,6 @@ Pick the cheapest check that is actually evidence:
 Rules:
 - Compiled is not verified. A green build earns the right to flash, nothing more.
 - Show the output: the command, the result, the log line that proves it. Don't summarize it away.
+- Running jig in a throwaway repo? There, set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched.
 - If the check can't be run (no board attached, no emulator), say so explicitly and stop. Don't infer success.
 - Prefer a check the next agent can re-run from `.jig/scripts/check.sh` over one that lived only in this session.
