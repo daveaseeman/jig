@@ -36,6 +36,8 @@ Its job is to find the reason this change is wrong. Its questions:
 
 A file in `.jig/staging/` is not decided; a finding that rests on one says so.
 
+A reviewer that runs jig to test a finding does it in a throwaway repo `$T`: point `JIG_CONFIG` and `XDG_CONFIG_HOME` into it first (`export JIG_CONFIG="$T/repos.json" XDG_CONFIG_HOME="$T/config"`), so nothing lands in the user's own jig config.
+
 ## What counts
 
 Rank findings: **blocking** (wrong, or misses the spec) / **should-fix** / **optional**.

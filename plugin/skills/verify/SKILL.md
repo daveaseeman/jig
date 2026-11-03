@@ -15,5 +15,6 @@ Pick the cheapest check that is actually evidence:
 Rules:
 - Compiled is not verified. A green build earns the right to flash, nothing more.
 - Show the output: the command, the result, the log line that proves it. Don't summarize it away.
+- Running jig in a throwaway repo `$T`? Before the first command, point `JIG_CONFIG` and `XDG_CONFIG_HOME` into it first (`export JIG_CONFIG="$T/repos.json" XDG_CONFIG_HOME="$T/config"`), so nothing lands in the user's own jig config.
 - If the check can't be run (no board attached, no emulator), say so explicitly and stop. Don't infer success.
 - Prefer a check the next agent can re-run from `.jig/scripts/check.sh` over one that lived only in this session.

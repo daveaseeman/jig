@@ -16,6 +16,8 @@ Everything known about the problem. Tag each line:
 
 Every `[assumed]` given the fix depends on gets converted before step 5: go read the log, run the thing, or ask one question. If it can't be converted, say so and treat it as a risk, not a fact.
 
+Reproducing in a throwaway repo `$T`? Before running jig there, point `JIG_CONFIG` and `XDG_CONFIG_HOME` into it first (`export JIG_CONFIG="$T/repos.json" XDG_CONFIG_HOME="$T/config"`), so nothing lands in the user's own jig config.
+
 ## 3. One layer up
 - Is there a sibling path (another mode, caller, handler) that does the same job? Does it have this problem?
 - If not — what's structurally different?
