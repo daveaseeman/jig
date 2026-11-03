@@ -106,7 +106,12 @@ A number is taken where trunk had no match for it, in any of the counter's files
 change adds one. So `### 31.2` under a section 31 that trunk has takes nothing, and `### 32.1`
 takes section 32. `"unique": true` is for numbers that must also appear once: a second
 `SCHEMA_VERSION = 17` where trunk has one is refused as "17 already exists". It is off unless
-set, because a section number appears once per rule under it.
+set, because a section number appears once per rule under it. It applies working alone too,
+with no job open: there is nobody to take a number from, but a second 17 still breaks.
+
+A section's rule numbers (`### 31.2`) belong to whoever holds the section. R6 counts whole
+numbers, so within a section trunk already has, nothing stops two jobs adding the same rule
+number: give each job its own section, or settle it at the merge.
 
 `--reserve <counter>` hands the job max(the highest on trunk, the highest an open job
 holds) + 1, so two jobs open at once never get the same number. `jig reserve <job> <counter>`
@@ -202,8 +207,13 @@ else stops with the files named, and a person resolves it.
 3. **The hubnode merges** with `jig merge <job>`, which deletes the job's entry in the merge
    commit itself, then syncs the clean jobs. A job synced since its note still merges: only
    the job's own commits count as changes since the check, and what a sync's resolution
-   carries beyond what `jig sync` would make of it. Either refuses until it is handed off
-   again. What the merge touched in shared files goes in that commit's message (`-m`).
+   carries beyond what `jig sync` would make of it (this replay needs git 2.38 or later).
+   Either refuses until it is handed off again. A job that wasn't synced and conflicts with
+   trunk in an `append_files` file is refused with "`jig sync` the job, then merge": the sync
+   resolves the appends as the gate did and stops on anything else. A job whose only
+   conflicts were appends needs no new handoff after it. What the merge touched in shared files goes in that commit's message (`-m`).
+   `--subject <text>` puts text before it: the subject becomes `<text>: merge <job>`, for a
+   repo whose subjects lead with ids.
 
 ## Workflow
 
@@ -242,16 +252,23 @@ bug in the spec or the approach: investigate it, don't start a fourth.
 user story. It is never committed, and nothing in it is decided — read it for context, never
 cite it. Each file's header names its `target` (a repo name, or `this`), `kind`, `change`
 (`new` or `update`), `destination` inside the target, and `source`. A destination is a bare
-path: a spec, doc or decisions file whose destination carries anything else (`docs/DECISIONS.md,
-on branch x`) is refused, never guessed at.
+path, with no space and no `:`, `,` or `;`: a spec, doc or decisions file whose destination
+carries anything else (`docs/DECISIONS.md, on branch x`, `see docs/x.md`) is refused, never
+guessed at. In a metarepo, decisions land only in a register `entry_files` names.
 
 `jig staging resolve <file>` lands it: a new spec or doc is written with its source; an
 update, a story's spec, or decisions with other content wait until the work is done and the
 source is in it; a file for another repo moves into that repo's staging, found through
 `jig repos`. `jig staging drop <file>` deletes it and records nothing: it was never committed.
 
-While anything is staged, `jig release` refuses; `--force` releases anyway and names the staged
-files in the release commit. Commits, pushes and gates don't look at staging. A chat needs access to `~/.config/jig/` (where
+A report on jig itself is `kind: feedback`, staged in the jig repo, whose header also names
+`from` (the reporting repo, required) and `jig_version`. When the jig repo isn't in `jig repos`,
+it waits in `feedback/` beside the repos list instead; `jig staging` lists that folder too, and
+resolves or drops files from it. A report resolves like a story: into a spec carrying its source.
+
+While anything is staged, a report for this repo in that `feedback/` folder included,
+`jig release` refuses; `--force` releases anyway and names the staged files in the release
+commit. Commits, pushes and gates don't look at staging. A chat needs access to `~/.config/jig/` (where
 `jig repos` keeps paths) and then to one repo's `.jig/staging/`, nothing more.
 
 ## Metarepo and pararepos
@@ -266,27 +283,35 @@ nothing copies it. Three rules do the work:
 
 A question that binds the pararepos gets its decision row when it is asked, with status
 `open`, so it can be cited before it is answered. The same row then moves to `proposed`, then
-`accepted` or `rejected`; a reversed decision is marked `superseded` and released as a major.
+`accepted` or `rejected`; a reversed decision is marked `superseded` (or `rejected`, when an accepted one is withdrawn)
+and released as a major.
 
 Each side's gates are on only when its file is on trunk: `.jig/meta.json` or `.jig/para.json`.
 `jig init --meta` and `jig init --para <metarepo>` write them; every other command reads them and
 does what that kind of repo needs.
+
+`entry_files` in `meta.json` lists what pararepos cite: what a release counts, what M3 asks a
+changelog line for, and what a pararepo caches. Its entries are globs, matched the way `owns`
+is: a folder of pages goes in as `docs/**/*.md`, and a new page there needs no edit. Nothing
+under `.jig/` counts, whatever the globs say.
 
 | Gate | Refuses |
 |---|---|
 | M1 | a source file outside `.jig/` in the metarepo |
 | M2 | a decision row (`| D-001 | … |`) without a status cell (open, proposed, accepted, superseded or rejected, optionally with a note in parentheses or `by D-…`) and a `YYYY-MM-DD` date |
 | M3 | an entry file changed without a line in `CHANGELOG.md` |
-| M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted) |
-| M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk |
+| M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted); a detached HEAD at trunk, or behind it, is trunk |
+| M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`) |
 | P1 | an `AGENTS.md` header that differs from what `.jig/para.json` generates |
-| P2 | a contract-path change with no spec saying `meta: <name> proposal <branch>` or `meta: none — <reason>` |
+| P2 | a contract-path change with none of: a row added or changed in `.jig/ledgers/BUFFER.md` in the same commit, or a spec saying `meta: buffered <row id>`, `meta: <name> proposal <branch>` or `meta: none — <reason>`. Also, in `BUFFER.md`: a state other than `Open` or `Closed`, a repeated id, an `Open` row deleted, or one closed by any commit but `jig sync`'s |
 | P4 | a contract-path change while a file targeting the metarepo is staged |
 | P3 | the metarepo's cache (`.jig/meta-cache/`) or its checkout committed into the pararepo |
 
 A fast-forward runs no hook, so a metarepo's release and its pre-push re-check every
 first-parent commit since the last release, and refuse any tag `jig release` didn't make.
+Pre-push judges the commit pushed to the remote's trunk, which may not be the local trunk's;
+a chained `pre-push.local` hook gets the same pushed refs.
 In a metarepo the release also turns `## Unreleased` into the version's heading, needs no
 `release.sh` steps, and defaults to `--minor`: minor for additions and clarifications, major
 for a rename or a reversed decision. A pararepo pins a release, never `main`, and bumps it in
@@ -294,6 +319,32 @@ a commit of its own, `meta: <name> v0.3.0 → v0.4.0`, with the report `jig sync
 trunk as the body. A two-part pin (`v0.3`), from before releases had three parts, keeps
 working: it sorts below `v0.3.0`. `jig gate` refuses a job whose spec cites a proposal that isn't in
 the pinned release.
+
+**The sync buffer.** A pararepo may work ahead of its metarepo: change what a metarepo claim
+describes, as often as testing needs, and commit and push each change. Every such difference
+is a row in `.jig/ledgers/BUFFER.md` (the first row creates it from jig's ledger template): the
+claim at the pin, what this repo does now, who decided, and a state, `Open` or `Closed`. A change
+of mind edits the row. `jig release` in the pararepo, before its build, puts every `Open` row
+no proposal carries yet, as it stands, into one metarepo proposal (`jig propose --buffer`, also
+run by hand): one branch, and a spec here that lists and copies the rows under `## Buffer rows`.
+A row edited after it was proposed goes again in the next one. When the metarepo releases a
+proposal, `jig sync` on the pararepo's trunk makes the pin commit itself: it moves the pin to
+that release and marks `Closed` the rows the proposal carried that are unchanged since, in one
+commit `meta: <name> v0.3.0 → v0.4.0` (or, when the pin already holds the release, `meta:
+<name> v0.4.0: close B1`). Rows added or edited after the proposal stay `Open` for the next one.
+`jig sync` also names each file here that a decision at the pin cites and `contract_paths`
+doesn't cover; adding it is the hubnode's call.
+
+Two rules for the metarepo's own pages:
+
+- **Newer wins.** A later decision, or a pararepo page a decision makes the authority, overrides
+  older page text it contradicts, whether or not that text is marked Accepted. The update gives
+  the new text with its source, and keeps an old "Accepted (who, date)" only on what it still
+  covers. A decision row changes only when the stale claim is one: it is marked
+  `superseded by` the newer. A page update needs no new sign-off: the decision behind it is
+  already the owner's.
+- **Every copy.** A metarepo spec that changes a claim lists every place that states it, found
+  by meaning, not only by its words, and its done-when covers each one.
 
 ## Release
 
@@ -324,7 +375,7 @@ jig install-hooks           rewrite the hooks
 jig status                  jobs, states, distance from trunk, dirt
 jig open <name> --spec … --owns … --shares … --after … --reserve schema
 jig mark <name> <state>     claimed|building|ready|gated|parked
-jig merge <name> [-m msg]   merge a job; its entry is deleted in the merge commit
+jig merge <name> [-m msg] [--subject text]   merge a job; its entry is deleted in the merge commit
 jig check [--staged]        run the rules here
 jig job                    this branch's manifest
 jig sync                    merge trunk in, append rule applied; on a pararepo's trunk, the metarepo
@@ -333,6 +384,7 @@ jig workflow                each step's model tier and effort in effect
 jig handoff [--spec path]   write the note for HEAD
 jig gate <name>             hubnode: verify, set up the scratch checkout, print its check
 jig propose <spec> <slug>   pararepo: open a proposal branch on the metarepo
+jig propose --buffer [slug]  pararepo: every Open row of the sync buffer, in one proposal
 ```
 
 ## Hooks are opt-in per checkout

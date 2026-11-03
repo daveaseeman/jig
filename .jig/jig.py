@@ -44,8 +44,8 @@ BOARD_DEFAULTS = {
     "not_docs": [],        # globs whose markdown ships as code; survey finds no home for it
     "release": {"artifacts": []},   # globs release.sh must produce; see `jig release`
     # Whether a board's datasheets are committed ("commit") or gitignored ("ignore"). Left
-    # unset, the hardware skill asks on the repo's first board page: a public repo may not be
-    # allowed to redistribute vendor PDFs, so it's the repo's call.
+    # unset, the hardware skill asks once, the next time it writes a page: a public repo may
+    # not be allowed to redistribute vendor PDFs, so it's the repo's call.
     "reference_files": "",
 }
 # Who runs each step, as numbers the tool maps to its own models and efforts. Tier 1 is the
@@ -344,8 +344,10 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
                 for k, v in held_numbers(l).items():
                     held.setdefault(k, set()).update(v)
                 who = f"job {n}"
-    if job is not None or board.open_jobs():
-        out += reserved_refusals(root, board, held, who, staged)
+    # Working alone the numbers are yours, but a second migration 17 still breaks a database:
+    # "unique" applies with no jobs open too.
+    out += reserved_refusals(root, board, held, who, staged,
+                             takes=job is not None or bool(board.open_jobs()))
 
     if job is None:
         if branch and branch != trunk and board.open_jobs():
@@ -428,21 +430,25 @@ def next_number(board: "Board", counter: str, spec: dict) -> int:
 
 
 def reserved_refusals(root: Path, board: "Board", holds: dict[str, set[int]],
-                      who: str, staged: bool) -> list[str]:
+                      who: str, staged: bool, takes: bool = True) -> list[str]:
     """R6. A scarce number (migration step, section number) belongs to one job.
     A number is taken when the base has no match for it in the counter's files and the
     index adds one. A second rule under a section the base already has takes nothing, and
     editing or moving a heading nets to zero. A counter with "unique" also refuses a number
     whose count rises past one: a second migration 17 is a collision of its own. Numbers
-    compare as ints, so D-002 is the 2 a job holds; a refusal shows the text it matched."""
+    compare as ints, so D-002 is the 2 a job holds; a refusal shows the text it matched.
+    With TAKES false (no job open, so nobody to collide with) only "unique" is checked."""
     out: list[str] = []
+    # A counter without a pattern matches nothing; update refuses one.
+    counters = {k: v for k, v in (board.data.get("reserve") or {}).items()
+                if isinstance(v, dict) and v.get("pattern") and (takes or v.get("unique"))}
+    if not counters:
+        return out
     at = base(board.trunk)
     touched = git("diff", "--name-only", "--no-renames", at,
                   *(["--cached"] if staged else [])).splitlines()
     tree = git("ls-tree", "-r", "--name-only", at).splitlines()
-    for counter, spec in (board.data.get("reserve") or {}).items():
-        if not isinstance(spec, dict) or not spec.get("pattern"):
-            continue                      # update refuses such a counter; nothing to match
+    for counter, spec in counters.items():
         pat = re.compile(spec["pattern"], re.M)
         globs = spec.get("files") or ["**"]
         held = holds.get(counter)
@@ -474,7 +480,7 @@ def reserved_refusals(root: Path, board: "Board", holds: dict[str, set[int]],
                 out.append(f"R6 {counter} {got} already exists: a {counter} is unique, and this "
                            f"change adds another" if n in before else
                            f"R6 {counter} {got} appears twice in this change: a {counter} is unique")
-            if n in before:
+            if n in before or not takes:
                 continue
             if not held:
                 out.append(f"R6 this change takes {counter} {got}, but this branch holds no "
@@ -528,10 +534,14 @@ def cmd_init(root: Path, args) -> int:
 HOOK = """#!/bin/sh
 # jig hook ({dir}/jig.py). Delete to disable; `jig install-hooks` rewrites it.
 # Runs TRUNK's copy of the checker, so a branch cannot weaken its own rules.
-[ -x "$0.local" ] && {{ "$0.local" "$@" || exit $?; }}
+# git hands pre-push the pushed refs on stdin, once: read here, a chained .local hook
+# (git-lfs) and jig each get them, where the first reader would otherwise take them all.
+if [ {name} = pre-push ]; then refs=$(cat); fi
+feed() {{ if [ {name} = pre-push ]; then printf '%s\n' "$refs" | "$@"; else "$@"; fi; }}
+[ -x "$0.local" ] && {{ feed "$0.local" "$@" || exit $?; }}
 copy=$(mktemp "${{TMPDIR:-/tmp}}/jig.XXXXXX") || exit 0
 git show {trunk}:{dir}/jig.py > "$copy" 2>/dev/null || {{ rm -f "$copy"; exit 0; }}
-python3 "$copy" hook {name} "$@"
+feed python3 "$copy" hook {name} "$@"
 status=$?
 rm -f "$copy"
 exit $status
@@ -653,7 +663,15 @@ def cmd_hook(root: Path, args) -> int:
             print(f"jig: {r}", file=sys.stderr)
         return 1 if refusals else 0
     if name == "pre-push":
-        problems = meta_problems(root, meta, board.trunk) if meta else []
+        # git names what is pushed on stdin: `<local ref> <sha> <remote ref> <sha>`. What goes
+        # to the remote's trunk is judged, not the local trunk: `git push origin HEAD:main`
+        # from a detached checkout sends a commit the local ref never had.
+        pushed = [l.split()[1] for l in (sys.stdin.read().splitlines() if meta else [])
+                  if len(l.split()) == 4 and l.split()[2] == f"refs/heads/{board.trunk}"
+                  and set(l.split()[1]) != {"0"}]
+        problems = []
+        for rev in pushed or ([""] if meta else []):
+            problems += [p for p in meta_problems(root, meta, board.trunk, rev) if p not in problems]
         for p in problems:
             print(f"jig: refused: {p}", file=sys.stderr)
         return 1 if problems else 0
@@ -839,12 +857,23 @@ def cmd_merge(root: Path, args) -> int:
     if since:
         die(f"{branch} has changed since the commit {notes[-1]} names ({', '.join(since[:5])}): "
             "hand off again and gate that, or merge the gated commit by hand")
-    msg = f"merge {name}" + (f"\n\n{args.message}" if args.message else "")
+    # The subject ends in `merge <job>` either way: the gate's deleted-branch fallback finds
+    # the job by it.
+    msg = (f"{args.subject}: " if args.subject else "") + f"merge {name}" + (f"\n\n{args.message}" if args.message else "")
     p = subprocess.run(["git", "merge", "--no-ff", "--no-commit", "-m", msg, branch],
                        capture_output=True, text=True)
     merging = bool(git("rev-parse", "-q", "--verify", "MERGE_HEAD"))
     if p.returncode and not merging:
         die(f"git merge {branch}: {(p.stderr or p.stdout).strip()}")
+    conflicted = git("diff", "--name-only", "--diff-filter=U").splitlines()
+    appends = [f for f in conflicted if matches(f, board.data.get("append_files", []))]
+    if p.returncode and appends:
+        # The gate resolved these the way sync does; by hand on trunk they could come out
+        # differently. Sync resolves them in the job and stops on the rest; a job whose only
+        # conflicts were appends merges after it with no new handoff.
+        git("merge", "--abort")
+        die(f"merging {branch} conflicts in append files ({', '.join(appends)}): "
+            f"`jig sync` the job, then merge again")
     del board.jobs[name]
     board.save()
     git("add", "--", JOBS, check=True)
@@ -852,7 +881,7 @@ def cmd_merge(root: Path, args) -> int:
         print(f"conflicts merging {branch}; {name}'s entry is already deleted in the index. "
               f"Resolve these, `git add` each, `git commit`, then run {DIR}/scripts/setup.sh:",
               file=sys.stderr)
-        for f in git("diff", "--name-only", "--diff-filter=U").splitlines():
+        for f in conflicted:
             print(f"  {f}", file=sys.stderr)
         return 1
     commit = ["git", "commit", "-q", "--no-edit"] if merging else \
@@ -968,6 +997,11 @@ def merge_trunk(board: "Board", here: Path) -> list[str] | None:
     return []
 
 
+def git_version() -> tuple[int, ...]:
+    m = re.search(r"(\d+)\.(\d+)", git("version"))
+    return (int(m.group(1)), int(m.group(2))) if m else (0, 0)
+
+
 def blob(rev: str, path: str) -> str:
     return subprocess.run(["git", "show", f"{rev}:{path}"], capture_output=True, text=True).stdout
 
@@ -989,6 +1023,9 @@ def changed_since(commit: str, branch: str, board: "Board") -> list[str]:
                                capture_output=True, text=True)
             tree, *conflicted = p.stdout.splitlines() or [""]
             if p.returncode not in (0, 1) or not tree:
+                if git_version() < (2, 38):
+                    die(f"comparing a synced job needs git 2.38 or later (`git merge-tree "
+                        f"--write-tree`); this is git {'.'.join(map(str, git_version()))}")
                 # No replay to compare with: everything the merge changed counts as the job's.
                 tree, conflicted = parents[0], []
             files = []
@@ -1246,8 +1283,11 @@ def cmd_gate(root: Path, args) -> int:
         return 1
     print(f"{scratch} holds {commit[:12]} with {trunk} merged in. Run the project checks there; "
           "jig never runs them:\n")
-    print(f"  cd {scratch} && ./{DIR}/scripts/check.sh")
-    print(f"  cd - && git worktree remove {scratch}\n")
+    # As the hooks run it: itself when executable (any language), through bash when not.
+    check = f"./{DIR}/scripts/check.sh"
+    print(f"  cd {scratch} && {'' if os.access(where / check, os.X_OK) else 'bash '}{check}")
+    # --force: setup.sh ran there and may have left untracked files (a venv, a build).
+    print(f"  cd - && git worktree remove --force {scratch}\n")
     if job is not None:
         print(f"Then: jig mark {name} gated, and on the owner's word: jig merge {name}")
     else:
@@ -1358,7 +1398,9 @@ def board_pages(md: list[str]) -> list[str]:
 # Markdown link targets: inline `[t](target "title")` and reference definitions `[d]: target`.
 # A target may sit in <...> so it can hold spaces; a bare one with a space is accepted too,
 # because a board page is read by people, and a link that renders for them counts.
-MD_INLINE = re.compile(r"""\]\(\s*(<[^>]*>|[^)\n]*?)(?:\s+"[^"]*"|\s+'[^']*')?\s*\)""")
+# A bare target may hold one level of balanced parentheses, as CommonMark allows: a vendor's
+# `qx-20(rev1).pdf` is one file, not `qx-20(rev1`.
+MD_INLINE = re.compile(r"""\]\(\s*(<[^>]*>|(?:[^()\n]|\([^()\n]*\))*?)(?:\s+"[^"]*"|\s+'[^']*')?\s*\)""")
 MD_REFDEF = re.compile(r"""^ {0,3}\[[^\]]+\]:\s*(<[^>]*>|.*?)(?:\s+"[^"]*"|\s+'[^']*')?\s*$""", re.M)
 
 
@@ -1542,6 +1584,21 @@ SUBJECT_IDS = re.compile(r"^[A-Z][A-Z0-9_-]*(?:, ?[A-Z][A-Z0-9_-]*)*: \S")
 CHANGELOG = "CHANGELOG.md"
 
 
+def is_entry(path: str, entry_files: list[str]) -> bool:
+    """entry_files are jig's globs, never git pathspecs: git's `**` misses a file directly
+    under the folder. jig's own files never count, or a `**/*.md` would make M3 ask the
+    hubnode's trunk bookkeeping for a changelog line that M4 then refuses on trunk."""
+    return not path.startswith(f"{DIR}/") and matches(path, entry_files)
+
+
+def entry_paths(rev: str, cwd: str | None = None) -> list[str]:
+    """The tracked files at rev that its meta.json's entry_files name."""
+    meta = {**META_DEFAULTS, **json.loads(git("show", f"{rev}:{META}", cwd=cwd) or "{}")}
+    # Unquoted, so a non-ASCII name reaches the glob as itself.
+    names = git("-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", rev, cwd=cwd)
+    return [f for f in names.splitlines() if is_entry(f, meta["entry_files"])]
+
+
 def load_meta(trunk: str) -> dict | None:
     """The metarepo config from TRUNK, like the board: a branch can't switch its own gates off."""
     raw = git("show", f"{trunk}:{META}")
@@ -1594,6 +1651,10 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
     branch = git("branch", "--show-current")
     paths = changed_paths(trunk, staged)
     merging = merging_commits()
+    # A detached HEAD at trunk (or behind it) is trunk all the same: `git push origin
+    # HEAD:main` lands what is committed there.
+    on_trunk = branch == trunk or (not branch and subprocess.run(
+        ["git", "merge-base", "--is-ancestor", "HEAD", trunk], capture_output=True).returncode == 0)
     # M1 docs only: the checker and its scripts live in .jig/, like any jig repo's
     for p in paths:
         if p.endswith(SRC_EXT) and not p.startswith(f"{DIR}/"):
@@ -1601,8 +1662,8 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
     if merging:
         # M5 main takes only merges of reviewed branches. A job's sync of trunk, and the
         # gate's scratch merge, are merges into something else.
-        done = reviewed_commits() if branch == trunk else set()
-        for c in (merging if branch == trunk else []):
+        done = reviewed_commits() if on_trunk else set()
+        for c in (merging if on_trunk else []):
             if not counts_reviewed(c, done, board):
                 out.append(f"M5 {c[:12]} has no review on record: review it on its branch "
                            f"(`jig reviewed`), then merge")
@@ -1616,15 +1677,20 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
         cells = [c.lower() for c in table_cells(m.group(1))]
         if not (any(STATUS_CELL.fullmatch(c) for c in cells)
                 and any(re.fullmatch(r"\d{4}-\d{2}-\d{2}", c) for c in cells)):
-            out.append(f"M2 a decision row needs a status ({'/'.join(DECISION_STATUSES)}) and a "
-                       f"date (YYYY-MM-DD): {m.group(0)[1:].strip()}")
-    # M3 a change to what pararepos cite is recorded where they will read it
-    if any(p in entry for p in paths) and CHANGELOG not in paths:
-        out.append(f"M3 {', '.join(p for p in paths if p in entry)} changed: add a line to "
-                   f"{CHANGELOG} under ## Unreleased")
+            out.append(f"M2 a decision row needs a Status cell that is exactly a status "
+                       f"({'/'.join(DECISION_STATUSES)}), optionally `(note)` or "
+                       f"`by {meta['decision_prefix']}…`, and a date (YYYY-MM-DD): "
+                       f"{m.group(0)[1:].strip()}")
+    # M3 a change to what pararepos cite is recorded where they will read it. A cited file
+    # deleted, or renamed out of the entry set, is a change too: pararepos lose it.
+    gone = git("diff", "--name-only", "--diff-filter=D", "--no-renames", base(trunk),
+               *(["--cached"] if staged else [])).splitlines()
+    cited = [p for p in dict.fromkeys(paths + gone) if p and is_entry(p, entry)]
+    if cited and CHANGELOG not in paths:
+        out.append(f"M3 {', '.join(cited)} changed: add a line to {CHANGELOG} under ## Unreleased")
     # M4 nothing lands on main except merges; jig's own bookkeeping (the board, handoffs) is
     # the exception, since the hubnode keeps it on trunk
-    if branch == trunk and paths and not all(p.startswith(f"{DIR}/") for p in paths):
+    if on_trunk and paths and not all(p.startswith(f"{DIR}/") for p in paths):
         out.append(f"M4 {trunk} takes only merges of reviewed branches: commit on a branch")
     return out
 
@@ -1641,9 +1707,10 @@ def check_subject(msg_file: str, meta: dict) -> list[str]:
             f"GLOSSARY: …): {subject!r}"]
 
 
-def meta_problems(root: Path, meta: dict, trunk: str) -> list[str]:
+def meta_problems(root: Path, meta: dict, trunk: str, rev: str = "") -> list[str]:
     """What makes the metarepo's history unreleasable. Shared by release and pre-push,
-    because a fast-forward runs no hook and a hand-made tag skips the release."""
+    because a fast-forward runs no hook and a hand-made tag skips the release. REV is the
+    commit to judge as trunk, when it isn't trunk's ref: what a push sends to it."""
     out: list[str] = []
     pat = re.compile(meta["tag_pattern"])
     tags = [t for t in git("tag", "--list").splitlines() if pat.match(t)]
@@ -1656,7 +1723,7 @@ def meta_problems(root: Path, meta: dict, trunk: str) -> list[str]:
             out.append(f"tag {t} was not made by jig release: its {CHANGELOG} has no "
                        f"`## {t} — <date>` heading. Delete it (`git tag -d {t}`)")
     last = latest_tag(released)
-    rng = f"{last}..{trunk}" if last else trunk
+    rng = f"{last}..{rev or trunk}" if last else rev or trunk
     done = reviewed_commits()
     board = Board.load(root)
     for line in git("rev-list", "--first-parent", "--parents", rng).splitlines():
@@ -1792,7 +1859,7 @@ def cmd_release(root: Path, args) -> int:
         die(f"the release protocol isn't defined ({missing}): run /jig:release, which asks what "
             f"this repo builds and ships and fills in {RELEASE} and release.artifacts", 2)
     problems = meta_problems(root, meta, trunk) if meta else []
-    left = staged_files(main_root())
+    left = release_waits_for()
     if not args.force:
         problems += staged_refusal("the release")
     if problems:
@@ -1802,16 +1869,31 @@ def cmd_release(root: Path, args) -> int:
     pat = re.compile(meta["tag_pattern"] if meta else r"^v\d+\.\d+(\.\d+)?$")
     last = latest_tag([t for t in git("tag", "--list").splitlines() if pat.match(t)])
     if meta:
-        changed = git("diff", "--name-only", last, "HEAD", "--", *meta["entry_files"]) if last \
-            else " ".join(f for f in meta["entry_files"] if (root / f).exists())
+        # No rename detection: a cited file moved out of the set still changed what is cited.
+        changed = [f for f in git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
+                                  last, "HEAD").splitlines()
+                   if is_entry(f, meta["entry_files"])] if last else entry_paths("HEAD")
         if not changed:
             die(f"nothing to release: no entry file changed since {last}", 2)
     version = next_version(last, args, meta)
     tag = f"v{version}"
+    # A pararepo's release settles its sync buffer: every Open row goes to the metarepo in one
+    # proposal, made before the build so a release never ships with drift nobody proposed.
+    para = None if meta else load_para(trunk)
+    proposed = None
+    if para and unproposed(root)[1]:
+        loc = meta_checkout(root, para)
+        if loc is None:
+            die(f"{BUFFER} has Open rows no proposal carries yet, and {para['meta']} can't be reached: "
+                "run `jig repos add meta` in its checkout", 2)
+        proposed = buffer_proposal(root, para, loc, f"buffer-{tag}")
 
     def undo(why: str) -> int:
         # The tree was clean, so putting tracked files back loses only what the release wrote.
         git("checkout", "-q", "--", ".")
+        if proposed:
+            proposed[0].unlink()
+            git("branch", "-D", proposed[1], cwd=str(loc))
         print(f"refused: {why}. Tracked files are back as they were; nothing is tagged.",
               file=sys.stderr)
         return 2
@@ -1848,6 +1930,9 @@ def cmd_release(root: Path, args) -> int:
         git("add", "--", CHANGELOG, check=True)
     git("add", "-u", check=True)
     msg = f"release {tag}"
+    if proposed:
+        git("add", "--", str(proposed[0].relative_to(root)), check=True)
+        msg += f"\n\nProposed the sync buffer's Open rows to {para['meta']} as {proposed[1]}."
     if left:
         msg += (f"\n\nReleased with {len(left)} staged file{'s' if len(left) > 1 else ''} left "
                 f"unresolved: {', '.join(f.name for f in left)}")
@@ -1861,6 +1946,10 @@ def cmd_release(root: Path, args) -> int:
         git("reset", "-q")
     git("tag", "-a", tag, "-m", tag, commit, check=True)
     print(f"released {tag} at {commit[:12]}.")
+    if proposed:
+        print(f"proposed {', '.join(listed_rows(proposed[0].read_text()))} to {para['meta']} as "
+              f"{proposed[1]} ({proposed[0].relative_to(root)}): write the change there; "
+              f"`jig sync` closes the rows once {para['meta']} releases it.")
     for fs in made.values():
         for f in sorted(fs):
             print(f"  {f.relative_to(root)}")
@@ -1875,8 +1964,38 @@ PARA = f"{DIR}/para.json"
 CACHE = f"{DIR}/meta-cache"
 HEADER_BEGIN = f"<!-- jig:meta — generated from {PARA} by `jig init --para`; edit that, not this -->"
 HEADER_END = "<!-- jig:meta end -->"
-# How a spec says what its contract change means for the metarepo: a proposal branch, or why none.
-PROPOSAL = re.compile(r"^\s*-?\s*meta: (?:none — \S.*|(?P<meta>\S+) proposal (?P<branch>\S+))\s*$", re.M)
+# How a spec says what its contract change means for the metarepo: a proposal branch, a row of
+# the buffer, or why none.
+PROPOSAL = re.compile(r"^\s*-?\s*meta: (?:none — \S.*|buffered (?P<row>\S+)|"
+                      r"(?P<meta>\S+) proposal (?P<branch>\S+))\s*$", re.M)
+# The sync buffer: each metarepo claim this repo has moved away from, held until a release
+# proposes them all at once. Rows are Open until the release that settles them is pinned.
+BUFFER = f"{DIR}/ledgers/BUFFER.md"
+BUFFER_STATES = ("Open", "Closed")
+# A buffer proposal's spec lists the rows it carries under this heading, one `- <id>` each.
+BUFFER_ROWS = re.compile(r"^## Buffer rows\s*\n((?:- \S+.*\n?)*)", re.M)
+
+
+def buffer_rows(text: str) -> list[list[str]]:
+    """The ledger's rows as cells, header and separator left out."""
+    rows = [table_cells(l) for l in text.splitlines() if l.lstrip().startswith("|")]
+    return [r for r in rows if r and r[0] != "Id" and not re.fullmatch(r":?-+:?", r[0])]
+
+
+def listed_rows(spec: str) -> list[str]:
+    m = BUFFER_ROWS.search(spec)
+    return [l[2:].split()[0] for l in m.group(1).splitlines()] if m else []
+
+
+def proposed_copy(spec: str) -> dict[str, list[str]]:
+    """The rows a buffer proposal's spec carried, as they read when proposed. A row edited
+    since went to the metarepo in its old form, so only an unchanged one counts as proposed."""
+    listed = set(listed_rows(spec))
+    return {r[0]: r for r in buffer_rows(spec) if r[0] in listed}
+
+
+def proposed_rows(texts: list[str]) -> set[tuple[str, ...]]:
+    return {tuple(r) for s in texts for r in proposed_copy(s).values()}
 
 
 def load_para(trunk: str) -> dict | None:
@@ -2020,6 +2139,7 @@ def cmd_repos(root: Path, args) -> int:
         print(f"  {name:<24} {e['kind']:<5} {e['path']}{missing}{'   ← here' if name in mine else ''}")
     if not repos:
         print(f"no repos in {repos_file()}: jig repos add repo|meta|para")
+    print(f"tool reports wait in {feedback_dir()} while no repo in this list is named jig")
     return 0
 
 
@@ -2050,12 +2170,11 @@ def released_tags(cwd: str) -> list[str]:
 def fill_cache(root: Path, loc: Path, pin: str) -> None:
     if not git("rev-parse", "-q", "--verify", f"{pin}^{{commit}}", cwd=str(loc)):
         die(f"the metarepo has no tag {pin}: check \"pin\" in {PARA}", 2)
-    meta = {**META_DEFAULTS, **json.loads(git("show", f"{pin}:{META}", cwd=str(loc)) or "{}")}
     cache = root / CACHE
     if cache.exists():
         shutil.rmtree(cache)
     cache.mkdir(parents=True)
-    for f in [*meta["entry_files"], CHANGELOG]:
+    for f in dict.fromkeys([*entry_paths(pin, str(loc)), CHANGELOG]):
         body = git("show", f"{pin}:{f}", cwd=str(loc))
         if body:
             (cache / f).parent.mkdir(parents=True, exist_ok=True)
@@ -2085,17 +2204,52 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
         if para_header(now) not in agents:
             out.append(f"P1 the AGENTS.md header is generated from {PARA}: edit that, then "
                        "`jig init --para` regenerates it")
-    # P2 a contract change carries its metarepo proposal, or says why it needs none
+    # P2 a contract change carries its metarepo proposal, its buffer row, or says why it needs none
     touched = [p for p in paths if matches(p, para.get("contract_paths", []))]
+    rows = buffer_rows(in_index(BUFFER, staged))
+    if BUFFER in paths:
+        for r in rows:
+            if r[-1] not in BUFFER_STATES:
+                out.append(f"P2 {BUFFER} row {r[0]} is {r[-1] or 'empty'}: a row is Open or Closed")
+        # Parallel jobs each appending "the next id" merge cleanly into two rows of one id.
+        for i in sorted({r[0] for r in rows if [x[0] for x in rows].count(r[0]) > 1}):
+            out.append(f"P2 {BUFFER} has more than one row {i}: each row has an id of its own")
+    # An Open row is drift still owed to the metarepo: it closes only once proposed as it
+    # stands, in a commit that changes no contract path (the one `jig sync` makes), and never
+    # disappears. A deleted ledger isn't in `paths`, so the old rows are read whatever changed.
+    now = {r[0]: r for r in rows}
+    was = [r for r in buffer_rows(at_rev(base(trunk), BUFFER)) if r[-1] == "Open"]
+    if was:
+        specs_then = [at_rev(base(trunk), s) for s in git("ls-tree", "-r", "--name-only", base(trunk),
+                                                         "--", f"{DIR}/specs/").splitlines()]
+        sent = proposed_rows(specs_then)
+    for r in was:
+        n = now.get(r[0])
+        if n is None:
+            out.append(f"P2 {BUFFER} row {r[0]} is Open and is gone: an Open row stays until "
+                       "`jig sync` closes it")
+        elif n[-1] == "Closed" and (touched or tuple(r) not in sent or n[:-1] != r[:-1]):
+            out.append(f"P2 {BUFFER} row {r[0]} closed by hand: `jig sync` closes a row once "
+                       "the metarepo releases the proposal that carried it as it stands")
     if touched:
         specs = {p for p in paths if p.startswith(f"{DIR}/specs/") and p.endswith(".md")}
         branch = git("branch", "--show-current")
         if branch and branch != trunk:
             specs |= {p for p in git("diff", "--name-only", f"{trunk}...HEAD", "--",
                                      f"{DIR}/specs/").splitlines() if p.endswith(".md")}
-        if not any(PROPOSAL.search(in_index(s, staged)) for s in specs):
-            out.append(f"P2 {', '.join(touched)} is a contract path: a spec in this change "
-                       "needs `meta: <name> proposal <branch>` (`jig propose`) or "
+        ids = {r[0] for r in rows if r[-1] == "Open"}
+        answered = any((not m.group("row") or m.group("row") in ids)
+                       for s in specs for m in PROPOSAL.finditer(in_index(s, staged)))
+        # A row added or changed in this commit answers it, the way R7's ledger row does.
+        diff = git("diff", "-U0", base(trunk), *(["--cached"] if staged else []), "--", BUFFER) \
+            if BUFFER in paths else ""
+        rowed = any(r[-1] == "Open" for l in diff.splitlines() if l.startswith("+|")
+                    for r in buffer_rows(l[1:]))
+        if not answered and not rowed:
+            out.append(f"P2 {', '.join(touched)} is a contract path: add or edit its row in "
+                       f"{BUFFER} in this commit (the first row creates the file from jig's "
+                       "ledger template), or a spec in this change needs `meta: buffered "
+                       "<row id>`, `meta: <name> proposal <branch>` (`jig propose`) or "
                        "`meta: none — <reason>`")
     # P4 no contract change while a file for the metarepo waits unresolved
     waiting = [f.name for f in staged_files(main_root()) if read_staged(f)[0].get("target") == para.get("meta")]
@@ -2161,10 +2315,20 @@ def cmd_para_init(root: Path, args) -> int:
     return 0
 
 
+def decision_ids(loc: Path, rev: str) -> str:
+    """A regex for the metarepo's decision ids at REV, from its decision_prefix."""
+    try:
+        meta = {**META_DEFAULTS, **json.loads(git("show", f"{rev}:{META}", cwd=str(loc)) or "{}")}
+    except ValueError:
+        meta = META_DEFAULTS
+    return re.escape(meta["decision_prefix"]) + r"\d+"
+
+
 def terms_changed(loc: Path, old: str, new: str) -> list[str]:
-    """Decision ids and glossary headings that changed between two releases."""
+    """Decision ids and glossary headings that changed between two releases. Ids are matched
+    by the metarepo's own decision_prefix, which may be lowercase."""
     diff = git("diff", old, new, "--", ".", f":!{CHANGELOG}", cwd=str(loc))
-    found = re.findall(r"^[+-]\s*\|\s*([A-Z][A-Z0-9]*-\d+)\s*\|", diff, re.M)
+    found = re.findall(rf"^[+-]\s*\|\s*({decision_ids(loc, new)})\s*\|", diff, re.M)
     found += re.findall(r"^[+-]#{2,3} (.+?)\s*$", diff, re.M)
     return list(dict.fromkeys(found))
 
@@ -2187,7 +2351,7 @@ def proposal_in(loc: Path, branch: str, tag: str) -> bool:
         sha, _, subject = line.partition(" ")
         if named.match(subject):
             return True
-        job = re.match(r"^merge (\S+)$", subject)
+        job = re.search(r"(?:^|: )merge (\S+)$", subject)
         if job:
             try:
                 jobs = json.loads(git("show", f"{sha}^1:{JOBS}", cwd=str(loc)) or "{}")
@@ -2233,6 +2397,7 @@ def unreleased_proposals(root: Path, para: dict, trunk: str, commit: str, named:
 
 def sync_meta(root: Path) -> int:
     """`jig sync` on a pararepo's trunk: refresh the cache, report what moved upstream."""
+    os.chdir(root)        # its git paths, and the pin commit's, are the whole repo's
     para = json.loads((root / PARA).read_text())
     agents = root / "AGENTS.md"
     if para_header(para) not in (agents.read_text() if agents.exists() else ""):
@@ -2252,45 +2417,131 @@ def sync_meta(root: Path) -> int:
     fill_cache(root, loc, pin)
     tags = released_tags(str(loc))
     latest = tags[-1] if tags else pin
+    buffered = []          # (spec, branch, the rows it carried that are still Open, unchanged)
+    still = {tuple(r) for r in buffer_rows((root / BUFFER).read_text() if (root / BUFFER).exists() else "")
+             if r[-1] == "Open"}
     for spec in sorted((root / DIR / "specs").glob("*.md")):
-        for m in PROPOSAL.finditer(spec.read_text()):
+        text = spec.read_text()
+        for m in PROPOSAL.finditer(text):
             if m.group("branch") and m.group("meta") == name:
                 landed = proposal_in(loc, m.group("branch"), latest)
                 print(f"proposal {m.group('branch')} ({spec.relative_to(root)}): "
                       f"{'released by ' + latest if landed else 'not released'}")
+                rows = [i for i, r in proposed_copy(text).items() if tuple(r) in still]
+                if rows:
+                    buffered.append((spec, m.group("branch"), rows))
+    uncovered_paths(root, loc, para)
+    # The buffer settles when the metarepo releases its proposal: the pin moves to the first
+    # release that holds one, and its rows close in that same commit. A pin already holding it
+    # (bumped by hand) closes them where it stands.
+    held = [pin] + [t for t in tags if version_key(t) > version_key(pin)]
+    settles = next((t for t in held if any(proposal_in(loc, b, t) for _, b, _ in buffered)), None)
+    if settles:
+        closing = [(s, b, rows) for s, b, rows in buffered if proposal_in(loc, b, settles)]
+        if git("status", "--porcelain", "--", PARA, "AGENTS.md", BUFFER) or git("diff", "--cached", "--name-only"):
+            print(f"{name} {settles} releases {', '.join(b for _, b, _ in closing)}: commit or stash first, "
+                  f"so jig sync can close its rows in a commit of their own")
+        else:
+            moved = settles != pin
+            body = changes_report(root, loc, pin, settles) if moved else []
+            ids = [i for _, _, rows in closing for i in rows]
+            para["pin"] = settles
+            (root / PARA).write_text(json.dumps(para, indent=2) + "\n")
+            agents.write_text(with_header(agents.read_text() if agents.exists() else "# AGENTS.md\n",
+                                          para_header(para)))
+            ledger = (root / BUFFER).read_text().splitlines(keepends=True)
+            for n, l in enumerate(ledger):
+                r = buffer_rows(l)
+                if r and r[0][0] in ids and r[0][-1] == "Open":
+                    ledger[n] = re.sub(r"\bOpen(\s*\|?\s*)$", r"Closed\1", l.rstrip("\n")) + "\n"
+            (root / BUFFER).write_text("".join(ledger))
+            fill_cache(root, loc, settles)
+            git("add", "--", PARA, "AGENTS.md", BUFFER, check=True)
+            subject = f"meta: {name} {pin} → {settles}" if moved else f"meta: {name} {pin}: close {', '.join(ids)}"
+            done = subprocess.run(["git", "commit", "-q", "-m", subject, "-m",
+                                   "\n".join(body + ["", f"Closed {', '.join(ids)}: "
+                                                      f"{', '.join(b for _, b, _ in closing)} released "
+                                                      f"in {settles}."]).strip()],
+                                  cwd=root)
+            if done.returncode:
+                die(f"the commit was refused: {PARA}, AGENTS.md and {BUFFER} are staged as jig wrote them", 1)
+            print(f"{subject}: committed, closing {', '.join(ids)}.")
+            pin = settles
     if version_key(latest) <= version_key(pin):
         print(f"{name} {pin} is the latest release")
         return 0
     major = version_key(latest)[0] > version_key(pin)[0]
     print(f"{name} {latest} is out; this repo pins {pin}{' (a major release)' if major else ''}.\n")
-    print("Changed, in this repo's terms:")
-    for term in terms_changed(loc, pin, latest):
-        # jig's own files (the rulebook's examples, the cache) are not the repo's use of a term.
-        users = [f for f in git("grep", "-l", "-F", "--", term).splitlines()
-                 if not f.startswith(f"{DIR}/")]
-        print(f"  {term}: " + (f"used in {', '.join(users)}" if users else "not used here"))
+    print("\n".join(changes_report(root, loc, pin, latest)))
     print(f"\nTo take it: set \"pin\" to \"{latest}\" in {PARA}, run `jig init --para {name}`, and commit "
           f"those alone as `meta: {name} {pin} → {latest}` with this report as the body.")
     return 0
 
 
+def changes_report(root: Path, loc: Path, old: str, new: str) -> list[str]:
+    out = ["Changed, in this repo's terms:"]
+    for term in terms_changed(loc, old, new):
+        # jig's own files (the rulebook's examples, the cache) are not the repo's use of a term.
+        # An id as a whole word: D-1 is not a use of D-12. A heading's term may be inflected.
+        whole = ["-w"] if re.fullmatch(decision_ids(loc, new), term) else []
+        users = [f for f in git("grep", "-l", "-F", *whole, "--", term).splitlines()
+                 if not f.startswith(f"{DIR}/")]
+        out.append(f"  {term}: " + (f"used in {', '.join(users)}" if users else "not used here"))
+    return out
+
+
+def uncovered_paths(root: Path, loc: Path, para: dict) -> None:
+    """Report this repo's files that a metarepo decision at the pin cites but contract_paths
+    doesn't cover: the decision then describes behavior that can change with no P2 asking.
+    Only reported: the rule reads trunk's para.json, and adding a path is the owner's choice."""
+    row = re.compile(rf"^\s*\|\s*({decision_ids(loc, para['pin'])})\s*\|.*$", re.M)
+    cited = [(m.group(1), m.group(0)) for f in sorted((root / CACHE).rglob("*.md"))
+             for m in row.finditer(f.read_text(errors="replace"))]
+    if not cited:
+        return
+    names = "|".join(re.escape(n) for n in sorted(this_repo_names(root)))
+    for path in git("-c", "core.quotePath=false", "ls-files").splitlines():
+        if path.startswith(f"{DIR}/") or matches(path, para.get("contract_paths", [])):
+            continue
+        # The path whole, alone or after this repo's name (`app/docs/ui.md`, `app:…`): another
+        # pararepo's docs/ui.md is not this one's.
+        cite = re.compile(rf"(?<![\w./:-])(?:(?:{names})[/:])?{re.escape(path)}(?![\w/-])")
+        ids = [i for i, line in cited if cite.search(line)]
+        if ids:
+            print(f"{path} is cited by {', '.join(dict.fromkeys(ids))} and is not a contract path: "
+                  f"add it to \"contract_paths\" in {PARA} if this repo can change what it says")
+
+
 def cmd_propose(root: Path, args) -> int:
     para = json.loads((root / PARA).read_text()) if (root / PARA).exists() else None
+    if para is None and (old := old_board(root)):
+        # init refuses an older layout too, so naming it here would send someone in a circle.
+        die(f"this repo is on an older jig layout ({old}): run `jig update` first; then, if it "
+            "isn't a pararepo yet, `jig init --para <metarepo name>`", 2)
     if para is None:
         die(f"not a pararepo (no {PARA}): a proposal is a pararepo's branch on its metarepo. "
             "`jig init --para <metarepo name>` makes this one", 2)
     loc = meta_checkout(root, para)
     if loc is None:
         die(f"can't find {para['meta']}: run `jig repos add meta` in its checkout", 2)
+    if args.buffer:
+        slug = args.slug or args.spec or f"buffer-{date.today().isoformat()}"
+        made = buffer_proposal(root, para, loc, slug)
+        if made is None:
+            print(f"nothing to propose: {BUFFER} has no Open row that a proposal doesn't already carry as it stands.")
+            return 0
+        spec, branch = made
+        print(f"made {branch} in {para['meta']} for every Open row of {BUFFER}, listed in "
+              f"{spec.relative_to(root)}. Commit that spec.")
+        print(f"Write the change there on that branch (git -C {loc} worktree add <dir> {branch}); "
+              f"the rows close when `jig sync` takes the release that holds it.")
+        return 0
+    if not (args.spec and args.slug):
+        die("usage: jig propose <spec> <slug>, or jig propose --buffer [slug]", 2)
     spec = root / args.spec
     if not spec.exists():
         die(f"no spec at {args.spec}", 2)
-    branch = f"propose/{main_root().name}-{args.slug}"   # the repo's name, not a job's folder
-    meta_trunk = Board.trunk_name(loc)
-    if git("rev-parse", "-q", "--verify", f"refs/heads/{branch}", cwd=str(loc)):
-        die(f"{branch} already exists in {para['meta']}", 2)
-    # A branch from the metarepo's trunk, made without checking anything out: main is untouched.
-    git("branch", branch, meta_trunk, cwd=str(loc), check=True)
+    branch = open_proposal(para, loc, args.slug)
     line = f"- meta: {para['meta']} proposal {branch}"
     text = spec.read_text()
     if re.search(r"^## Decisions\s*$", text, re.M):
@@ -2304,13 +2555,61 @@ def cmd_propose(root: Path, args) -> int:
     return 0
 
 
+def open_proposal(para: dict, loc: Path, slug: str) -> str:
+    branch = f"propose/{main_root().name}-{slug}"   # the repo's name, not a job's folder
+    if git("rev-parse", "-q", "--verify", f"refs/heads/{branch}", cwd=str(loc)):
+        die(f"{branch} already exists in {para['meta']}", 2)
+    # A branch from the metarepo's trunk, made without checking anything out: main is untouched.
+    git("branch", branch, Board.trunk_name(loc), cwd=str(loc), check=True)
+    return branch
+
+
+def unproposed(root: Path) -> tuple[list[str], list[str]]:
+    """The buffer's table header and its Open rows not yet proposed as they stand. A row a
+    proposal already carries unchanged waits for that one; an edited row goes again."""
+    text = (root / BUFFER).read_text() if (root / BUFFER).exists() else ""
+    lines = [l for l in text.splitlines() if l.lstrip().startswith("|")]
+    sent = proposed_rows([s.read_text() for s in sorted((root / DIR / "specs").glob("*.md"))])
+    return ([l for l in lines if not buffer_rows(l)],
+            [l for l in lines if buffer_rows(l) and buffer_rows(l)[0][-1] == "Open"
+             and tuple(buffer_rows(l)[0]) not in sent])
+
+
+def buffer_proposal(root: Path, para: dict, loc: Path, slug: str) -> tuple[Path, str] | None:
+    """Every Open row of the buffer not yet proposed, in one proposal: a metarepo branch, and a
+    spec here that lists the rows by id, which is the record of what went. None when no row
+    is left to propose."""
+    head, open_ = unproposed(root)
+    if not open_:
+        return None
+    spec = root / DIR / "specs" / f"{slug}.md"
+    if spec.exists():
+        die(f"{spec.relative_to(root)} already exists: name the proposal (`jig propose --buffer <slug>`)", 2)
+    branch = open_proposal(para, loc, slug)
+    ids = "".join(f"- {buffer_rows(l)[0][0]}\n" for l in open_)
+    table = "\n".join([*head, *open_])
+    spec.parent.mkdir(parents=True, exist_ok=True)
+    spec.write_text(
+        f"# Buffer proposal: {slug}\n\n"
+        f"Each row is a claim of {para['meta']} at {para['pin']} that this repo has moved away from. "
+        f"{para['meta']} updates every place that states it (RULES.md: Newer wins, Every copy).\n\n"
+        f"## Buffer rows\n{ids}\n{table}\n\n## Decisions\n- meta: {para['meta']} proposal {branch}\n")
+    return spec, branch
+
+
 # -------------------------------------------------------------------- staging
 
 # Where a chat drops a file meant for this repo, or another. Untracked: nothing in it is
 # authoritative, and it can reach a contract only through `jig staging resolve`.
 STAGING = f"{DIR}/staging"
-KINDS = ("spec", "doc", "decisions", "user-story")
+KINDS = ("spec", "doc", "decisions", "user-story", "feedback")
 HEADER_KEYS = ("staged", "target", "kind", "change", "destination", "source", "status")
+
+
+def feedback_dir() -> Path:
+    """Where a tool report waits when the jig repo isn't in repos.json: beside that list, so
+    it survives a cleared temp folder and the same `jig staging` finds it from any repo."""
+    return repos_file().parent / "feedback"
 
 
 def staged_files(root: Path) -> list[Path]:
@@ -2333,6 +2632,8 @@ def read_staged(path: Path) -> tuple[dict, str, list[str]]:
     bad = [f"no {k}" for k in HEADER_KEYS if not head.get(k)]
     if head.get("kind") and head["kind"] not in KINDS:
         bad.append(f"kind {head['kind']!r} is not one of {', '.join(KINDS)}")
+    if head.get("kind") == "feedback" and not head.get("from"):
+        bad.append("no from: a report names the repo it came from")
     if head.get("change") and head["change"] not in ("new", "update"):
         bad.append(f"change {head['change']!r} is not new or update")
     if head.get("staged") and head["staged"] != "true":
@@ -2355,13 +2656,26 @@ def staged_summary(root: Path) -> str:
         f"{kinds.count(k)} {k}" for k in dict.fromkeys(kinds))
 
 
+def fallback_files() -> list[Path]:
+    d = feedback_dir()
+    return sorted(d.glob("*.md")) if d.is_dir() else []
+
+
+def release_waits_for() -> list[Path]:
+    """The main checkout's staging, since staged files are never committed, and any report in
+    the fallback folder aimed at this repo: it is staged here in all but location."""
+    names = this_repo_names(main_root())
+    return staged_files(main_root()) + [f for f in fallback_files()
+                                        if read_staged(f)[0].get("target") in names]
+
+
 def staged_refusal(what: str) -> list[str]:
-    """Release waits while anything is staged: the main checkout's folder, since staged files
-    are never committed. Reading it only refuses more, so a branch can't weaken it."""
-    files = staged_files(main_root())
+    """Release waits while anything is staged. Reading it only refuses more, so a branch can't
+    weaken it."""
+    files = release_waits_for()
     return [f"{what} waits while {len(files)} file{'s' if len(files) > 1 else ''} sit in "
-            f"{STAGING}: {', '.join(f.name for f in files)}. Resolve or drop each "
-            f"(`jig staging resolve` / `drop`), or force it"] if files else []
+            f"{STAGING} or {feedback_dir()}: {', '.join(f.name for f in files)}. Resolve or "
+            f"drop each (`jig staging resolve` / `drop`), or force it"] if files else []
 
 
 def this_repo_names(root: Path) -> set[str]:
@@ -2375,8 +2689,9 @@ def this_repo_names(root: Path) -> set[str]:
 
 
 def bare_path(dest: str) -> bool:
-    """A header's destination is a path and nothing else: prose after it is never guessed at."""
-    return dest.endswith(".md") and not re.search(r"[,;]", dest)
+    """A header's destination is a path and nothing else: prose around it is never guessed at.
+    A space counts as prose: "see docs/x.md" would otherwise land as a file of that name."""
+    return dest.endswith(".md") and not re.search(r"[\s:,;]", dest)
 
 
 def decision_id(cell: str) -> str:
@@ -2387,15 +2702,21 @@ def decision_id(cell: str) -> str:
 def cmd_staging(root: Path, args) -> int:
     if args.action not in ("resolve", "drop"):
         files = staged_files(root)
-        if not files:
+        waiting = fallback_files()
+        if not files and not waiting:
             print(f"nothing staged in {STAGING}")
             return 0
-        print(staged_summary(root))
+        if files:
+            print(staged_summary(root))
+        if waiting:
+            why = "" if repo_path("jig") else " (the jig repo isn't in repos.json)"
+            print(f"{len(waiting)} waiting in {feedback_dir()}{why}:")
         bad = False
-        for f in files:
+        for f in files + waiting:
             head, _, problems = read_staged(f)
+            origin = f", from {head['from']}" if head.get("from") else ""
             print(f"  {f.name}: {head.get('change', '?')} {head.get('kind', '?')} for "
-                  f"{head.get('target', '?')} → {head.get('destination', '?')}")
+                  f"{head.get('target', '?')} → {head.get('destination', '?')}{origin}")
             for p in problems:
                 print(f"      {p}")
                 bad = True
@@ -2403,10 +2724,14 @@ def cmd_staging(root: Path, args) -> int:
 
     if not args.file:
         die(f"which file? jig staging {args.action} <file>", 2)
-    # Staged files live in the main checkout only: they are never committed into a job.
-    path = main_root() / STAGING / Path(args.file).name
+    # Staged files live in the main checkout only: they are never committed into a job. A
+    # report whose jig repo wasn't registered waits in the fallback folder instead.
+    name = Path(args.file).name
+    path = main_root() / STAGING / name
     if not path.exists():
-        die(f"no {args.file} in {STAGING}", 2)
+        path = feedback_dir() / name
+    if not path.exists():
+        die(f"no {args.file} in {STAGING} or {feedback_dir()}", 2)
     if args.action == "drop":
         # A staged file was never committed, so a record of dropping it would point at nothing.
         path.unlink()
@@ -2438,19 +2763,26 @@ def cmd_staging(root: Path, args) -> int:
         f = inside(rel)
         return f.exists() and mark in f.read_text(errors="replace")
 
-    if kind == "user-story":
+    if kind in ("user-story", "feedback"):
         specs = [s for s in (root / DIR / "specs").glob("*.md") if mark in s.read_text()]
         if not specs:
             how = "write a new spec" if change == "new" else "amend the spec it extends"
-            die(f"a story resolves into a spec: {how} under {DIR}/specs/ from it, carrying "
+            what = "a story" if kind == "user-story" else "a report"
+            die(f"{what} resolves into a spec: {how} under {DIR}/specs/ from it, carrying "
                 f"`{mark}`, then resolve again", 1)
         return done(f"carried by {specs[0].relative_to(root)}")
     if kind in ("spec", "doc") and not bare_path(dest):
         die(f"destination {dest!r} isn't a path yet: find the page, put its path in the header, "
             "then resolve again", 1)
     if kind == "decisions" and not bare_path(dest):
-        die(f"destination {dest!r} in the header isn't a bare path: put only the register's "
+        die(f"destination {dest!r} in the header isn't a path: put only the register's "
             "path in `destination:`, then resolve again", 1)
+    if kind == "decisions" and (root / META).exists():
+        # A misspelt register (DECISION.md) would start a second one nobody cites.
+        entry = {**META_DEFAULTS, **json.loads((root / META).read_text() or "{}")}["entry_files"]
+        if not is_entry(dest, entry):
+            die(f"destination {dest} isn't a register {META}'s entry_files name "
+                f"({', '.join(entry)}): fix the header, or add it there first", 1)
     if kind == "spec" and not dest.startswith(f"{DIR}/specs/"):
         dest = f"{DIR}/specs/{Path(dest).name}"
     if change == "update":
@@ -2483,6 +2815,7 @@ def cmd_staging(root: Path, args) -> int:
         dupes = [r.split("|")[1].strip() for r in rows if decision_id(r.split("|")[1]) in have]
         if dupes:
             die(f"{', '.join(dupes)} already in {reg.name}: stage it as `change: update`", 1)
+        reg.parent.mkdir(parents=True, exist_ok=True)
         reg.write_text(text.rstrip("\n") + "\n" + "\n".join(rows) + "\n")
         ids = ", ".join(r.split("|")[1].strip() for r in rows)
         # In a metarepo, M3 refuses the commit until CHANGELOG.md says so: that's its rule to
@@ -2504,7 +2837,10 @@ def cmd_staging(root: Path, args) -> int:
 
 def decision_rows(body: str, root: Path) -> list[str]:
     meta = root / META
-    known = json.loads(meta.read_text() or "{}").get("decision_prefix") if meta.exists() else None
+    # A metarepo's ids are its decision_prefix, defaulted like everywhere else; a plain repo's
+    # register has no configured prefix, so any uppercase one is taken.
+    known = ({**META_DEFAULTS, **json.loads(meta.read_text() or "{}")}["decision_prefix"]
+             if meta.exists() else None)
     prefix = re.escape(known) if known else r"[A-Z][A-Z0-9]*-"
     rx = re.compile(rf"^\s*\|\s*{prefix}\d+\s*\|")
     return [l.rstrip() for l in body.splitlines() if rx.match(l)]
@@ -2519,9 +2855,11 @@ def forward(root: Path, path: Path, head: dict) -> int:
         die(f"{target} isn't this repo and isn't in {repos_file()}: "
             f"jig repos add {target} <path>", 2)
     there = Path(there)
+    if old := old_board(there):
+        die(f"{target} at {there} is on an older jig layout ({old}): run `jig update` there "
+            "first, then resolve again", 2)
     if not (there / DIR).is_dir():
-        older = " (it has jig/: run `jig update` there first)" if (there / "jig" / "lanes.json").exists() else ""
-        die(f"{target} is listed at {there}, but that isn't a jig repo (no {DIR}/){older}: fix it "
+        die(f"{target} is listed at {there}, but that isn't a jig repo (no {DIR}/): fix it "
             f"with `jig repos add {target} <path>`", 2)
     me = Board.load(root, working_tree=True).data.get("name") or main_root().name
     para = json.loads((root / PARA).read_text()) if (root / PARA).exists() else None
@@ -2976,9 +3314,11 @@ def stale_references(root: Path, plan: dict, board_at: str) -> dict[str, list[tu
                   key=len, reverse=True)
     if not olds:
         return {}
-    # `]` and `#` end a path, so a Markdown link's text and anchor are not part of it.
-    pat = re.compile(r"(?<![\w/.-])(?:\./)?((?:" + "|".join(re.escape(o) for o in olds)
-                     + r")[^\s'\"`()|,;:\]#]*)")
+    # `]` and `#` end a path, so a Markdown link's text and anchor are not part of it. A
+    # path may start `/` (a .gitignore anchor) or `../` after a folder, as in
+    # `$(dirname "$0")/../specs/x.md`; after `example.com/` it is a URL, not a path.
+    pat = re.compile(r"(?:(?<![\w/.-])(?:\./|/)?|(?<![\w.-])(?:\.\./)+)((?:"
+                     + "|".join(re.escape(o) for o in olds) + r")[^\s'\"`()|,;:\]#]*)")
     there = set(plan["after"])
 
     def stale(ref: str) -> bool:
@@ -2991,7 +3331,9 @@ def stale_references(root: Path, plan: dict, board_at: str) -> dict[str, list[tu
         inside = ref if ref.endswith("/") else ref + "/"
         return not any(f.startswith(inside) for f in there)
     back = {n: o for o, n in plan["moves"].items()}
-    skip = {CONFIG, JOBS, board_at, ".gitignore", *TOOL_FILES}
+    skip = {CONFIG, JOBS, board_at, *TOOL_FILES}
+    # update rewrites these .gitignore lines itself.
+    own_ignores = {*OLD_IGNORES, "jig/meta-cache/"}
     out: dict[str, list[tuple[int, str]]] = {}
     for f in plan["after"]:
         # Handoff notes anywhere — jig's or another tool's — record what was true then.
@@ -3003,9 +3345,44 @@ def stale_references(root: Path, plan: dict, board_at: str) -> dict[str, list[tu
         except (OSError, UnicodeDecodeError):
             continue
         hits = [(i, line.strip()) for i, line in enumerate(text.splitlines(), 1)
-                if any(stale(m) for m in pat.findall(line))]
+                if any(stale(m) for m in pat.findall(line))
+                and not (f == ".gitignore" and line.strip() in own_ignores)]
         if hits:
             out[f] = hits
+    return out
+
+
+def left_behind(root: Path, files: list[str], plan: dict, handled: list[str]) -> list[str]:
+    """One warning per folder whose tracked files all move but which holds untracked or
+    ignored files: `git mv` takes only what git tracks, so those stay in a folder that
+    otherwise empties. `handled` are folders update deals with apart from this."""
+    after, tracked_set = plan["after"], set(files)
+    emptied = set()
+    for o in plan["moves"]:
+        parts = o.split("/")[:-1]
+        for i in range(1, len(parts) + 1):
+            d = "/".join(parts[:i]) + "/"
+            if not any(f.startswith(d) for f in after):
+                emptied.add(d)
+                break
+    out = []
+    for d in sorted(emptied):
+        stay = []
+        for here, dirs, names in os.walk(root / d):
+            rel = Path(here).relative_to(root).as_posix() + "/"
+            for sub in sorted(dirs):
+                path = rel + sub + "/"
+                if any(path.startswith(h) for h in handled):
+                    dirs.remove(sub)
+                elif not any(f.startswith(path) for f in tracked_set):
+                    # Wholly untracked: named once, not file by file. An empty one moves nothing.
+                    if any(names for _, _, names in os.walk(root / path)):
+                        stay.append(path)
+                    dirs.remove(sub)
+            stay += sorted(rel + n for n in names if rel + n not in tracked_set)
+        if stay:
+            out.append(f"{d} moves, but files git doesn't track stay in it: {', '.join(sorted(stay))}. "
+                       "Move or delete each, or the folder stays with only them")
     return out
 
 
@@ -3057,16 +3434,33 @@ def worktree_refusals(root: Path, old_folders: tuple) -> list[str]:
             records[rec.name] = Path((rec / "gitdir").read_text().strip()).parent
         except OSError:
             records[rec.name] = rec / "missing"
-    # A checkout's .git file names its record: `gitdir: <common>/worktrees/<id>`.
+    # A checkout's .git file names its record: `gitdir: <common>/worktrees/<id>`. A branch
+    # with `/` puts its checkout a level deeper (`feat/x`), so the search goes down until it
+    # finds a checkout; reporting `feat` itself would lead someone to delete the checkout.
     folders: dict[Path, str | None] = {}
-    for base in [root / f for f in old_folders] + [git_common() / "jig" / "worktrees"]:
-        for d in sorted(base.iterdir()) if base.is_dir() else []:
-            if not d.is_dir():
-                continue
+
+    def scan(d: Path) -> bool:
+        if (d / ".git").exists():
             try:
                 line = (d / ".git").read_text().strip()
                 folders[d] = Path(line[len("gitdir:"):].strip()).name if line.startswith("gitdir:") else None
             except OSError:
+                folders[d] = None
+            return True
+        try:
+            subs = [s for s in sorted(d.iterdir()) if s.is_dir() and not s.is_symlink()]
+        except OSError:
+            return False                  # unreadable: reported as no checkout, to look at
+        found = {s: scan(s) for s in subs}
+        if not any(found.values()):
+            return False
+        # Beside a checkout, a folder with none in it is reported by its own name.
+        folders.update({s: None for s, f in found.items() if not f})
+        return True
+
+    for base in [root / f for f in old_folders] + [git_common() / "jig" / "worktrees"]:
+        for d in sorted(base.iterdir()) if base.is_dir() else []:
+            if d.is_dir() and not scan(d):
                 folders[d] = None
     out = []
     claimed = set()
@@ -3083,7 +3477,7 @@ def worktree_refusals(root: Path, old_folders: tuple) -> list[str]:
         else:
             out.append(f"worktree {path} is gone, but git still records it: `git worktree prune`")
     for d, rid in folders.items():
-        old = any(d.parent == root / f.rstrip("/") for f in old_folders)
+        old = any((root / f.rstrip("/")) in d.parents for f in old_folders)
         if old and d.resolve() not in claimed:
             out.append(f"{shown(d)} is not a checkout git knows: look, then delete it")
     return out
@@ -3198,6 +3592,7 @@ def cmd_update(root: Path, args) -> int:
     occupied += [f"{n}{f.relative_to(root / o).as_posix()} (from {f.relative_to(root).as_posix()})"
                  for o, n in untracked for f in sorted((root / o).rglob("*"))
                  if f.is_file() and (root / n / f.relative_to(root / o)).exists()]
+    warnings += left_behind(root, files, plan, [o for o, _ in OLD_UNTRACKED] + list(old_ignores))
     if occupied:
         refused.append(f"untracked files where files would move: {', '.join(occupied)}. Look at "
                        "each, move or delete it, then update again")
@@ -3416,6 +3811,7 @@ def main(argv: list[str] | None = None) -> int:
     mg = sub.add_parser("merge", help="hubnode: merge a job and delete its entry in that commit")
     mg.add_argument("name")
     mg.add_argument("-m", "--message", help="appended to the merge commit: what shared files it touched")
+    mg.add_argument("--subject", help="the merge subject, before `: merge <name>` (ids a repo's subjects lead with)")
     c = sub.add_parser("check", help="run the rules here")
     c.add_argument("--staged", action="store_true")
     sub.add_parser("job", help="print this branch's manifest")
@@ -3441,8 +3837,9 @@ def main(argv: list[str] | None = None) -> int:
     bump.add_argument("--version", help="X.Y.Z: the first release, or a jump")
     rl_.add_argument("--force", action="store_true", help="release though files are staged")
     pp = sub.add_parser("propose", help="pararepo: open a proposal branch on the metarepo for a spec")
-    pp.add_argument("spec")
-    pp.add_argument("slug")
+    pp.add_argument("spec", nargs="?")
+    pp.add_argument("slug", nargs="?")
+    pp.add_argument("--buffer", action="store_true", help="every Open row of the sync buffer, in one proposal")
     st = sub.add_parser("staging", help="list staged files, or resolve or drop one")
     st.add_argument("action", nargs="?", choices=["resolve", "drop"])
     st.add_argument("file", nargs="?")
