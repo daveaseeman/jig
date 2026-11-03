@@ -1,7 +1,7 @@
 {
   "smoke-isolation": {
     "spec": ".jig/specs/bug-smoke-isolation.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
