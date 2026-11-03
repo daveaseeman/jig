@@ -2156,7 +2156,10 @@ msg="feedback: jig repos prints where tool reports wait"
 expect_pass sh -c "$J repos | grep -q 'tool reports wait in .*/fb/feedback while'"
 
 msg="isolation: the user's real jig config folder is unchanged by the run"
-expect_pass test "$(cfg_state "$REAL_CFG")" = "$real_before"
+real_after=$(cfg_state "$REAL_CFG")
+expect_pass test "$real_after" = "$real_before"
+# Another session's real jig work can change it too; the diff shows which file did.
+[ "$real_after" = "$real_before" ] || diff <(echo "$real_before") <(echo "$real_after")
 
 rm -rf "$T"
 exit $fail
