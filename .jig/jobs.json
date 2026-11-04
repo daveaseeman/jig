@@ -1,14 +1,1 @@
-{
-  "page-pointers": {
-    "spec": ".jig/specs/sync-page-pointers.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh"
-    ],
-    "shares": [],
-    "reserved": {}
-  }
-}
+{}
