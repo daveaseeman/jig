@@ -29,11 +29,10 @@ That is a dry run. It changes nothing, and its exit code says what you have:
   look then delete for a folder git doesn't know. Before any `remove` or delete, show what is
   uncommitted in it. Run each only on a yes; `update` runs none. A refusing dry run still prints
   the plan below the refusal: show it too, so the user sees what follows the fix. A block means the layout is one
-  jig doesn't recognize. Say why the update would fail, then draft the change to jig that
-  would recognize it — which `LAYOUT` row, board default or `STEPS` entry to add, with a
-  done-when the plugin owner can test — written the way `/jig:feedback` writes its report.
-  Show the draft; save it where `/jig:feedback` would only on the owner's word. Apply nothing,
-  and stop.
+  jig doesn't recognize. Say why the update would fail, then show the owner the drafted
+  problem: the change to jig that would recognize it — which `LAYOUT` row, board default or
+  `STEPS` entry to add, with a done-when the plugin owner can test. Save nothing; on the
+  owner's word, the owner runs `/jig:feedback`. Apply nothing, and stop.
 
 **Repo files to review** are the repo's own files an old convention left behind. Show each
 one's proposed edit and ask about each; make it only on a yes. `--apply` never touches them.

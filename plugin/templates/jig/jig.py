@@ -187,9 +187,9 @@ class Board:
 
 def workflow_steps(config: dict) -> tuple[dict, list[str]]:
     """The steps in effect, and every way the override breaks the rules. Execute is judged
-    against the spec it builds from; review needs a model at least as good as the one whose work it judges (its effort is the
-    owner's call);
-    a bug investigation writes a spec, so it gets at least the spec's budget."""
+    against the spec it builds from; review needs a model at least as good as the one whose
+    work it judges (its effort is the owner's call); a bug investigation writes a spec, so it
+    gets at least the spec's budget."""
     steps = {k: dict(v) for k, v in WORKFLOW_DEFAULTS.items()}
     over = config.get("workflow") or {}
     if not isinstance(over, dict):
@@ -210,6 +210,10 @@ def workflow_steps(config: dict) -> tuple[dict, list[str]]:
                 bad.append(f"workflow.{step}.{k}: {v!r} is not a whole number from {least} up")
             else:
                 steps[step][k] = v
+    # A raised spec raises bug with it: an investigation that writes a spec never gets less.
+    for k in ("tier", "effort"):
+        if k not in (over.get("bug") or {}):
+            steps["bug"][k] = min(steps["bug"][k], steps["spec"][k])
     sp, bg, ex, rv = steps["spec"], steps["bug"], steps["execute"], steps["review"]
     lower = " (a higher number is a lower effort)"
     if bg["tier"] > sp["tier"]:

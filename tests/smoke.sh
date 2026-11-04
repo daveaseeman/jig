@@ -1420,6 +1420,12 @@ expect_pass sh -c "$J workflow | grep -qx 'review: tier 2, effort 2'"
 setwf '{"review": {"effort": 3}}'
 msg="workflow: review at effort 3 with execute at 3 is accepted: review's effort has no rule"
 expect_pass sh -c "$J workflow | grep -qx 'review: tier 2, effort 3'"
+setwf '{"spec": {"tier": 1, "effort": 1}, "review": {"tier": 1}}'
+msg="workflow: a raised spec raises a bug step left at its default, field by field"
+expect_pass sh -c "$J workflow | grep -qx 'bug: tier 1, effort 1' && $J workflow | grep -qx 'spec: tier 1, effort 1'"
+msg="workflow: a bug field the repo sets is kept; only the unset one follows spec"
+setwf '{"spec": {"tier": 1, "effort": 1}, "review": {"tier": 1}, "bug": {"effort": 0}}'
+expect_pass sh -c "$J workflow | grep -qx 'bug: tier 1, effort 0'"
 setwf '{"bug": {"tier": 1, "effort": 2}}'
 msg="workflow: a bug step at spec's effort and a better tier is accepted"
 expect_pass sh -c "$J workflow | grep -qx 'bug: tier 1, effort 2'"

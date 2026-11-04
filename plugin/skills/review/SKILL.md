@@ -66,7 +66,7 @@ because the reviewer suggested them.
 
 Fix blocking items and re-run the checks. One round of should-fix is enough. If a third
 round of fixes still leaves something blocking, don't start a fourth: run `/jig:bug` on why
-the fixes aren't converging. Every should-fix or optional finding you
+the fixes aren't converging (in a repo with a hubnode, ask the hubnode to run it). Every should-fix or optional finding you
 don't take gets a row in `.jig/ledgers/DEFERRED.md` with its rank and one reason, tagged `[seen]` or
 `[assumed]`. The first row creates the file from `${CLAUDE_PLUGIN_ROOT}/templates/ledgers/DEFERRED.md`.
 
