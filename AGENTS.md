@@ -8,7 +8,7 @@ Risk: R0 — one user, nothing shipped. Optimize for simplicity and clarity, not
 `.jig/` is jig running on this repo — the installed release. `plugin/` is the product. Edit `plugin/`; `.jig/` changes only by `/jig:update`.
 
 ## Commands
-- smoke:  `bash tests/smoke.sh` (the rules, end to end, in a throwaway repo)
+- smoke:  `bash tests/smoke.sh` (the rules, end to end, in throwaway repos; sections run in parallel, ~2 min). `bash tests/smoke.sh <section>…` reruns only those (`--list` names them)
 - validate: `claude plugin validate ./plugin`
 - reload in a session: `/reload-plugins`
 - check: `.jig/scripts/check.sh` (the validator and a syntax check of `jig.py`; the full smoke runs at the gate)
