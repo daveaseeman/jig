@@ -1,7 +1,7 @@
 {
   "para-release": {
     "spec": ".jig/specs/para-default-release.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
