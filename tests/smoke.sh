@@ -1799,6 +1799,15 @@ expect_pass sh -c "git -C '$EM' log -1 --merges --format=%s v0.5.0 | grep -qx 'D
 setjson .jig/para.json pin v0.5.0 && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: em v0.4.0 → v0.5.0"
 msg="merge --subject: the gate's fallback still finds job J by its merge after its branch is deleted"
 gate_ok E1; rc=$?; expect_pass test $rc = 0
+emergejob() {  # emergejob <job> <subject>: open a job in $EM, hand it off, and merge it with --subject
+  (cd "$EM" && $J open "$1" --branch "b-$1" --owns "products/$1.md" CHANGELOG.md >/dev/null && git add -A && git commit -qm "TOOL: open $1" \
+    && cd ".git/jig/worktrees/b-$1" && printf '# x\n' > "products/$1.md" && printf -- "- $1\n" >> CHANGELOG.md \
+    && git add -A && git commit -qm "PRODUCTS: $1" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
+    && git add -A && git commit -qm "TOOL: note $1" && cd "$EM" && $J merge "$1" --subject "$2" >/dev/null); }
+msg="merge --subject: a subject that already ends in ': merge <job>' is used as given"
+emergejob S1 "D-001: merge S1"; expect_pass sh -c "git -C '$EM' log -1 --merges --format=%s | grep -qx 'D-001: merge S1'"
+msg="merge --subject: bare ids still get ': merge <job>' added"
+emergejob S2 "D-001"; expect_pass sh -c "git -C '$EM' log -1 --merges --format=%s | grep -qx 'D-001: merge S2'"
 
 msg="entry globs: a non-ASCII page name under the glob is counted by the release"
 cd "$EG" && printf '# c\n' > "products/café.md" && printf -- '- café\n' >> CHANGELOG.md
