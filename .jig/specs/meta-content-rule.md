@@ -43,8 +43,9 @@ disagreed only on what took its place: the new text, or a pointer to it.
 - Siblings: every text that tells a writer what to do with a changed claim. That's Newer wins,
   Every copy, the buffer proposal template, the BUFFER ledger header, spec step 3 and review
   item 7. None of them asks where the claim lives, so all of them have the same gap.
-- Existing pattern: the metarepo already cites pararepo files by path, and `jig sync` follows
-  those citations. A pointer needs no new mechanism, only a rule for when to use one.
+- Existing pattern: the metarepo already cites pararepo files by path, and `jig sync` checks the
+  ones a decision row cites. A pointer needs no new mechanism, only a rule for when to use one.
+  `[seen]`: `uncovered_paths` scans decision rows only, so a pointer on a page is not checked.
 
 ## 4. Correction
 Add one rule for where a claim lives, and make Newer wins, Every copy and the buffer proposal
@@ -68,7 +69,7 @@ check can tell restating from pointing by meaning.
 - [x] Spec skill step 3 and review skill item 7 ask the same: is each changed claim stated only
       at its home, with a pointer everywhere else? The BUFFER ledger header says the row records
       a claim the metarepo states, even when the fix is a pointer.
-- [ ] A `marketing/FEATURES.md` row for the rule, added before the change.
+- [x] A `marketing/FEATURES.md` row for the rule, added before the change.
 - [x] Smoke passes, and the validator passes.
 - [x] Replayed by hand once, at build. A throwaway metarepo page restates pararepo-owned
       behaviour, with one buffer row against it. A fresh writer given the spec from
@@ -82,6 +83,8 @@ check can tell restating from pointing by meaning.
 ### Out of scope
 - Any gate or hook. Restating versus pointing is a judgment of meaning; review catches it.
 - Changing P2 or `contract_paths` (see Open questions).
+- Checking page pointers. Known limit: `jig sync` checks only decision-row citations, so a page
+  pointer to a pararepo file can dangle unreported (DEFERRED). `[seen]`: `uncovered_paths`.
 - Fixing any adopting repo's pages, or its own AGENTS.md rules.
 
 ### Touches
