@@ -37,7 +37,9 @@ Its job is to find the reason this change is wrong. Its questions:
    proposal, or a `meta: none` reason that holds? Does a buffer row say what the code now does?
 7. In a metarepo: does a changed claim still stand, in other words, anywhere the spec didn't
    list (Every copy)? Does older text it contradicts still read as current, Accepted or not
-   (Newer wins)?
+   (Newer wins)? Is each changed claim stated only at its home, with a pointer everywhere else
+   (What the metarepo holds)? A decision row and the pages citing it as their source are one
+   home, not copies.
 
 A file in `.jig/staging/` is not decided; a finding that rests on one says so.
 
