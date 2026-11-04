@@ -18,3 +18,4 @@ Every should-fix or optional review finding not taken at handoff has a row here.
 | 2026-11-03 | sync-report | Case folds two ways: `(?i:)` in uncovered_paths, `casefold()` in name_in | optional | deferred | `(?i:)` and `casefold()` give the same result for ASCII repo names. [seen: reviewer's runs] |
 | 2026-11-03 | meta-rule | sync checks only decision-row citations, so a page pointer to a pararepo file can dangle unreported | should-fix | deferred | A follow-up spec, outside this one's Touches. [seen] `uncovered_paths` |
 | 2026-11-03 | meta-rule | The gate alternative is rejected on an [assumed] reason | optional | deferred | Gates are out of scope and the fix doesn't depend on it. [seen] spec |
+| 2026-11-03 | fix-general | /jig:feedback doesn't ask the reporter step 3's question, and a too-specific drop's suggestion reaches the reporting repo only through the owner | optional | deferred | A follow-up spec if the owner wants one. [seen: feedback/SKILL.md:8-16] |

@@ -12,15 +12,5 @@
       "plugin/skills/init/SKILL.md"
     ],
     "reserved": {}
-  },
-  "fix-general": {
-    "spec": ".jig/specs/fix-general.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/skills/fix/SKILL.md"
-    ],
-    "shares": [],
-    "reserved": {}
   }
 }
