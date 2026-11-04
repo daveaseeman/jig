@@ -65,19 +65,6 @@
     ],
     "reserved": {}
   },
-  "owner-steps": {
-    "spec": ".jig/specs/owner-steps.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/skills/hubnode/SKILL.md"
-    ],
-    "shares": [
-      "plugin/skills/release/SKILL.md",
-      "plugin/skills/review/SKILL.md"
-    ],
-    "reserved": {}
-  },
   "fix-general": {
     "spec": ".jig/specs/fix-general.md",
     "state": "claimed",
