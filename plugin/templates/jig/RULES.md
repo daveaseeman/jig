@@ -355,8 +355,16 @@ checks that each glob in `release.artifacts` matched a file, and tags `vX.Y.Z`. 
 failure puts the tracked files back and tags nothing. The version is the last tag bumped by
 `--patch` (the default), `--minor` or `--major`, or `--version X.Y.Z` for the first.
 
-Until `release.sh` has steps and `config.json` names its artifacts, the release refuses and points
-to `/jig:release`, which asks what the repo builds and ships.
+In a plain repo, until `release.sh` has steps and `config.json` names its artifacts, the release
+refuses and points to `/jig:release`, which asks what the repo builds and ships. A metarepo and
+a pararepo release with defaults: steps and artifacts are optional (any that are given still run
+and must match), and jig's own checks run before the tag. A metarepo's are its history checks
+(below). A pararepo's refuse when the metarepo can't be reached (`jig repos add meta`), when the
+pin isn't one of its releases (`main`, a hand-made tag), when the `AGENTS.md` header isn't the
+generated one (P1), when `.jig/meta-cache/` is tracked (P3), or when a `BUFFER.md` row is neither
+Open nor Closed or shares its id (P2); a newer metarepo release, or a cited path outside
+`contract_paths`, is reported as `jig sync` reports it and refuses nothing. Then the release
+settles the sync buffer (below).
 
 ## Commands
 

@@ -862,6 +862,34 @@ git add -A && git commit -qm "para-init"
 
 msg="release: a pararepo says so"
 expect_pass sh -c "$J release 2>&1 | grep -q '(pararepo)'"
+msg="para release: release.sh untouched from the template and no artifacts: tags v0.1.0"
+out=$($J release --version 0.1.0 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && git tag | grep -qx v0.1.0 && grep -q 'TODO: release protocol' .jig/scripts/release.sh" "$out"
+msg="para release: with two Open rows it also makes the one proposal branch"
+mkdir -p .jig/ledgers && cp "$P/ledgers/BUFFER.md" .jig/ledgers/BUFFER.md
+for i in 1 2; do printf '| B%s | DECISIONS.md § D-001: x | api/a.py, y | owner, 2026-11-02 | Open |\n' $i >> .jig/ledgers/BUFFER.md; done
+git add -A && git commit -qm "buffer: B1, B2" && $J release >/dev/null 2>&1
+expect_pass sh -c "git tag | grep -qx v0.1.1 && test \$(git -C mrclone branch --list 'propose/*' | wc -l) = 1 && git -C mrclone rev-parse -q --verify refs/heads/propose/pr-buffer-v0.1.1"
+paratip=$(git rev-parse HEAD)
+msg="para release: pin set to main is refused, naming the pin, and tags nothing"
+python3 -c "import json; p = json.load(open('.jig/para.json')); p['pin'] = 'main'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
+$J init --para >/dev/null 2>&1 && git add -A && git commit -qm "pin main" >/dev/null 2>&1
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: the pin main' && ! git tag | grep -qx v0.1.2" "$out"
+git reset -q --hard "$paratip" && $J init --para >/dev/null 2>&1
+msg="para release: a hand-edited header committed with --no-verify is refused, naming P1"
+sed -i.bak 's/is written only by branch/is written by anyone/' AGENTS.md && rm AGENTS.md.bak && git commit -qam header --no-verify
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: P1' && ! git tag | grep -qx v0.1.2" "$out"
+git reset -q --hard "$paratip"
+msg="para release: a metarepo that isn't registered is refused, naming jig repos add meta"
+out=$(JIG_CONFIG="$T/none.json" $J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: .*jig repos add meta' && ! git tag | grep -qx v0.1.2" "$out"
+msg="para release: a tracked cache and a malformed buffer row are refused, naming P3 and P2"
+git add -f .jig/meta-cache/PIN && printf '| B3 | x | y | z | Settling |\n' >> .jig/ledgers/BUFFER.md && git commit -qam cache --no-verify
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: P3 .jig/meta-cache/PIN' && echo \"\$0\" | grep -q 'refused: P2 .*row B3 is Settling' && ! git tag | grep -qx v0.1.2" "$out"
+git reset -q --hard "$paratip" && $J init --para >/dev/null 2>&1
 
 msg="para P1: a hand-edited header is refused"
 sed -i.bak 's/is written only by branch/is written by anyone/' AGENTS.md && rm AGENTS.md.bak
@@ -2031,8 +2059,12 @@ sbland() {  # sbland <proposal branch> <term>: the metarepo writes it, merges an
     && git merge -q --no-ff --no-edit "$1" && $J release >/dev/null); }
 sbbump() { setjson .jig/para.json pin "$1" && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: sbm → $1"; }
 
-msg="buffer: a pararepo release with no buffer opens no proposal branch"
-$J release --version 0.9.0 >/dev/null 2>&1; expect_pass sh -c "git tag | grep -qx v0.9.0 && test $(sbprops) = 0"
+msg="buffer: a pararepo release with its own steps and a glob that matches nothing tags nothing"
+board "b['release']['artifacts'].append('dist/*.dmg')" && git add -A && git commit -qm "release: dmg"
+out=$($J release --version 0.9.0 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'made no file matching dist/\\*.dmg' && ! git tag | grep -qx v0.9.0" "$out"
+git revert --no-edit HEAD >/dev/null
+msg="buffer: a pararepo release with no buffer runs its steps, checks the glob, and opens no proposal branch"
+out=$($J release --version 0.9.0 2>&1); expect_pass sh -c "git tag | grep -qx v0.9.0 && test $(sbprops) = 0 && echo \"\$0\" | grep -q 'dist/app-0.9.0.zip'" "$out"
 msg="buffer P2: a contract-path change with no buffer row and no spec answer is refused"
 printf 'y=2\n' >> api/a.py && git add -A; expect_refuse git commit -qm "api: y"
 msg="buffer P2: with a row added to BUFFER.md in the same commit it is accepted"
@@ -2086,8 +2118,8 @@ msg="buffer: propose --buffer by hand puts B3, the one Open row, in its own prop
 out=$($J propose --buffer later 2>&1)
 expect_pass sh -c "git -C '$SM' rev-parse -q --verify refs/heads/propose/sb-para-later >/dev/null && grep -qx -- '- B3' .jig/specs/later.md && ! grep -qx -- '- B1' .jig/specs/later.md" "$out"
 git add .jig/specs/later.md && git commit -qm "specs: later"
-msg="buffer: a release whose Open rows a proposal already carries unchanged opens no branch, and needs no metarepo"
-mv "$SM" "$T/sb-away"; $J release --version 1.0.1 >/dev/null 2>&1; rc=$?; mv "$T/sb-away" "$SM"
+msg="buffer: a release whose Open rows a proposal already carries unchanged opens no branch"
+$J release --version 1.0.1 >/dev/null 2>&1; rc=$?
 expect_pass sh -c "test $rc = 0 && git tag | grep -qx v1.0.1 && test \$(git -C '$SM' branch --list 'propose/*' | wc -l) = 2"
 sed -i.bak 's/scrolled (third try)/scrolled, then paged (fourth try)/' .jig/ledgers/BUFFER.md && rm .jig/ledgers/BUFFER.md.bak && printf 'r=10\n' >> api/a.py && git add -A && git commit -qm "api: r"
 sbland propose/sb-para-later later
