@@ -1681,12 +1681,15 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
                        f"({'/'.join(DECISION_STATUSES)}), optionally `(note)` or "
                        f"`by {meta['decision_prefix']}…`, and a date (YYYY-MM-DD): "
                        f"{m.group(0)[1:].strip()}")
-    # M3 a change to what pararepos cite is recorded where they will read it. A cited file
-    # deleted, or renamed out of the entry set, is a change too: pararepos lose it.
-    gone = git("diff", "--name-only", "--diff-filter=D", "--no-renames", base(trunk),
-               *(["--cached"] if staged else [])).splitlines()
-    cited = [p for p in dict.fromkeys(paths + gone) if p and is_entry(p, entry)]
-    if cited and CHANGELOG not in paths:
+    # M3 a change to what pararepos cite is recorded where they will read it. Judged on the
+    # branch since it left trunk, not this commit: a release sees whole branches, so a line
+    # an earlier commit added covers this one, and a commit dropping the only line is caught.
+    # No renames: a cited file deleted, or moved out of the entry set, is a change too.
+    since = git("merge-base", trunk, "HEAD") or "HEAD"
+    branch_paths = git("diff", "--name-only", "--no-renames", since,
+                       *(["--cached"] if staged else [])).splitlines()
+    cited = [p for p in branch_paths if p and is_entry(p, entry)]
+    if cited and CHANGELOG not in branch_paths:
         out.append(f"M3 {', '.join(cited)} changed: add a line to {CHANGELOG} under ## Unreleased")
     # M4 nothing lands on main except merges; jig's own bookkeeping (the board, handoffs) is
     # the exception, since the hubnode keeps it on trunk
