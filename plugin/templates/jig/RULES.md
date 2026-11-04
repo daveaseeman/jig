@@ -212,8 +212,9 @@ else stops with the files named, and a person resolves it.
    trunk in an `append_files` file is refused with "`jig sync` the job, then merge": the sync
    resolves the appends as the gate did and stops on anything else. A job whose only
    conflicts were appends needs no new handoff after it. What the merge touched in shared files goes in that commit's message (`-m`).
-   `--subject <text>` puts text before it: the subject becomes `<text>: merge <job>`, for a
-   repo whose subjects lead with ids.
+   `--subject <ids>` is the ids the subject leads with, e.g. `D-001, D-002`, for a repo whose
+   subjects lead with ids: the subject becomes `<ids>: merge <job>`. `: merge <job>` is added
+   unless the text already ends with it, so pass the ids and don't write the merge yourself.
 
 ## Workflow
 
@@ -273,13 +274,20 @@ commit. Commits, pushes and gates don't look at staging. A chat needs access to 
 
 ## Metarepo and pararepos
 
-A set of repos can share one **metarepo**: docs only — definitions, decisions, conventions.
-Each **pararepo** (code, firmware, hardware) cites it at a released tag. The metarepo points;
-nothing copies it. Three rules do the work:
+A set of repos can share one **metarepo**: docs only — definitions, decisions, conventions, the
+contracts the pararepos share (What the metarepo holds). Each **pararepo** (code, firmware,
+hardware) cites it at a released tag. The metarepo points; nothing copies it. Three rules do the work:
 
 1. A pararepo writes the metarepo only by branch, via `jig propose`.
-2. The metarepo holds no code and no copied pararepo content.
+2. The metarepo holds no code and no copied pararepo content (What the metarepo holds).
 3. Only `jig release` tags, so a pin never names something that failed validation.
+
+**What the metarepo holds.** A claim lives in the metarepo when another repo must agree with it
+or build against it: a contract, unless a decision makes a pararepo page its authority; then the
+metarepo holds the decision and points to the page. Otherwise a claim lives with its one owner,
+and the metarepo points to it (`<repo>/<path> § <section>`) instead of restating it. Each claim
+has one home and is stated only there; everywhere else is a pointer. Inside the metarepo, a
+decision row and the pages that cite it as their source are one home.
 
 A question that binds the pararepos gets its decision row when it is asked, with status
 `open`, so it can be cited before it is answered. The same row then moves to `proposed`, then
@@ -299,7 +307,7 @@ under `.jig/` counts, whatever the globs say.
 |---|---|
 | M1 | a source file outside `.jig/` in the metarepo |
 | M2 | a decision row (`| D-001 | … |`) without a status cell (open, proposed, accepted, superseded or rejected, optionally with a note in parentheses or `by D-…`) and a `YYYY-MM-DD` date |
-| M3 | an entry file changed without a line in `CHANGELOG.md` |
+| M3 | an entry file changed without a line in `CHANGELOG.md`, judged on the branch since it left trunk: a line an earlier commit on the branch added covers this one, and a commit that drops the branch's only line is refused |
 | M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted); a detached HEAD at trunk, or behind it, is trunk |
 | M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`) |
@@ -333,18 +341,24 @@ that release and marks `Closed` the rows the proposal carried that are unchanged
 commit `meta: <name> v0.3.0 → v0.4.0` (or, when the pin already holds the release, `meta:
 <name> v0.4.0: close B1`). Rows added or edited after the proposal stay `Open` for the next one.
 `jig sync` also names each file here that a decision at the pin cites and `contract_paths`
-doesn't cover; adding it is the hubnode's call.
+doesn't cover; adding it is the hubnode's call. A decision may cite this repo by name in any
+case (`App/docs/ui.md`); the path after it is exact.
 
 Two rules for the metarepo's own pages:
 
 - **Newer wins.** A later decision, or a pararepo page a decision makes the authority, overrides
-  older page text it contradicts, whether or not that text is marked Accepted. The update gives
-  the new text with its source, and keeps an old "Accepted (who, date)" only on what it still
-  covers. A decision row changes only when the stale claim is one: it is marked
+  older page text it contradicts, whether or not that text is marked Accepted. The update changes
+  the claim where it lives (What the metarepo holds); when the home is a pararepo, it already
+  says it, and the metarepo points. Any restatement elsewhere becomes a pointer to the home. Only
+  when the claim lives in the metarepo does the update give the new text, on the decision and the
+  pages that cite it as their source; it keeps an old "Accepted (who, date)" only on what it
+  still covers. A decision row changes only when the stale claim is one: it is marked
   `superseded by` the newer. A page update needs no new sign-off: the decision behind it is
   already the owner's.
 - **Every copy.** A metarepo spec that changes a claim lists every place that states it, found
-  by meaning, not only by its words, and its done-when covers each one.
+  by meaning, not only by its words, and its done-when covers each one: the claim's home is
+  updated (a decision and the pages citing it as their source; when the home is a pararepo, it
+  already says it, and the metarepo points), and every other place becomes a pointer to it.
 
 ## Release
 

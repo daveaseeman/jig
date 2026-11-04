@@ -66,11 +66,12 @@ Smoke, in the entry-globs metarepo fixture, on a branch:
 
 ### Touches
 `plugin/templates/jig/jig.py` (`meta_rules`, M3 only), `plugin/templates/jig/RULES.md` (M3
-row), `tests/smoke.sh` (entry-globs section), `marketing/FEATURES.md` (the M1–M6 row).
+row), `tests/smoke.sh` (entry-globs section), `marketing/FEATURES.md` (the M1–M6 row),
+`plugin/skills/stage/SKILL.md` (its M3 hint).
 
 ### Alternatives considered
 - M3 at `jig gate` / `jig merge` / `jig handoff`, per the report. Rejected: the writer learns
-  after review, solo work never gates, and it adds a second home for one rule while the commit
+  after review, and it adds a second home for one rule while the commit
   hook can see the branch already. `[seen]`: merge-base diff in the prototype.
 - Keep the per-commit trigger, satisfy it from the branch (entry files from this commit,
   CHANGELOG from the branch). Rejected: it still lets a commit drop the branch's only line.

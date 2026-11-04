@@ -858,8 +858,11 @@ def cmd_merge(root: Path, args) -> int:
         die(f"{branch} has changed since the commit {notes[-1]} names ({', '.join(since[:5])}): "
             "hand off again and gate that, or merge the gated commit by hand")
     # The subject ends in `merge <job>` either way: the gate's deleted-branch fallback finds
-    # the job by it.
-    msg = (f"{args.subject}: " if args.subject else "") + f"merge {name}" + (f"\n\n{args.message}" if args.message else "")
+    # the job by it. A caller who already wrote it out isn't given it twice.
+    subject = args.subject or ""
+    if not re.search(rf"(?:^|: )merge {re.escape(name)}$", subject):
+        subject = (f"{subject}: " if subject else "") + f"merge {name}"
+    msg = subject + (f"\n\n{args.message}" if args.message else "")
     p = subprocess.run(["git", "merge", "--no-ff", "--no-commit", "-m", msg, branch],
                        capture_output=True, text=True)
     merging = bool(git("rev-parse", "-q", "--verify", "MERGE_HEAD"))
@@ -1681,12 +1684,18 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
                        f"({'/'.join(DECISION_STATUSES)}), optionally `(note)` or "
                        f"`by {meta['decision_prefix']}…`, and a date (YYYY-MM-DD): "
                        f"{m.group(0)[1:].strip()}")
-    # M3 a change to what pararepos cite is recorded where they will read it. A cited file
-    # deleted, or renamed out of the entry set, is a change too: pararepos lose it.
-    gone = git("diff", "--name-only", "--diff-filter=D", "--no-renames", base(trunk),
-               *(["--cached"] if staged else [])).splitlines()
-    cited = [p for p in dict.fromkeys(paths + gone) if p and is_entry(p, entry)]
-    if cited and CHANGELOG not in paths:
+    # M3 a change to what pararepos cite is recorded where they will read it. Judged on the
+    # branch since it left trunk, not this commit: a release sees whole branches, so a line
+    # an earlier commit added covers this one, and a commit dropping the only line is caught.
+    # No renames: a cited file deleted, or moved out of the entry set, is a change too.
+    # Trunk's upstream counts as trunk: a pull of it into the branch moves the base, though
+    # the local trunk is stale. A deleted CHANGELOG.md is a change to it, but no line.
+    since = (git("merge-base", "HEAD", trunk, f"{trunk}@{{u}}") or git("merge-base", trunk, "HEAD")
+             or "HEAD")
+    branch_paths = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", since,
+                       *(["--cached"] if staged else [])).splitlines()
+    cited = [p for p in branch_paths if p and is_entry(p, entry)]
+    if cited and (CHANGELOG not in branch_paths or not in_index(CHANGELOG, staged)):
         out.append(f"M3 {', '.join(cited)} changed: add a line to {CHANGELOG} under ## Unreleased")
     # M4 nothing lands on main except merges; jig's own bookkeeping (the board, handoffs) is
     # the exception, since the hubnode keeps it on trunk
@@ -2252,7 +2261,7 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
                        "<row id>`, `meta: <name> proposal <branch>` (`jig propose`) or "
                        "`meta: none — <reason>`")
     # P4 no contract change while a file for the metarepo waits unresolved
-    waiting = [f.name for f in staged_files(main_root()) if read_staged(f)[0].get("target") == para.get("meta")]
+    waiting = [f.name for f in staged_files(main_root()) if name_in(read_staged(f)[0].get("target"), {para.get("meta", "")})]
     if touched and waiting:
         out.append(f"P4 {', '.join(touched)} is a contract path, and {', '.join(waiting)} for "
                    f"{para.get('meta')} is still staged: resolve it first")
@@ -2327,7 +2336,12 @@ def decision_ids(loc: Path, rev: str) -> str:
 def terms_changed(loc: Path, old: str, new: str) -> list[str]:
     """Decision ids and glossary headings that changed between two releases. Ids are matched
     by the metarepo's own decision_prefix, which may be lowercase."""
-    diff = git("diff", old, new, "--", ".", f":!{CHANGELOG}", cwd=str(loc))
+    # Only what a pararepo can read: the entry set release counts and the cache copies. Literal
+    # paths, not entry_files globs, since git's `**` misses a file directly under the folder.
+    paths = sorted((set(entry_paths(old, str(loc))) | set(entry_paths(new, str(loc)))) - {CHANGELOG})
+    if not paths:
+        return []
+    diff = git("--literal-pathspecs", "diff", old, new, "--", *paths, cwd=str(loc))
     found = re.findall(rf"^[+-]\s*\|\s*({decision_ids(loc, new)})\s*\|", diff, re.M)
     found += re.findall(r"^[+-]#{2,3} (.+?)\s*$", diff, re.M)
     return list(dict.fromkeys(found))
@@ -2424,9 +2438,10 @@ def sync_meta(root: Path) -> int:
         text = spec.read_text()
         for m in PROPOSAL.finditer(text):
             if m.group("branch") and m.group("meta") == name:
-                landed = proposal_in(loc, m.group("branch"), latest)
+                first = next((t for t in sorted(set(tags) | {pin}, key=version_key)
+                              if proposal_in(loc, m.group("branch"), t)), None)
                 print(f"proposal {m.group('branch')} ({spec.relative_to(root)}): "
-                      f"{'released by ' + latest if landed else 'not released'}")
+                      f"{'released by ' + first if first else 'not released'}")
                 rows = [i for i, r in proposed_copy(text).items() if tuple(r) in still]
                 if rows:
                     buffered.append((spec, m.group("branch"), rows))
@@ -2504,8 +2519,9 @@ def uncovered_paths(root: Path, loc: Path, para: dict) -> None:
         if path.startswith(f"{DIR}/") or matches(path, para.get("contract_paths", [])):
             continue
         # The path whole, alone or after this repo's name (`app/docs/ui.md`, `app:…`): another
-        # pararepo's docs/ui.md is not this one's.
-        cite = re.compile(rf"(?<![\w./:-])(?:(?:{names})[/:])?{re.escape(path)}(?![\w/-])")
+        # pararepo's docs/ui.md is not this one's. The name is typed prose, so its case folds;
+        # the path's doesn't.
+        cite = re.compile(rf"(?<![\w./:-])(?:(?i:{names})[/:])?{re.escape(path)}(?![\w/-])")
         ids = [i for i, line in cited if cite.search(line)]
         if ids:
             print(f"{path} is cited by {', '.join(dict.fromkeys(ids))} and is not a contract path: "
@@ -2592,7 +2608,10 @@ def buffer_proposal(root: Path, para: dict, loc: Path, slug: str) -> tuple[Path,
     spec.write_text(
         f"# Buffer proposal: {slug}\n\n"
         f"Each row is a claim of {para['meta']} at {para['pin']} that this repo has moved away from. "
-        f"{para['meta']} updates every place that states it (RULES.md: Newer wins, Every copy).\n\n"
+        f"For each row, {para['meta']} decides where the claim lives (RULES.md: What the metarepo holds). "
+        f"A contract gets the new text with its source; a claim this repo owns gets a pointer to "
+        f"the \"This repo now\" source wherever {para['meta']} states it, never a copy "
+        f"(RULES.md: Newer wins, Every copy).\n\n"
         f"## Buffer rows\n{ids}\n{table}\n\n## Decisions\n- meta: {para['meta']} proposal {branch}\n")
     return spec, branch
 
@@ -2664,9 +2683,8 @@ def fallback_files() -> list[Path]:
 def release_waits_for() -> list[Path]:
     """The main checkout's staging, since staged files are never committed, and any report in
     the fallback folder aimed at this repo: it is staged here in all but location."""
-    names = this_repo_names(main_root())
     return staged_files(main_root()) + [f for f in fallback_files()
-                                        if read_staged(f)[0].get("target") in names]
+                                        if names_this_repo(read_staged(f)[0].get("target"), main_root())]
 
 
 def staged_refusal(what: str) -> list[str]:
@@ -2686,6 +2704,15 @@ def this_repo_names(root: Path) -> set[str]:
     if meta.exists():
         names.add(json.loads(meta.read_text() or "{}").get("name", ""))
     return names - {""}
+
+
+def name_in(name: str | None, names: set[str]) -> bool:
+    """A human types a repo's name, so `App` and `app` are one repo."""
+    return (name or "").casefold() in {n.casefold() for n in names - {""}}
+
+
+def names_this_repo(name: str | None, root: Path) -> bool:
+    return name_in(name, this_repo_names(root))
 
 
 def bare_path(dest: str) -> bool:
@@ -2744,7 +2771,7 @@ def cmd_staging(root: Path, args) -> int:
     mark = provenance(head, path)
 
     target = head["target"]
-    if target not in this_repo_names(root):
+    if not names_this_repo(target, root):
         return forward(root, path, head)
 
     def done(msg: str) -> int:
@@ -2818,8 +2845,8 @@ def cmd_staging(root: Path, args) -> int:
         reg.parent.mkdir(parents=True, exist_ok=True)
         reg.write_text(text.rstrip("\n") + "\n" + "\n".join(rows) + "\n")
         ids = ", ".join(r.split("|")[1].strip() for r in rows)
-        # In a metarepo, M3 refuses the commit until CHANGELOG.md says so: that's its rule to
-        # enforce, not staging's line to write.
+        # In a metarepo, M3 refuses the commit on a branch with no line yet: that's its rule
+        # to enforce, not staging's line to write.
         also = f"; add `- {ids}. {mark}` to {CHANGELOG} (M3)" if (root / META).exists() else ""
         return done(f"{len(rows)} row{'s' if len(rows) > 1 else ''} appended to {reg.name}{also}")
     out = inside(dest)
@@ -3811,7 +3838,7 @@ def main(argv: list[str] | None = None) -> int:
     mg = sub.add_parser("merge", help="hubnode: merge a job and delete its entry in that commit")
     mg.add_argument("name")
     mg.add_argument("-m", "--message", help="appended to the merge commit: what shared files it touched")
-    mg.add_argument("--subject", help="the merge subject, before `: merge <name>` (ids a repo's subjects lead with)")
+    mg.add_argument("--subject", help="the ids the subject leads with, e.g. `D-001, D-002`; `: merge <job>` is added unless it's already there")
     c = sub.add_parser("check", help="run the rules here")
     c.add_argument("--staged", action="store_true")
     sub.add_parser("job", help="print this branch's manifest")

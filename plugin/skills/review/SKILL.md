@@ -11,7 +11,12 @@ scope, so that is the scope at which these questions can be answered.
 Run the subagent at the `review` step's settings: `jig workflow` gives its tier and effort,
 `${CLAUDE_PLUGIN_ROOT}/tiers.json` maps them to a model and an effort level. A number with no
 entry there is refused: say so and stop. Its prompt starts with `running <model> at
-<effort>`, and so must the first line of its reply; a different model stops the review.
+<effort>`, and so must the first line of its reply, read from its own settings; a value it
+can't read, it reports as `unknown`. The prompt also says: "if your own model or effort
+differs from this line, reply with only your `running` line and stop". At a mismatch in model
+or effort, retry once, then ask the owner; never use the mismatched run's output. Only a value
+it read and that differs is a mismatch: an `unknown` gets no retry, record it as `unknown`
+(`--ran "<model> at unknown"`) and tell the owner once.
 
 Give a subagent exactly this and nothing else: the diff since the last handoff
 (`git diff <last-handoff-commit>..HEAD`, or `git diff <trunk>...HEAD` for the first one; the
@@ -32,7 +37,9 @@ Its job is to find the reason this change is wrong. Its questions:
    proposal, or a `meta: none` reason that holds? Does a buffer row say what the code now does?
 7. In a metarepo: does a changed claim still stand, in other words, anywhere the spec didn't
    list (Every copy)? Does older text it contradicts still read as current, Accepted or not
-   (Newer wins)?
+   (Newer wins)? Is each changed claim stated only at its home, with a pointer everywhere else
+   (What the metarepo holds)? A decision row and the pages citing it as their source are one
+   home, not copies.
 
 A file in `.jig/staging/` is not decided; a finding that rests on one says so.
 

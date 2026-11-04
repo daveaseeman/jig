@@ -892,6 +892,10 @@ stage meta-note.md docs decisions new DECISIONS.md '| D-009 | x | proposed | 202
 printf 'z=3\n' >> api/a.py && printf -- '- meta: none — still internal\n' >> .jig/specs/x.md && git add api/a.py .jig/specs/x.md
 expect_refuse git commit -qm "api: more"
 python3 .jig/jig.py staging drop meta-note.md >/dev/null
+msg="para P4: a file staged for the metarepo by its name in another case holds it back too"
+stage upper-note.md DOCS decisions new DECISIONS.md '| D-009 | x | proposed | 2026-10-29 |\n'
+expect_refuse git commit -qm "api: more"
+python3 .jig/jig.py staging drop upper-note.md >/dev/null
 msg="para P4: once it is resolved, the same commit is accepted"
 expect_pass git commit -qm "api: more"
 
@@ -1703,6 +1707,10 @@ setjson .jig/para.json pin v0.3.0 && $J init --para >/dev/null 2>&1 && git add -
 msg="gate: a proposal landed by jig merge, its branch deleted, is found by the merge's job and passes"
 expect_pass sh -c "git -C '$PM' log -1 --merges --format=%s v0.3.0 | grep -qx 'merge tj' && ! git -C '$PM' rev-parse -q --verify refs/heads/propose/pa-t >/dev/null" 
 gate_ok G3; rc=$?; expect_pass test $rc = 0
+msg="sync on a pararepo trunk: once a later release is out, a proposal reads released by the first release that held it"
+mkdir -p .jig/specs && printf '# r\n\n- meta: pm proposal propose/pa-g\n' > .jig/specs/r.md
+out=$($J sync 2>&1); rm .jig/specs/r.md
+expect_pass sh -c "echo \"\$0\" | grep -q 'proposal propose/pa-g (.jig/specs/r.md): released by v0.2.0'" "$out"
 msg="init --para: a metarepo clone without the pinned tag still gets the header written; the cache waits, exit 0"
 setjson .jig/para.json pin v9.9.9 && out=$($J init --para 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'no tag v9.9.9' && grep -q 'at \`v9.9.9\`' AGENTS.md && head -1 .jig/meta-cache/PIN | grep -qx v0.3.0" "$out"
@@ -1767,7 +1775,36 @@ msg="entry globs: M3 refuses a change to products/a.md with no changelog line"
 printf 'x\n' >> products/a.md; git add -A; expect_refuse git commit -qm "PRODUCTS: no line"; undo
 msg="entry globs: M3 takes a change to notes.md, which no glob names, with no line"
 printf 'x\n' >> notes.md; git add -A; expect_pass git commit -qm "NOTES: n"
-git switch -q main
+# M3 judges the branch since it left trunk: a line one commit added covers the next ones.
+# This branch's line goes under the heading, trunk's at the end, so the sync merges cleanly.
+underhead() { python3 -c "import sys; f='CHANGELOG.md'; s=open(f).read(); open(f,'w').write(s.replace('## Unreleased\n', '## Unreleased\n'+sys.argv[1]+'\n', 1))" "$1"; }
+git switch -q main && git switch -q -c em4
+printf 'y\n' >> products/a.md && underhead '- y' && git add -A && git commit -qm "PRODUCTS: y"
+msg="entry globs: M3 takes a page-only commit on a branch whose earlier commit added the line"
+printf 'z\n' >> products/a.md; git add -A; expect_pass git commit -qm "PRODUCTS: z"
+msg="entry globs: M3 takes a DECISIONS.md-only commit on that branch"
+printf '\nmore\n' >> DECISIONS.md; git add -A; expect_pass git commit -qm "DECISIONS: more"
+git switch -q main && printf 'w\n' >> products/x/b.md && printf -- '- w\n' >> CHANGELOG.md
+emerge em5 "PRODUCTS: w" products/x/b.md CHANGELOG.md; git switch -q em4 && git merge -q --no-edit main
+msg="entry globs: after the branch merges a moved trunk, a page-only commit still passes"
+printf 'v\n' >> products/a.md; git add -A; expect_pass git commit -qm "PRODUCTS: v"
+msg="entry globs: M3 refuses a commit that drops the branch's only line, its page changes kept"
+python3 -c "f='CHANGELOG.md'; s=open(f).read(); open(f,'w').write(s.replace('- y\n', '', 1))"
+git add -A; expect_refuse git commit -qm "CHANGELOG: drop y"; undo
+msg="entry globs: M3 refuses a commit that deletes CHANGELOG.md after the branch added its line"
+git rm -q CHANGELOG.md; expect_refuse git commit -qm "CHANGELOG: gone"; undo
+git switch -q main && git switch -q -c em6
+msg="entry globs: M3 refuses CHANGELOG.md deleted alongside a page change"
+printf 'u\n' >> products/a.md && git rm -q CHANGELOG.md && git add -A; expect_refuse git commit -qm "PRODUCTS: u"; undo
+msg="entry globs: M3 refuses a non-ASCII page name under the glob with no line"
+printf '# d\n' > "products/déjà.md"; git add -A; expect_refuse git commit -qm "PRODUCTS: déjà"; undo
+# A pull of trunk's upstream into the branch moves the base, though local main stays behind.
+git switch -q main && git switch -q -c emup && printf 't\n' >> products/a.md && printf -- '- t\n' >> CHANGELOG.md \
+  && git add -A && git commit -qm "PRODUCTS: t" && git branch -q --set-upstream-to=emup main
+git switch -q main && git switch -q -c em7 && git merge -q --ff-only emup
+msg="entry globs: M3 doesn't let upstream trunk's line cover a branch that pulled it"
+printf 's\n' >> products/a.md; git add -A; expect_refuse git commit -qm "PRODUCTS: s"; undo
+git switch -q main && git branch -q --unset-upstream main
 printf '# b top\n' > products/b.md && printf -- '- new page b\n' >> CHANGELOG.md
 msg="entry globs: a new products/b.md needs no meta.json edit; the next release counts it"
 emerge ec "PRODUCTS: new b" products/b.md CHANGELOG.md; $J release >/dev/null 2>&1
@@ -1792,13 +1829,22 @@ git add .jig/specs/t.md && git commit -qm "specs: t" && $J open E1 --spec .jig/s
 (cd "$EM" && $J open J --branch propose/ep-t --owns products/t.md CHANGELOG.md >/dev/null && git add -A && git commit -qm "TOOL: open J" \
   && cd .git/jig/worktrees/propose/ep-t && printf '# t\n' > products/t.md && printf -- '- t\n' >> CHANGELOG.md \
   && git add -A && git commit -qm "PRODUCTS: t" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
-  && git add -A && git commit -qm "TOOL: note J" && cd "$EM" && $J merge J --subject "D-001: land J" >/dev/null && $J release >/dev/null \
+  && git add -A && git commit -qm "TOOL: note J" && cd "$EM" && $J merge J --subject "D-001, D-002" >/dev/null && $J release >/dev/null \
   && git worktree remove --force .git/jig/worktrees/propose/ep-t && git branch -q -D propose/ep-t)
-msg="merge --subject: the subject is '<text>: merge J'"
-expect_pass sh -c "git -C '$EM' log -1 --merges --format=%s v0.5.0 | grep -qx 'D-001: land J: merge J'"
+msg="merge --subject: the subject is '<ids>: merge J'"
+expect_pass sh -c "git -C '$EM' log -1 --merges --format=%s v0.5.0 | grep -qx 'D-001, D-002: merge J'"
 setjson .jig/para.json pin v0.5.0 && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: em v0.4.0 → v0.5.0"
 msg="merge --subject: the gate's fallback still finds job J by its merge after its branch is deleted"
 gate_ok E1; rc=$?; expect_pass test $rc = 0
+emergejob() {  # emergejob <job> <subject>: open a job in $EM, hand it off, and merge it with --subject
+  (cd "$EM" && $J open "$1" --branch "b-$1" --owns "products/$1.md" CHANGELOG.md >/dev/null && git add -A && git commit -qm "TOOL: open $1" \
+    && cd ".git/jig/worktrees/b-$1" && printf '# x\n' > "products/$1.md" && printf -- "- $1\n" >> CHANGELOG.md \
+    && git add -A && git commit -qm "PRODUCTS: $1" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
+    && git add -A && git commit -qm "TOOL: note $1" && cd "$EM" && $J merge "$1" --subject "$2" >/dev/null); }
+msg="merge --subject: a subject that already ends in ': merge <job>' is used as given"
+emergejob S1 "D-001: merge S1"; expect_pass sh -c "git -C '$EM' log -1 --merges --format=%s | grep -qx 'D-001: merge S1'"
+msg="merge --subject: bare ids still get ': merge <job>' added"
+emergejob S2 "D-001"; expect_pass sh -c "git -C '$EM' log -1 --merges --format=%s | grep -qx 'D-001: merge S2'"
 
 msg="entry globs: a non-ASCII page name under the glob is counted by the release"
 cd "$EG" && printf '# c\n' > "products/café.md" && printf -- '- café\n' >> CHANGELOG.md
@@ -2016,8 +2062,9 @@ expect_pass hrsurvey "assert r['components_missing'] == [] and r['components_unl
 SM="$T/sb-meta"; pcnew "$SM" && git add -A && git commit -qm init && $J init --meta --name sbm >/dev/null
 printf '| D-001 | the list shows ids (`sb-para/docs/ui.md`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
 printf '| D-002 | the other app has a page (`other-para/docs/x.md`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
+printf '| D-003 | the help page (`SB-Para/docs/z.md`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
 git add -A && git commit -qm meta-init && $J release >/dev/null
-SP="$T/sb-para"; pcnew "$SP" && mkdir -p api docs && printf 'x=1\n' > api/a.py && printf '# UI\n' > docs/ui.md && printf '# X\n' > docs/x.md && printf 'dist/\n' > .gitignore
+SP="$T/sb-para"; pcnew "$SP" && mkdir -p api docs && printf 'x=1\n' > api/a.py && printf '# UI\n' > docs/ui.md && printf '# X\n' > docs/x.md && printf '# Z\n' > docs/z.md && printf 'dist/\n' > .gitignore
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 $J init --para sbm --location "$SM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
 sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
@@ -2077,6 +2124,8 @@ before=$(git rev-parse HEAD); out=$($J sync 2>&1)
 expect_pass sh -c "test \"\$(git rev-list --count $before..HEAD)\" = 1 && git log -1 --format=%s | grep -qx 'meta: sbm v0.1.0 → v0.2.0' && grep -q '\"pin\": \"v0.2.0\"' .jig/para.json && grep -q 'at \`v0.2.0\`' AGENTS.md && grep -q '^| B1 .*| Closed |\$' .jig/ledgers/BUFFER.md && grep -q '^| B2 .*| Closed |\$' .jig/ledgers/BUFFER.md && grep -q '^| B3 .*| Open |\$' .jig/ledgers/BUFFER.md && test \"\$(git show --name-only --format= HEAD | sort | tr '\n' ' ')\" = '.jig/ledgers/BUFFER.md .jig/para.json AGENTS.md ' && test -z \"\$(git status --porcelain)\" && head -1 .jig/meta-cache/PIN | grep -qx v0.2.0" "$out"
 msg="buffer: jig sync reports a pararepo path a metarepo decision cites that contract_paths doesn't cover, and not one it covers or another repo's"
 expect_pass sh -c "echo \"\$0\" | grep -q 'docs/ui.md is cited by D-001 and is not a contract path' && ! echo \"\$0\" | grep -q 'api/a.py is cited' && ! echo \"\$0\" | grep -q 'docs/x.md is cited'" "$out"
+msg="buffer: a decision may name this repo in any case, the path still exact"
+expect_pass sh -c "echo \"\$0\" | grep -q 'docs/z.md is cited by D-003 and is not a contract path'" "$out"
 msg="buffer P2: meta: buffered naming a Closed row is refused"
 printf '# c\n\n- meta: buffered B1\n' > .jig/specs/c.md && printf 'w=4\n' >> api/a.py && git add -A; expect_refuse git commit -qm "api: w"; undo
 msg="buffer: a second sync moves nothing"
@@ -2085,6 +2134,8 @@ expect_pass sh -c "test \"\$(git rev-parse HEAD)\" = $before && echo \"\$0\" | g
 msg="buffer: propose --buffer by hand puts B3, the one Open row, in its own proposal"
 out=$($J propose --buffer later 2>&1)
 expect_pass sh -c "git -C '$SM' rev-parse -q --verify refs/heads/propose/sb-para-later >/dev/null && grep -qx -- '- B3' .jig/specs/later.md && ! grep -qx -- '- B1' .jig/specs/later.md" "$out"
+msg="buffer: the proposal's spec names where each claim lives, and a pointer for one this repo owns"
+expect_pass sh -c "grep -q 'What the metarepo holds' .jig/specs/later.md && grep -q 'pointer' .jig/specs/later.md"
 git add .jig/specs/later.md && git commit -qm "specs: later"
 msg="buffer: a release whose Open rows a proposal already carries unchanged opens no branch, and needs no metarepo"
 mv "$SM" "$T/sb-away"; $J release --version 1.0.1 >/dev/null 2>&1; rc=$?; mv "$T/sb-away" "$SM"
@@ -2105,6 +2156,13 @@ expect_pass sh -c "test \"\$(git rev-list --count $before..HEAD)\" = 1 && git lo
 msg="buffer: a release with every row Closed opens no branch"
 n=$(git -C "$SM" branch --list 'propose/*' | wc -l); $J release --version 1.0.3 >/dev/null 2>&1
 expect_pass sh -c "git tag | grep -qx v1.0.3 && test \$(git -C '$SM' branch --list 'propose/*' | wc -l) = $n"
+(cd "$SM" && git switch -q -c d4 && mkdir -p .jig/specs .jig/handoffs && printf '# s\n\n## Done when\n\n## Touches\n' > .jig/specs/s.md \
+  && printf '# h\n\n## Built\n\n## Left\n' > .jig/handoffs/h.md && printf '| D-004 | ids are links | accepted (owner) | 2026-11-03 |\n' >> DECISIONS.md \
+  && printf -- '- D-004\n' >> CHANGELOG.md && git add -A && git commit -qm "D-004: links" && $J reviewed >/dev/null \
+  && git switch -q main && git merge -q --no-ff --no-edit d4 && $J release >/dev/null)
+msg="sync: the changes report lists a new decision, and no heading from the metarepo's .jig/ files"
+out=$($J sync 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'sbm v0.5.0 is out' && echo \"\$0\" | grep -q 'D-004:' && ! echo \"\$0\" | grep -qE '(Built|Left|Done when|Touches):'" "$out"
 
 # ---------------------------------------------------------------- feedback
 export JIG_CONFIG="$T/fb/repos.json"      # its feedback/ fallback sits beside it, never the user's
@@ -2149,8 +2207,13 @@ fb "$T/fb/feedback" mine.md widget && sed -i.bak 's/^target: this$/target: fr/' 
 msg="feedback: release refuses while a report for this repo waits in the fallback, naming it and not another repo's"
 out=$($J release 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'release waits while 1 file.*mine.md' && ! echo \"\$0\" | grep -q other.md && ! git tag | grep -q ." "$out"
+msg="feedback: a report naming this repo in another case holds the release too"
+$J staging drop mine.md >/dev/null
+fb "$T/fb/feedback" upper.md widget && sed -i.bak 's/^target: this$/target: FR/' "$T/fb/feedback/upper.md" && rm "$T/fb/feedback/upper.md.bak"
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'release waits while 1 file.*upper.md' && ! git tag | grep -q ." "$out"
 msg="feedback: once it's dropped, the release goes through beside the other repo's report"
-expect_pass sh -c "$J staging drop mine.md >/dev/null && $J release >/dev/null && git tag | grep -q ."
+expect_pass sh -c "$J staging drop upper.md >/dev/null && $J release >/dev/null && git tag | grep -q ."
 rm "$T/fb/feedback/other.md"
 msg="feedback: jig repos prints where tool reports wait"
 expect_pass sh -c "$J repos | grep -q 'tool reports wait in .*/fb/feedback while'"
