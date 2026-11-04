@@ -37,10 +37,16 @@ python3 .jig/jig.py release            # --minor, --major, or --version X.Y.Z fo
 
 ## In a pararepo
 
+Steps and artifacts are optional: with `release.sh` untouched and none named, jig's own checks
+are the release. It refuses when the metarepo can't be reached (`jig repos add meta` in its
+checkout), when the pin in `.jig/para.json` isn't one of its releases (set a released tag, then
+`jig init --para`), on a stale or hand-edited `AGENTS.md` header (P1: `jig init --para`, then
+commit), a tracked `.jig/meta-cache/` (P3), or a malformed `BUFFER.md` row (P2). A newer
+metarepo release is reported, not refused.
+
 Before the build, the release puts every `Open` row of `.jig/ledgers/BUFFER.md` into one
 metarepo proposal: a `propose/<repo>-buffer-vX.Y.Z` branch there, and a spec here listing the
-rows, committed with the release. With no open row it just releases. If the metarepo can't be
-reached, it refuses: register it with `jig repos add meta` in its checkout. After the release,
+rows, committed with the release. With no open row it just releases. After the release,
 the change is written on that branch by the metarepo's own process; `jig sync` on trunk closes the
 rows once the metarepo releases it.
 

@@ -54,8 +54,9 @@ Then:
    install in its directory; `.gitmodules` → `git submodule update --init --recursive`; a
    gitignored `.env` in the main checkout → the copy line. Install, never link, unless the
    user asks: a linked environment hides an undeclared dependency from the gate.
-   Leave `.jig/scripts/release.sh` as the template: the first `jig release` refuses until it
-   is filled, and `/jig:release` fills it with the user then.
+   Leave `.jig/scripts/release.sh` as the template: in a plain repo the first `jig release` refuses until
+   it is filled, and `/jig:release` fills it with the user then. A metarepo or pararepo releases
+   with jig's defaults.
 4. Write one sentence for the Project line in `AGENTS.md` from the README or the code. Mark it `(inferred)` so the user corrects it.
 5. If the repo already has a `CLAUDE.md` with content, don't replace it; append `@AGENTS.md` and say so.
 6. Offer to register the repo with `/jig:repos add repo` (or `add meta` / `add para`), so a chat can find its `.jig/staging/`.

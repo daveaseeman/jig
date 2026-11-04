@@ -1821,13 +1821,16 @@ def release_script(root: Path, meta: bool = False) -> bool:
     return True
 
 
-def protocol_missing(root: Path, board: "Board", meta: dict | None) -> str:
+def protocol_missing(root: Path, board: "Board", meta: dict | None, para: dict | None) -> str:
+    # A metarepo and a pararepo have a default release: jig's own checks, before the tag.
+    if meta or para:
+        return ""
     script = root / RELEASE
     if not script.exists():
         return f"no {RELEASE}"
     if any(l.startswith(RELEASE_TODO) for l in script.read_text().splitlines()):
         return f"{RELEASE} still holds the template's TODO"
-    if not meta and not (board.data.get("release") or {}).get("artifacts"):
+    if not (board.data.get("release") or {}).get("artifacts"):
         return f"the board's release.artifacts is empty"
     return ""
 
@@ -1857,17 +1860,20 @@ def cmd_release(root: Path, args) -> int:
     board = Board.load(root)
     trunk = board.trunk
     meta = load_meta(trunk)
-    kind = "metarepo" if meta else "pararepo" if load_para(trunk) else "repo"
+    para = None if meta else load_para(trunk)
+    kind = "metarepo" if meta else "pararepo" if para else "repo"
     print(f"jig release: {board.data.get('name') or root.name} ({kind})")
     if git("branch", "--show-current") != trunk:
         die(f"release from {trunk}", 2)
     if git("status", "--porcelain", "--untracked-files=no"):
         die("commit or stash first: a release names one commit", 2)
-    missing = protocol_missing(root, board, meta)
+    missing = protocol_missing(root, board, meta, para)
     if missing:
         die(f"the release protocol isn't defined ({missing}): run /jig:release, which asks what "
             f"this repo builds and ships and fills in {RELEASE} and release.artifacts", 2)
-    problems = meta_problems(root, meta, trunk) if meta else []
+    problems, loc = (meta_problems(root, meta, trunk) if meta else []), None
+    if para:
+        problems, loc = para_problems(root, para, trunk)
     left = release_waits_for()
     if not args.force:
         problems += staged_refusal("the release")
@@ -1888,13 +1894,8 @@ def cmd_release(root: Path, args) -> int:
     tag = f"v{version}"
     # A pararepo's release settles its sync buffer: every Open row goes to the metarepo in one
     # proposal, made before the build so a release never ships with drift nobody proposed.
-    para = None if meta else load_para(trunk)
     proposed = None
     if para and unproposed(root)[1]:
-        loc = meta_checkout(root, para)
-        if loc is None:
-            die(f"{BUFFER} has Open rows no proposal carries yet, and {para['meta']} can't be reached: "
-                "run `jig repos add meta` in its checkout", 2)
         proposed = buffer_proposal(root, para, loc, f"buffer-{tag}")
 
     def undo(why: str) -> int:
@@ -2174,6 +2175,47 @@ def released_tags(cwd: str) -> list[str]:
         if pat.match(t) and heading.search(git("show", f"{t}:{CHANGELOG}", cwd=cwd)):
             out.append(t)
     return sorted(out, key=version_key)
+
+
+def para_problems(root: Path, para: dict, trunk: str) -> tuple[list[str], Path | None]:
+    """What makes a pararepo unreleasable: its default release, the checks jig already has.
+    Warnings (a newer metarepo release, a cited path outside contract_paths) print as `jig
+    sync` prints them and refuse nothing. Returns the refusals and the metarepo's checkout."""
+    out: list[str] = []
+    name, pin = para["meta"], para.get("pin") or ""
+    # Trunk's files, not the hooks' view of a commit: a commit made with --no-verify is checked too.
+    if para_header(para) not in git("show", f"{trunk}:AGENTS.md"):
+        out.append(f"P1 the AGENTS.md header is generated from {PARA}: edit that, then "
+                   "`jig init --para` regenerates it")
+    tracked = git("ls-files", "--", f"{CACHE}/").splitlines()
+    if tracked:
+        out.append(f"P3 {', '.join(tracked)} is the metarepo's: pararepos cite it at a tag, never copy it")
+    rows = buffer_rows(git("show", f"{trunk}:{BUFFER}"))
+    for r in rows:
+        if r[-1] not in BUFFER_STATES:
+            out.append(f"P2 {BUFFER} row {r[0]} is {r[-1] or 'empty'}: a row is Open or Closed")
+    for i in sorted({r[0] for r in rows if [x[0] for x in rows].count(r[0]) > 1}):
+        out.append(f"P2 {BUFFER} has more than one row {i}: each row has an id of its own")
+    loc = meta_checkout(root, para)
+    if loc is None:
+        return out + [f"can't reach {name} to check the pin against: run `jig repos add meta` in its checkout"], None
+    # fill_cache below rewrites the cache: a tracked one would leave the tree dirty after a refusal.
+    if tracked:
+        return out, loc
+    git("fetch", "-q", "--tags", cwd=str(loc))
+    tags = released_tags(str(loc))
+    # The cache can't vouch for the pin: fill_cache takes any commit-ish, `main` included.
+    if pin not in tags:
+        return out + [f"the pin {pin or '(none)'} in {PARA} is not a release of {name} "
+                      f"({', '.join(tags) or 'none yet'}): a pararepo pins a release, never a branch "
+                      "or a hand-made tag"], loc
+    fill_cache(root, loc, pin)
+    # As `jig sync`: until defer_until, what moved upstream is not reported.
+    if date.today().isoformat() >= (para.get("defer_until") or ""):
+        uncovered_paths(root, loc, para)
+        if version_key(tags[-1]) > version_key(pin):
+            print("\n".join(newer_release(root, loc, name, pin, tags[-1])))
+    return out, loc
 
 
 def fill_cache(root: Path, loc: Path, pin: str) -> None:
@@ -2485,12 +2527,16 @@ def sync_meta(root: Path) -> int:
     if version_key(latest) <= version_key(pin):
         print(f"{name} {pin} is the latest release")
         return 0
-    major = version_key(latest)[0] > version_key(pin)[0]
-    print(f"{name} {latest} is out; this repo pins {pin}{' (a major release)' if major else ''}.\n")
-    print("\n".join(changes_report(root, loc, pin, latest)))
-    print(f"\nTo take it: set \"pin\" to \"{latest}\" in {PARA}, run `jig init --para {name}`, and commit "
-          f"those alone as `meta: {name} {pin} → {latest}` with this report as the body.")
+    print("\n".join(newer_release(root, loc, name, pin, latest)))
     return 0
+
+
+def newer_release(root: Path, loc: Path, name: str, pin: str, latest: str) -> list[str]:
+    major = version_key(latest)[0] > version_key(pin)[0]
+    return [f"{name} {latest} is out; this repo pins {pin}{' (a major release)' if major else ''}.\n",
+            *changes_report(root, loc, pin, latest),
+            f"\nTo take it: set \"pin\" to \"{latest}\" in {PARA}, run `jig init --para {name}`, and commit "
+            f"those alone as `meta: {name} {pin} → {latest}` with this report as the body."]
 
 
 def changes_report(root: Path, loc: Path, old: str, new: str) -> list[str]:

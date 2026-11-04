@@ -862,6 +862,49 @@ git add -A && git commit -qm "para-init"
 
 msg="release: a pararepo says so"
 expect_pass sh -c "$J release 2>&1 | grep -q '(pararepo)'"
+msg="para release: release.sh untouched from the template and no artifacts: tags v0.1.0"
+out=$($J release --version 0.1.0 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && git tag | grep -qx v0.1.0 && grep -q 'TODO: release protocol' .jig/scripts/release.sh" "$out"
+msg="para release: with two Open rows it also makes the one proposal branch"
+mkdir -p .jig/ledgers && cp "$P/ledgers/BUFFER.md" .jig/ledgers/BUFFER.md
+for i in 1 2; do printf '| B%s | DECISIONS.md § D-001: x | api/a.py, y | owner, 2026-11-02 | Open |\n' $i >> .jig/ledgers/BUFFER.md; done
+git add -A && git commit -qm "buffer: B1, B2" && $J release >/dev/null 2>&1
+expect_pass sh -c "git tag | grep -qx v0.1.1 && test \$(git -C mrclone branch --list 'propose/*' | wc -l) = 1 && git -C mrclone rev-parse -q --verify refs/heads/propose/pr-buffer-v0.1.1"
+paratip=$(git rev-parse HEAD)
+msg="para release: pin set to main is refused, naming the pin, and tags nothing"
+python3 -c "import json; p = json.load(open('.jig/para.json')); p['pin'] = 'main'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
+$J init --para >/dev/null 2>&1 && git add -A && git commit -qm "pin main" >/dev/null 2>&1
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: the pin main' && ! git tag | grep -qx v0.1.2" "$out"
+git reset -q --hard "$paratip" && $J init --para >/dev/null 2>&1
+msg="para release: a hand-edited header committed with --no-verify is refused, naming P1"
+sed -i.bak 's/is written only by branch/is written by anyone/' AGENTS.md && rm AGENTS.md.bak && git commit -qam header --no-verify
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: P1' && ! git tag | grep -qx v0.1.2" "$out"
+git reset -q --hard "$paratip"
+msg="para release: a metarepo that isn't registered is refused, naming jig repos add meta"
+out=$(JIG_CONFIG="$T/none.json" $J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: .*jig repos add meta' && ! git tag | grep -qx v0.1.2" "$out"
+msg="para release: a tracked cache and a malformed buffer row are refused, naming P3 and P2"
+git add -f .jig/meta-cache/PIN && printf '| B3 | x | y | z | Settling |\n' >> .jig/ledgers/BUFFER.md && git commit -qam cache --no-verify
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: P3 .jig/meta-cache/PIN' && echo \"\$0\" | grep -q 'refused: P2 .*row B3 is Settling' && ! git tag | grep -qx v0.1.2" "$out"
+msg="para release: a P3 refusal leaves the tree clean, so the next release names P3 again"
+out=$($J release 2>&1)
+expect_pass sh -c "test -z \"\$(git status --porcelain)\" && echo \"\$1\" | grep -q 'refused: P3' && ! echo \"\$1\" | grep -q 'commit or stash'" "" "$out"
+git reset -q --hard "$paratip" && $J init --para >/dev/null 2>&1
+msg="para release: a second row with an id already taken is refused, naming P2"
+printf '| B1 | DECISIONS.md § D-001: twin | api/a.py | owner, 2026-11-02 | Open |\n' >> .jig/ledgers/BUFFER.md && git commit -qam twin --no-verify
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: P2 .*more than one row B1' && ! git tag | grep -qx v0.1.2" "$out"
+git reset -q --hard "$paratip"
+msg="para release: a pin on a tag made by hand in the metarepo is refused, naming the pin"
+git -C mrclone tag v0.5.0
+python3 -c "import json; p = json.load(open('.jig/para.json')); p['pin'] = 'v0.5.0'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
+$J init --para >/dev/null 2>&1 && git add -A && git commit -qm "pin v0.5.0" >/dev/null 2>&1
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: the pin v0.5.0' && ! git tag | grep -qx v0.1.2" "$out"
+git -C mrclone tag -d v0.5.0 >/dev/null && git reset -q --hard "$paratip" && $J init --para >/dev/null 2>&1
 
 msg="para P1: a hand-edited header is refused"
 sed -i.bak 's/is written only by branch/is written by anyone/' AGENTS.md && rm AGENTS.md.bak
@@ -2078,8 +2121,12 @@ sbland() {  # sbland <proposal branch> <term>: the metarepo writes it, merges an
     && git merge -q --no-ff --no-edit "$1" && $J release >/dev/null); }
 sbbump() { setjson .jig/para.json pin "$1" && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: sbm → $1"; }
 
-msg="buffer: a pararepo release with no buffer opens no proposal branch"
-$J release --version 0.9.0 >/dev/null 2>&1; expect_pass sh -c "git tag | grep -qx v0.9.0 && test $(sbprops) = 0"
+msg="buffer: a pararepo release with its own steps and a glob that matches nothing tags nothing"
+board "b['release']['artifacts'].append('dist/*.dmg')" && git add -A && git commit -qm "release: dmg"
+out=$($J release --version 0.9.0 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'made no file matching dist/\\*.dmg' && ! git tag | grep -qx v0.9.0" "$out"
+git revert --no-edit HEAD >/dev/null
+msg="buffer: a pararepo release with no buffer runs its steps, checks the glob, and opens no proposal branch"
+out=$($J release --version 0.9.0 2>&1); expect_pass sh -c "git tag | grep -qx v0.9.0 && test $(sbprops) = 0 && echo \"\$0\" | grep -q 'dist/app-0.9.0.zip'" "$out"
 msg="buffer P2: a contract-path change with no buffer row and no spec answer is refused"
 printf 'y=2\n' >> api/a.py && git add -A; expect_refuse git commit -qm "api: y"
 msg="buffer P2: with a row added to BUFFER.md in the same commit it is accepted"
@@ -2113,6 +2160,8 @@ brow B2 'ids sorted' 'unsorted' 'second try' Open >> .jig/ledgers/BUFFER.md && p
 msg="buffer: jig release with two Open rows opens one metarepo proposal whose spec, in the release, lists both"
 out=$($J release --version 1.0.0 2>&1)
 expect_pass sh -c "test \$(git -C '$SM' branch --list 'propose/*' | wc -l) = 1 && git -C '$SM' rev-parse -q --verify refs/heads/propose/sb-para-buffer-v1.0.0 >/dev/null && git show v1.0.0:.jig/specs/buffer-v1.0.0.md | grep -qx -- '- B1' && git show v1.0.0:.jig/specs/buffer-v1.0.0.md | grep -qx -- '- B2' && grep -q 'meta: sbm proposal propose/sb-para-buffer-v1.0.0' .jig/specs/buffer-v1.0.0.md && test -z \"\$(git status --porcelain)\"" "$out"
+msg="buffer: the release warns, as jig sync does, of a path a metarepo decision cites that contract_paths doesn't cover"
+expect_pass sh -c "echo \"\$0\" | grep -q 'docs/ui.md is cited by D-001'" "$out"
 msg="buffer: the rows stay Open after the proposal"
 expect_pass sh -c "test \$(grep -c '| Open |\$' .jig/ledgers/BUFFER.md) = 2"
 brow B3 'ids paged' 'scrolled' 'third try' Open >> .jig/ledgers/BUFFER.md && printf 's=9\n' >> api/a.py && git add -A && git commit -qm "api: s"
@@ -2137,8 +2186,8 @@ expect_pass sh -c "git -C '$SM' rev-parse -q --verify refs/heads/propose/sb-para
 msg="buffer: the proposal's spec names where each claim lives, and a pointer for one this repo owns"
 expect_pass sh -c "grep -q 'What the metarepo holds' .jig/specs/later.md && grep -q 'pointer' .jig/specs/later.md"
 git add .jig/specs/later.md && git commit -qm "specs: later"
-msg="buffer: a release whose Open rows a proposal already carries unchanged opens no branch, and needs no metarepo"
-mv "$SM" "$T/sb-away"; $J release --version 1.0.1 >/dev/null 2>&1; rc=$?; mv "$T/sb-away" "$SM"
+msg="buffer: a release whose Open rows a proposal already carries unchanged opens no branch"
+$J release --version 1.0.1 >/dev/null 2>&1; rc=$?
 expect_pass sh -c "test $rc = 0 && git tag | grep -qx v1.0.1 && test \$(git -C '$SM' branch --list 'propose/*' | wc -l) = 2"
 sed -i.bak 's/scrolled (third try)/scrolled, then paged (fourth try)/' .jig/ledgers/BUFFER.md && rm .jig/ledgers/BUFFER.md.bak && printf 'r=10\n' >> api/a.py && git add -A && git commit -qm "api: r"
 sbland propose/sb-para-later later
@@ -2153,16 +2202,19 @@ sbland propose/sb-para-buffer-v1.0.2 again && sbbump v0.4.0
 msg="buffer: with the pin bumped by hand past the release, sync still closes the row, in one commit, the pin where it is"
 before=$(git rev-parse HEAD); out=$($J sync 2>&1)
 expect_pass sh -c "test \"\$(git rev-list --count $before..HEAD)\" = 1 && git log -1 --format=%s | grep -qx 'meta: sbm v0.4.0: close B3' && grep -q '^| B3 .*| Closed |\$' .jig/ledgers/BUFFER.md && grep -q '\"pin\": \"v0.4.0\"' .jig/para.json && test -z \"\$(git status --porcelain)\"" "$out"
+git -C "$SM" branch propose/sb-para-extra main && sbland propose/sb-para-extra extra
 msg="buffer: a release with every row Closed opens no branch"
-n=$(git -C "$SM" branch --list 'propose/*' | wc -l); $J release --version 1.0.3 >/dev/null 2>&1
+n=$(git -C "$SM" branch --list 'propose/*' | wc -l); out=$($J release --version 1.0.3 2>&1)
 expect_pass sh -c "git tag | grep -qx v1.0.3 && test \$(git -C '$SM' branch --list 'propose/*' | wc -l) = $n"
+msg="buffer: a release after a newer metarepo release, pin not bumped, warns as jig sync does and tags"
+expect_pass sh -c "echo \"\$0\" | grep -q 'sbm v0.5.0 is out; this repo pins v0.4.0' && git tag | grep -qx v1.0.3" "$out"
 (cd "$SM" && git switch -q -c d4 && mkdir -p .jig/specs .jig/handoffs && printf '# s\n\n## Done when\n\n## Touches\n' > .jig/specs/s.md \
   && printf '# h\n\n## Built\n\n## Left\n' > .jig/handoffs/h.md && printf '| D-004 | ids are links | accepted (owner) | 2026-11-03 |\n' >> DECISIONS.md \
   && printf -- '- D-004\n' >> CHANGELOG.md && git add -A && git commit -qm "D-004: links" && $J reviewed >/dev/null \
   && git switch -q main && git merge -q --no-ff --no-edit d4 && $J release >/dev/null)
 msg="sync: the changes report lists a new decision, and no heading from the metarepo's .jig/ files"
 out=$($J sync 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -q 'sbm v0.5.0 is out' && echo \"\$0\" | grep -q 'D-004:' && ! echo \"\$0\" | grep -qE '(Built|Left|Done when|Touches):'" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -q 'sbm v0.6.0 is out' && echo \"\$0\" | grep -q 'D-004:' && ! echo \"\$0\" | grep -qE '(Built|Left|Done when|Touches):'" "$out"
 
 # ---------------------------------------------------------------- feedback
 export JIG_CONFIG="$T/fb/repos.json"      # its feedback/ fallback sits beside it, never the user's

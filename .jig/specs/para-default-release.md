@@ -77,8 +77,9 @@ Smoke, in the existing meta + para fixture:
   it costs a tag; the commit-time check can follow.
 
 ### Touches
-`plugin/templates/jig/jig.py` (`protocol_missing`, `cmd_release`, new `para_problems`),
-`plugin/templates/jig/RULES.md` (*Release*), `plugin/skills/release/SKILL.md`,
+`plugin/templates/jig/jig.py` (`protocol_missing`, `cmd_release`, new `para_problems`, `sync_meta`
+and new `newer_release`), `plugin/templates/jig/RULES.md` (*Release*), `plugin/skills/release/SKILL.md`,
+`plugin/skills/init/SKILL.md`,
 `marketing/FEATURES.md`, `tests/smoke.sh`.
 
 ### Alternatives considered
