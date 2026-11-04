@@ -41,7 +41,7 @@
   },
   "meta-rule": {
     "spec": ".jig/specs/meta-content-rule.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
