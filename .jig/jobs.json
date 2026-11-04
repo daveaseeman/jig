@@ -1,7 +1,7 @@
 {
   "review-bug-feedback": {
     "spec": ".jig/specs/review-bug-feedback.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/templates/jig/jig.py",
