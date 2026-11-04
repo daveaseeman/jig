@@ -889,7 +889,22 @@ msg="para release: a tracked cache and a malformed buffer row are refused, namin
 git add -f .jig/meta-cache/PIN && printf '| B3 | x | y | z | Settling |\n' >> .jig/ledgers/BUFFER.md && git commit -qam cache --no-verify
 out=$($J release 2>&1); rc=$?
 expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: P3 .jig/meta-cache/PIN' && echo \"\$0\" | grep -q 'refused: P2 .*row B3 is Settling' && ! git tag | grep -qx v0.1.2" "$out"
+msg="para release: a P3 refusal leaves the tree clean, so the next release names P3 again"
+out=$($J release 2>&1)
+expect_pass sh -c "test -z \"\$(git status --porcelain)\" && echo \"\$1\" | grep -q 'refused: P3' && ! echo \"\$1\" | grep -q 'commit or stash'" "" "$out"
 git reset -q --hard "$paratip" && $J init --para >/dev/null 2>&1
+msg="para release: a second row with an id already taken is refused, naming P2"
+printf '| B1 | DECISIONS.md § D-001: twin | api/a.py | owner, 2026-11-02 | Open |\n' >> .jig/ledgers/BUFFER.md && git commit -qam twin --no-verify
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: P2 .*more than one row B1' && ! git tag | grep -qx v0.1.2" "$out"
+git reset -q --hard "$paratip"
+msg="para release: a pin on a tag made by hand in the metarepo is refused, naming the pin"
+git -C mrclone tag v0.5.0
+python3 -c "import json; p = json.load(open('.jig/para.json')); p['pin'] = 'v0.5.0'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
+$J init --para >/dev/null 2>&1 && git add -A && git commit -qm "pin v0.5.0" >/dev/null 2>&1
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: the pin v0.5.0' && ! git tag | grep -qx v0.1.2" "$out"
+git -C mrclone tag -d v0.5.0 >/dev/null && git reset -q --hard "$paratip" && $J init --para >/dev/null 2>&1
 
 msg="para P1: a hand-edited header is refused"
 sed -i.bak 's/is written only by branch/is written by anyone/' AGENTS.md && rm AGENTS.md.bak
@@ -2098,6 +2113,8 @@ brow B2 'ids sorted' 'unsorted' 'second try' Open >> .jig/ledgers/BUFFER.md && p
 msg="buffer: jig release with two Open rows opens one metarepo proposal whose spec, in the release, lists both"
 out=$($J release --version 1.0.0 2>&1)
 expect_pass sh -c "test \$(git -C '$SM' branch --list 'propose/*' | wc -l) = 1 && git -C '$SM' rev-parse -q --verify refs/heads/propose/sb-para-buffer-v1.0.0 >/dev/null && git show v1.0.0:.jig/specs/buffer-v1.0.0.md | grep -qx -- '- B1' && git show v1.0.0:.jig/specs/buffer-v1.0.0.md | grep -qx -- '- B2' && grep -q 'meta: sbm proposal propose/sb-para-buffer-v1.0.0' .jig/specs/buffer-v1.0.0.md && test -z \"\$(git status --porcelain)\"" "$out"
+msg="buffer: the release warns, as jig sync does, of a path a metarepo decision cites that contract_paths doesn't cover"
+expect_pass sh -c "echo \"\$0\" | grep -q 'docs/ui.md is cited by D-001'" "$out"
 msg="buffer: the rows stay Open after the proposal"
 expect_pass sh -c "test \$(grep -c '| Open |\$' .jig/ledgers/BUFFER.md) = 2"
 brow B3 'ids paged' 'scrolled' 'third try' Open >> .jig/ledgers/BUFFER.md && printf 's=9\n' >> api/a.py && git add -A && git commit -qm "api: s"
@@ -2134,9 +2151,12 @@ sbland propose/sb-para-buffer-v1.0.2 again && sbbump v0.4.0
 msg="buffer: with the pin bumped by hand past the release, sync still closes the row, in one commit, the pin where it is"
 before=$(git rev-parse HEAD); out=$($J sync 2>&1)
 expect_pass sh -c "test \"\$(git rev-list --count $before..HEAD)\" = 1 && git log -1 --format=%s | grep -qx 'meta: sbm v0.4.0: close B3' && grep -q '^| B3 .*| Closed |\$' .jig/ledgers/BUFFER.md && grep -q '\"pin\": \"v0.4.0\"' .jig/para.json && test -z \"\$(git status --porcelain)\"" "$out"
+git -C "$SM" branch propose/sb-para-extra main && sbland propose/sb-para-extra extra
 msg="buffer: a release with every row Closed opens no branch"
-n=$(git -C "$SM" branch --list 'propose/*' | wc -l); $J release --version 1.0.3 >/dev/null 2>&1
+n=$(git -C "$SM" branch --list 'propose/*' | wc -l); out=$($J release --version 1.0.3 2>&1)
 expect_pass sh -c "git tag | grep -qx v1.0.3 && test \$(git -C '$SM' branch --list 'propose/*' | wc -l) = $n"
+msg="buffer: a release after a newer metarepo release, pin not bumped, warns as jig sync does and tags"
+expect_pass sh -c "echo \"\$0\" | grep -q 'sbm v0.5.0 is out; this repo pins v0.4.0' && git tag | grep -qx v1.0.3" "$out"
 
 # ---------------------------------------------------------------- feedback
 export JIG_CONFIG="$T/fb/repos.json"      # its feedback/ fallback sits beside it, never the user's
