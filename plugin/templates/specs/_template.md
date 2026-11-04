@@ -1,5 +1,7 @@
 # <task name>
 
+Source: <who asked or reported, when; for a bug, the symptom in their words>
+
 ## Intent
 One or two sentences. What should be true when this is done that isn't true now.
 

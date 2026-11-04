@@ -26,7 +26,8 @@ investigation. Elsewhere, stop and say where to run it. If `jig staging` refuses
    - **too specific** (step 3): `jig staging drop <file>`, saying step 3's reason and
      suggestion.
    - **a correction**: write the spec through `/jig:spec`, carrying the line
-     `Source: <source> (staged as <file name>)` for every report in the group. Then
+     `Source: <source> (staged as <file name>): <symptom>` for every report in the group, the
+     symptom copied from the report in its words. Then
      `jig staging resolve <file>` for each.
    - **a workaround for one repo** (`/jig:bug` step 4): `jig staging drop <file>`, saying why and what that repo
      should do instead.
