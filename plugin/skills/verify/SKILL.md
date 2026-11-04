@@ -16,5 +16,6 @@ Rules:
 - Compiled is not verified. A green build earns the right to flash, nothing more.
 - Show the output: the command, the result, the log line that proves it. Don't summarize it away.
 - Running jig in a throwaway repo? There, set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched.
+- A run that can outlast your shell's foreground time limit goes in the background, with its output to a file, and you act on its exit notice. Where the shell gives no notice, start it as `cmd > out 2>&1 & pid=$!` and wait with `while kill -0 $pid 2>/dev/null; do sleep 10; done`. Never wait on a pattern (`pgrep -f`, `ps | grep`): the pattern is in the waiting command's own line, so it matches itself and never ends.
 - If the check can't be run (no board attached, no emulator), say so explicitly and stop. Don't infer success.
 - Prefer a check the next agent can re-run from `.jig/scripts/check.sh` over one that lived only in this session.

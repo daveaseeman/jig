@@ -106,6 +106,8 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
    other; each uses only its own temp folder. The run's output always goes to
    `$(git rev-parse --git-common-dir)/jig/gate-<name>.out`, outside `worktrees/`, which the next
    gate removes; a failure nobody can reproduce is reported with that path, so it can be read.
+   A run that can outlast the shell's foreground limit is waited on as `/jig:verify` says:
+   background, its exit notice or its pid, never a pattern.
 3. Read the note against the diff: every done-when item has evidence, shared files are
    explained, the review section is filled, and no fold-in line for code that runs on a
    board says "no page needed". A miss goes back to the subnode as a note, never

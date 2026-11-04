@@ -30,6 +30,9 @@ Prefer the correction. A workaround is fine when it is the right fix — say why
 ## 5. Write the spec
 `Alternatives considered` is required: `<sibling or correction> — rejected because <reason> — this reason is [seen|assumed]`.
 `Done when` must include an observable that proves the fix fires. A fix that can't be observed isn't a fix.
+It also includes an observable that the symptom the report describes no longer happens. If the whys moved
+to a different cause, the spec says what happens to the original symptom: fixed too, with that
+observable, or left, as an `Out of scope` line with its reason, so the owner sees it.
 
 If the fix is a workaround:
 - one-line code comment, ≤120 chars, starting `WORKAROUND:` — what it patches and why a patch was right

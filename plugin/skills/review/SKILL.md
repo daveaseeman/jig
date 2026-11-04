@@ -26,7 +26,9 @@ evaluates the result on its own terms.
 
 Its job is to find the reason this change is wrong. Its questions:
 
-1. Does every "done when" item have evidence? Name it, or it isn't done.
+1. Does every "done when" item have evidence? Name it, or it isn't done. Does "done when"
+   cover the symptom in the spec's Source? A fix spec whose "done when" doesn't, and whose
+   `Out of scope` doesn't say why, is blocking.
 2. Did anything change outside "touches" / "out of scope"?
 3. Is there a sibling path that does the same job differently now? Asymmetry is a finding.
 4. If this is a fix: is `Alternatives considered` filled, and is each rejection reason
