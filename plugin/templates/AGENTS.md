@@ -31,7 +31,7 @@ Risk: R0 — personal prototype, single user, nothing shipped. Optimize for spee
 ## Code
 - Comments explain *why*. A comment restating the code is a naming failure — rename instead — and it rots the moment the code moves on.
   Exception, where a name genuinely can't carry it: register writes, bit manipulation, protocol framing, non-obvious algorithms. State plainly what those do.
-- Bug reported → /jig:bug before editing. Prefer the fix that makes the odd path look like the healthy ones over one that patches the symptom.
+- Bug reported → /jig:bug before editing (in a repo with a hubnode, ask the hubnode to run it). Prefer the fix that makes the odd path look like the healthy ones over one that patches the symptom.
 - A workaround is allowed when it's the right fix. It gets a `WORKAROUND:` comment and a row in `.jig/ledgers/WORKAROUNDS.md`. Never silently.
 - A review finding you defer or reject gets a row in `.jig/ledgers/DEFERRED.md` at handoff.
 - No new dependencies without saying so in the spec.
