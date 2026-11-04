@@ -15,7 +15,7 @@
   },
   "fix-general": {
     "spec": ".jig/specs/fix-general.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/fix/SKILL.md"
