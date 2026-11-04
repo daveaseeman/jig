@@ -20,7 +20,8 @@
       "plugin/templates/jig/jig.py",
       "plugin/templates/jig/RULES.md",
       "tests/smoke.sh",
-      "plugin/skills/release/SKILL.md"
+      "plugin/skills/release/SKILL.md",
+      "plugin/skills/init/SKILL.md"
     ],
     "reserved": {}
   },
@@ -45,7 +46,8 @@
     "shares": [
       "plugin/templates/jig/jig.py",
       "tests/smoke.sh",
-      "plugin/templates/jig/RULES.md"
+      "plugin/templates/jig/RULES.md",
+      "plugin/skills/hubnode/SKILL.md"
     ],
     "reserved": {}
   },
@@ -60,19 +62,6 @@
       "tests/smoke.sh",
       "plugin/templates/ledgers/BUFFER.md",
       "plugin/skills/spec/SKILL.md",
-      "plugin/skills/review/SKILL.md"
-    ],
-    "reserved": {}
-  },
-  "owner-steps": {
-    "spec": ".jig/specs/owner-steps.md",
-    "state": "claimed",
-    "after": [],
-    "owns": [
-      "plugin/skills/hubnode/SKILL.md"
-    ],
-    "shares": [
-      "plugin/skills/release/SKILL.md",
       "plugin/skills/review/SKILL.md"
     ],
     "reserved": {}
