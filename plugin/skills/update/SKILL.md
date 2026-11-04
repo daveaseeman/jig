@@ -31,8 +31,9 @@ That is a dry run. It changes nothing, and its exit code says what you have:
   the plan below the refusal: show it too, so the user sees what follows the fix. A block means the layout is one
   jig doesn't recognize. Say why the update would fail, then draft the change to jig that
   would recognize it — which `LAYOUT` row, board default or `STEPS` entry to add, with a
-  done-when the plugin owner can test — written the way `/jig:feedback` writes its report,
-  to the same temporary path. Apply nothing, and stop.
+  done-when the plugin owner can test — written the way `/jig:feedback` writes its report.
+  Show the draft; save it where `/jig:feedback` would only on the owner's word. Apply nothing,
+  and stop.
 
 **Repo files to review** are the repo's own files an old convention left behind. Show each
 one's proposed edit and ask about each; make it only on a yes. `--apply` never touches them.

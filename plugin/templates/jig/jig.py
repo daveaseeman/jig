@@ -54,6 +54,7 @@ BOARD_DEFAULTS = {
 # config.json's "workflow", never per task: a model would be choosing its own budget.
 WORKFLOW_DEFAULTS = {
     "spec":    {"tier": 2, "effort": 2},   # and decide, retro, a hardware page: the hubnode's
+    "bug":     {"tier": 2, "effort": 1},   # a /jig:bug investigation, before any diff exists
     "execute": {"tier": 2, "effort": 3},   # and fix, in the session that executed
     "review":  {"tier": 2, "effort": 1},   # always in a fresh context
     "check":   {"tier": 3, "effort": 4},   # gate check, release run, survey: fixed commands
@@ -186,7 +187,8 @@ class Board:
 
 def workflow_steps(config: dict) -> tuple[dict, list[str]]:
     """The steps in effect, and every way the override breaks the rules. Execute is judged
-    against the spec it builds from; review must be able to see more than the work it judges."""
+    against the spec it builds from; review must be able to see more than the work it judges;
+    a bug investigation writes a spec, so it gets at least the spec's budget."""
     steps = {k: dict(v) for k, v in WORKFLOW_DEFAULTS.items()}
     over = config.get("workflow") or {}
     if not isinstance(over, dict):
@@ -207,18 +209,23 @@ def workflow_steps(config: dict) -> tuple[dict, list[str]]:
                 bad.append(f"workflow.{step}.{k}: {v!r} is not a whole number from {least} up")
             else:
                 steps[step][k] = v
-    sp, ex, rv = steps["spec"], steps["execute"], steps["review"]
+    sp, bg, ex, rv = steps["spec"], steps["bug"], steps["execute"], steps["review"]
     lower = " (a higher number is a lower effort)"
+    if bg["tier"] > sp["tier"]:
+        bad.append(f"workflow.bug: tier {bg['tier']} is below the spec's tier {sp['tier']}")
+    if bg["effort"] > sp["effort"]:
+        bad.append(f"workflow.bug: effort {bg['effort']} is lower than the spec's "
+                   f"effort {sp['effort']}{lower}")
     if ex["tier"] < sp["tier"]:
         bad.append(f"workflow.execute: tier {ex['tier']} is above the spec's tier {sp['tier']}")
     if ex["effort"] <= sp["effort"]:
         bad.append(f"workflow.execute: effort {ex['effort']} is not below the spec's "
                    f"effort {sp['effort']}{lower}")
-    if rv["tier"] > sp["tier"]:
-        bad.append(f"workflow.review: tier {rv['tier']} is below the spec's tier {sp['tier']}")
-    if rv["effort"] >= sp["effort"]:
-        bad.append(f"workflow.review: effort {rv['effort']} is not above the spec's "
-                   f"effort {sp['effort']}{lower}")
+    if rv["tier"] > ex["tier"]:
+        bad.append(f"workflow.review: tier {rv['tier']} is below execute's tier {ex['tier']}")
+    if rv["effort"] >= ex["effort"]:
+        bad.append(f"workflow.review: effort {rv['effort']} is not above execute's "
+                   f"effort {ex['effort']}{lower}")
     return steps, bad
 
 

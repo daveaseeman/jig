@@ -45,6 +45,10 @@ Its job is to find the reason this change is wrong. Its questions:
 
 A file in `.jig/staging/` is not decided; a finding that rests on one says so.
 
+Don't rerun the full checks: the author ran them and showed the output, and the gate runs them
+again. Run only the narrowest check a specific finding needs (one smoke section, one command),
+and say which one and why.
+
 A reviewer that runs jig to test a finding does it in a throwaway repo. There, set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched.
 
 ## What counts

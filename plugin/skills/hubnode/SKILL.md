@@ -60,6 +60,8 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
   `running` line and to wait, raise it with `set_session_model` and `set_session_effort`,
   ask it for the line again, and send the brief once it reads back right. A raise applies
   from its next turn; the app may ask the owner first.
+- **bug**: a `/jig:bug` investigation, as a subagent or a session, runs at the `bug` step's
+  settings, not the step it interrupts. `/jig:fix` runs each group's `/jig:bug` at that step.
 - **review** runs as a subagent (the Agent tool) at the review step's model and effort,
   always with a fresh context: the inputs `/jig:review` names and nothing of this
   conversation. Where there is no subagent, start a raised session with no history instead.

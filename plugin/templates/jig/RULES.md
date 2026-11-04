@@ -76,8 +76,9 @@ cannot weaken the rules it is judged by, and a stale checkout is still judged by
 While a merge of trunk is being finished, a change is judged against trunk, so what trunk
 brought in is not the job's.
 
-**A bug in `.jig/jig.py`, `.jig/RULES.md` or a skill is the tool's, not this repo's.** Run `/jig:feedback`, then
-park the job or ask the hubnode. Don't patch them; don't ledger it.
+**A bug in `.jig/jig.py`, `.jig/RULES.md` or a skill is the tool's, not this repo's.** Say what
+in jig broke and tell the owner, then stop; the owner decides whether to run `/jig:feedback`.
+Don't patch them; don't ledger it.
 
 ## Keeping merges mechanical
 
@@ -225,8 +226,9 @@ itself.
 | Step | Who | Tier | Effort | An override must keep |
 |---|---|---|---|---|
 | `spec`: spec, decide, retro, hardware page | hubnode | 2 | 2 | — |
+| `bug`: a bug investigation | a subagent or a session it starts | 2 | 1 | tier no worse than spec's; effort no lower |
 | `execute`: execute, fix | a subnode it starts | 2 | 3 | tier no better than spec's; effort lower |
-| `review` | a subnode, always a fresh context | 2 | 1 | tier no worse than spec's; effort higher |
+| `review` | a subnode, always a fresh context | 2 | 1 | tier no worse than execute's; effort higher |
 | `check`: gate check, release run, survey | a subnode it starts | 3 | 4 | nothing: fixed commands |
 
 Tier 1 is the best model the tool has; a higher number is a lesser model. Effort 0 is the

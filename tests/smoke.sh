@@ -1003,8 +1003,8 @@ expect_pass sh -c "echo \"\$0\" | grep -q 'add .- D-050.*CHANGELOG.md (M3)' && g
 git add -A; msg="staging: and M3 refuses that commit until the line is there"; expect_refuse git commit -qm "D-050: x"
 git reset -q --hard && git switch -q main
 
-msg="plugin: only the skills that change the repo, tag or write user config are user-only; read-only ones stay listed"
-expect_pass test "$(grep -l '^disable-model-invocation: true' $P/../skills/*/SKILL.md | xargs -n1 dirname | xargs -n1 basename | sort | tr '\n' ' ')" = "adopt init release repos update "
+msg="plugin: only the skills that change the repo, tag, write user config or report on jig are user-only; read-only ones stay listed"
+expect_pass test "$(grep -l '^disable-model-invocation: true' $P/../skills/*/SKILL.md | xargs -n1 dirname | xargs -n1 basename | sort | tr '\n' ' ')" = "adopt feedback init release repos update "
 
 msg="plugin: no skill description holds angle brackets (the desktop app reads them as XML tags)"
 expect_refuse grep -lE '^description:.*[<>]' $P/../skills/*/SKILL.md $P/skills/*/SKILL.md
@@ -1400,24 +1400,35 @@ WF="$T/wf"; mkdir -p "$WF" && cd "$WF" && git init -q -b main && git config user
 cp -r "$P/jig" .jig && chmod +x .jig/scripts/*.sh && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 msg="workflow: prints jig's defaults, one step per line"
 expect_pass sh -c "$J workflow | grep -qx 'execute: tier 2, effort 3' && $J workflow | grep -qx 'review: tier 2, effort 1'"
+msg="workflow: the bug step is printed, in step order after spec"
+expect_pass test "$($J workflow | cut -d: -f1 | tr '\n' ' ')" = "spec bug execute review check "
 for rule in \
   '{"execute": {"tier": 1}}|workflow.execute: tier 1 is above the spec.s tier 2' \
   '{"execute": {"effort": 2}}|workflow.execute: effort 2 is not below the spec.s effort 2' \
-  '{"review": {"tier": 3}}|workflow.review: tier 3 is below the spec.s tier 2' \
-  '{"spec": {"effort": 1}}|workflow.review: effort 1 is not above the spec.s effort 1'; do
+  '{"bug": {"tier": 3}}|workflow.bug: tier 3 is below the spec.s tier 2' \
+  '{"bug": {"effort": 3}}|workflow.bug: effort 3 is lower than the spec.s effort 2' \
+  '{"review": {"tier": 3}}|workflow.review: tier 3 is below execute.s tier 2' \
+  '{"review": {"effort": 3}}|workflow.review: effort 3 is not above execute.s effort 3'; do
   setwf "${rule%%|*}"
   msg="workflow: $(echo "${rule%%|*}") is refused by jig workflow, naming the rule"
   expect_pass sh -c "! $J workflow >/dev/null 2>&1 && $J workflow 2>&1 | grep -q '${rule#*|}' && test -z \"\$($J workflow 2>/dev/null)\""
   msg="workflow: $(echo "${rule%%|*}") is refused by the commit hook"
   git add -A; expect_refuse git commit -qm wf; undo
 done
+setwf '{"review": {"effort": 2}}'
+msg="workflow: review at effort 2 with execute at 3 is accepted: review is judged against execute, not spec"
+expect_pass sh -c "$J workflow | grep -qx 'review: tier 2, effort 2'"
+setwf '{"bug": {"tier": 1, "effort": 2}}'
+msg="workflow: a bug step at spec's effort and a better tier is accepted"
+expect_pass sh -c "$J workflow | grep -qx 'bug: tier 1, effort 2'"
 setwf '{"review": {"tier": 1, "effort": 0}}'
 msg="workflow: an override that keeps the rules is accepted by the hook"
 git add -A; expect_pass git commit -qm wf
 msg="workflow: the accepted override is the step in effect"
 expect_pass sh -c "$J workflow | grep -qx 'review: tier 1, effort 0'"
 
-mkdir -p .jig/specs && printf '# t\n\n## Workflow\nspec: tier 2, effort 2\nreview: tier 2, effort 1\n' > .jig/specs/t.md
+# Written before the bug step: four Workflow lines. It must still gate, and warn.
+mkdir -p .jig/specs && printf '# t\n\n## Workflow\nspec: tier 2, effort 2\nexecute: tier 2, effort 3\nreview: tier 2, effort 1\ncheck: tier 3, effort 4\n' > .jig/specs/t.md
 git add -A && git commit -qm spec && git switch -q -c g
 printf 'a\n' > notes.txt && git add -A && git commit -qm one
 msg="reviewed: --tier without --effort is refused"
@@ -1427,7 +1438,7 @@ note=".jig/handoffs/g-$(date +%F).md"
 msg="handoff: the note carries the review's tier, effort and what it ran on"
 expect_pass sh -c "grep -qx 'Review: tier 2, effort 2' $note && grep -qx 'Ran: model-x at level-y' $note"
 sed -i.bak 's/^- \[ \]/- [x]/' "$note" && rm "$note.bak" && git add -A && git commit -qm note
-msg="gate: a review at a lower effort than the spec asks is warned about, not refused"
+msg="gate: a spec with the four pre-bug Workflow lines gates; a review at a lower effort than it asks is warned about, not refused"
 out=$($J gate 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'warning: review ran at tier 2, effort 2; the spec asks for tier 2, effort 1'" "$out"
 msg="gate: the branch relaxing its spec's Workflow doesn't silence the warning: trunk's copy is read"

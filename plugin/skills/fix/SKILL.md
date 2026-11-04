@@ -10,7 +10,8 @@ investigation. Elsewhere, stop and say where to run it. If `jig staging` refuses
 1. **Read.** `python3 .jig/jig.py staging` lists what's staged, and the `feedback/` folder
    beside your repos list too. Read every file whose kind is `feedback`. Group those that look
    like one root cause; a report with two unrelated issues joins two groups.
-2. **Investigate.** Per group, run `/jig:bug` against jig's own code (`plugin/`). The reporters'
+2. **Investigate.** Per group, run `/jig:bug` against jig's own code (`plugin/`), at the `bug`
+   step's settings (`jig workflow`; the hubnode's *Who runs each step*). The reporters'
    givens are inputs: tag one `[seen]` only once you've reproduced it here, else `[assumed]`.
    Note each report's `jig_version`: the bug may be in an older copy than this one.
 3. **General?** Picture another repo using the same feature the way RULES.md describes
