@@ -33,7 +33,7 @@ subject leads with, with an example, and the merge isn't written by the caller.
 - [ ] Smoke: `jig merge <job> --subject "D-001: merge <job>"` gives the subject `D-001: merge <job>`, once.
 - [ ] Smoke: `--subject "D-001"` still gives `D-001: merge <job>`.
 - [ ] `jig merge --help` reads: the ids the subject leads with, e.g. `D-001, D-002`; `: merge <job>` is added unless it's already there.
-- [ ] The docs no longer invite a `<what>` that names the merge: RULES.md (jobs, the hubnode merges) and
+- [x] The docs no longer invite a `<what>` that names the merge: RULES.md (jobs, the hubnode merges) and
       `plugin/skills/hubnode/SKILL.md` say what the help says.
 - [ ] Smoke passes, and the validator passes.
 
