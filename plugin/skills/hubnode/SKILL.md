@@ -115,8 +115,9 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
 5. `jig mark <name> gated`, commit `jobs.json`, then on the owner's word
    `jig merge <name> -m "shared files: ..."`. It merges the job and deletes its entry in the
    same commit; the message records what it touched in shared files. In a repo whose
-   subjects lead with ids, add `--subject "<ids>: <what>"`: the subject becomes
-   `<ids>: <what>: merge <name>`.
+   subjects lead with ids, add `--subject "<ids>"`, e.g. `--subject "D-001, D-002"`: the
+   subject becomes `<ids>: merge <name>`. `: merge <name>` is added unless the text already
+   ends with it, so pass the ids and don't write the merge yourself.
 
 ## After a merge
 

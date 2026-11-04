@@ -212,8 +212,9 @@ else stops with the files named, and a person resolves it.
    trunk in an `append_files` file is refused with "`jig sync` the job, then merge": the sync
    resolves the appends as the gate did and stops on anything else. A job whose only
    conflicts were appends needs no new handoff after it. What the merge touched in shared files goes in that commit's message (`-m`).
-   `--subject <text>` puts text before it: the subject becomes `<text>: merge <job>`, for a
-   repo whose subjects lead with ids.
+   `--subject <ids>` is the ids the subject leads with, e.g. `D-001, D-002`, for a repo whose
+   subjects lead with ids: the subject becomes `<ids>: merge <job>`. `: merge <job>` is added
+   unless the text already ends with it, so pass the ids and don't write the merge yourself.
 
 ## Workflow
 
