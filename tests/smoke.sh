@@ -2125,6 +2125,8 @@ expect_pass sh -c "test \"\$(git rev-parse HEAD)\" = $before && echo \"\$0\" | g
 msg="buffer: propose --buffer by hand puts B3, the one Open row, in its own proposal"
 out=$($J propose --buffer later 2>&1)
 expect_pass sh -c "git -C '$SM' rev-parse -q --verify refs/heads/propose/sb-para-later >/dev/null && grep -qx -- '- B3' .jig/specs/later.md && ! grep -qx -- '- B1' .jig/specs/later.md" "$out"
+msg="buffer: the proposal's spec names where each claim lives, and a pointer for one this repo owns"
+expect_pass sh -c "grep -q 'What the metarepo holds' .jig/specs/later.md && grep -q 'pointer' .jig/specs/later.md"
 git add .jig/specs/later.md && git commit -qm "specs: later"
 msg="buffer: a release whose Open rows a proposal already carries unchanged opens no branch, and needs no metarepo"
 mv "$SM" "$T/sb-away"; $J release --version 1.0.1 >/dev/null 2>&1; rc=$?; mv "$T/sb-away" "$SM"

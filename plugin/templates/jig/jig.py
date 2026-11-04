@@ -2605,7 +2605,10 @@ def buffer_proposal(root: Path, para: dict, loc: Path, slug: str) -> tuple[Path,
     spec.write_text(
         f"# Buffer proposal: {slug}\n\n"
         f"Each row is a claim of {para['meta']} at {para['pin']} that this repo has moved away from. "
-        f"{para['meta']} updates every place that states it (RULES.md: Newer wins, Every copy).\n\n"
+        f"For each row, {para['meta']} decides where the claim lives (RULES.md: What the metarepo holds). "
+        f"A contract gets the new text with its source; a claim this repo owns gets a pointer to "
+        f"the \"This repo now\" source wherever {para['meta']} states it, never a copy "
+        f"(RULES.md: Newer wins, Every copy).\n\n"
         f"## Buffer rows\n{ids}\n{table}\n\n## Decisions\n- meta: {para['meta']} proposal {branch}\n")
     return spec, branch
 
