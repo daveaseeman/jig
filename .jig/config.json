@@ -22,5 +22,11 @@
       "dist/jig-*.plugin"
     ]
   },
-  "reference_files": ""
+  "reference_files": "",
+  "workflow": {
+    "review": {
+      "tier": 2,
+      "effort": 2
+    }
+  }
 }
