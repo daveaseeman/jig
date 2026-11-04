@@ -20,3 +20,4 @@ Every should-fix or optional review finding not taken at handoff has a row here.
 | 2026-11-03 | meta-rule | The gate alternative is rejected on an [assumed] reason | optional | deferred | Gates are out of scope and the fix doesn't depend on it. [seen] spec |
 | 2026-11-03 | fix-general | /jig:feedback doesn't ask the reporter step 3's question, and a too-specific drop's suggestion reaches the reporting repo only through the owner | optional | rejected | Owner, 2026-11-03: the question belongs to /jig:fix, not the reporter. |
 | 2026-11-03 | para-release | A pararepo's release checks run only at `jig release`; a hand-made tag or a `--no-verify` push skips them | optional | rejected | Owner, 2026-11-03: tags aren't made by hand. |
+| 2026-11-03 | page-pointers | Pointers aren't reported when the metarepo can't be reached, though they need only the cache | optional | deferred | Consistent with uncovered_paths. [seen: sync_meta returns early] |

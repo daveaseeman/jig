@@ -2216,23 +2216,34 @@ msg="sync: the changes report lists a new decision, and no heading from the meta
 out=$($J sync 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'sbm v0.6.0 is out' && echo \"\$0\" | grep -q 'D-004:' && ! echo \"\$0\" | grep -qE '(Built|Left|Done when|Touches):'" "$out"
 # Page pointers: a metarepo page points to files this repo owns, one of them already gone.
-(cd "$SM" && git switch -q -c ptr && printf '\n## Screens\nThe list: `sb-para/docs/ui.md § UI`.\n\n## Help\nSee `sb-para/docs/z.md`, `sb-para/docs/gone.md` and sb-para:docs/x.md § Colors.\n' >> GLOSSARY.md \
-  && printf -- '- GLOSSARY: Screens, Help\n' >> CHANGELOG.md && git add -A && git commit -qm "GLOSSARY: Screens, Help" && $J reviewed >/dev/null \
+mkdir -p docs/guide && printf '# B\n\n## Build (release)\n\n## The `run` step\n' > docs/b.md && printf '# Guide\n' > docs/guide/a.md && git add -A && git commit -qm "docs: b, guide"
+(cd "$SM" && git switch -q -c ptr && printf '\n## Screens\nThe list: `sb-para/docs/ui.md § UI`. See sb-para/docs/ui.md § UI for the list.\n\n## Help\nSee `sb-para/docs/z.md`, `sb-para/docs/gone.md` and sb-para:docs/x.md § Colors.\n\n## Build\n`sb-para/docs/b.md § Build (release)`, then sb-para/docs/b.md § The `run` step, in sb-para/docs/guide. Use this/that wording.\n' >> GLOSSARY.md \
+  && printf '| D-005 | the old page (`sb-para/docs/old.md`) | superseded by D-004 | 2026-11-03 |\n' >> DECISIONS.md \
+  && printf -- '- D-005, GLOSSARY: Screens, Help, Build\n' >> CHANGELOG.md && git add -A && git commit -qm "D-005, GLOSSARY: Screens, Help, Build" && $J reviewed >/dev/null \
   && git switch -q main && git merge -q --no-ff --no-edit ptr && $J release >/dev/null)
 sbbump v0.7.0
 msg="pointers: sync reports a page pointer to a file this repo doesn't have, and to a heading a file lacks"
 out=$($J sync 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -qx '.jig/meta-cache/GLOSSARY.md points to docs/gone.md, which this repo doesn.t have' && echo \"\$0\" | grep -qx '.jig/meta-cache/GLOSSARY.md points to docs/x.md § Colors, which docs/x.md has no heading for'" "$out"
-msg="pointers: a pointer that resolves prints nothing, and a page pointer gets no contract_paths advice"
-expect_pass sh -c "! echo \"\$0\" | grep -qE 'points to docs/(ui|z)\.md' && ! echo \"\$0\" | grep -q 'docs/x.md is cited'" "$out"
+msg="pointers: pointers that resolve print nothing: in prose, a code span with (, a heading with code, a folder"
+expect_pass sh -c "! echo \"\$0\" | grep -qE 'points to docs/(ui|z|b)\.md|points to docs/guide'" "$out"
+msg="pointers: this/that is not a pointer, a superseded row's pointer isn't checked, and a page pointer gets no contract_paths advice"
+expect_pass sh -c "! echo \"\$0\" | grep -qE 'points to that|docs/old.md|docs/x.md is cited'" "$out"
 msg="pointers: the pararepo's release warns of a stale pointer and still tags"
 out=$($J release --version 1.0.4 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'points to docs/gone.md' && git tag | grep -qx v1.0.4" "$out"
 msg="pointers P2: a commit deleting a file a page pointer names is refused, and the refusal names the pointer"
 git rm -q docs/z.md; out=$(git commit -qm "docs: drop z" 2>&1); rc=$?; undo
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'GLOSSARY.md points to docs/z.md'" "$out"
-msg="pointers P2: a commit renaming the heading a § names is refused"
-sed -i.bak 's/^# UI$/# Screens/' docs/ui.md && rm docs/ui.md.bak && git add -A; expect_refuse git commit -qm "docs: rename UI"; undo
+msg="pointers P2: a commit renaming the heading a § names is refused, naming it"
+sed -i.bak 's/^# UI$/# Screens/' docs/ui.md && rm docs/ui.md.bak && git add -A; out=$(git commit -qm "docs: rename UI" 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'points to docs/ui.md § UI'" "$out"
+msg="pointers P2: removing a heading a code-span pointer names, ( and all, is refused"
+sed -i.bak '/^## Build (release)$/d' docs/b.md && rm docs/b.md.bak && git add -A; out=$(git commit -qm "docs: drop build" 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'points to docs/b.md § Build (release)'" "$out"
+msg="pointers P2: removing a pointed-to folder is refused"
+git rm -rq docs/guide; out=$(git commit -qm "docs: drop guide" 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'points to docs/guide'" "$out"
 msg="pointers P2: the delete passes with meta: buffered <id>"
 brow B4 'help page' 'gone' 'pointer' Open >> .jig/ledgers/BUFFER.md && git add -A && git commit -qm "buffer: B4"
 printf '# z\n\n- meta: buffered B4\n' > .jig/specs/z.md && git rm -q docs/z.md && git add -A; expect_pass git commit -qm "docs: drop z"

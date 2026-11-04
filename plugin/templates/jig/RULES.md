@@ -290,7 +290,11 @@ has one home and is stated only there; everywhere else is a pointer. Inside the 
 decision row and the pages that cite it as their source are one home. A pointer is checked from
 the pararepo's side, in what it caches: `jig sync` and its release report each one whose file or
 heading (`§`) the pararepo doesn't have, and P2 asks a commit that leaves one dangling for what a
-contract change needs. The name folds case (`App/…` is `app/…`); the path and heading don't.
+contract change needs. A pointer is `<repo>/<path>` or `<repo>:<path>`, best written in backticks
+(`` `app/docs/ui.md § Build (release)` ``): there the section is the span's text, matched whole;
+in prose it is any heading the text after `§` begins with. Headings are compared as read, code
+and emphasis marks dropped. The name folds case (`App/…` is `app/…`); the path and heading
+don't. A superseded or rejected decision row isn't checked.
 
 A question that binds the pararepos gets its decision row when it is asked, with status
 `open`, so it can be cited before it is answered. The same row then moves to `proposed`, then

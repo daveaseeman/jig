@@ -2286,11 +2286,13 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
                        "the metarepo releases the proposal that carried it as it stands")
     # A pointer this change leaves dangling: the metarepo now points at nothing, so it is owed
     # what a contract change is. Deletes and renames count here, so the diff keeps them.
-    diffed = set(git("diff", "--name-only", "--no-renames", base(trunk),
-                     *(["--cached"] if staged else [])).splitlines())
-    broken = [f"{f} points to {gap}" for f, path, section in pointers(root) if path in diffed
-              and not pointer_gap(path, section, body_at(base(trunk), path))
-              and (gap := pointer_gap(path, section, body_now(path, staged)))]
+    diffed = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", base(trunk),
+                 *(["--cached"] if staged else [])).splitlines()
+    # The cache lives in the primary checkout: it is ignored, so a job's worktree has none.
+    broken = [f"{f} points to {gap}" for f, path, section, code in pointers(root, main_root())
+              if any(d == path or d.startswith(f"{path}/") for d in diffed)
+              and not pointer_gap(path, section, code, body_at(base(trunk), path))
+              and (gap := pointer_gap(path, section, code, body_now(path, staged)))]
     if touched or broken:
         specs = {p for p in paths if p.startswith(f"{DIR}/specs/") and p.endswith(".md")}
         branch = git("branch", "--show-current")
@@ -2593,28 +2595,50 @@ def named_path(path: str, *, bare: bool = False) -> re.Pattern[str]:
     return re.compile(rf"(?<![\w./:-])(?:(?P<name>[\w.-]+)[/:]){'?' if bare else ''}{path}")
 
 
-# A metarepo's pointer to a claim this repo owns: `<repo>/<path> § <section>`, the section optional.
-POINTER = named_path(r"(?P<path>[\w.-]+(?:/[\w.-]+)*)(?:[ \t]*§[ \t]*(?P<section>[^`|)\n,;]*[^`|)\n,;\s]))?")
+# A metarepo's pointer to a claim this repo owns: `<repo>/<path> § <section>`, the section
+# optional. In a code span the section runs to the closing backtick; in prose, where it ends is
+# unknown, so REST is the line's remainder and a heading that begins it is the section. REST is
+# only looked at, so a later pointer on the line is still found.
+POINTER = named_path(r"(?P<path>[\w.-]+(?:/[\w.-]+)*)(?:(?P<shut>`)?[ \t]*§[ \t]*(?=(?P<rest>[^\n]*)))?")
 HEADING = re.compile(r"^ {0,3}#{1,6}[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$", re.M)
+# A row no longer in force points at what was, not at what must still be there.
+DEAD_ROW = re.compile(r"^(?:superseded|rejected)\b")
 
 
-def pointers(root: Path) -> list[tuple[str, str, str | None]]:
-    """Every pointer to this repo in the cache, decision rows and pages alike, as (cache file,
-    path, section). The changelog is history: a path it names was true when written."""
-    cache, names, out = main_root() / CACHE, this_repo_names(root), []
+def plain(text: str) -> str:
+    """Heading text as read: code backticks and emphasis marks dropped, `_` inside a word kept."""
+    return re.sub(r"`|\*+|(?<!\w)_+|_+(?!\w)", "", text).strip()
+
+
+def pointers(root: Path, home: Path | None = None) -> list[tuple[str, str, str | None, bool]]:
+    """Every pointer to this repo in HOME's cache (ROOT's by default), decision rows and pages
+    alike, as (cache file, path, section, whether the section is a code span's whole text). The
+    changelog is history: a path it names was true when written. `this/that` is prose, not a
+    repo called this."""
+    cache, names, out = (home or root) / CACHE, this_repo_names(root) - {"this"}, []
     for f in sorted(cache.rglob("*.md")):
         if f == cache / CHANGELOG:
             continue
-        for m in POINTER.finditer(f.read_text(errors="replace")):
-            if name_in(m.group("name"), names):
-                section = m.group("section")
-                out.append((f.relative_to(main_root()).as_posix(),
-                            m.group("path").rstrip("."), section.rstrip(".") if section else None))
+        for line in f.read_text(errors="replace").splitlines():
+            if line.lstrip().startswith("|") and any(DEAD_ROW.match(c) for c in table_cells(line)):
+                continue
+            for m in POINTER.finditer(line):
+                if not name_in(m.group("name"), names):
+                    continue
+                code = m.start() > 0 and line[m.start() - 1] == "`" and not m.group("shut")
+                rest = m.group("rest")
+                section = (rest.split("`")[0].strip() if code else rest) if rest else None
+                out.append((f"{CACHE}/{f.relative_to(cache).as_posix()}", m.group("path").rstrip("."),
+                            section or None, code))
     return list(dict.fromkeys(out))
 
 
 def body_at(rev: str, path: str) -> str | None:
-    return at_rev(rev, path) if git("cat-file", "-t", f"{rev}:{path}") in ("blob", "tree") else None
+    """PATH's text at REV ('' the index); '' for a folder; None when neither is there."""
+    if git("cat-file", "-t", f"{rev}:{path}") == "blob":
+        return at_rev(rev, path)
+    listed = git("ls-tree", "-r", "--name-only", rev, "--", path) if rev else git("ls-files", "--", path)
+    return "" if listed else None
 
 
 def body_now(path: str, staged: bool) -> str | None:
@@ -2623,19 +2647,24 @@ def body_now(path: str, staged: bool) -> str | None:
     return Path(path).read_text(errors="replace") if Path(path).is_file() else "" if Path(path).is_dir() else None
 
 
-def pointer_gap(path: str, section: str | None, body: str | None) -> str:
-    """What a pointer names that BODY, the file as it stands (None: no file), lacks; '' if nothing."""
+def pointer_gap(path: str, section: str | None, code: bool, body: str | None) -> str:
+    """What a pointer names that BODY, the file as it stands (None: no file), lacks; '' if nothing.
+    A prose section resolves when some heading begins it, a whole word or more."""
     if body is None:
         return f"{path}, which this repo doesn't have"
-    if section and section not in HEADING.findall(body):
-        return f"{path} § {section}, which {path} has no heading for"
-    return ""
+    if not section:
+        return ""
+    want, heads = plain(section), [plain(h) for h in HEADING.findall(body)]
+    if want in heads or not code and any(h and re.match(rf"{re.escape(h)}(?!\w)", want) for h in heads):
+        return ""
+    shown = want if code else re.split(r"[.,;:)|]", want)[0].strip()
+    return f"{path} § {shown}, which {path} has no heading for"
 
 
 def stale_pointers(root: Path) -> list[str]:
     """Reported, never refused: the fix is the metarepo's, through the buffer."""
-    return [f"{f} points to {gap}" for f, path, section in pointers(root)
-            if (gap := pointer_gap(path, section, body_at("HEAD", path)))]
+    return [f"{f} points to {gap}" for f, path, section, code in pointers(root)
+            if (gap := pointer_gap(path, section, code, body_at("HEAD", path)))]
 
 
 def cmd_propose(root: Path, args) -> int:
