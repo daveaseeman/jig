@@ -18,9 +18,9 @@ says so.
 **A bug step; review judged against execute**
 - [ ] `WORKFLOW_DEFAULTS` gains `"bug": {"tier": 2, "effort": 1}`, in step order after `spec`.
       `jig workflow` prints it. Its rule: tier no worse than spec's, effort no lower than spec's.
-- [ ] The review rule compares against `execute`, not `spec`: tier no worse than execute's,
-      effort higher than execute's. Review at effort 2 with execute at 3 is accepted; review at 3
-      with execute at 3 is refused, naming execute.
+- [ ] The review rule compares against `execute`, not `spec`: tier no worse than execute's. Its
+      effort rule is dropped: any review effort is accepted. Review at effort 2 or 3 with execute
+      at 3 is accepted; review at tier 3 with execute at tier 2 is refused, naming execute.
 - [ ] RULES.md's workflow table lists `bug` and the new review rule. The hubnode skill's *Who
       runs each step* says a `/jig:bug` investigation, as a subagent or a session, runs at the
       `bug` step; `/jig:fix` runs each group's `/jig:bug` at that step.

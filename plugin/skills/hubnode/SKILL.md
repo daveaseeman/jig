@@ -33,7 +33,8 @@ handoff or when blocked.
    `running <model> at <effort>`, from your own system prompt. If that is below the `spec`
    step's, say so in one line — the owner chose your session, and jig can't change it.
    If `jig workflow` isn't a command, the repo's `.jig/` is older than the plugin: say "run
-   /jig:update first" and stop.
+   /jig:update first" and stop. No `bug` line: `.jig/` predates it; use spec's settings until
+   `/jig:update`.
 7. Work in this order: open the jobs asked for, gate the handoffs waiting, sync the rest.
 
 ## Who runs each step
@@ -60,6 +61,9 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
   `running` line and to wait, raise it with `set_session_model` and `set_session_effort`,
   ask it for the line again, and send the brief once it reads back right. A raise applies
   from its next turn; the app may ask the owner first.
+- **bug**: a `/jig:bug` investigation, as a subagent or a session, runs at the `bug` step's
+  settings, not the step it interrupts. `/jig:fix` runs each group's `/jig:bug` at that step.
+  No `bug` line: `.jig/` predates it; use spec's settings until `/jig:update`.
 - **review** runs as a subagent (the Agent tool) at the review step's model and effort,
   always with a fresh context: the inputs `/jig:review` names and nothing of this
   conversation. Where there is no subagent, start a raised session with no history instead.

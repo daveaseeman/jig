@@ -45,6 +45,10 @@ Its job is to find the reason this change is wrong. Its questions:
 
 A file in `.jig/staging/` is not decided; a finding that rests on one says so.
 
+Don't rerun the full checks: the author ran them and showed the output, and the gate runs them
+again. Run only the narrowest check a specific finding needs (one smoke section, one command),
+and say which one and why.
+
 A reviewer that runs jig to test a finding does it in a throwaway repo. There, set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched.
 
 ## What counts
@@ -62,7 +66,7 @@ because the reviewer suggested them.
 
 Fix blocking items and re-run the checks. One round of should-fix is enough. If a third
 round of fixes still leaves something blocking, don't start a fourth: run `/jig:bug` on why
-the fixes aren't converging. Every should-fix or optional finding you
+the fixes aren't converging (in a repo with a hubnode, ask the hubnode to run it). Every should-fix or optional finding you
 don't take gets a row in `.jig/ledgers/DEFERRED.md` with its rank and one reason, tagged `[seen]` or
 `[assumed]`. The first row creates the file from `${CLAUDE_PLUGIN_ROOT}/templates/ledgers/DEFERRED.md`.
 
