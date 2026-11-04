@@ -20,7 +20,7 @@ Report items 3 and 9.
   push and publish stay yours, on the owner's word." Nothing says the release itself waits.
 - `[seen]` The same skill: every spawned prompt starts with the `running` line, "and its first
   reply must start with the same line… A mismatch stops it: tell the owner, don't brief it."
-  Sessions get a holding prompt first. Subagents get no equivalent step.
+  Raised sessions get a holding prompt first. Subagents get no equivalent step.
 - `[seen]` Owner (quoted in the report): a release asked for in a spec or brief goes to him
   first. A release in a test clone is fine.
 - `[assumed]` Why the subagent read "low". It isn't reproducible from jig, so it's kept as a risk.
@@ -58,14 +58,16 @@ Skill text only.
 - Any check in `jig release` itself. jig can't tell a brief from the owner.
 
 ### Touches
-`plugin/skills/hubnode/SKILL.md`, `plugin/skills/release/SKILL.md`.
+`plugin/skills/hubnode/SKILL.md`, `plugin/skills/release/SKILL.md`,
+`plugin/skills/review/SKILL.md` (the dispatch paragraph only; shared with job meta-rule).
 
 ### Alternatives considered
 - `jig release` asks for confirmation on a TTY. Rejected: agents run it without a TTY, and a
   prompt an agent can answer itself isn't the owner's word. The decision point is the conversation.
   `[seen]`: hubnode runs `jig release` from Bash.
-- Keep "don't brief it" for subagents. Rejected: an Agent call has no point between the read-back
-  and the brief. `[seen]`: the Agent tool takes one prompt.
+- Keep "don't brief it" for subagents: read back first, then send the brief as a follow-up.
+  Rejected: the in-prompt stop needs no extra round trip, and it works where a follow-up message
+  to the agent isn't available. `[seen]`: the Agent tool's first prompt carries the brief.
 
 ## Workflow
 spec: tier 2, effort 2
