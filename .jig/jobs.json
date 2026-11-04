@@ -46,7 +46,8 @@
     "shares": [
       "plugin/templates/jig/jig.py",
       "tests/smoke.sh",
-      "plugin/templates/jig/RULES.md"
+      "plugin/templates/jig/RULES.md",
+      "plugin/skills/hubnode/SKILL.md"
     ],
     "reserved": {}
   },
