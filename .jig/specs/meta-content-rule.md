@@ -54,26 +54,30 @@ check can tell restating from pointing by meaning.
 ## 5. Spec
 
 ### Done when
-- [ ] RULES.md "Metarepo and pararepos" has a **What the metarepo holds** paragraph: a claim
+- [x] RULES.md "Metarepo and pararepos" has a **What the metarepo holds** paragraph: a claim
       lives in the metarepo when another repo must agree with it or build against it (a
       contract). Otherwise it lives with its one owner, and the metarepo points to it
       (`<repo>/<path> § <section>`). Rule 2 cites it.
-- [ ] Newer wins reads: update the claim where it lives; replace any restatement elsewhere with a
+- [x] Newer wins reads: update the claim where it lives; replace any restatement elsewhere with a
       pointer to it. "gives the new text" applies only when the claim lives in the metarepo. Every
       copy says each place it lists is either updated (the home) or turned into a pointer.
-- [ ] `buffer_proposal`'s spec names the rule. For each row, the metarepo decides where the claim
+- [x] `buffer_proposal`'s spec names the rule. For each row, the metarepo decides where the claim
       lives. A contract gets the new text with its source; a claim the pararepo owns gets a
       pointer to the "This repo now" source wherever the metarepo states it. A smoke case greps
       the written spec for the rule's name and the word "pointer".
-- [ ] Spec skill step 3 and review skill item 7 ask the same: is each changed claim stated only
+- [x] Spec skill step 3 and review skill item 7 ask the same: is each changed claim stated only
       at its home, with a pointer everywhere else? The BUFFER ledger header says the row records
       a claim the metarepo states, even when the fix is a pointer.
 - [ ] A `marketing/FEATURES.md` row for the rule, added before the change.
-- [ ] Smoke passes, and the validator passes.
-- [ ] Replayed by hand once, at build. A throwaway metarepo page restates pararepo-owned
+- [x] Smoke passes, and the validator passes.
+- [x] Replayed by hand once, at build. A throwaway metarepo page restates pararepo-owned
       behaviour, with one buffer row against it. A fresh writer given the spec from
       `jig propose --buffer` replaces the restatement with a pointer, and a fresh review raises no
       copy finding.
+      Replay (2026-11-03): writer turned `docs/app.md § Menu` into "Owned by shop-app:
+      `shop-app/ui/menu.py`", no copy; reviewer found the claim stated nowhere else and raised no
+      copy finding (its other findings were the scratch setup: `docs/` not in `entry_files`, a
+      wrong commit id in the row).
 
 ### Out of scope
 - Any gate or hook. Restating versus pointing is a judgment of meaning; review catches it.
