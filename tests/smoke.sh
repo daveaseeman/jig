@@ -1783,7 +1783,20 @@ printf 'v\n' >> products/a.md; git add -A; expect_pass git commit -qm "PRODUCTS:
 msg="entry globs: M3 refuses a commit that drops the branch's only line, its page changes kept"
 python3 -c "f='CHANGELOG.md'; s=open(f).read(); open(f,'w').write(s.replace('- y\n', '', 1))"
 git add -A; expect_refuse git commit -qm "CHANGELOG: drop y"; undo
-git switch -q main
+msg="entry globs: M3 refuses a commit that deletes CHANGELOG.md after the branch added its line"
+git rm -q CHANGELOG.md; expect_refuse git commit -qm "CHANGELOG: gone"; undo
+git switch -q main && git switch -q -c em6
+msg="entry globs: M3 refuses CHANGELOG.md deleted alongside a page change"
+printf 'u\n' >> products/a.md && git rm -q CHANGELOG.md && git add -A; expect_refuse git commit -qm "PRODUCTS: u"; undo
+msg="entry globs: M3 refuses a non-ASCII page name under the glob with no line"
+printf '# d\n' > "products/déjà.md"; git add -A; expect_refuse git commit -qm "PRODUCTS: déjà"; undo
+# A pull of trunk's upstream into the branch moves the base, though local main stays behind.
+git switch -q main && git switch -q -c emup && printf 't\n' >> products/a.md && printf -- '- t\n' >> CHANGELOG.md \
+  && git add -A && git commit -qm "PRODUCTS: t" && git branch -q --set-upstream-to=emup main
+git switch -q main && git switch -q -c em7 && git merge -q --ff-only emup
+msg="entry globs: M3 doesn't let upstream trunk's line cover a branch that pulled it"
+printf 's\n' >> products/a.md; git add -A; expect_refuse git commit -qm "PRODUCTS: s"; undo
+git switch -q main && git branch -q --unset-upstream main
 printf '# b top\n' > products/b.md && printf -- '- new page b\n' >> CHANGELOG.md
 msg="entry globs: a new products/b.md needs no meta.json edit; the next release counts it"
 emerge ec "PRODUCTS: new b" products/b.md CHANGELOG.md; $J release >/dev/null 2>&1
