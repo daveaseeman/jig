@@ -1,7 +1,7 @@
 {
   "para-release": {
     "spec": ".jig/specs/para-default-release.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [],
     "shares": [
@@ -15,7 +15,7 @@
   },
   "merge-subject": {
     "spec": ".jig/specs/bug-merge-subject.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
@@ -28,7 +28,7 @@
   },
   "fix-general": {
     "spec": ".jig/specs/fix-general.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [
       "plugin/skills/fix/SKILL.md"
