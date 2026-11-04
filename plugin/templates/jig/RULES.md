@@ -333,7 +333,8 @@ that release and marks `Closed` the rows the proposal carried that are unchanged
 commit `meta: <name> v0.3.0 → v0.4.0` (or, when the pin already holds the release, `meta:
 <name> v0.4.0: close B1`). Rows added or edited after the proposal stay `Open` for the next one.
 `jig sync` also names each file here that a decision at the pin cites and `contract_paths`
-doesn't cover; adding it is the hubnode's call.
+doesn't cover; adding it is the hubnode's call. A decision may cite this repo by name in any
+case (`App/docs/ui.md`); the path after it is exact.
 
 Two rules for the metarepo's own pages:
 
