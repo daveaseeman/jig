@@ -2347,6 +2347,8 @@ expect_pass sh -c "$J repos | grep -q 'tool reports wait in .*/fb/feedback while
 
 # Sections in file order. Ones joined by a comma share state and run in one process, in
 # order: staging releases metarepo's $M; R6 as ints works in R6 takes' repo $R.
+# The slowest start first, so the run isn't waiting on one that started last.
+SLOW="pararepo_commands entry_globs report_fixes sync_buffer"
 UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer feedback"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
@@ -2355,8 +2357,13 @@ if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, it
   # Before any jig command, so every case and any fragment copied out of this file writes
   # user-level state into the section's own folder. Sections still set their own lists.
   export JIG_CONFIG="$T/repos.json" XDG_CONFIG_HOME="$T/config"
+  # Python's __pycache__ writes into a .jig/ that a parallel section may be copying.
+  export PYTHONDONTWRITEBYTECODE=1
   exec > "$2/$3.out" 2>&1 < /dev/null
-  for s in $(echo "$3" | tr , ' '); do cd "$T" && "sec_$s"; done
+  for s in $(echo "$3" | tr , ' '); do
+    declare -F "sec_$s" >/dev/null || { bad "no section $s"; continue; }
+    cd "$T" && "sec_$s"
+  done
   echo $fail > "$2/$3.rc"; exit 0
 fi
 
@@ -2366,10 +2373,22 @@ for want in "$@"; do               # a section named on its own runs its whole u
   case " $pick " in *" $u "*) ;; *) pick="$pick $u" ;; esac
 done
 [ -n "$pick" ] || pick=$UNITS
+for f in $(declare -F | awk '$3 ~ /^sec_/ {print substr($3, 5)}'); do   # a section UNITS forgot never runs
+  case " $(echo $UNITS | tr , ' ') " in *" $f "*) ;; *) bad "section $f is not in UNITS" ;; esac
+done
 real_before=$(cfg_state "$REAL_CFG")
 RUN=$(mktemp -d "${TMPDIR:-/tmp}/jig-smoke.XXXXXX")
+echo "smoke: sections run in $RUN"
 jobs=${JIG_SMOKE_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
-echo $pick | tr ' ' '\n' | xargs -P "$jobs" -I{} bash "$0" --unit "$RUN" {}
+order=$(for u in $SLOW $pick; do echo $u; done | awk -v p=" $pick " 'index(p, " " $0 " ") && !seen[$0]++')
+# Its own process group, so a stopped run takes its units with it and no caller's processes.
+set -m
+echo "$order" | xargs -P "$jobs" -I{} bash "$0" --unit "$RUN" {} &
+units=$!
+set +m
+trap 'kill -TERM -- -$units 2>/dev/null; wait $units; rm -rf "$RUN"; exit 130' INT TERM
+wait $units
+trap - INT TERM
 for u in $UNITS; do
   case " $pick " in *" $u "*) ;; *) continue ;; esac
   cat "$RUN/$u.out" 2>/dev/null
