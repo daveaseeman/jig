@@ -892,6 +892,10 @@ stage meta-note.md docs decisions new DECISIONS.md '| D-009 | x | proposed | 202
 printf 'z=3\n' >> api/a.py && printf -- '- meta: none — still internal\n' >> .jig/specs/x.md && git add api/a.py .jig/specs/x.md
 expect_refuse git commit -qm "api: more"
 python3 .jig/jig.py staging drop meta-note.md >/dev/null
+msg="para P4: a file staged for the metarepo by its name in another case holds it back too"
+stage upper-note.md DOCS decisions new DECISIONS.md '| D-009 | x | proposed | 2026-10-29 |\n'
+expect_refuse git commit -qm "api: more"
+python3 .jig/jig.py staging drop upper-note.md >/dev/null
 msg="para P4: once it is resolved, the same commit is accepted"
 expect_pass git commit -qm "api: more"
 
@@ -1703,6 +1707,10 @@ setjson .jig/para.json pin v0.3.0 && $J init --para >/dev/null 2>&1 && git add -
 msg="gate: a proposal landed by jig merge, its branch deleted, is found by the merge's job and passes"
 expect_pass sh -c "git -C '$PM' log -1 --merges --format=%s v0.3.0 | grep -qx 'merge tj' && ! git -C '$PM' rev-parse -q --verify refs/heads/propose/pa-t >/dev/null" 
 gate_ok G3; rc=$?; expect_pass test $rc = 0
+msg="sync on a pararepo trunk: once a later release is out, a proposal reads released by the first release that held it"
+mkdir -p .jig/specs && printf '# r\n\n- meta: pm proposal propose/pa-g\n' > .jig/specs/r.md
+out=$($J sync 2>&1); rm .jig/specs/r.md
+expect_pass sh -c "echo \"\$0\" | grep -q 'proposal propose/pa-g (.jig/specs/r.md): released by v0.2.0'" "$out"
 msg="init --para: a metarepo clone without the pinned tag still gets the header written; the cache waits, exit 0"
 setjson .jig/para.json pin v9.9.9 && out=$($J init --para 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'no tag v9.9.9' && grep -q 'at \`v9.9.9\`' AGENTS.md && head -1 .jig/meta-cache/PIN | grep -qx v0.3.0" "$out"
@@ -2016,8 +2024,9 @@ expect_pass hrsurvey "assert r['components_missing'] == [] and r['components_unl
 SM="$T/sb-meta"; pcnew "$SM" && git add -A && git commit -qm init && $J init --meta --name sbm >/dev/null
 printf '| D-001 | the list shows ids (`sb-para/docs/ui.md`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
 printf '| D-002 | the other app has a page (`other-para/docs/x.md`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
+printf '| D-003 | the help page (`SB-Para/docs/z.md`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
 git add -A && git commit -qm meta-init && $J release >/dev/null
-SP="$T/sb-para"; pcnew "$SP" && mkdir -p api docs && printf 'x=1\n' > api/a.py && printf '# UI\n' > docs/ui.md && printf '# X\n' > docs/x.md && printf 'dist/\n' > .gitignore
+SP="$T/sb-para"; pcnew "$SP" && mkdir -p api docs && printf 'x=1\n' > api/a.py && printf '# UI\n' > docs/ui.md && printf '# X\n' > docs/x.md && printf '# Z\n' > docs/z.md && printf 'dist/\n' > .gitignore
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 $J init --para sbm --location "$SM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
 sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
@@ -2077,6 +2086,8 @@ before=$(git rev-parse HEAD); out=$($J sync 2>&1)
 expect_pass sh -c "test \"\$(git rev-list --count $before..HEAD)\" = 1 && git log -1 --format=%s | grep -qx 'meta: sbm v0.1.0 → v0.2.0' && grep -q '\"pin\": \"v0.2.0\"' .jig/para.json && grep -q 'at \`v0.2.0\`' AGENTS.md && grep -q '^| B1 .*| Closed |\$' .jig/ledgers/BUFFER.md && grep -q '^| B2 .*| Closed |\$' .jig/ledgers/BUFFER.md && grep -q '^| B3 .*| Open |\$' .jig/ledgers/BUFFER.md && test \"\$(git show --name-only --format= HEAD | sort | tr '\n' ' ')\" = '.jig/ledgers/BUFFER.md .jig/para.json AGENTS.md ' && test -z \"\$(git status --porcelain)\" && head -1 .jig/meta-cache/PIN | grep -qx v0.2.0" "$out"
 msg="buffer: jig sync reports a pararepo path a metarepo decision cites that contract_paths doesn't cover, and not one it covers or another repo's"
 expect_pass sh -c "echo \"\$0\" | grep -q 'docs/ui.md is cited by D-001 and is not a contract path' && ! echo \"\$0\" | grep -q 'api/a.py is cited' && ! echo \"\$0\" | grep -q 'docs/x.md is cited'" "$out"
+msg="buffer: a decision may name this repo in any case, the path still exact"
+expect_pass sh -c "echo \"\$0\" | grep -q 'docs/z.md is cited by D-003 and is not a contract path'" "$out"
 msg="buffer P2: meta: buffered naming a Closed row is refused"
 printf '# c\n\n- meta: buffered B1\n' > .jig/specs/c.md && printf 'w=4\n' >> api/a.py && git add -A; expect_refuse git commit -qm "api: w"; undo
 msg="buffer: a second sync moves nothing"
@@ -2105,6 +2116,13 @@ expect_pass sh -c "test \"\$(git rev-list --count $before..HEAD)\" = 1 && git lo
 msg="buffer: a release with every row Closed opens no branch"
 n=$(git -C "$SM" branch --list 'propose/*' | wc -l); $J release --version 1.0.3 >/dev/null 2>&1
 expect_pass sh -c "git tag | grep -qx v1.0.3 && test \$(git -C '$SM' branch --list 'propose/*' | wc -l) = $n"
+(cd "$SM" && git switch -q -c d4 && mkdir -p .jig/specs .jig/handoffs && printf '# s\n\n## Done when\n\n## Touches\n' > .jig/specs/s.md \
+  && printf '# h\n\n## Built\n\n## Left\n' > .jig/handoffs/h.md && printf '| D-004 | ids are links | accepted (owner) | 2026-11-03 |\n' >> DECISIONS.md \
+  && printf -- '- D-004\n' >> CHANGELOG.md && git add -A && git commit -qm "D-004: links" && $J reviewed >/dev/null \
+  && git switch -q main && git merge -q --no-ff --no-edit d4 && $J release >/dev/null)
+msg="sync: the changes report lists a new decision, and no heading from the metarepo's .jig/ files"
+out=$($J sync 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'sbm v0.5.0 is out' && echo \"\$0\" | grep -q 'D-004:' && ! echo \"\$0\" | grep -qE '(Built|Left|Done when|Touches):'" "$out"
 
 # ---------------------------------------------------------------- feedback
 export JIG_CONFIG="$T/fb/repos.json"      # its feedback/ fallback sits beside it, never the user's
@@ -2149,8 +2167,13 @@ fb "$T/fb/feedback" mine.md widget && sed -i.bak 's/^target: this$/target: fr/' 
 msg="feedback: release refuses while a report for this repo waits in the fallback, naming it and not another repo's"
 out=$($J release 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'release waits while 1 file.*mine.md' && ! echo \"\$0\" | grep -q other.md && ! git tag | grep -q ." "$out"
+msg="feedback: a report naming this repo in another case holds the release too"
+$J staging drop mine.md >/dev/null
+fb "$T/fb/feedback" upper.md widget && sed -i.bak 's/^target: this$/target: FR/' "$T/fb/feedback/upper.md" && rm "$T/fb/feedback/upper.md.bak"
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'release waits while 1 file.*upper.md' && ! git tag | grep -q ." "$out"
 msg="feedback: once it's dropped, the release goes through beside the other repo's report"
-expect_pass sh -c "$J staging drop mine.md >/dev/null && $J release >/dev/null && git tag | grep -q ."
+expect_pass sh -c "$J staging drop upper.md >/dev/null && $J release >/dev/null && git tag | grep -q ."
 rm "$T/fb/feedback/other.md"
 msg="feedback: jig repos prints where tool reports wait"
 expect_pass sh -c "$J repos | grep -q 'tool reports wait in .*/fb/feedback while'"

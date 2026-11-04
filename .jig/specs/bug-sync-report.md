@@ -62,6 +62,11 @@ item 1. It's per machine and needs you to know the miss happened.
 - [ ] **8.** The sync status line names the first release in `released_tags` that holds the
       proposal: `released by <first>`, else `not released`. A smoke case: in the `pm` section,
       after v0.3.0 is released, the spec citing `propose/pa-g` still reads `released by v0.2.0`.
+- [ ] **Decided 2.** `release_waits_for`, `staging resolve`'s target check and P4's staged-file
+      check compare a repo name case-insensitively, through one `name_in`. Smoke cases: in a
+      metarepo named `fr`, a fallback report with `target: FR` makes `jig release` refuse; in a
+      pararepo whose metarepo is `docs`, a file staged with `target: DOCS` holds back a
+      contract-path commit (P4).
 - [ ] RULES.md's sync-buffer paragraph says a decision may cite this repo by name in any case.
 - [ ] Smoke passes, and the validator passes.
 
@@ -71,14 +76,15 @@ item 1. It's per machine and needs you to know the miss happened.
 - Saying in the status line whether the first release is past the pin. The gate already says it.
 
 ### Touches
-`plugin/templates/jig/jig.py` (`uncovered_paths`, `terms_changed`, `sync_meta`),
+`plugin/templates/jig/jig.py` (`uncovered_paths`, `terms_changed`, `sync_meta`, `release_waits_for`,
+`cmd_staging`, `names_this_repo`, `name_in`, P4 in the para checks),
 `plugin/templates/jig/RULES.md`, `tests/smoke.sh`.
 
 ### Alternatives considered
 - Item 1: rely on a repos.json alias. Rejected: per machine, and the miss is silent until you
   look for it. `[seen]`: no output without the alias.
 - Item 1: `re.IGNORECASE` on the whole pattern. Rejected: paths would fold too, so `docs/UI.md`
-  would match a cite of `docs/ui.md`. `[assumed]`: no such pair tested.
+  would match a cite of `docs/ui.md`. `[seen]`: the review's run of that pair.
 - Item 1: a citation name per pararepo in meta.json `pararepos`. Rejected: one more name to keep
   in step, and `forward` already reads that list exactly. `[seen]`.
 - Item 7: exclude only `.jig/`. Rejected: headings in non-entry pages (a README) would still be
