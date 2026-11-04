@@ -20,15 +20,15 @@ reporter. Add that question before the decision, so a fix fitted to one repo is 
       > against jig on purpose to trigger it. If the fix is too specific, then: drop it, say what
       > jig does promise, and suggest how the reporting repo can meet its stricter need itself.
 
-- [ ] Decide gains a bullet: **too specific** (step 3) → `jig staging drop <file>`, with step 3's
-      reason and suggestion. Step 4 (Show) shows that reason like any other drop's.
+- [ ] Decide gains a bullet: **too specific** (step 3) → `jig staging drop <file>`, saying step 3's
+      reason and suggestion. Step 5 (Show) shows that reason like any other drop's.
 - [ ] The skill names no repo and no past case.
 - [ ] The `fix` row in `marketing/FEATURES.md` (main checkout, gitignored) says it drops a fix
       too specific to one repo. The hubnode edits it before the change.
 - [ ] Smoke passes, and the validator passes.
 
 ## Out of scope
-- Any code: `jig staging drop` already takes a reason.
+- Any code: `jig staging drop` takes no reason and records nothing; the reason is only shown (step 5).
 - Re-running `/jig:fix` on reports already decided.
 
 ## Touches

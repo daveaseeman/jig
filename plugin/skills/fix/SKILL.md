@@ -22,13 +22,13 @@ investigation. Elsewhere, stop and say where to run it. If `jig staging` refuses
    guarantee, or a policy or tool of its own) or if someone would have to be working
    against jig on purpose to trigger it. If the fix is too specific, then: drop it, say what
    jig does promise, and suggest how the reporting repo can meet its stricter need itself.
-4. **Decide** by `/jig:bug`'s fourth step, then act:
+4. **Decide** by step 3, then by `/jig:bug`'s fourth step, then act:
+   - **too specific** (step 3): `jig staging drop <file>`, saying step 3's reason and
+     suggestion.
    - **a correction**: write the spec through `/jig:spec`, carrying the line
      `Source: <source> (staged as <file name>)` for every report in the group. Then
      `jig staging resolve <file>` for each.
-   - **too specific** (step 3): `jig staging drop <file>`, with step 3's reason and
-     suggestion.
-   - **a workaround for one repo**: `jig staging drop <file>`, saying why and what that repo
+   - **a workaround for one repo** (`/jig:bug` step 4): `jig staging drop <file>`, saying why and what that repo
      should do instead.
    - **already fixed**: `jig staging drop <file>`, naming the commit that fixed it.
    - **can't reproduce**: leave it staged, and say what's missing to reproduce it.
