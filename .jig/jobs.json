@@ -1,1 +1,16 @@
-{}
+{
+  "wait-loop": {
+    "spec": ".jig/specs/bug-wait-loop.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/bug/SKILL.md",
+      "plugin/skills/review/SKILL.md",
+      "plugin/skills/verify/SKILL.md",
+      "plugin/skills/subnode/SKILL.md",
+      "plugin/skills/hubnode/SKILL.md"
+    ],
+    "shares": [],
+    "reserved": {}
+  }
+}
