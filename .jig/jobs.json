@@ -1,7 +1,7 @@
 {
   "page-pointers": {
     "spec": ".jig/specs/sync-page-pointers.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/templates/jig/jig.py",
