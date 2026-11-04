@@ -1407,8 +1407,7 @@ for rule in \
   '{"execute": {"effort": 2}}|workflow.execute: effort 2 is not below the spec.s effort 2' \
   '{"bug": {"tier": 3}}|workflow.bug: tier 3 is below the spec.s tier 2' \
   '{"bug": {"effort": 3}}|workflow.bug: effort 3 is lower than the spec.s effort 2' \
-  '{"review": {"tier": 3}}|workflow.review: tier 3 is below execute.s tier 2' \
-  '{"review": {"effort": 3}}|workflow.review: effort 3 is not above execute.s effort 3'; do
+  '{"review": {"tier": 3}}|workflow.review: tier 3 is below execute.s tier 2'; do
   setwf "${rule%%|*}"
   msg="workflow: $(echo "${rule%%|*}") is refused by jig workflow, naming the rule"
   expect_pass sh -c "! $J workflow >/dev/null 2>&1 && $J workflow 2>&1 | grep -q '${rule#*|}' && test -z \"\$($J workflow 2>/dev/null)\""
@@ -1418,6 +1417,9 @@ done
 setwf '{"review": {"effort": 2}}'
 msg="workflow: review at effort 2 with execute at 3 is accepted: review is judged against execute, not spec"
 expect_pass sh -c "$J workflow | grep -qx 'review: tier 2, effort 2'"
+setwf '{"review": {"effort": 3}}'
+msg="workflow: review at effort 3 with execute at 3 is accepted: review's effort has no rule"
+expect_pass sh -c "$J workflow | grep -qx 'review: tier 2, effort 3'"
 setwf '{"bug": {"tier": 1, "effort": 2}}'
 msg="workflow: a bug step at spec's effort and a better tier is accepted"
 expect_pass sh -c "$J workflow | grep -qx 'bug: tier 1, effort 2'"

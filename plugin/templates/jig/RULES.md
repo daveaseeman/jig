@@ -228,7 +228,7 @@ itself.
 | `spec`: spec, decide, retro, hardware page | hubnode | 2 | 2 | — |
 | `bug`: a bug investigation | a subagent or a session it starts | 2 | 1 | tier no worse than spec's; effort no lower |
 | `execute`: execute, fix | a subnode it starts | 2 | 3 | tier no better than spec's; effort lower |
-| `review` | a subnode, always a fresh context | 2 | 1 | tier no worse than execute's; effort higher |
+| `review` | a subnode, always a fresh context | 2 | 1 | tier no worse than execute's; any effort |
 | `check`: gate check, release run, survey | a subnode it starts | 3 | 4 | nothing: fixed commands |
 
 Tier 1 is the best model the tool has; a higher number is a lesser model. Effort 0 is the
