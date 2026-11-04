@@ -2215,6 +2215,27 @@ expect_pass sh -c "echo \"\$0\" | grep -q 'sbm v0.5.0 is out; this repo pins v0.
 msg="sync: the changes report lists a new decision, and no heading from the metarepo's .jig/ files"
 out=$($J sync 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'sbm v0.6.0 is out' && echo \"\$0\" | grep -q 'D-004:' && ! echo \"\$0\" | grep -qE '(Built|Left|Done when|Touches):'" "$out"
+# Page pointers: a metarepo page points to files this repo owns, one of them already gone.
+(cd "$SM" && git switch -q -c ptr && printf '\n## Screens\nThe list: `sb-para/docs/ui.md § UI`.\n\n## Help\nSee `sb-para/docs/z.md`, `sb-para/docs/gone.md` and sb-para:docs/x.md § Colors.\n' >> GLOSSARY.md \
+  && printf -- '- GLOSSARY: Screens, Help\n' >> CHANGELOG.md && git add -A && git commit -qm "GLOSSARY: Screens, Help" && $J reviewed >/dev/null \
+  && git switch -q main && git merge -q --no-ff --no-edit ptr && $J release >/dev/null)
+sbbump v0.7.0
+msg="pointers: sync reports a page pointer to a file this repo doesn't have, and to a heading a file lacks"
+out=$($J sync 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -qx '.jig/meta-cache/GLOSSARY.md points to docs/gone.md, which this repo doesn.t have' && echo \"\$0\" | grep -qx '.jig/meta-cache/GLOSSARY.md points to docs/x.md § Colors, which docs/x.md has no heading for'" "$out"
+msg="pointers: a pointer that resolves prints nothing, and a page pointer gets no contract_paths advice"
+expect_pass sh -c "! echo \"\$0\" | grep -qE 'points to docs/(ui|z)\.md' && ! echo \"\$0\" | grep -q 'docs/x.md is cited'" "$out"
+msg="pointers: the pararepo's release warns of a stale pointer and still tags"
+out=$($J release --version 1.0.4 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'points to docs/gone.md' && git tag | grep -qx v1.0.4" "$out"
+msg="pointers P2: a commit deleting a file a page pointer names is refused, and the refusal names the pointer"
+git rm -q docs/z.md; out=$(git commit -qm "docs: drop z" 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'GLOSSARY.md points to docs/z.md'" "$out"
+msg="pointers P2: a commit renaming the heading a § names is refused"
+sed -i.bak 's/^# UI$/# Screens/' docs/ui.md && rm docs/ui.md.bak && git add -A; expect_refuse git commit -qm "docs: rename UI"; undo
+msg="pointers P2: the delete passes with meta: buffered <id>"
+brow B4 'help page' 'gone' 'pointer' Open >> .jig/ledgers/BUFFER.md && git add -A && git commit -qm "buffer: B4"
+printf '# z\n\n- meta: buffered B4\n' > .jig/specs/z.md && git rm -q docs/z.md && git add -A; expect_pass git commit -qm "docs: drop z"
 
 # ---------------------------------------------------------------- feedback
 export JIG_CONFIG="$T/fb/repos.json"      # its feedback/ fallback sits beside it, never the user's

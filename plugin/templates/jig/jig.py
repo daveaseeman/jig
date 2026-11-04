@@ -2213,6 +2213,8 @@ def para_problems(root: Path, para: dict, trunk: str) -> tuple[list[str], Path |
     # As `jig sync`: until defer_until, what moved upstream is not reported.
     if date.today().isoformat() >= (para.get("defer_until") or ""):
         uncovered_paths(root, loc, para)
+        for line in stale_pointers(root):
+            print(line)
         if version_key(tags[-1]) > version_key(pin):
             print("\n".join(newer_release(root, loc, name, pin, tags[-1])))
     return out, loc
@@ -2282,7 +2284,14 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
         elif n[-1] == "Closed" and (touched or tuple(r) not in sent or n[:-1] != r[:-1]):
             out.append(f"P2 {BUFFER} row {r[0]} closed by hand: `jig sync` closes a row once "
                        "the metarepo releases the proposal that carried it as it stands")
-    if touched:
+    # A pointer this change leaves dangling: the metarepo now points at nothing, so it is owed
+    # what a contract change is. Deletes and renames count here, so the diff keeps them.
+    diffed = set(git("diff", "--name-only", "--no-renames", base(trunk),
+                     *(["--cached"] if staged else [])).splitlines())
+    broken = [f"{f} points to {gap}" for f, path, section in pointers(root) if path in diffed
+              and not pointer_gap(path, section, body_at(base(trunk), path))
+              and (gap := pointer_gap(path, section, body_now(path, staged)))]
+    if touched or broken:
         specs = {p for p in paths if p.startswith(f"{DIR}/specs/") and p.endswith(".md")}
         branch = git("branch", "--show-current")
         if branch and branch != trunk:
@@ -2296,12 +2305,14 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
             if BUFFER in paths else ""
         rowed = any(r[-1] == "Open" for l in diff.splitlines() if l.startswith("+|")
                     for r in buffer_rows(l[1:]))
-        if not answered and not rowed:
-            out.append(f"P2 {', '.join(touched)} is a contract path: add or edit its row in "
-                       f"{BUFFER} in this commit (the first row creates the file from jig's "
-                       "ledger template), or a spec in this change needs `meta: buffered "
-                       "<row id>`, `meta: <name> proposal <branch>` (`jig propose`) or "
-                       "`meta: none — <reason>`")
+        answer = (f"add or edit its row in {BUFFER} in this commit (the first row creates the "
+                  "file from jig's ledger template), or a spec in this change needs `meta: "
+                  "buffered <row id>`, `meta: <name> proposal <branch>` (`jig propose`) or "
+                  "`meta: none — <reason>`")
+        if not answered and not rowed and touched:
+            out.append(f"P2 {', '.join(touched)} is a contract path: {answer}")
+        if not answered and not rowed and broken:
+            out.append(f"P2 this change leaves the metarepo pointing at nothing ({'; '.join(broken)}): {answer}")
     # P4 no contract change while a file for the metarepo waits unresolved
     waiting = [f.name for f in staged_files(main_root()) if name_in(read_staged(f)[0].get("target"), {para.get("meta", "")})]
     if touched and waiting:
@@ -2524,6 +2535,8 @@ def sync_meta(root: Path) -> int:
                 die(f"the commit was refused: {PARA}, AGENTS.md and {BUFFER} are staged as jig wrote them", 1)
             print(f"{subject}: committed, closing {', '.join(ids)}.")
             pin = settles
+    for line in stale_pointers(root):
+        print(line)
     if version_key(latest) <= version_key(pin):
         print(f"{name} {pin} is the latest release")
         return 0
@@ -2560,18 +2573,69 @@ def uncovered_paths(root: Path, loc: Path, para: dict) -> None:
              for m in row.finditer(f.read_text(errors="replace"))]
     if not cited:
         return
-    names = "|".join(re.escape(n) for n in sorted(this_repo_names(root)))
+    names = this_repo_names(root)
     for path in git("-c", "core.quotePath=false", "ls-files").splitlines():
         if path.startswith(f"{DIR}/") or matches(path, para.get("contract_paths", [])):
             continue
-        # The path whole, alone or after this repo's name (`app/docs/ui.md`, `app:…`): another
-        # pararepo's docs/ui.md is not this one's. The name is typed prose, so its case folds;
-        # the path's doesn't.
-        cite = re.compile(rf"(?<![\w./:-])(?:(?i:{names})[/:])?{re.escape(path)}(?![\w/-])")
-        ids = [i for i, line in cited if cite.search(line)]
+        # The path whole, alone or after this repo's name: another pararepo's docs/ui.md is not
+        # this one's.
+        cite = named_path(rf"{re.escape(path)}(?![\w/-])", bare=True)
+        ids = [i for i, line in cited
+               if any(not m.group("name") or name_in(m.group("name"), names) for m in cite.finditer(line))]
         if ids:
             print(f"{path} is cited by {', '.join(dict.fromkeys(ids))} and is not a contract path: "
                   f"add it to \"contract_paths\" in {PARA} if this repo can change what it says")
+
+
+def named_path(path: str, *, bare: bool = False) -> re.Pattern[str]:
+    """PATH (a regex) after a repo's name, `app/docs/ui.md` or `app:docs/ui.md`, or alone when
+    BARE. Whose name it is is name_in's call, so a name's case folds one way; a path's never does."""
+    return re.compile(rf"(?<![\w./:-])(?:(?P<name>[\w.-]+)[/:]){'?' if bare else ''}{path}")
+
+
+# A metarepo's pointer to a claim this repo owns: `<repo>/<path> § <section>`, the section optional.
+POINTER = named_path(r"(?P<path>[\w.-]+(?:/[\w.-]+)*)(?:[ \t]*§[ \t]*(?P<section>[^`|)\n,;]*[^`|)\n,;\s]))?")
+HEADING = re.compile(r"^ {0,3}#{1,6}[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$", re.M)
+
+
+def pointers(root: Path) -> list[tuple[str, str, str | None]]:
+    """Every pointer to this repo in the cache, decision rows and pages alike, as (cache file,
+    path, section). The changelog is history: a path it names was true when written."""
+    cache, names, out = main_root() / CACHE, this_repo_names(root), []
+    for f in sorted(cache.rglob("*.md")):
+        if f == cache / CHANGELOG:
+            continue
+        for m in POINTER.finditer(f.read_text(errors="replace")):
+            if name_in(m.group("name"), names):
+                section = m.group("section")
+                out.append((f.relative_to(main_root()).as_posix(),
+                            m.group("path").rstrip("."), section.rstrip(".") if section else None))
+    return list(dict.fromkeys(out))
+
+
+def body_at(rev: str, path: str) -> str | None:
+    return at_rev(rev, path) if git("cat-file", "-t", f"{rev}:{path}") in ("blob", "tree") else None
+
+
+def body_now(path: str, staged: bool) -> str | None:
+    if staged:
+        return body_at("", path)
+    return Path(path).read_text(errors="replace") if Path(path).is_file() else "" if Path(path).is_dir() else None
+
+
+def pointer_gap(path: str, section: str | None, body: str | None) -> str:
+    """What a pointer names that BODY, the file as it stands (None: no file), lacks; '' if nothing."""
+    if body is None:
+        return f"{path}, which this repo doesn't have"
+    if section and section not in HEADING.findall(body):
+        return f"{path} § {section}, which {path} has no heading for"
+    return ""
+
+
+def stale_pointers(root: Path) -> list[str]:
+    """Reported, never refused: the fix is the metarepo's, through the buffer."""
+    return [f"{f} points to {gap}" for f, path, section in pointers(root)
+            if (gap := pointer_gap(path, section, body_at("HEAD", path)))]
 
 
 def cmd_propose(root: Path, args) -> int:
