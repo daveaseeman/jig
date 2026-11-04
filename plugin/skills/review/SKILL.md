@@ -11,7 +11,12 @@ scope, so that is the scope at which these questions can be answered.
 Run the subagent at the `review` step's settings: `jig workflow` gives its tier and effort,
 `${CLAUDE_PLUGIN_ROOT}/tiers.json` maps them to a model and an effort level. A number with no
 entry there is refused: say so and stop. Its prompt starts with `running <model> at
-<effort>`, and so must the first line of its reply; a different model stops the review.
+<effort>`, and so must the first line of its reply, read from its own settings; a value it
+can't read, it reports as `unknown`. The prompt also says: "if your own model or effort
+differs from this line, reply with only your `running` line and stop". At a mismatch in model
+or effort, retry once, then ask the owner; never use the mismatched run's output. Only a value
+it read and that differs is a mismatch: an `unknown` gets no retry, record it as `unknown`
+(`--ran "<model> at unknown"`) and tell the owner once.
 
 Give a subagent exactly this and nothing else: the diff since the last handoff
 (`git diff <last-handoff-commit>..HEAD`, or `git diff <trunk>...HEAD` for the first one; the
