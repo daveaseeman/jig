@@ -127,9 +127,9 @@ Day to day:
 
 Every rule the hooks enforce is written in `.jig/RULES.md` after init.
 
-`/jig:init`, `/jig:adopt`, `/jig:update`, `/jig:release` and `/jig:repos` don't show in the
-slash list, and an agent can't start them on its own: each changes the repo, tags a release or
-writes your repo list, so only you do. Type them in full at the start of a message.
+`/jig:init`, `/jig:adopt`, `/jig:update`, `/jig:release`, `/jig:repos` and `/jig:feedback` don't
+show in the slash list, and an agent can't start them on its own: each changes the repo, tags a
+release, writes your repo list or files a report on jig, so only you do. Type them in full at the start of a message.
 
 ## 📦 Installation
 
@@ -154,8 +154,9 @@ enough to read in a minute.
 
 This is a personal tool, built in the open. Issues and discussion are on GitHub.
 
-If jig misbehaves in your repo, run `/jig:feedback`. It investigates the way `/jig:bug` does and
-writes a report to a temp file you can attach to an issue, without patching your copy.
+If jig misbehaves in your repo, a session tells you and stops. Run `/jig:feedback` if you want a
+report: it investigates the way `/jig:bug` does and stages the report in the jig repo, without
+patching your copy.
 
 To work on jig itself, start with `AGENTS.md`. `bash tests/smoke.sh` runs every rule end to end
 in a throwaway repo, and `claude plugin validate ./plugin` checks the plugin's shape. This repo
