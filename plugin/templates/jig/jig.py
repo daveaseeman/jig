@@ -858,8 +858,11 @@ def cmd_merge(root: Path, args) -> int:
         die(f"{branch} has changed since the commit {notes[-1]} names ({', '.join(since[:5])}): "
             "hand off again and gate that, or merge the gated commit by hand")
     # The subject ends in `merge <job>` either way: the gate's deleted-branch fallback finds
-    # the job by it.
-    msg = (f"{args.subject}: " if args.subject else "") + f"merge {name}" + (f"\n\n{args.message}" if args.message else "")
+    # the job by it. A caller who already wrote it out isn't given it twice.
+    subject = args.subject or ""
+    if not re.search(rf"(?:^|: )merge {re.escape(name)}$", subject):
+        subject = (f"{subject}: " if subject else "") + f"merge {name}"
+    msg = subject + (f"\n\n{args.message}" if args.message else "")
     p = subprocess.run(["git", "merge", "--no-ff", "--no-commit", "-m", msg, branch],
                        capture_output=True, text=True)
     merging = bool(git("rev-parse", "-q", "--verify", "MERGE_HEAD"))
@@ -3835,7 +3838,7 @@ def main(argv: list[str] | None = None) -> int:
     mg = sub.add_parser("merge", help="hubnode: merge a job and delete its entry in that commit")
     mg.add_argument("name")
     mg.add_argument("-m", "--message", help="appended to the merge commit: what shared files it touched")
-    mg.add_argument("--subject", help="the merge subject, before `: merge <name>` (ids a repo's subjects lead with)")
+    mg.add_argument("--subject", help="the ids the subject leads with, e.g. `D-001, D-002`; `: merge <job>` is added unless it's already there")
     c = sub.add_parser("check", help="run the rules here")
     c.add_argument("--staged", action="store_true")
     sub.add_parser("job", help="print this branch's manifest")
