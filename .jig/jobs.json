@@ -1,7 +1,7 @@
 {
   "smoke-parallel": {
     "spec": ".jig/specs/smoke-parallel.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "tests/smoke.sh",
