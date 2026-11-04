@@ -2252,7 +2252,7 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
                        "<row id>`, `meta: <name> proposal <branch>` (`jig propose`) or "
                        "`meta: none — <reason>`")
     # P4 no contract change while a file for the metarepo waits unresolved
-    waiting = [f.name for f in staged_files(main_root()) if read_staged(f)[0].get("target") == para.get("meta")]
+    waiting = [f.name for f in staged_files(main_root()) if name_in(read_staged(f)[0].get("target"), {para.get("meta", "")})]
     if touched and waiting:
         out.append(f"P4 {', '.join(touched)} is a contract path, and {', '.join(waiting)} for "
                    f"{para.get('meta')} is still staged: resolve it first")
@@ -2327,12 +2327,12 @@ def decision_ids(loc: Path, rev: str) -> str:
 def terms_changed(loc: Path, old: str, new: str) -> list[str]:
     """Decision ids and glossary headings that changed between two releases. Ids are matched
     by the metarepo's own decision_prefix, which may be lowercase."""
-    # Only what a pararepo can read: the entry set release counts and the cache copies. Paths,
-    # not entry_files globs, since git's `**` misses a file directly under the folder.
+    # Only what a pararepo can read: the entry set release counts and the cache copies. Literal
+    # paths, not entry_files globs, since git's `**` misses a file directly under the folder.
     paths = sorted((set(entry_paths(old, str(loc))) | set(entry_paths(new, str(loc)))) - {CHANGELOG})
     if not paths:
         return []
-    diff = git("diff", old, new, "--", *paths, cwd=str(loc))
+    diff = git("--literal-pathspecs", "diff", old, new, "--", *paths, cwd=str(loc))
     found = re.findall(rf"^[+-]\s*\|\s*({decision_ids(loc, new)})\s*\|", diff, re.M)
     found += re.findall(r"^[+-]#{2,3} (.+?)\s*$", diff, re.M)
     return list(dict.fromkeys(found))
@@ -2429,7 +2429,8 @@ def sync_meta(root: Path) -> int:
         text = spec.read_text()
         for m in PROPOSAL.finditer(text):
             if m.group("branch") and m.group("meta") == name:
-                first = next((t for t in tags if proposal_in(loc, m.group("branch"), t)), None)
+                first = next((t for t in sorted(set(tags) | {pin}, key=version_key)
+                              if proposal_in(loc, m.group("branch"), t)), None)
                 print(f"proposal {m.group('branch')} ({spec.relative_to(root)}): "
                       f"{'released by ' + first if first else 'not released'}")
                 rows = [i for i, r in proposed_copy(text).items() if tuple(r) in still]
@@ -2693,9 +2694,13 @@ def this_repo_names(root: Path) -> set[str]:
     return names - {""}
 
 
+def name_in(name: str | None, names: set[str]) -> bool:
+    """A human types a repo's name, so `App` and `app` are one repo."""
+    return (name or "").casefold() in {n.casefold() for n in names - {""}}
+
+
 def names_this_repo(name: str | None, root: Path) -> bool:
-    """A human types a repo's name, so `App-Lite` and `app-lite` are one repo."""
-    return (name or "").casefold() in {n.casefold() for n in this_repo_names(root)}
+    return name_in(name, this_repo_names(root))
 
 
 def bare_path(dest: str) -> bool:

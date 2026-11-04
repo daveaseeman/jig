@@ -892,6 +892,10 @@ stage meta-note.md docs decisions new DECISIONS.md '| D-009 | x | proposed | 202
 printf 'z=3\n' >> api/a.py && printf -- '- meta: none — still internal\n' >> .jig/specs/x.md && git add api/a.py .jig/specs/x.md
 expect_refuse git commit -qm "api: more"
 python3 .jig/jig.py staging drop meta-note.md >/dev/null
+msg="para P4: a file staged for the metarepo by its name in another case holds it back too"
+stage upper-note.md DOCS decisions new DECISIONS.md '| D-009 | x | proposed | 2026-10-29 |\n'
+expect_refuse git commit -qm "api: more"
+python3 .jig/jig.py staging drop upper-note.md >/dev/null
 msg="para P4: once it is resolved, the same commit is accepted"
 expect_pass git commit -qm "api: more"
 
@@ -2163,8 +2167,13 @@ fb "$T/fb/feedback" mine.md widget && sed -i.bak 's/^target: this$/target: fr/' 
 msg="feedback: release refuses while a report for this repo waits in the fallback, naming it and not another repo's"
 out=$($J release 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'release waits while 1 file.*mine.md' && ! echo \"\$0\" | grep -q other.md && ! git tag | grep -q ." "$out"
+msg="feedback: a report naming this repo in another case holds the release too"
+$J staging drop mine.md >/dev/null
+fb "$T/fb/feedback" upper.md widget && sed -i.bak 's/^target: this$/target: FR/' "$T/fb/feedback/upper.md" && rm "$T/fb/feedback/upper.md.bak"
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'release waits while 1 file.*upper.md' && ! git tag | grep -q ." "$out"
 msg="feedback: once it's dropped, the release goes through beside the other repo's report"
-expect_pass sh -c "$J staging drop mine.md >/dev/null && $J release >/dev/null && git tag | grep -q ."
+expect_pass sh -c "$J staging drop upper.md >/dev/null && $J release >/dev/null && git tag | grep -q ."
 rm "$T/fb/feedback/other.md"
 msg="feedback: jig repos prints where tool reports wait"
 expect_pass sh -c "$J repos | grep -q 'tool reports wait in .*/fb/feedback while'"
