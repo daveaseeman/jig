@@ -1818,7 +1818,36 @@ msg="entry globs: M3 refuses a change to products/a.md with no changelog line"
 printf 'x\n' >> products/a.md; git add -A; expect_refuse git commit -qm "PRODUCTS: no line"; undo
 msg="entry globs: M3 takes a change to notes.md, which no glob names, with no line"
 printf 'x\n' >> notes.md; git add -A; expect_pass git commit -qm "NOTES: n"
-git switch -q main
+# M3 judges the branch since it left trunk: a line one commit added covers the next ones.
+# This branch's line goes under the heading, trunk's at the end, so the sync merges cleanly.
+underhead() { python3 -c "import sys; f='CHANGELOG.md'; s=open(f).read(); open(f,'w').write(s.replace('## Unreleased\n', '## Unreleased\n'+sys.argv[1]+'\n', 1))" "$1"; }
+git switch -q main && git switch -q -c em4
+printf 'y\n' >> products/a.md && underhead '- y' && git add -A && git commit -qm "PRODUCTS: y"
+msg="entry globs: M3 takes a page-only commit on a branch whose earlier commit added the line"
+printf 'z\n' >> products/a.md; git add -A; expect_pass git commit -qm "PRODUCTS: z"
+msg="entry globs: M3 takes a DECISIONS.md-only commit on that branch"
+printf '\nmore\n' >> DECISIONS.md; git add -A; expect_pass git commit -qm "DECISIONS: more"
+git switch -q main && printf 'w\n' >> products/x/b.md && printf -- '- w\n' >> CHANGELOG.md
+emerge em5 "PRODUCTS: w" products/x/b.md CHANGELOG.md; git switch -q em4 && git merge -q --no-edit main
+msg="entry globs: after the branch merges a moved trunk, a page-only commit still passes"
+printf 'v\n' >> products/a.md; git add -A; expect_pass git commit -qm "PRODUCTS: v"
+msg="entry globs: M3 refuses a commit that drops the branch's only line, its page changes kept"
+python3 -c "f='CHANGELOG.md'; s=open(f).read(); open(f,'w').write(s.replace('- y\n', '', 1))"
+git add -A; expect_refuse git commit -qm "CHANGELOG: drop y"; undo
+msg="entry globs: M3 refuses a commit that deletes CHANGELOG.md after the branch added its line"
+git rm -q CHANGELOG.md; expect_refuse git commit -qm "CHANGELOG: gone"; undo
+git switch -q main && git switch -q -c em6
+msg="entry globs: M3 refuses CHANGELOG.md deleted alongside a page change"
+printf 'u\n' >> products/a.md && git rm -q CHANGELOG.md && git add -A; expect_refuse git commit -qm "PRODUCTS: u"; undo
+msg="entry globs: M3 refuses a non-ASCII page name under the glob with no line"
+printf '# d\n' > "products/déjà.md"; git add -A; expect_refuse git commit -qm "PRODUCTS: déjà"; undo
+# A pull of trunk's upstream into the branch moves the base, though local main stays behind.
+git switch -q main && git switch -q -c emup && printf 't\n' >> products/a.md && printf -- '- t\n' >> CHANGELOG.md \
+  && git add -A && git commit -qm "PRODUCTS: t" && git branch -q --set-upstream-to=emup main
+git switch -q main && git switch -q -c em7 && git merge -q --ff-only emup
+msg="entry globs: M3 doesn't let upstream trunk's line cover a branch that pulled it"
+printf 's\n' >> products/a.md; git add -A; expect_refuse git commit -qm "PRODUCTS: s"; undo
+git switch -q main && git branch -q --unset-upstream main
 printf '# b top\n' > products/b.md && printf -- '- new page b\n' >> CHANGELOG.md
 msg="entry globs: a new products/b.md needs no meta.json edit; the next release counts it"
 emerge ec "PRODUCTS: new b" products/b.md CHANGELOG.md; $J release >/dev/null 2>&1
@@ -2145,6 +2174,8 @@ expect_pass sh -c "test \"\$(git rev-parse HEAD)\" = $before && echo \"\$0\" | g
 msg="buffer: propose --buffer by hand puts B3, the one Open row, in its own proposal"
 out=$($J propose --buffer later 2>&1)
 expect_pass sh -c "git -C '$SM' rev-parse -q --verify refs/heads/propose/sb-para-later >/dev/null && grep -qx -- '- B3' .jig/specs/later.md && ! grep -qx -- '- B1' .jig/specs/later.md" "$out"
+msg="buffer: the proposal's spec names where each claim lives, and a pointer for one this repo owns"
+expect_pass sh -c "grep -q 'What the metarepo holds' .jig/specs/later.md && grep -q 'pointer' .jig/specs/later.md"
 git add .jig/specs/later.md && git commit -qm "specs: later"
 msg="buffer: a release whose Open rows a proposal already carries unchanged opens no branch"
 $J release --version 1.0.1 >/dev/null 2>&1; rc=$?

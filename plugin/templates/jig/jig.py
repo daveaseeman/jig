@@ -1681,12 +1681,18 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
                        f"({'/'.join(DECISION_STATUSES)}), optionally `(note)` or "
                        f"`by {meta['decision_prefix']}…`, and a date (YYYY-MM-DD): "
                        f"{m.group(0)[1:].strip()}")
-    # M3 a change to what pararepos cite is recorded where they will read it. A cited file
-    # deleted, or renamed out of the entry set, is a change too: pararepos lose it.
-    gone = git("diff", "--name-only", "--diff-filter=D", "--no-renames", base(trunk),
-               *(["--cached"] if staged else [])).splitlines()
-    cited = [p for p in dict.fromkeys(paths + gone) if p and is_entry(p, entry)]
-    if cited and CHANGELOG not in paths:
+    # M3 a change to what pararepos cite is recorded where they will read it. Judged on the
+    # branch since it left trunk, not this commit: a release sees whole branches, so a line
+    # an earlier commit added covers this one, and a commit dropping the only line is caught.
+    # No renames: a cited file deleted, or moved out of the entry set, is a change too.
+    # Trunk's upstream counts as trunk: a pull of it into the branch moves the base, though
+    # the local trunk is stale. A deleted CHANGELOG.md is a change to it, but no line.
+    since = (git("merge-base", "HEAD", trunk, f"{trunk}@{{u}}") or git("merge-base", trunk, "HEAD")
+             or "HEAD")
+    branch_paths = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", since,
+                       *(["--cached"] if staged else [])).splitlines()
+    cited = [p for p in branch_paths if p and is_entry(p, entry)]
+    if cited and (CHANGELOG not in branch_paths or not in_index(CHANGELOG, staged)):
         out.append(f"M3 {', '.join(cited)} changed: add a line to {CHANGELOG} under ## Unreleased")
     # M4 nothing lands on main except merges; jig's own bookkeeping (the board, handoffs) is
     # the exception, since the hubnode keeps it on trunk
@@ -2645,7 +2651,10 @@ def buffer_proposal(root: Path, para: dict, loc: Path, slug: str) -> tuple[Path,
     spec.write_text(
         f"# Buffer proposal: {slug}\n\n"
         f"Each row is a claim of {para['meta']} at {para['pin']} that this repo has moved away from. "
-        f"{para['meta']} updates every place that states it (RULES.md: Newer wins, Every copy).\n\n"
+        f"For each row, {para['meta']} decides where the claim lives (RULES.md: What the metarepo holds). "
+        f"A contract gets the new text with its source; a claim this repo owns gets a pointer to "
+        f"the \"This repo now\" source wherever {para['meta']} states it, never a copy "
+        f"(RULES.md: Newer wins, Every copy).\n\n"
         f"## Buffer rows\n{ids}\n{table}\n\n## Decisions\n- meta: {para['meta']} proposal {branch}\n")
     return spec, branch
 
@@ -2879,8 +2888,8 @@ def cmd_staging(root: Path, args) -> int:
         reg.parent.mkdir(parents=True, exist_ok=True)
         reg.write_text(text.rstrip("\n") + "\n" + "\n".join(rows) + "\n")
         ids = ", ".join(r.split("|")[1].strip() for r in rows)
-        # In a metarepo, M3 refuses the commit until CHANGELOG.md says so: that's its rule to
-        # enforce, not staging's line to write.
+        # In a metarepo, M3 refuses the commit on a branch with no line yet: that's its rule
+        # to enforce, not staging's line to write.
         also = f"; add `- {ids}. {mark}` to {CHANGELOG} (M3)" if (root / META).exists() else ""
         return done(f"{len(rows)} row{'s' if len(rows) > 1 else ''} appended to {reg.name}{also}")
     out = inside(dest)
