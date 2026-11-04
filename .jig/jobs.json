@@ -73,5 +73,15 @@
       "plugin/skills/release/SKILL.md"
     ],
     "reserved": {}
+  },
+  "fix-general": {
+    "spec": ".jig/specs/fix-general.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/fix/SKILL.md"
+    ],
+    "shares": [],
+    "reserved": {}
   }
 }
