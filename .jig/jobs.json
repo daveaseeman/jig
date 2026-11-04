@@ -1,7 +1,7 @@
 {
   "wait-loop": {
     "spec": ".jig/specs/bug-wait-loop.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/bug/SKILL.md",
