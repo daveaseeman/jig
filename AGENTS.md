@@ -18,6 +18,7 @@ Risk: R0 — one user, nothing shipped. Optimize for simplicity and clarity, not
 - Every change to the plugin is proposed before it is made. One proposal, approved, then one pass.
 - Run the smoke test and the validator yourself and show the output. That is the evidence.
 - A mergeable chunk is a handoff: checks pass → /jig:review → `jig reviewed` → `jig handoff`.
+- A diff that changes only skill text, docs or specs (no `jig.py`, hooks, templates or `tests/`) gets a lighter review: tier 3, effort 2. Anything else gets the workflow's `review` step. This is the owner's setting, not a hubnode's pick.
 - A release ships its rebuilt `dist/jig-X.Y.Z.plugin`. On the owner's word: `git push --follow-tags`, `gh release create vX.Y.Z dist/jig-X.Y.Z.plugin --repo daveaseeman/jig`, then `gh release view vX.Y.Z` must list the file.
 
 ## Code
