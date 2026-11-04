@@ -67,7 +67,7 @@
   },
   "owner-steps": {
     "spec": ".jig/specs/owner-steps.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/hubnode/SKILL.md"
