@@ -1,15 +1,1 @@
-{
-  "smoke-parallel": {
-    "spec": ".jig/specs/smoke-parallel.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "tests/smoke.sh",
-      "tests/smoke/**"
-    ],
-    "shares": [
-      "AGENTS.md"
-    ],
-    "reserved": {}
-  }
-}
+{}

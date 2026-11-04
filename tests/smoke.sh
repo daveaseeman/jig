@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# End-to-end check of the rules in a throwaway repo: one job in a worktree, the hooks
-# installed from the template. Every case prints PASS or the refusal it expected.
-# Runs are independent and safe to start at the same time: each touches only its own temp
-# folder, and the last case proves the user's real jig config was left alone.
+# End-to-end check of the rules in throwaway repos: jobs in worktrees, the hooks installed
+# from the template. Every case prints PASS or the refusal it expected.
+#   bash tests/smoke.sh               every section, in parallel (JIG_SMOKE_JOBS, default the cores)
+#   bash tests/smoke.sh <section>...  only those, for a quick rerun
+#   bash tests/smoke.sh --list        the section names
+# Each section runs in its own process and temp folder, so sections, and whole runs started at
+# the same time, are independent. Output is printed section by section, in file order, and the
+# last case proves the user's real jig config was left alone.
 set -u
 # Listing and hash of every file under a folder; empty when it doesn't exist.
 cfg_state() { python3 - "$1" <<'PY'
@@ -13,13 +17,14 @@ for d, _, fs in sorted(os.walk(sys.argv[1])):
         p = os.path.join(d, f); print(p, hashlib.sha256(open(p, 'rb').read()).hexdigest())
 PY
 }
-REAL_CFG="$HOME/.config/jig"; real_before=$(cfg_state "$REAL_CFG")
-T=$(mktemp -d "${TMPDIR:-/tmp}/jig-smoke.XXXXXX")
-# Once, before any jig command, so every section and any fragment copied out of this file
-# writes user-level state into the run's folder. Sections below still set their own lists.
-export JIG_CONFIG="$T/repos.json" XDG_CONFIG_HOME="$T/config"
+REAL_CFG="$HOME/.config/jig"
 P="$(cd "$(dirname "$0")/.." && pwd)/plugin/templates"
 J="python3 .jig/jig.py"
+# Old layouts are rebuilt from this repo's own history, so the smoke test needs a full clone.
+R="$(cd "$(dirname "$P")/.." && pwd)"
+JR="$R"                                # $R is reused as a repo by the R6 sections
+UP="python3 $P/jig/jig.py update"     # the plugin's copy, as the update skill runs it
+FX="$R/tests/fixtures"
 fail=0
 ok()   { echo "PASS  $1"; }
 bad()  { echo "FAIL  $1"; fail=1; }
@@ -27,6 +32,121 @@ expect_pass() { if "$@" >/dev/null 2>&1; then ok "$msg"; else bad "$msg"; fi; }
 expect_refuse() { if "$@" >/dev/null 2>&1; then bad "$msg (was accepted)"; else ok "$msg"; fi; }
 undo() { git reset -q; git checkout -q -- .; git clean -fdq; }
 
+code() { "$@" >/dev/null 2>&1; echo $?; }
+snap() { git status --porcelain; find .git -type f | sort | xargs shasum 2>/dev/null; }
+# old <dir> <commit> <style>: a repo set up the way that commit's init skill says, with a
+# reserve counter on docs/**, a docmap page, a merged job, and a script of the repo's own.
+# Styles: dot = eaec973's .jig/ with specs/, ledgers/, scripts/ at root; aidev = the same as
+# ai-dev renamed it; jig = 62c8d9f's jig/ holding docs too; jig2 = 0.2.x's jig/, docs at root.
+old() {
+  d=$1; c=$2; style=$3
+  mkdir -p "$d/.t" && git -C "$R" archive "$c" plugin/templates | tar -x -C "$d/.t"
+  cd "$d" && git init -q -b main && git config user.email t@t && git config user.name t
+  t=.t/plugin/templates
+  printf '*.log\n' > .gitignore
+  mkdir -p src scripts && printf 'x=1\n' > src/a.py && printf 'echo build\n' > scripts/build.sh
+  if [ "$style" = jig ]; then
+    cp $t/AGENTS.md $t/CLAUDE.md . && cp -r $t/jig jig && rm jig/docs/HARDWARE.md
+    tool=jig; docs=jig/docs; specs=jig/specs
+  elif [ "$style" = jig2 ]; then
+    cp $t/AGENTS.md $t/CLAUDE.md . && cp -r $t/jig jig && mkdir -p docs && printf '# Docs\n' > docs/README.md
+    tool=jig; docs=docs; specs=jig/specs
+  else
+    cp $t/AGENTS.md $t/CLAUDE.md . && cp -r $t/ledgers . && mkdir -p docs specs .jig
+    cp $t/docs/README.md docs/ && cp $t/specs/_template.md specs/
+    cp $t/scripts/check.sh $t/scripts/format.sh scripts/ && cp $t/jig/jig.py $t/jig/RULES.md .jig/
+    tool=.jig; docs=docs; specs=specs
+  fi
+  rm -rf .t && chmod +x scripts/*.sh $tool/scripts/*.sh 2>/dev/null
+  mkdir -p $docs/alpha && printf '# Alpha\n\n## 1 One\n' > $docs/alpha/alpha.md
+  git add -A && git commit -qm init && python3 $tool/jig.py init >/dev/null
+  python3 - "$tool" "$docs" "$specs" <<'EOF'
+import json, sys
+tool, docs, specs = sys.argv[1:]
+b = json.load(open(f'{tool}/lanes.json'))
+b['reserve'] = {'section': {'next': 1, 'pattern': r'^## (\d+) ', 'files': [f'{docs}/**']}}
+b['docmap'] = {f'{docs}/alpha/alpha.md': ['src/**']}
+b['lanes'] = {'old': {'branch': 'old', 'state': 'merged', 'worktree': f'{tool}/worktrees/old',
+                      'owns': ['scripts/**', 'src/**'], 'shares': [f'{specs}/**']}}
+json.dump(b, open(f'{tool}/lanes.json', 'w'), indent=2)
+EOF
+  if [ "$style" = aidev ]; then       # ai-dev: jig under its old name, the ledgers at root
+    git mv .jig .aidev && git mv .aidev/jig.py .aidev/aidev.py
+    git mv ledgers/WORKAROUNDS.md WORKAROUNDS.md && git mv ledgers/DEFERRED.md DEFERRED.md
+    sed -i.bak -e 's|\.jig/|.aidev/|g' -e 's|"ledgers/\*\*"|"WORKAROUNDS.md", "DEFERRED.md"|g' \
+      .aidev/lanes.json && rm .aidev/lanes.json.bak
+    sed -i.bak 's|^\.jig/worktrees/$|.aidev/worktrees/|' .gitignore && rm .gitignore.bak
+    for h in pre-commit pre-merge-commit pre-push post-checkout; do
+      sed -i.bak -e 's|# jig hook|# aidev hook|' -e 's|\.jig/jig\.py|.aidev/aidev.py|' .git/hooks/$h
+      rm .git/hooks/$h.bak
+    done
+    mv .git/jig .git/aidev
+  fi
+  git add -A && git commit -qm board
+}
+fixture() {  # fixture <generation>: a fresh repo from tests/fixtures/<generation>, committed
+  mkdir -p "$T/fx-$1" && cp -R "$FX/$1/repo/." "$T/fx-$1/" && cd "$T/fx-$1"
+  git init -q -b main && git config user.email t@t && git config user.name t
+  git add -A && git commit -qm init && cp -R "$FX/$1/git/." .git/
+}
+lines() { wc -l < "$LOG" | tr -d ' '; }
+mrel() { $J release 2>&1; }
+branch_commit() {  # branch_commit <branch> <subject>: commit what's staged on a new branch
+  git switch -q -c "$1" && git commit -qm "$2"; }
+m2() { printf '%s\n' "$1" >> DECISIONS.md && printf -- '- D-001\n' >> CHANGELOG.md && git add -A
+  $J check --staged; local rc=$?; git reset -q; git checkout -q -- DECISIONS.md CHANGELOG.md; return $rc; }
+stage() {  # stage <file> <target> <kind> <change> <destination> [body]
+  printf -- '---\nstaged: true\ntarget: %s\nkind: %s\nchange: %s\ndestination: %s\nsource: chat %s\nstatus: staged\n---\n%b' \
+    "$2" "$3" "$4" "$5" "$1" "${6:-# Title\n\nbody\n}" > ".jig/staging/$1"; }
+board() { python3 -c "import json,sys; b=json.load(open('.jig/config.json')); $1; json.dump(b, open('.jig/config.json','w'), indent=2)"; }
+dec() { printf '| D-%s | x | accepted | 2026-10-30 |\n' "$1" >> DECISIONS.md && printf -- '- D-%s\n' "$1" >> CHANGELOG.md && git add -A; }
+foldin() { sed -i.bak -e 's/^- \[ \]/- [x]/' -e 's/___/smoke/g' .jig/handoffs/*.md && rm .jig/handoffs/*.bak; }
+setwf() { python3 -c "import json, sys; c = json.load(open('.jig/config.json')); c['workflow'] = json.loads(sys.argv[1]); json.dump(c, open('.jig/config.json', 'w'), indent=2)" "$1"; }
+hooksnap() { find .git/hooks -type f | sort | xargs shasum 2>/dev/null; }
+hrsurvey() { python3 -c "
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+$1"; }
+ax() {  # ax <dir> [setup command]: the fixture, the setup run in it, committed
+  mkdir -p "$1" && cp -R "$FX/ai-dev/repo/." "$1/" && cd "$1"
+  git init -q -b main && git config user.email t@t && git config user.name t
+  if [ -n "${2:-}" ]; then eval "$2"; fi
+  git add -A && git commit -qm init && cp -R "$FX/ai-dev/git/." .git/
+}
+mkf() { for f in "$@"; do mkdir -p "$(dirname "$f")" && printf 'x\n' > "$f"; done; }
+renamed() { git diff --cached -M --name-status | grep -q "^R100	$1	$2\$"; }
+wt() { git -c core.hooksPath=/dev/null worktree add -q "$@" 2>/dev/null; }
+pcnew() {  # pcnew <dir>: a git repo with the template copied in, nothing committed
+  mkdir -p "$1" && cd "$1" && git init -q -b main && git config user.email t@t && git config user.name t
+  cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" .; }
+pcfold() { sed -i.bak -e 's/^- \[ \]/- [x]/' -e 's/___/smoke/g' .jig/handoffs/*.md && rm .jig/handoffs/*.bak; }
+setjson() {  # setjson <file> <key> <value>
+  python3 -c "import json,sys; f=sys.argv[1]; d=json.load(open(f)); d[sys.argv[2]]=sys.argv[3]; json.dump(d, open(f,'w'), indent=2)" "$@"; }
+gate_ok() { out=$($J gate "$1" 2>&1); rc=$?; git worktree remove --force ".git/jig/worktrees/gate-$1" 2>/dev/null; return $rc; }
+setentry() { python3 -c "import json,sys; f='.jig/meta.json'; d=json.load(open(f)); d['entry_files']=sys.argv[1:]; json.dump(d, open(f,'w'), indent=2)" "$@"; }
+emerge() {  # emerge <branch> <subject> <file>...: commit the staged change on a branch, review it, merge it into main
+  b=$1 s=$2; shift 2; git switch -q -c "$b" && git add -- "$@" && git commit -qm "$s" && $J reviewed >/dev/null \
+    && git switch -q main && git merge -q --no-ff --no-edit "$b"; }
+underhead() { python3 -c "import sys; f='CHANGELOG.md'; s=open(f).read(); open(f,'w').write(s.replace('## Unreleased\n', '## Unreleased\n'+sys.argv[1]+'\n', 1))" "$1"; }
+emergejob() {  # emergejob <job> <subject>: open a job in $EM, hand it off, and merge it with --subject
+  (cd "$EM" && $J open "$1" --branch "b-$1" --owns "products/$1.md" CHANGELOG.md >/dev/null && git add -A && git commit -qm "TOOL: open $1" \
+    && cd ".git/jig/worktrees/b-$1" && printf '# x\n' > "products/$1.md" && printf -- "- $1\n" >> CHANGELOG.md \
+    && git add -A && git commit -qm "PRODUCTS: $1" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
+    && git add -A && git commit -qm "TOOL: note $1" && cd "$EM" && $J merge "$1" --subject "$2" >/dev/null); }
+sbprops() { git -C "$SM" branch --list 'propose/*' | wc -l | tr -d ' '; }
+brow() { printf '| %s | DECISIONS.md § D-001: %s | api/a.py, %s (%s) | owner, 2026-11-02 | %s |\n' "$@"; }
+sbland() {  # sbland <proposal branch> <term>: the metarepo writes it, merges and releases
+  (cd "$SM" && git switch -q "$1" && printf '\n## %s\n' "$2" >> GLOSSARY.md && printf -- '- %s\n' "$2" >> CHANGELOG.md \
+    && git add -A && git commit -qm "GLOSSARY: $2" && $J reviewed >/dev/null && git switch -q main \
+    && git merge -q --no-ff --no-edit "$1" && $J release >/dev/null); }
+sbbump() { setjson .jig/para.json pin "$1" && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: sbm → $1"; }
+fb() {  # fb <dir> <file> [from]: a feedback report, with a from: line when given one
+  mkdir -p "$1" && printf -- '---\nstaged: true\ntarget: this\nkind: feedback\nchange: new\ndestination: a fix in jig\nsource: chat %s\n%bjig_version: abc123\nstatus: staged\n---\n# R\n' \
+    "$2" "${3:+from: $3\n}" > "$1/$2"; }
+fbj() { fb "$@" && sed -i.bak 's/^target: this$/target: jig/' "$1/$2" && rm "$1/$2.bak"; }
+
+# ---------------------------------------------------------------- rules
+sec_rules() {
 cd "$T" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && chmod +x .jig/scripts/*.sh
 mkdir -p docs/alpha src
@@ -268,65 +388,12 @@ expect_pass python3 -c "
 import json, subprocess
 r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 assert r['not_docs_unmatched'] == ['plugin/'], r['not_docs_unmatched']"
-
+}
 
 # ---------------------------------------------------------------- update
+sec_update() {
 # Old layouts are rebuilt from this repo's own history, so the smoke test needs a full clone.
-R="$(cd "$(dirname "$P")/.." && pwd)"
-UP="python3 $P/jig/jig.py update"     # the plugin's copy, as the update skill runs it
-code() { "$@" >/dev/null 2>&1; echo $?; }
-snap() { git status --porcelain; find .git -type f | sort | xargs shasum 2>/dev/null; }
 
-# old <dir> <commit> <style>: a repo set up the way that commit's init skill says, with a
-# reserve counter on docs/**, a docmap page, a merged job, and a script of the repo's own.
-# Styles: dot = eaec973's .jig/ with specs/, ledgers/, scripts/ at root; aidev = the same as
-# ai-dev renamed it; jig = 62c8d9f's jig/ holding docs too; jig2 = 0.2.x's jig/, docs at root.
-old() {
-  d=$1; c=$2; style=$3
-  mkdir -p "$d/.t" && git -C "$R" archive "$c" plugin/templates | tar -x -C "$d/.t"
-  cd "$d" && git init -q -b main && git config user.email t@t && git config user.name t
-  t=.t/plugin/templates
-  printf '*.log\n' > .gitignore
-  mkdir -p src scripts && printf 'x=1\n' > src/a.py && printf 'echo build\n' > scripts/build.sh
-  if [ "$style" = jig ]; then
-    cp $t/AGENTS.md $t/CLAUDE.md . && cp -r $t/jig jig && rm jig/docs/HARDWARE.md
-    tool=jig; docs=jig/docs; specs=jig/specs
-  elif [ "$style" = jig2 ]; then
-    cp $t/AGENTS.md $t/CLAUDE.md . && cp -r $t/jig jig && mkdir -p docs && printf '# Docs\n' > docs/README.md
-    tool=jig; docs=docs; specs=jig/specs
-  else
-    cp $t/AGENTS.md $t/CLAUDE.md . && cp -r $t/ledgers . && mkdir -p docs specs .jig
-    cp $t/docs/README.md docs/ && cp $t/specs/_template.md specs/
-    cp $t/scripts/check.sh $t/scripts/format.sh scripts/ && cp $t/jig/jig.py $t/jig/RULES.md .jig/
-    tool=.jig; docs=docs; specs=specs
-  fi
-  rm -rf .t && chmod +x scripts/*.sh $tool/scripts/*.sh 2>/dev/null
-  mkdir -p $docs/alpha && printf '# Alpha\n\n## 1 One\n' > $docs/alpha/alpha.md
-  git add -A && git commit -qm init && python3 $tool/jig.py init >/dev/null
-  python3 - "$tool" "$docs" "$specs" <<'EOF'
-import json, sys
-tool, docs, specs = sys.argv[1:]
-b = json.load(open(f'{tool}/lanes.json'))
-b['reserve'] = {'section': {'next': 1, 'pattern': r'^## (\d+) ', 'files': [f'{docs}/**']}}
-b['docmap'] = {f'{docs}/alpha/alpha.md': ['src/**']}
-b['lanes'] = {'old': {'branch': 'old', 'state': 'merged', 'worktree': f'{tool}/worktrees/old',
-                      'owns': ['scripts/**', 'src/**'], 'shares': [f'{specs}/**']}}
-json.dump(b, open(f'{tool}/lanes.json', 'w'), indent=2)
-EOF
-  if [ "$style" = aidev ]; then       # ai-dev: jig under its old name, the ledgers at root
-    git mv .jig .aidev && git mv .aidev/jig.py .aidev/aidev.py
-    git mv ledgers/WORKAROUNDS.md WORKAROUNDS.md && git mv ledgers/DEFERRED.md DEFERRED.md
-    sed -i.bak -e 's|\.jig/|.aidev/|g' -e 's|"ledgers/\*\*"|"WORKAROUNDS.md", "DEFERRED.md"|g' \
-      .aidev/lanes.json && rm .aidev/lanes.json.bak
-    sed -i.bak 's|^\.jig/worktrees/$|.aidev/worktrees/|' .gitignore && rm .gitignore.bak
-    for h in pre-commit pre-merge-commit pre-push post-checkout; do
-      sed -i.bak -e 's|# jig hook|# aidev hook|' -e 's|\.jig/jig\.py|.aidev/aidev.py|' .git/hooks/$h
-      rm .git/hooks/$h.bak
-    done
-    mv .git/jig .git/aidev
-  fi
-  git add -A && git commit -qm board
-}
 
 # Every glob that matched a tracked file before still matches one after; a glob that matches
 # nothing now matched nothing before (CHANGELOG.md). scripts/** keeps meaning the repo's scripts.
@@ -536,12 +603,6 @@ expect_pass sh -c "test $rc = 0 && echo \"\$0\" | head -1 | grep -qx 'up to date
 
 # Every generation, from the made-up repos in tests/fixtures/: each ends with the same jig
 # paths and board keys, and every file it doesn't remove moves byte for byte.
-FX="$R/tests/fixtures"
-fixture() {  # fixture <generation>: a fresh repo from tests/fixtures/<generation>, committed
-  mkdir -p "$T/fx-$1" && cp -R "$FX/$1/repo/." "$T/fx-$1/" && cd "$T/fx-$1"
-  git init -q -b main && git config user.email t@t && git config user.name t
-  git add -A && git commit -qm init && cp -R "$FX/$1/git/." .git/
-}
 for gen in claude-lane ai-dev jig-0.2 dot-jig-v7; do
   fixture $gen
   if [ $gen = claude-lane ]; then
@@ -614,8 +675,10 @@ old "$T/up-js" eaec973 dot
 printf 'it()\n' > specs/app.spec.js && git add -A && git commit -qm js
 out=$($UP 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'specs/app.spec.js is in specs/ but isn.t Markdown' && ! echo \"\$0\" | grep -q 'app.spec.js → '" "$out"
+}
 
 # ---------------------------------------------------------------- the board, split
+sec_board_split() {
 B="$T/jobs"; mkdir -p "$B" && cd "$B" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs src
 printf '# D\n\n## 1 One\n' > docs/d.md && printf 'x=1\n' > src/a.py
@@ -702,8 +765,10 @@ expect_pass python3 -c "import json; assert json.load(open('.jig/jobs.json'))['G
 git add -A && git commit -qm "open G"
 msg="no log: neither file has a log key, and jig log is not a command"
 expect_pass sh -c "! grep -q '\"log\"' .jig/config.json .jig/jobs.json && ! $J log 2>/dev/null"
+}
 
 # ---------------------------------------------------------------- worktree setup
+sec_worktree_setup() {
 W="$T/setup"; LOG="$T/setup.log"
 mkdir -p "$W" && cd "$W" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p src && printf 'x=1\n' > src/a.py
@@ -714,7 +779,6 @@ expect_pass sh -c "test -x .jig/scripts/setup.sh && grep -q TODO .jig/scripts/se
 
 printf '#!/bin/sh\necho "set up $(pwd -P)"\npwd -P >> "%s"\n' "$LOG" > .jig/scripts/setup.sh
 git commit -qam "setup logs" && : > "$LOG"
-lines() { wc -l < "$LOG" | tr -d ' '; }
 
 msg="setup: a plain git worktree add --detach sets the new worktree up once"
 git worktree add -q --detach "$T/setup-plain" HEAD 2>/dev/null
@@ -760,14 +824,13 @@ git worktree add -q --detach "$T/setup-mk" HEAD 2>/dev/null
 before_none=$(cd "$T/setup-mk" && git rm -q .jig/scripts/setup.sh && git commit -qm "no setup" && git rev-parse HEAD)
 n=$(lines); err=$(git worktree add -q --detach "$T/setup-none" "$before_none" 2>&1)
 expect_pass sh -c "test -z \"\$0\" && test $n = \$(wc -l < '$LOG' | tr -d ' ') && test ! -e '$T/setup-none/.jig/scripts/setup.sh'" "$err"
+}
 
 # ---------------------------------------------------------------- metarepo
+sec_metarepo() {
 M="$T/meta"; mkdir -p "$M" && cd "$M" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
 $J init --meta --name docs >/dev/null && git add -A && git commit -qm "meta-init"
-mrel() { $J release 2>&1; }
-branch_commit() {  # branch_commit <branch> <subject>: commit what's staged on a new branch
-  git switch -q -c "$1" && git commit -qm "$2"; }
 
 msg="meta: init --meta then release tags v0.1.0, with no release.sh steps to fill, and says it's a metarepo"
 out=$($J release 2>&1)
@@ -785,8 +848,6 @@ printf '\n' >> .jig/jig.py && git add .jig/jig.py; expect_pass git commit -qm "T
 msg="meta M2: a decision row without status and date is refused"
 printf '| D-001 | use JSON |\n' >> DECISIONS.md && printf -- '- D-001\n' >> CHANGELOG.md && git add -A
 expect_refuse git commit -qm "D-001: JSON"; git reset -q; git checkout -q -- DECISIONS.md CHANGELOG.md
-m2() { printf '%s\n' "$1" >> DECISIONS.md && printf -- '- D-001\n' >> CHANGELOG.md && git add -A
-  $J check --staged; local rc=$?; git reset -q; git checkout -q -- DECISIONS.md CHANGELOG.md; return $rc; }
 msg="meta M2: an open question is a decision row"
 expect_pass m2 '| D-001 | which wire format? | open | 2026-10-29 |'
 msg="meta M2: a status with a note, and superseded by an id, are accepted"
@@ -842,154 +903,12 @@ git tag v0.3
 out=$(mrel)
 expect_pass sh -c "echo \"\$0\" | grep -q 'tag v0.3 was not made by jig release' && ! git push -q origin main 2>/dev/null" "$out"
 git tag -d v0.3 >/dev/null
-
-# ---------------------------------------------------------------- pararepo
-export JIG_CONFIG="$T/repos.json"     # never the user's real list
-MR="$T/mr"; mkdir -p "$MR" && cd "$MR" && git init -q -b main && git config user.email t@t && git config user.name t
-cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
-$J init --meta --name docs >/dev/null && git add -A && git commit -qm meta-init && $J release >/dev/null
-PR="$T/pr"; mkdir -p "$PR" && cd "$PR" && git init -q -b main && git config user.email t@t && git config user.name t
-cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p api && printf 'x=1\n' > api/a.py
-git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
-git clone -q "$MR" mrclone
-
-msg="para: init --para writes para.json, the AGENTS.md header, the cache, and ignores the cache"
-$J init --para docs --location mrclone --contract 'api/**' >/dev/null
-expect_pass sh -c "grep -q '\"pin\": \"v0.1.0\"' .jig/para.json && ! grep -q location .jig/para.json && grep -q '\"docs\"' '$T/repos.json' && grep -q 'jig:meta' AGENTS.md && test -f .jig/meta-cache/DECISIONS.md && grep -qx '.jig/meta-cache/' .gitignore && grep -qx 'mrclone/' .gitignore"
-msg="para: the generated header is at most 6 lines"
-expect_pass test "$(sed -n '/jig:meta —/,/jig:meta end/p' AGENTS.md | wc -l | tr -d ' ')" -le 6
-git add -A && git commit -qm "para-init"
-
-msg="release: a pararepo says so"
-expect_pass sh -c "$J release 2>&1 | grep -q '(pararepo)'"
-msg="para release: release.sh untouched from the template and no artifacts: tags v0.1.0"
-out=$($J release --version 0.1.0 2>&1); rc=$?
-expect_pass sh -c "test $rc = 0 && git tag | grep -qx v0.1.0 && grep -q 'TODO: release protocol' .jig/scripts/release.sh" "$out"
-msg="para release: with two Open rows it also makes the one proposal branch"
-mkdir -p .jig/ledgers && cp "$P/ledgers/BUFFER.md" .jig/ledgers/BUFFER.md
-for i in 1 2; do printf '| B%s | DECISIONS.md § D-001: x | api/a.py, y | owner, 2026-11-02 | Open |\n' $i >> .jig/ledgers/BUFFER.md; done
-git add -A && git commit -qm "buffer: B1, B2" && $J release >/dev/null 2>&1
-expect_pass sh -c "git tag | grep -qx v0.1.1 && test \$(git -C mrclone branch --list 'propose/*' | wc -l) = 1 && git -C mrclone rev-parse -q --verify refs/heads/propose/pr-buffer-v0.1.1"
-paratip=$(git rev-parse HEAD)
-msg="para release: pin set to main is refused, naming the pin, and tags nothing"
-python3 -c "import json; p = json.load(open('.jig/para.json')); p['pin'] = 'main'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
-$J init --para >/dev/null 2>&1 && git add -A && git commit -qm "pin main" >/dev/null 2>&1
-out=$($J release 2>&1); rc=$?
-expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: the pin main' && ! git tag | grep -qx v0.1.2" "$out"
-git reset -q --hard "$paratip" && $J init --para >/dev/null 2>&1
-msg="para release: a hand-edited header committed with --no-verify is refused, naming P1"
-sed -i.bak 's/is written only by branch/is written by anyone/' AGENTS.md && rm AGENTS.md.bak && git commit -qam header --no-verify
-out=$($J release 2>&1); rc=$?
-expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: P1' && ! git tag | grep -qx v0.1.2" "$out"
-git reset -q --hard "$paratip"
-msg="para release: a metarepo that isn't registered is refused, naming jig repos add meta"
-out=$(JIG_CONFIG="$T/none.json" $J release 2>&1); rc=$?
-expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: .*jig repos add meta' && ! git tag | grep -qx v0.1.2" "$out"
-msg="para release: a tracked cache and a malformed buffer row are refused, naming P3 and P2"
-git add -f .jig/meta-cache/PIN && printf '| B3 | x | y | z | Settling |\n' >> .jig/ledgers/BUFFER.md && git commit -qam cache --no-verify
-out=$($J release 2>&1); rc=$?
-expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: P3 .jig/meta-cache/PIN' && echo \"\$0\" | grep -q 'refused: P2 .*row B3 is Settling' && ! git tag | grep -qx v0.1.2" "$out"
-msg="para release: a P3 refusal leaves the tree clean, so the next release names P3 again"
-out=$($J release 2>&1)
-expect_pass sh -c "test -z \"\$(git status --porcelain)\" && echo \"\$1\" | grep -q 'refused: P3' && ! echo \"\$1\" | grep -q 'commit or stash'" "" "$out"
-git reset -q --hard "$paratip" && $J init --para >/dev/null 2>&1
-msg="para release: a second row with an id already taken is refused, naming P2"
-printf '| B1 | DECISIONS.md § D-001: twin | api/a.py | owner, 2026-11-02 | Open |\n' >> .jig/ledgers/BUFFER.md && git commit -qam twin --no-verify
-out=$($J release 2>&1); rc=$?
-expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: P2 .*more than one row B1' && ! git tag | grep -qx v0.1.2" "$out"
-git reset -q --hard "$paratip"
-msg="para release: a pin on a tag made by hand in the metarepo is refused, naming the pin"
-git -C mrclone tag v0.5.0
-python3 -c "import json; p = json.load(open('.jig/para.json')); p['pin'] = 'v0.5.0'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
-$J init --para >/dev/null 2>&1 && git add -A && git commit -qm "pin v0.5.0" >/dev/null 2>&1
-out=$($J release 2>&1); rc=$?
-expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: the pin v0.5.0' && ! git tag | grep -qx v0.1.2" "$out"
-git -C mrclone tag -d v0.5.0 >/dev/null && git reset -q --hard "$paratip" && $J init --para >/dev/null 2>&1
-
-msg="para P1: a hand-edited header is refused"
-sed -i.bak 's/is written only by branch/is written by anyone/' AGENTS.md && rm AGENTS.md.bak
-git add -A; expect_refuse git commit -qm header; git reset -q --hard
-
-msg="para P2: a contract-path change with no proposal or reason in a spec is refused"
-printf 'y=2\n' >> api/a.py && git add -A; expect_refuse git commit -qm api
-msg="para P2: with meta: none — <reason> in a staged spec it is accepted"
-mkdir -p .jig/specs && printf '# x\n\n## Decisions\n- meta: none — internal refactor, no contract change\n' > .jig/specs/x.md
-git add -A; expect_pass git commit -qm api
-
-msg="para P3: git add -f of the cache is refused"
-git add -f .jig/meta-cache/DECISIONS.md; expect_refuse git commit -qm cache; git reset -q
-msg="para P3: staging the metarepo checkout is refused"
-git add -f mrclone 2>/dev/null; expect_refuse git commit -qm clone; git reset -q
-
-msg="propose: a branch on the metarepo, the id in the spec, the metarepo's main untouched"
-mainbefore=$(git -C mrclone rev-parse main)
-$J propose .jig/specs/x.md fmt >/dev/null
-expect_pass sh -c "git -C mrclone rev-parse -q --verify refs/heads/propose/pr-fmt && grep -q 'meta: docs proposal propose/pr-fmt' .jig/specs/x.md && test \"\$(git -C mrclone rev-parse main)\" = '$mainbefore' && test \"\$(git -C mrclone branch --show-current)\" = main"
-git add -A && git commit -qm "specs: proposal"
-
-stage() {  # stage <file> <target> <kind> <change> <destination> [body]
-  printf -- '---\nstaged: true\ntarget: %s\nkind: %s\nchange: %s\ndestination: %s\nsource: chat %s\nstatus: staged\n---\n%b' \
-    "$2" "$3" "$4" "$5" "$1" "${6:-# Title\n\nbody\n}" > ".jig/staging/$1"; }
-msg="para P4: a contract change waits while a file for the metarepo is staged"
-stage meta-note.md docs decisions new DECISIONS.md '| D-009 | x | proposed | 2026-10-29 |\n'
-printf 'z=3\n' >> api/a.py && printf -- '- meta: none — still internal\n' >> .jig/specs/x.md && git add api/a.py .jig/specs/x.md
-expect_refuse git commit -qm "api: more"
-python3 .jig/jig.py staging drop meta-note.md >/dev/null
-msg="para P4: a file staged for the metarepo by its name in another case holds it back too"
-stage upper-note.md DOCS decisions new DECISIONS.md '| D-009 | x | proposed | 2026-10-29 |\n'
-expect_refuse git commit -qm "api: more"
-python3 .jig/jig.py staging drop upper-note.md >/dev/null
-msg="para P4: once it is resolved, the same commit is accepted"
-expect_pass git commit -qm "api: more"
-
-msg="para: a new worktree gets the main checkout's cache; propose there names the repo, not the folder"
-git worktree add -q --detach "$T/pr-job" HEAD 2>/dev/null
-(cd "$T/pr-job" && $J propose .jig/specs/x.md lanefix >/dev/null)
-expect_pass sh -c "test -f '$T/pr-job/.jig/meta-cache/DECISIONS.md' && git -C mrclone rev-parse -q --verify refs/heads/propose/pr-lanefix"
-git worktree remove --force "$T/pr-job"
-
-msg="repos: works outside any git repo"
-expect_pass sh -c "cd '$T' && python3 '$P/jig/jig.py' repos"
-
-cd "$MR" && git switch -q -c d1 && printf '| D-001 | ids are numbers | accepted | 2026-10-29 |\n' >> DECISIONS.md
-printf -- '- D-001\n' >> CHANGELOG.md && git add -A && git commit -qm "D-001: ids" && $J reviewed >/dev/null
-git switch -q main && git merge -q --no-ff --no-edit d1 2>/dev/null && $J release >/dev/null
-cd "$PR" && printf 'D-001 is how ids work\n' > api/ids.md && git add api/ids.md && git commit -qm "api: ids" >/dev/null 2>&1
-msg="sync on a pararepo trunk: after a release it reports the change in this repo's terms and proposes the bump; the pin stays"
-out=$($J sync 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -q 'docs v0.2.0 is out' && echo \"\$0\" | grep -q 'D-001: used in api/ids.md' && echo \"\$0\" | grep -q 'meta: docs v0.1.0 → v0.2.0' && grep -q '\"pin\": \"v0.1.0\"' .jig/para.json" "$out"
-
-msg="repos: lists each repo and flags a path that no longer exists"
-mv mrclone ../mrclone-away; out=$($J repos 2>&1); mv ../mrclone-away mrclone
-expect_pass sh -c "echo \"\$0\" | grep -q 'docs .*(missing)'" "$out"
-
-msg="sync on a pararepo trunk: offline, it reads the cache and says so"
-mv mrclone ../mrclone-away; out=$($J sync 2>&1); mv ../mrclone-away mrclone
-expect_pass sh -c "echo \"\$0\" | grep -q \"can't reach docs\" && echo \"\$0\" | grep -q 'reading the cache (v0.1'" "$out"
-
-msg="sync on a pararepo trunk: with defer_until in the future it prints nothing; on or after it, the full report"
-python3 -c "import json; p = json.load(open('.jig/para.json')); p['defer_until'] = '2999-01-01'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
-quiet=$($J sync 2>&1)
-python3 -c "import json; p = json.load(open('.jig/para.json')); p['defer_until'] = '2000-01-01'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
-loud=$($J sync 2>&1)
-expect_pass sh -c "test -z \"\$0\" && echo \"\$1\" | grep -q 'v0.2.0 is out'" "$quiet" "$loud"
-git checkout -q -- .jig/para.json
-msg="update: a pararepo's generated header is left as it is (trunk's older checker would refuse a change)"
-expect_pass sh -c "! python3 '$P/jig/jig.py' update | grep -q AGENTS.md"
-msg="update: a metarepo's two-part tag_pattern is widened to take vX.Y.Z"
-(cd "$MR" && python3 -c "import json; m = json.load(open('.jig/meta.json')); m['tag_pattern'] = r'^v\\d+\\.\\d+$'; json.dump(m, open('.jig/meta.json', 'w'), indent=2)")
-expect_pass sh -c "cd '$MR' && python3 '$P/jig/jig.py' update | grep -q 'widen .jig/meta.json'"
-git -C "$MR" checkout -q -- .jig/meta.json
-
-msg="plugin: no instance names or the instance's decision prefix"
-expect_refuse grep -rnE 'Maige|maige|"E-' "$P/.."
+}
 
 # ---------------------------------------------------------------- staging
+sec_staging() {
 ST="$T/st"; mkdir -p "$ST" && cd "$ST" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
-stage() {
-  printf -- '---\nstaged: true\ntarget: %s\nkind: %s\nchange: %s\ndestination: %s\nsource: chat %s\nstatus: staged\n---\n%b' \
-    "$2" "$3" "$4" "$5" "$1" "${6:-# Title\n\nbody\n}" > ".jig/staging/$1"; }
 
 msg="staging: init leaves .jig/staging/ with only its .gitignore, and a dropped file is untracked"
 stage a.md this spec new a.md
@@ -1089,12 +1008,153 @@ expect_pass test "$(grep -l '^disable-model-invocation: true' $P/../skills/*/SKI
 
 msg="plugin: no skill description holds angle brackets (the desktop app reads them as XML tags)"
 expect_refuse grep -lE '^description:.*[<>]' $P/../skills/*/SKILL.md $P/skills/*/SKILL.md
+}
+
+# ---------------------------------------------------------------- pararepo
+sec_pararepo() {
+export JIG_CONFIG="$T/repos.json"     # never the user's real list
+MR="$T/mr"; mkdir -p "$MR" && cd "$MR" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
+$J init --meta --name docs >/dev/null && git add -A && git commit -qm meta-init && $J release >/dev/null
+PR="$T/pr"; mkdir -p "$PR" && cd "$PR" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p api && printf 'x=1\n' > api/a.py
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+git clone -q "$MR" mrclone
+
+msg="para: init --para writes para.json, the AGENTS.md header, the cache, and ignores the cache"
+$J init --para docs --location mrclone --contract 'api/**' >/dev/null
+expect_pass sh -c "grep -q '\"pin\": \"v0.1.0\"' .jig/para.json && ! grep -q location .jig/para.json && grep -q '\"docs\"' '$T/repos.json' && grep -q 'jig:meta' AGENTS.md && test -f .jig/meta-cache/DECISIONS.md && grep -qx '.jig/meta-cache/' .gitignore && grep -qx 'mrclone/' .gitignore"
+msg="para: the generated header is at most 6 lines"
+expect_pass test "$(sed -n '/jig:meta —/,/jig:meta end/p' AGENTS.md | wc -l | tr -d ' ')" -le 6
+git add -A && git commit -qm "para-init"
+
+msg="release: a pararepo says so"
+expect_pass sh -c "$J release 2>&1 | grep -q '(pararepo)'"
+msg="para release: release.sh untouched from the template and no artifacts: tags v0.1.0"
+out=$($J release --version 0.1.0 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && git tag | grep -qx v0.1.0 && grep -q 'TODO: release protocol' .jig/scripts/release.sh" "$out"
+msg="para release: with two Open rows it also makes the one proposal branch"
+mkdir -p .jig/ledgers && cp "$P/ledgers/BUFFER.md" .jig/ledgers/BUFFER.md
+for i in 1 2; do printf '| B%s | DECISIONS.md § D-001: x | api/a.py, y | owner, 2026-11-02 | Open |\n' $i >> .jig/ledgers/BUFFER.md; done
+git add -A && git commit -qm "buffer: B1, B2" && $J release >/dev/null 2>&1
+expect_pass sh -c "git tag | grep -qx v0.1.1 && test \$(git -C mrclone branch --list 'propose/*' | wc -l) = 1 && git -C mrclone rev-parse -q --verify refs/heads/propose/pr-buffer-v0.1.1"
+paratip=$(git rev-parse HEAD)
+msg="para release: pin set to main is refused, naming the pin, and tags nothing"
+python3 -c "import json; p = json.load(open('.jig/para.json')); p['pin'] = 'main'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
+$J init --para >/dev/null 2>&1 && git add -A && git commit -qm "pin main" >/dev/null 2>&1
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: the pin main' && ! git tag | grep -qx v0.1.2" "$out"
+git reset -q --hard "$paratip" && $J init --para >/dev/null 2>&1
+msg="para release: a hand-edited header committed with --no-verify is refused, naming P1"
+sed -i.bak 's/is written only by branch/is written by anyone/' AGENTS.md && rm AGENTS.md.bak && git commit -qam header --no-verify
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: P1' && ! git tag | grep -qx v0.1.2" "$out"
+git reset -q --hard "$paratip"
+msg="para release: a metarepo that isn't registered is refused, naming jig repos add meta"
+out=$(JIG_CONFIG="$T/none.json" $J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: .*jig repos add meta' && ! git tag | grep -qx v0.1.2" "$out"
+msg="para release: a tracked cache and a malformed buffer row are refused, naming P3 and P2"
+git add -f .jig/meta-cache/PIN && printf '| B3 | x | y | z | Settling |\n' >> .jig/ledgers/BUFFER.md && git commit -qam cache --no-verify
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: P3 .jig/meta-cache/PIN' && echo \"\$0\" | grep -q 'refused: P2 .*row B3 is Settling' && ! git tag | grep -qx v0.1.2" "$out"
+msg="para release: a P3 refusal leaves the tree clean, so the next release names P3 again"
+out=$($J release 2>&1)
+expect_pass sh -c "test -z \"\$(git status --porcelain)\" && echo \"\$1\" | grep -q 'refused: P3' && ! echo \"\$1\" | grep -q 'commit or stash'" "" "$out"
+git reset -q --hard "$paratip" && $J init --para >/dev/null 2>&1
+msg="para release: a second row with an id already taken is refused, naming P2"
+printf '| B1 | DECISIONS.md § D-001: twin | api/a.py | owner, 2026-11-02 | Open |\n' >> .jig/ledgers/BUFFER.md && git commit -qam twin --no-verify
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: P2 .*more than one row B1' && ! git tag | grep -qx v0.1.2" "$out"
+git reset -q --hard "$paratip"
+msg="para release: a pin on a tag made by hand in the metarepo is refused, naming the pin"
+git -C mrclone tag v0.5.0
+python3 -c "import json; p = json.load(open('.jig/para.json')); p['pin'] = 'v0.5.0'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
+$J init --para >/dev/null 2>&1 && git add -A && git commit -qm "pin v0.5.0" >/dev/null 2>&1
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'refused: the pin v0.5.0' && ! git tag | grep -qx v0.1.2" "$out"
+git -C mrclone tag -d v0.5.0 >/dev/null && git reset -q --hard "$paratip" && $J init --para >/dev/null 2>&1
+
+msg="para P1: a hand-edited header is refused"
+sed -i.bak 's/is written only by branch/is written by anyone/' AGENTS.md && rm AGENTS.md.bak
+git add -A; expect_refuse git commit -qm header; git reset -q --hard
+
+msg="para P2: a contract-path change with no proposal or reason in a spec is refused"
+printf 'y=2\n' >> api/a.py && git add -A; expect_refuse git commit -qm api
+msg="para P2: with meta: none — <reason> in a staged spec it is accepted"
+mkdir -p .jig/specs && printf '# x\n\n## Decisions\n- meta: none — internal refactor, no contract change\n' > .jig/specs/x.md
+git add -A; expect_pass git commit -qm api
+
+msg="para P3: git add -f of the cache is refused"
+git add -f .jig/meta-cache/DECISIONS.md; expect_refuse git commit -qm cache; git reset -q
+msg="para P3: staging the metarepo checkout is refused"
+git add -f mrclone 2>/dev/null; expect_refuse git commit -qm clone; git reset -q
+
+msg="propose: a branch on the metarepo, the id in the spec, the metarepo's main untouched"
+mainbefore=$(git -C mrclone rev-parse main)
+$J propose .jig/specs/x.md fmt >/dev/null
+expect_pass sh -c "git -C mrclone rev-parse -q --verify refs/heads/propose/pr-fmt && grep -q 'meta: docs proposal propose/pr-fmt' .jig/specs/x.md && test \"\$(git -C mrclone rev-parse main)\" = '$mainbefore' && test \"\$(git -C mrclone branch --show-current)\" = main"
+git add -A && git commit -qm "specs: proposal"
+
+msg="para P4: a contract change waits while a file for the metarepo is staged"
+stage meta-note.md docs decisions new DECISIONS.md '| D-009 | x | proposed | 2026-10-29 |\n'
+printf 'z=3\n' >> api/a.py && printf -- '- meta: none — still internal\n' >> .jig/specs/x.md && git add api/a.py .jig/specs/x.md
+expect_refuse git commit -qm "api: more"
+python3 .jig/jig.py staging drop meta-note.md >/dev/null
+msg="para P4: a file staged for the metarepo by its name in another case holds it back too"
+stage upper-note.md DOCS decisions new DECISIONS.md '| D-009 | x | proposed | 2026-10-29 |\n'
+expect_refuse git commit -qm "api: more"
+python3 .jig/jig.py staging drop upper-note.md >/dev/null
+msg="para P4: once it is resolved, the same commit is accepted"
+expect_pass git commit -qm "api: more"
+
+msg="para: a new worktree gets the main checkout's cache; propose there names the repo, not the folder"
+git worktree add -q --detach "$T/pr-job" HEAD 2>/dev/null
+(cd "$T/pr-job" && $J propose .jig/specs/x.md lanefix >/dev/null)
+expect_pass sh -c "test -f '$T/pr-job/.jig/meta-cache/DECISIONS.md' && git -C mrclone rev-parse -q --verify refs/heads/propose/pr-lanefix"
+git worktree remove --force "$T/pr-job"
+
+msg="repos: works outside any git repo"
+expect_pass sh -c "cd '$T' && python3 '$P/jig/jig.py' repos"
+
+cd "$MR" && git switch -q -c d1 && printf '| D-001 | ids are numbers | accepted | 2026-10-29 |\n' >> DECISIONS.md
+printf -- '- D-001\n' >> CHANGELOG.md && git add -A && git commit -qm "D-001: ids" && $J reviewed >/dev/null
+git switch -q main && git merge -q --no-ff --no-edit d1 2>/dev/null && $J release >/dev/null
+cd "$PR" && printf 'D-001 is how ids work\n' > api/ids.md && git add api/ids.md && git commit -qm "api: ids" >/dev/null 2>&1
+msg="sync on a pararepo trunk: after a release it reports the change in this repo's terms and proposes the bump; the pin stays"
+out=$($J sync 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'docs v0.2.0 is out' && echo \"\$0\" | grep -q 'D-001: used in api/ids.md' && echo \"\$0\" | grep -q 'meta: docs v0.1.0 → v0.2.0' && grep -q '\"pin\": \"v0.1.0\"' .jig/para.json" "$out"
+
+msg="repos: lists each repo and flags a path that no longer exists"
+mv mrclone ../mrclone-away; out=$($J repos 2>&1); mv ../mrclone-away mrclone
+expect_pass sh -c "echo \"\$0\" | grep -q 'docs .*(missing)'" "$out"
+
+msg="sync on a pararepo trunk: offline, it reads the cache and says so"
+mv mrclone ../mrclone-away; out=$($J sync 2>&1); mv ../mrclone-away mrclone
+expect_pass sh -c "echo \"\$0\" | grep -q \"can't reach docs\" && echo \"\$0\" | grep -q 'reading the cache (v0.1'" "$out"
+
+msg="sync on a pararepo trunk: with defer_until in the future it prints nothing; on or after it, the full report"
+python3 -c "import json; p = json.load(open('.jig/para.json')); p['defer_until'] = '2999-01-01'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
+quiet=$($J sync 2>&1)
+python3 -c "import json; p = json.load(open('.jig/para.json')); p['defer_until'] = '2000-01-01'; json.dump(p, open('.jig/para.json', 'w'), indent=2)"
+loud=$($J sync 2>&1)
+expect_pass sh -c "test -z \"\$0\" && echo \"\$1\" | grep -q 'v0.2.0 is out'" "$quiet" "$loud"
+git checkout -q -- .jig/para.json
+msg="update: a pararepo's generated header is left as it is (trunk's older checker would refuse a change)"
+expect_pass sh -c "! python3 '$P/jig/jig.py' update | grep -q AGENTS.md"
+msg="update: a metarepo's two-part tag_pattern is widened to take vX.Y.Z"
+(cd "$MR" && python3 -c "import json; m = json.load(open('.jig/meta.json')); m['tag_pattern'] = r'^v\\d+\\.\\d+$'; json.dump(m, open('.jig/meta.json', 'w'), indent=2)")
+expect_pass sh -c "cd '$MR' && python3 '$P/jig/jig.py' update | grep -q 'widen .jig/meta.json'"
+git -C "$MR" checkout -q -- .jig/meta.json
+
+msg="plugin: no instance names or the instance's decision prefix"
+expect_refuse grep -rnE 'Maige|maige|"E-' "$P/.."
+}
 
 # ---------------------------------------------------------------- release
+sec_release() {
 RL="$T/rl"; mkdir -p "$RL" && cd "$RL" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && printf 'dist/\n' > .gitignore && printf '0.0.0\n' > VERSION && git add -A && git commit -qm init
 $J init >/dev/null && git add -A && git commit -qm board
-board() { python3 -c "import json,sys; b=json.load(open('.jig/config.json')); $1; json.dump(b, open('.jig/config.json','w'), indent=2)"; }
 msg="release: an undefined protocol refuses and points to /jig:release, naming the kind"
 out=$($J release --version 1.0.0 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'jig release: rl (repo)' && echo \"\$0\" | grep -q \"isn't defined (.jig/scripts/release.sh still holds the template's TODO).*/jig:release\" && ! git tag | grep -q ." "$out"
@@ -1148,8 +1208,10 @@ board "b['release']['artifacts'] = ['dist/app-*.zip']"; git add -A && git commit
 expect_pass sh -c "git tag | grep -qx v2.0.2 && test \"\$(git show v2.0.2:VERSION)\" = 2.0.2 && test -z \"\$(git status --porcelain)\""
 msg="release: off trunk it refuses"
 git switch -q -c side && expect_refuse $J release; git switch -q main
+}
 
 # ---------------------------------------------------------------- R6 takes and unique numbers
+sec_r6_takes() {
 R="$T/r6"; mkdir -p "$R" && cd "$R" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs src
 printf '# D\n\n## 1 One\n\n### 1.1 First\n' > docs/d.md
@@ -1181,8 +1243,10 @@ printf 'SCHEMA_VERSION = 17\n' >> src/plain.py; git add -A; expect_pass git comm
 cd "$R/.git/jig/worktrees/S"
 msg="R6 take: holding section 12, the page with ### 12.1 is accepted"
 printf '### 12.1 New\n' > docs/n.md; git add -A; expect_pass git commit -qm s12
+}
 
 # ---------------------------------------------------------------- R6 as ints, M5 in a job's flow, a decisions destination
+sec_r6_ints() {
 MJ="$T/metajob"; mkdir -p "$MJ" && cd "$MJ" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
 $J init --meta --name docs >/dev/null && git add -A && git commit -qm "meta-init"
@@ -1193,8 +1257,6 @@ json.dump(c, open('.jig/config.json', 'w'), indent=2)
 EOF
 git add -A && git commit -qm "TOOL: decision counter"
 $J open D --shares DECISIONS.md CHANGELOG.md --reserve decision=2 >/dev/null && git add -A && git commit -qm "TOOL: open D"
-dec() { printf '| D-%s | x | accepted | 2026-10-30 |\n' "$1" >> DECISIONS.md && printf -- '- D-%s\n' "$1" >> CHANGELOG.md && git add -A; }
-foldin() { sed -i.bak -e 's/^- \[ \]/- [x]/' -e 's/___/smoke/g' .jig/handoffs/*.md && rm .jig/handoffs/*.bak; }
 cd "$MJ/.git/jig/worktrees/D"
 msg="R6 ints: a job holding decision 2 adds | D-002 |, and check prints ok"
 dec 002; expect_pass sh -c "$J check --staged | grep -qx ok"; undo
@@ -1253,8 +1315,10 @@ expect_pass sh -c "$J staging resolve de.md && grep -q 'D-010' DECISIONS.md"
 msg="staging: D-10 is the D-010 already in the register, and is refused as new"
 stage de.md this decisions new DECISIONS.md '| D-10 | again | accepted | 2026-10-30 |\n'
 expect_refuse $J staging resolve de.md; rm .jig/staging/de.md
+}
 
 # ---------------------------------------------------------------- merge after a sync, the gate's own scratch merge, jig reserve
+sec_merge_after_sync() {
 MS="$T/msync"; mkdir -p "$MS" && cd "$MS" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs
 printf '# D\n\n## 1 One\n' > docs/d.md && printf '# Changelog\n' > CHANGELOG.md
@@ -1266,7 +1330,6 @@ json.dump(c, open('.jig/config.json', 'w'), indent=2)
 EOF
 git add -A && git commit -qm config
 for j in K L M; do $J open $j --shares CHANGELOG.md >/dev/null; done; git add -A && git commit -qm "open K L M"
-foldin() { sed -i.bak -e 's/^- \[ \]/- [x]/' -e 's/___/smoke/g' .jig/handoffs/*.md && rm .jig/handoffs/*.bak; }
 for j in K L M; do
   ( cd "$MS/.git/jig/worktrees/$j" && printf -- '- %s\n' "$j" >> CHANGELOG.md && printf 'x=1\n' > "$j.py" && git add -A && git commit -qm "$j" \
     && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && foldin && git add -A && git commit -qm "note $j" )
@@ -1308,8 +1371,10 @@ msg="R6: on a detached trunk, a number an open job holds is still refused (no fa
 ( cd "$MS/.git/jig/worktrees/R" && $J sync >/dev/null 2>&1 )
 git switch -q --detach main && printf '\n## 4 Four\n' >> docs/d.md && git add -A
 expect_refuse git commit -qm four; git reset -q --hard && git switch -q main
+}
 
 # ---------------------------------------------------------------- repos
+sec_repos() {
 export JIG_CONFIG="$T/repos-cmd.json"
 RP="$T/rp"; mkdir -p "$RP" && cd "$RP" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && git add -A && git commit -qm init && $J init >/dev/null
@@ -1327,11 +1392,12 @@ import importlib.util, sys; s = importlib.util.spec_from_file_location('j', '.ji
 assert j.repo_path('rp') is not None and j.repo_path('tools') is not None"
 msg="repos: the list marks this folder"
 expect_pass sh -c "$J repos | grep -q 'tools .*← here'"
+}
 
 # ---------------------------------------------------------------- workflow
+sec_workflow() {
 WF="$T/wf"; mkdir -p "$WF" && cd "$WF" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && chmod +x .jig/scripts/*.sh && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
-setwf() { python3 -c "import json, sys; c = json.load(open('.jig/config.json')); c['workflow'] = json.loads(sys.argv[1]); json.dump(c, open('.jig/config.json', 'w'), indent=2)" "$1"; }
 msg="workflow: prints jig's defaults, one step per line"
 expect_pass sh -c "$J workflow | grep -qx 'execute: tier 2, effort 3' && $J workflow | grep -qx 'review: tier 2, effort 1'"
 for rule in \
@@ -1380,14 +1446,17 @@ $J open k --spec .jig/specs/t.md --owns 'k/**' >/dev/null && git add -A && git c
   && rm .jig/handoffs/*.bak && git add -A && git commit -qm note)
 msg="gate: a note with no --spec is judged by the board's spec, and an unrecorded review is warned about"
 expect_pass sh -c "$J gate k 2>&1 | grep -q 'warning: the review.s tier and effort are not recorded; the spec asks for tier 2, effort 1'"
-
+}
 
 # ---------------------------------------------------------------- init beside an old board
+sec_init_old_board() {
 # init must refuse in a repo whose board is at an older path: a second board blocks update,
 # and its hooks would run a trunk .jig/jig.py that isn't there yet.
-export JIG_CONFIG="$T/repos.json"     # the pararepo section's list, which names metarepo docs
+# Its own metarepo docs, listed in this section's repos.json, for the last case's init --para.
+MR="$T/mr"; mkdir -p "$MR" && cd "$MR" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
+$J init --meta --name docs >/dev/null && git add -A && git commit -qm meta-init && $J release >/dev/null && $J repos add meta >/dev/null
 IJ="python3 $P/jig/jig.py"            # the plugin's copy: an old repo has no .jig/jig.py
-hooksnap() { find .git/hooks -type f | sort | xargs shasum 2>/dev/null; }
 for gen in ai-dev jig-0.2; do
   d="$T/ib-$gen"; mkdir -p "$d" && cp -R "$FX/$gen/repo/." "$d/" && cd "$d"
   git init -q -b main && git config user.email t@t && git config user.name t
@@ -1413,10 +1482,12 @@ for gen in ai-dev jig-0.2; do
 done
 msg="init --para after update and a commit succeeds, and the next update is up to date"
 $UP --apply >/dev/null 2>&1; git add -A && git commit -qm update >/dev/null 2>&1
-out=$($J init --para docs --contract 'src/**' 2>&1); rc=$?     # docs: the pararepo section's clone
+out=$($J init --para docs --contract 'src/**' 2>&1); rc=$?     # docs: this section's metarepo
 expect_pass sh -c "test $rc = 0 && test -f .jig/para.json && test \"\$($UP 2>&1)\" = 'up to date'" "$out"
+}
 
 # ---------------------------------------------------------------- ledger rows of the wrong shape
+sec_ledger_rows() {
 # A ledger row is cut on the pipes GitHub cuts on: \| is a literal pipe, a pipe in backticks
 # is not. A row whose cell count isn't its header's is kept and named, never guessed at.
 d="$T/lg"; mkdir -p "$d" && cp -R "$FX/ai-dev/repo/." "$d/" && cd "$d"
@@ -1444,8 +1515,10 @@ msg="table_cells: \\| is one cell's literal pipe; a backtick pipe splits; outer 
 expect_pass python3 -c "
 import importlib.util; s = importlib.util.spec_from_file_location('j', '$P/jig/jig.py'); j = importlib.util.module_from_spec(s); s.loader.exec_module(j)
 assert j.table_cells(r'| a | b \| c | \`x|y\` |') == ['a', 'b | c', '\`x', 'y\`'], j.table_cells(r'| a | b \| c | \`x|y\` |')"
+}
 
 # ---------------------------------------------------------------- hardware reference files
+sec_hardware() {
 HR="$T/hwref"
 mkdir -p "$HR" && cd "$HR" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs/hardware/components/pmic docs/hardware/watch main
@@ -1455,10 +1528,6 @@ printf '# PMIC notes\n' > docs/hardware/components/pmic/notes.md
 printf '# Vendor definition\n' > docs/hardware/watch/vendor-definition.md
 printf 'int led = 2;\n' > main/app.c
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
-hrsurvey() { python3 -c "
-import json, subprocess
-r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
-$1"; }
 
 msg="reference files: unmapped, only docs/hardware/<board>.md is a board page"
 expect_pass hrsurvey "assert r['boards_unmapped'] == ['docs/hardware/watch.md'], r['boards_unmapped']"
@@ -1509,17 +1578,11 @@ json.dump(b, open('.jig/config.json', 'w'), indent=2)
 PY
 git add -A && git commit -qm "older config"
 expect_pass sh -c "$J update 2>&1 | grep -q 'reference_files: added'"
+}
 
 # ---------------------------------------------------------------- update: per file, whole subfolders, worktrees
+sec_update_per_file() {
 # Each repo is the ai-dev fixture plus what the case adds, set up before its first commit.
-ax() {  # ax <dir> [setup command]: the fixture, the setup run in it, committed
-  mkdir -p "$1" && cp -R "$FX/ai-dev/repo/." "$1/" && cd "$1"
-  git init -q -b main && git config user.email t@t && git config user.name t
-  if [ -n "${2:-}" ]; then eval "$2"; fi
-  git add -A && git commit -qm init && cp -R "$FX/ai-dev/git/." .git/
-}
-mkf() { for f in "$@"; do mkdir -p "$(dirname "$f")" && printf 'x\n' > "$f"; done; }
-renamed() { git diff --cached -M --name-status | grep -q "^R100	$1	$2\$"; }
 
 ax "$T/pf-a" "mkf specs/a.md specs/b.md .jig/specs/b.md && printf 'See [specs/b.md](specs/b.md#top).\n' > docs/notes.md
   sed -i.bak 's|\"AGENTS.md\",|\"AGENTS.md\", \"specs/**\",|' .aidev/lanes.json && rm .aidev/lanes.json.bak"
@@ -1587,7 +1650,6 @@ msg="update: --apply refuses on it and stages no rename"
 rc=$(code $UP --apply)
 expect_pass sh -c "test $rc = 2 && test -z \"\$(git diff --cached --name-only)\" && test -f specs/alpha.md"
 
-wt() { git -c core.hooksPath=/dev/null worktree add -q "$@" 2>/dev/null; }
 ax "$T/wt-a"; wt -b l1 .aidev/worktrees/l1
 cd "$T" && mv wt-a wt-a2 && cd wt-a2
 out=$($UP 2>&1); rc=$?
@@ -1633,18 +1695,12 @@ mkdir -p .jig/staging && printf 'x\n' > jig/staging/pending.md && printf 'y\n' >
 msg="update: an untracked staged file whose .jig/staging/ destination is taken refuses the dry run and --apply"
 out=$($UP 2>&1); rc=$?; rc2=$(code $UP --apply)
 expect_pass sh -c "test $rc = 2 && test $rc2 = 2 && echo \"\$0\" | grep -q 'untracked files where files would move: .jig/staging/pending.md (from jig/staging/pending.md)' && test -f jig/staging/pending.md" "$out"
+}
 
 # ---------------------------------------------------------------- pararepo commands are the standard ones
-# Self-contained: its own metarepo, pararepos and repos.json. $R was reused above, so the jig
-# repo is found again from $P.
-JR="$(cd "$P/../.." && pwd)"
+sec_pararepo_commands() {
+# Self-contained: its own metarepo, pararepos and repos.json.
 export JIG_CONFIG="$T/pc-repos.json"
-pcnew() {  # pcnew <dir>: a git repo with the template copied in, nothing committed
-  mkdir -p "$1" && cd "$1" && git init -q -b main && git config user.email t@t && git config user.name t
-  cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" .; }
-pcfold() { sed -i.bak -e 's/^- \[ \]/- [x]/' -e 's/___/smoke/g' .jig/handoffs/*.md && rm .jig/handoffs/*.bak; }
-setjson() {  # setjson <file> <key> <value>
-  python3 -c "import json,sys; f=sys.argv[1]; d=json.load(open(f)); d[sys.argv[2]]=sys.argv[3]; json.dump(d, open(f,'w'), indent=2)" "$@"; }
 
 PM="$T/pm"; pcnew "$PM" && git add -A && git commit -qm init
 $J init --meta --name pm >/dev/null && git add -A && git commit -qm meta-init && $J release >/dev/null
@@ -1682,7 +1738,6 @@ GW="$PA/.git/jig/worktrees/G1"
 (cd "$GW" && mkdir -p .jig/specs && printf '# g\n\n## Decisions\n' > .jig/specs/g.md && $J propose .jig/specs/g.md g >/dev/null \
   && printf 'y=2\n' >> api/a.py && git add -A && git commit -qm "api: g" && $J reviewed >/dev/null \
   && $J handoff --spec .jig/specs/g.md >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note G1")
-gate_ok() { out=$($J gate "$1" 2>&1); rc=$?; git worktree remove --force ".git/jig/worktrees/gate-$1" 2>/dev/null; return $rc; }
 
 msg="gate: a job citing an unreleased proposal is refused, naming the proposal and the pin"
 out=$($J gate G1 2>&1); rc=$?
@@ -1796,13 +1851,11 @@ python3 -c "import json,sys; f=sys.argv[1]; d=json.load(open(f)); d.pop('pm'); j
 sed -i.bak 's/by `jig init --para`/by `jig para-init`/; s/`jig propose`/`jig para-propose`/g' AGENTS.md && rm AGENTS.md.bak
 out=$($J init --para 2>&1); rc=$?; mv "$T/pc-repos.bak" "$JIG_CONFIG"
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'was not refreshed' && test \"\$(grep -c 'jig:meta —' AGENTS.md)\" = 1 && git diff --quiet -- AGENTS.md" "$out"
+}
 
 # ---------------------------------------------------------------- entry_files take globs; merge --subject
+sec_entry_globs() {
 # A metarepo whose pages are a glob, so a new page needs no meta.json edit.
-setentry() { python3 -c "import json,sys; f='.jig/meta.json'; d=json.load(open(f)); d['entry_files']=sys.argv[1:]; json.dump(d, open(f,'w'), indent=2)" "$@"; }
-emerge() {  # emerge <branch> <subject> <file>...: commit the staged change on a branch, review it, merge it into main
-  b=$1 s=$2; shift 2; git switch -q -c "$b" && git add -- "$@" && git commit -qm "$s" && $J reviewed >/dev/null \
-    && git switch -q main && git merge -q --no-ff --no-edit "$b"; }
 EM="$T/em"; pcnew "$EM" && mkdir -p products/x && printf '# a\n' > products/a.md && printf '# b\n' > products/x/b.md && printf 'n\n' > notes.md
 $J init --meta --name em >/dev/null && setentry DECISIONS.md 'products/**/*.md' && git add -A && git commit -qm meta-init && $J release >/dev/null
 printf 'more\n' >> products/a.md && printf -- '- a\n' >> CHANGELOG.md
@@ -1820,7 +1873,6 @@ msg="entry globs: M3 takes a change to notes.md, which no glob names, with no li
 printf 'x\n' >> notes.md; git add -A; expect_pass git commit -qm "NOTES: n"
 # M3 judges the branch since it left trunk: a line one commit added covers the next ones.
 # This branch's line goes under the heading, trunk's at the end, so the sync merges cleanly.
-underhead() { python3 -c "import sys; f='CHANGELOG.md'; s=open(f).read(); open(f,'w').write(s.replace('## Unreleased\n', '## Unreleased\n'+sys.argv[1]+'\n', 1))" "$1"; }
 git switch -q main && git switch -q -c em4
 printf 'y\n' >> products/a.md && underhead '- y' && git add -A && git commit -qm "PRODUCTS: y"
 msg="entry globs: M3 takes a page-only commit on a branch whose earlier commit added the line"
@@ -1879,11 +1931,6 @@ expect_pass sh -c "git -C '$EM' log -1 --merges --format=%s v0.5.0 | grep -qx 'D
 setjson .jig/para.json pin v0.5.0 && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: em v0.4.0 → v0.5.0"
 msg="merge --subject: the gate's fallback still finds job J by its merge after its branch is deleted"
 gate_ok E1; rc=$?; expect_pass test $rc = 0
-emergejob() {  # emergejob <job> <subject>: open a job in $EM, hand it off, and merge it with --subject
-  (cd "$EM" && $J open "$1" --branch "b-$1" --owns "products/$1.md" CHANGELOG.md >/dev/null && git add -A && git commit -qm "TOOL: open $1" \
-    && cd ".git/jig/worktrees/b-$1" && printf '# x\n' > "products/$1.md" && printf -- "- $1\n" >> CHANGELOG.md \
-    && git add -A && git commit -qm "PRODUCTS: $1" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
-    && git add -A && git commit -qm "TOOL: note $1" && cd "$EM" && $J merge "$1" --subject "$2" >/dev/null); }
 msg="merge --subject: a subject that already ends in ': merge <job>' is used as given"
 emergejob S1 "D-001: merge S1"; expect_pass sh -c "git -C '$EM' log -1 --merges --format=%s | grep -qx 'D-001: merge S1'"
 msg="merge --subject: bare ids still get ': merge <job>' added"
@@ -1911,8 +1958,10 @@ msg="entry globs: with '**/*.md', a pararepo's cache holds no .jig/ file"
 EK="$T/ek"; pcnew "$EK" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 $J init --para ej --location "$EJ" >/dev/null 2>&1
 expect_pass sh -c "test -f .jig/meta-cache/p.md && test -z \"\$(find .jig/meta-cache -path '*/.jig/*')\""
+}
 
 # ---------------------------------------------------------------- report-fixes follow-up
+sec_report_fixes() {
 # What eight /jig:bug evaluations found around the report-born fixes. Each repo is its own.
 
 # update: a worktree for a branch with `/` sits a level deeper than its worktrees folder.
@@ -2099,8 +2148,10 @@ printf '# Watch\n\n| RTC | QX-20 | time | [ds](components/rtc/qx-20(rev1).pdf) |
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 msg="survey: components/rtc/qx-20(rev1).pdf, linked bare, is neither missing nor unlinked"
 expect_pass hrsurvey "assert r['components_missing'] == [] and r['components_unlinked'] == [], r"
+}
 
 # ---------------------------------------------------------------- sync buffer
+sec_sync_buffer() {
 # A metarepo whose decision cites the pararepo's UI doc, and a pararepo working ahead of it.
 SM="$T/sb-meta"; pcnew "$SM" && git add -A && git commit -qm init && $J init --meta --name sbm >/dev/null
 printf '| D-001 | the list shows ids (`sb-para/docs/ui.md`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
@@ -2113,13 +2164,6 @@ $J init --para sbm --location "$SM" --contract 'api/**' >/dev/null && git add -A
 sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
 printf 'mkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/release.sh
 board "b['release'] = {'artifacts': ['dist/app-*.zip']}" && git add -A && git commit -qm "release protocol"
-sbprops() { git -C "$SM" branch --list 'propose/*' | wc -l | tr -d ' '; }
-brow() { printf '| %s | DECISIONS.md § D-001: %s | api/a.py, %s (%s) | owner, 2026-11-02 | %s |\n' "$@"; }
-sbland() {  # sbland <proposal branch> <term>: the metarepo writes it, merges and releases
-  (cd "$SM" && git switch -q "$1" && printf '\n## %s\n' "$2" >> GLOSSARY.md && printf -- '- %s\n' "$2" >> CHANGELOG.md \
-    && git add -A && git commit -qm "GLOSSARY: $2" && $J reviewed >/dev/null && git switch -q main \
-    && git merge -q --no-ff --no-edit "$1" && $J release >/dev/null); }
-sbbump() { setjson .jig/para.json pin "$1" && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: sbm → $1"; }
 
 msg="buffer: a pararepo release with its own steps and a glob that matches nothing tags nothing"
 board "b['release']['artifacts'].append('dist/*.dmg')" && git add -A && git commit -qm "release: dmg"
@@ -2247,13 +2291,12 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'points to docs/guide
 msg="pointers P2: the delete passes with meta: buffered <id>"
 brow B4 'help page' 'gone' 'pointer' Open >> .jig/ledgers/BUFFER.md && git add -A && git commit -qm "buffer: B4"
 printf '# z\n\n- meta: buffered B4\n' > .jig/specs/z.md && git rm -q docs/z.md && git add -A; expect_pass git commit -qm "docs: drop z"
+}
 
 # ---------------------------------------------------------------- feedback
+sec_feedback() {
 export JIG_CONFIG="$T/fb/repos.json"      # its feedback/ fallback sits beside it, never the user's
 FB="$T/fb-jig"; pcnew "$FB" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
-fb() {  # fb <dir> <file> [from]: a feedback report, with a from: line when given one
-  mkdir -p "$1" && printf -- '---\nstaged: true\ntarget: this\nkind: feedback\nchange: new\ndestination: a fix in jig\nsource: chat %s\n%bjig_version: abc123\nstatus: staged\n---\n# R\n' \
-    "$2" "${3:+from: $3\n}" > "$1/$2"; }
 
 msg="feedback: a report without from: is refused by the list"
 fb .jig/staging nofrom.md
@@ -2278,7 +2321,6 @@ before=$(git rev-parse HEAD)
 expect_pass sh -c "$J staging drop r2.md && test ! -e '$T/fb/feedback/r2.md' && test \"\$(git rev-parse HEAD)\" = '$before'"
 
 FJ="$T/fb2/jig"; pcnew "$FJ" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
-fbj() { fb "$@" && sed -i.bak 's/^target: this$/target: jig/' "$1/$2" && rm "$1/$2.bak"; }
 msg="feedback: in a repo named jig, a target: jig report in the fallback waits for a spec carrying its mark, then resolves"
 fbj "$T/fb/feedback" r3.md widget
 out=$($J staging resolve r3.md 2>&1); rc=$?
@@ -2301,6 +2343,59 @@ expect_pass sh -c "$J staging drop upper.md >/dev/null && $J release >/dev/null 
 rm "$T/fb/feedback/other.md"
 msg="feedback: jig repos prints where tool reports wait"
 expect_pass sh -c "$J repos | grep -q 'tool reports wait in .*/fb/feedback while'"
+}
+
+# Sections in file order. Ones joined by a comma share state and run in one process, in
+# order: staging releases metarepo's $M; R6 as ints works in R6 takes' repo $R.
+# The slowest start first, so the run isn't waiting on one that started last.
+SLOW="pararepo_commands entry_globs report_fixes sync_buffer"
+UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer feedback"
+
+if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
+if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file
+  T="$2/${3%%,*}"; mkdir -p "$T"
+  # Before any jig command, so every case and any fragment copied out of this file writes
+  # user-level state into the section's own folder. Sections still set their own lists.
+  export JIG_CONFIG="$T/repos.json" XDG_CONFIG_HOME="$T/config"
+  # Python's __pycache__ writes into a .jig/ that a parallel section may be copying.
+  export PYTHONDONTWRITEBYTECODE=1
+  exec > "$2/$3.out" 2>&1 < /dev/null
+  for s in $(echo "$3" | tr , ' '); do
+    declare -F "sec_$s" >/dev/null || { bad "no section $s"; continue; }
+    cd "$T" && "sec_$s"
+  done
+  echo $fail > "$2/$3.rc"; exit 0
+fi
+
+pick=""
+for want in "$@"; do               # a section named on its own runs its whole unit
+  u=$(echo $UNITS | tr ' ' '\n' | grep -E "(^|,)$want(,|\$)") || { echo "no section $want: see --list" >&2; exit 2; }
+  case " $pick " in *" $u "*) ;; *) pick="$pick $u" ;; esac
+done
+[ -n "$pick" ] || pick=$UNITS
+for f in $(declare -F | awk '$3 ~ /^sec_/ {print substr($3, 5)}'); do   # a section UNITS forgot never runs
+  case " $(echo $UNITS | tr , ' ') " in *" $f "*) ;; *) bad "section $f is not in UNITS" ;; esac
+done
+real_before=$(cfg_state "$REAL_CFG")
+RUN=$(mktemp -d "${TMPDIR:-/tmp}/jig-smoke.XXXXXX")
+echo "smoke: sections run in $RUN"
+jobs=${JIG_SMOKE_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
+order=$(for u in $SLOW $pick; do echo $u; done | awk -v p=" $pick " 'index(p, " " $0 " ") && !seen[$0]++')
+# Its own process group, so a stopped run takes its units with it and no caller's processes.
+set -m
+echo "$order" | xargs -P "$jobs" -I{} bash "$0" --unit "$RUN" {} &
+units=$!
+set +m
+trap 'kill -TERM -- -$units 2>/dev/null; wait $units; rm -rf "$RUN"; exit 130' INT TERM
+wait $units
+trap - INT TERM
+for u in $UNITS; do
+  case " $pick " in *" $u "*) ;; *) continue ;; esac
+  cat "$RUN/$u.out" 2>/dev/null
+  rc=$(cat "$RUN/$u.rc" 2>/dev/null) || rc=""
+  [ "$rc" = 0 ] || { [ "$rc" = 1 ] || echo "FAIL  section $u did not finish"; fail=1; }
+done
+
 
 msg="isolation: the user's real jig config folder is unchanged by the run"
 real_after=$(cfg_state "$REAL_CFG")
@@ -2308,5 +2403,5 @@ expect_pass test "$real_after" = "$real_before"
 # Another session's real jig work can change it too; the diff shows which file did.
 [ "$real_after" = "$real_before" ] || diff <(echo "$real_before") <(echo "$real_after")
 
-rm -rf "$T"
+rm -rf "$RUN"
 exit $fail
