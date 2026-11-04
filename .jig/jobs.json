@@ -12,5 +12,18 @@
     ],
     "shares": [],
     "reserved": {}
+  },
+  "smoke-parallel": {
+    "spec": ".jig/specs/smoke-parallel.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "tests/smoke.sh",
+      "tests/smoke/**"
+    ],
+    "shares": [
+      "AGENTS.md"
+    ],
+    "reserved": {}
   }
 }
