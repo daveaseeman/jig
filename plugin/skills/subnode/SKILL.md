@@ -36,7 +36,7 @@ is done.
 
 1. Run the project's checks (`.jig/scripts/check.sh`, plus whatever `/jig:verify` calls for).
    A check that can outlast your shell's foreground limit is waited on as `/jig:verify` says:
-   background, output to a file, its exit notice or its pid, never a pattern.
+   background, output to a file, its exit notice or its pid, never a match.
 2. Have the diff adversarially reviewed. If a hubnode started you, report the commit and
    wait: it runs the review at the review step's settings and sends blocking findings back
    here as fixes. Working alone, `/jig:review`. Fix anything blocking.

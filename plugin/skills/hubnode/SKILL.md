@@ -70,8 +70,9 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
   message asking for one isn't that word. A scratch or test clone (a repo made for the test,
   with no remote) is exempt. When you release
   (`/jig:release`'s run: check, `release.sh`, smoke) or survey, start a session at the `check`
-  step's settings to run it and report the output; you read the report. The push and publish
-  stay yours, on the owner's word.
+  step's settings to run it and report the output; you read the report. Its brief says to
+  wait on a long run as `/jig:verify` says: background, exit notice or pid, never a match.
+  The push and publish stay yours, on the owner's word.
 - **Decide.** Read the review. Blocking findings go back to the session that executed, as
   a fix, at execute's settings — a new one only when that session is gone. Count the
   rounds. After a third fix that leaves a blocking finding, don't start a fourth: run
@@ -107,7 +108,7 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
    `$(git rev-parse --git-common-dir)/jig/gate-<name>.out`, outside `worktrees/`, which the next
    gate removes; a failure nobody can reproduce is reported with that path, so it can be read.
    A run that can outlast the shell's foreground limit is waited on as `/jig:verify` says:
-   background, its exit notice or its pid, never a pattern.
+   background, its exit notice or its pid, never a match.
 3. Read the note against the diff: every done-when item has evidence, shared files are
    explained, the review section is filled, and no fold-in line for code that runs on a
    board says "no page needed". A miss goes back to the subnode as a note, never

@@ -28,6 +28,7 @@ Does the fix handle the symptom where it appears, or change the thing that produ
 Prefer the correction. A workaround is fine when it is the right fix — say why in one line.
 
 ## 5. Write the spec
+The spec opens with `Source:` naming who reported it, when, and the symptom in their words.
 `Alternatives considered` is required: `<sibling or correction> — rejected because <reason> — this reason is [seen|assumed]`.
 `Done when` must include an observable that proves the fix fires. A fix that can't be observed isn't a fix.
 It also includes an observable that the symptom the report describes no longer happens. If the whys moved
