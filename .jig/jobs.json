@@ -1,1 +1,91 @@
-{}
+{
+  "sync-report": {
+    "spec": ".jig/specs/bug-sync-report.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh"
+    ],
+    "reserved": {}
+  },
+  "para-release": {
+    "spec": ".jig/specs/para-default-release.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "plugin/skills/release/SKILL.md",
+      "plugin/skills/init/SKILL.md"
+    ],
+    "reserved": {}
+  },
+  "m3-branch": {
+    "spec": ".jig/specs/bug-m3-per-branch.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "plugin/skills/stage/SKILL.md"
+    ],
+    "reserved": {}
+  },
+  "merge-subject": {
+    "spec": ".jig/specs/bug-merge-subject.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "tests/smoke.sh",
+      "plugin/templates/jig/RULES.md"
+    ],
+    "reserved": {}
+  },
+  "meta-rule": {
+    "spec": ".jig/specs/meta-content-rule.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "plugin/templates/ledgers/BUFFER.md",
+      "plugin/skills/spec/SKILL.md",
+      "plugin/skills/review/SKILL.md"
+    ],
+    "reserved": {}
+  },
+  "owner-steps": {
+    "spec": ".jig/specs/owner-steps.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/hubnode/SKILL.md"
+    ],
+    "shares": [
+      "plugin/skills/release/SKILL.md",
+      "plugin/skills/review/SKILL.md"
+    ],
+    "reserved": {}
+  },
+  "fix-general": {
+    "spec": ".jig/specs/fix-general.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/fix/SKILL.md"
+    ],
+    "shares": [],
+    "reserved": {}
+  }
+}
