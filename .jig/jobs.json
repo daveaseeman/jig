@@ -1,7 +1,7 @@
 {
   "sync-report": {
     "spec": ".jig/specs/bug-sync-report.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
