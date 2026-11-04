@@ -70,7 +70,8 @@
       "plugin/skills/hubnode/SKILL.md"
     ],
     "shares": [
-      "plugin/skills/release/SKILL.md"
+      "plugin/skills/release/SKILL.md",
+      "plugin/skills/review/SKILL.md"
     ],
     "reserved": {}
   },
