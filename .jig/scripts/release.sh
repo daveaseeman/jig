@@ -22,3 +22,7 @@ bash tests/smoke.sh
 # bump above isn't committed yet, so `git archive HEAD` would ship the old version
 mkdir -p dist && rm -f "dist/jig-$version.plugin"
 (cd plugin && git ls-files -z | xargs -0 zip -q "../dist/jig-$version.plugin")
+
+# --- the file shipped must be this build: jig checks this run wrote it; this checks it says so
+unzip -p "dist/jig-$version.plugin" .claude-plugin/plugin.json | grep -q "\"version\": \"$version\"" \
+  || { echo "dist/jig-$version.plugin doesn't carry version $version" >&2; exit 1; }
