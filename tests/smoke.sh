@@ -1792,10 +1792,10 @@ git add .jig/specs/t.md && git commit -qm "specs: t" && $J open E1 --spec .jig/s
 (cd "$EM" && $J open J --branch propose/ep-t --owns products/t.md CHANGELOG.md >/dev/null && git add -A && git commit -qm "TOOL: open J" \
   && cd .git/jig/worktrees/propose/ep-t && printf '# t\n' > products/t.md && printf -- '- t\n' >> CHANGELOG.md \
   && git add -A && git commit -qm "PRODUCTS: t" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
-  && git add -A && git commit -qm "TOOL: note J" && cd "$EM" && $J merge J --subject "D-001: land J" >/dev/null && $J release >/dev/null \
+  && git add -A && git commit -qm "TOOL: note J" && cd "$EM" && $J merge J --subject "D-001, D-002" >/dev/null && $J release >/dev/null \
   && git worktree remove --force .git/jig/worktrees/propose/ep-t && git branch -q -D propose/ep-t)
-msg="merge --subject: the subject is '<text>: merge J'"
-expect_pass sh -c "git -C '$EM' log -1 --merges --format=%s v0.5.0 | grep -qx 'D-001: land J: merge J'"
+msg="merge --subject: the subject is '<ids>: merge J'"
+expect_pass sh -c "git -C '$EM' log -1 --merges --format=%s v0.5.0 | grep -qx 'D-001, D-002: merge J'"
 setjson .jig/para.json pin v0.5.0 && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: em v0.4.0 → v0.5.0"
 msg="merge --subject: the gate's fallback still finds job J by its merge after its branch is deleted"
 gate_ok E1; rc=$?; expect_pass test $rc = 0

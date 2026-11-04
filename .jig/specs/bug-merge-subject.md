@@ -6,9 +6,11 @@ Report item 6.
 
 ## 1. Why
 - Why the doubled "merge lite-buffer"? `cmd_merge` builds `f"{subject}: merge {name}"`, and the
-  caller passed a subject that already ended in `merge lite-buffer`.
-- Why did they? The flag is named `--subject`. Its help ("the merge subject, before `: merge
-  <name>`") is the only place that says it's a prefix.
+  caller's `--subject` already named the merge: `E-045, E-044: merge lite-buffer (Maige Lite buffer B1)`.
+- Why did they? The hubnode skill invites it: `--subject "<ids>: <what>"`, and a caller fills
+  `<what>` with what the merge does, the merge included. RULES.md ("`--subject <text>` puts text
+  before it") and the help ("the merge subject, before `: merge <name>`") call it a prefix of any
+  text too; none says it is only the ids.
 - Why is the suffix forced? `proposal_in` finds a job whose branch is gone by `merge <job>` at
   the subject's end. Keep that; just don't add it twice.
 
@@ -21,8 +23,9 @@ Report item 6.
 No sibling builds a merge subject. `jig sync` writes its own `meta:` subjects whole.
 
 ## 4. Correction
-Correction. A `--subject` that already ends in `merge <job>` is used as given. Otherwise it's a
-prefix, as today. The help names the prefix shape with an example.
+Correction. A `--subject` that already ends in `: merge <job>` is used as given. Otherwise it's a
+prefix, as today. The help, RULES.md and the hubnode skill all say the same: it is the ids the
+subject leads with, with an example, and the merge isn't written by the caller.
 
 ## 5. Spec
 
@@ -30,13 +33,17 @@ prefix, as today. The help names the prefix shape with an example.
 - [ ] Smoke: `jig merge <job> --subject "D-001: merge <job>"` gives the subject `D-001: merge <job>`, once.
 - [ ] Smoke: `--subject "D-001"` still gives `D-001: merge <job>`.
 - [ ] `jig merge --help` reads: the ids the subject leads with, e.g. `D-001, D-002`; `: merge <job>` is added unless it's already there.
+- [ ] The docs no longer invite a `<what>` that names the merge: RULES.md (jobs, the hubnode merges) and
+      `plugin/skills/hubnode/SKILL.md` say what the help says.
 - [ ] Smoke passes, and the validator passes.
 
 ### Out of scope
 Renaming the flag: repos already pass `--subject`.
 
 ### Touches
-`plugin/templates/jig/jig.py` (`cmd_merge` and its help), `tests/smoke.sh`.
+`plugin/templates/jig/jig.py` (`cmd_merge` and its help), `tests/smoke.sh`,
+`plugin/templates/jig/RULES.md` (the hubnode merges), `plugin/skills/hubnode/SKILL.md` (its merge step,
+after job owner-steps merges).
 
 ### Alternatives considered
 - Rename to `--ids`. Rejected: it breaks existing callers for a help-text problem. `[seen]`:
