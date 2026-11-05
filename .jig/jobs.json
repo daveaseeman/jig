@@ -1,7 +1,7 @@
 {
   "slash-branch": {
     "spec": ".jig/specs/bug-slash-branch.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [
       "plugin/skills/hubnode/SKILL.md"
