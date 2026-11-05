@@ -1,18 +1,4 @@
 {
-  "slash-branch": {
-    "spec": ".jig/specs/bug-slash-branch.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/skills/hubnode/SKILL.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh"
-    ],
-    "reserved": {}
-  },
   "numbered-pointers": {
     "spec": ".jig/specs/bug-numbered-pointers.md",
     "state": "ready",

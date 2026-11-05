@@ -716,15 +716,23 @@ def cmd_status(root: Path, args) -> int:
     return 0
 
 
+def file_safe(name: str) -> str:
+    """A job or branch name as one file or folder name. git allows `/` in a branch; the notes
+    and the gate's scratch stay flat, so `a/b` and `a-b` share a stem, and a note's header,
+    not its file name, says whose it is."""
+    return name.replace("/", "-")
+
+
 def handoff_notes(branch: str, name: str) -> list[str]:
     """The notes a job has filed, read from its branch, oldest first: the record of a handoff
     is the note."""
     # The names `jig handoff` writes: <job>-<date>.md, then -2, -3 the same day. By name alone
     # "-" sorts before ".", putting the day's first note last; and job X-y's notes start "X-".
-    note = re.compile(rf"{re.escape(name)}-(\d{{4}}-\d{{2}}-\d{{2}})(?:-(\d+))?\.md")
-    listing = git("ls-tree", "-r", "--name-only", branch, "--", f"{DIR}/handoffs/")
+    note = re.compile(rf"{re.escape(file_safe(name))}-(\d{{4}}-\d{{2}}-\d{{2}})(?:-(\d+))?\.md")
+    listing = git("ls-tree", "--name-only", branch, "--", f"{DIR}/handoffs/")
     found = [(m.group(1), int(m.group(2) or 1), n) for n in listing.splitlines()
-             if (m := note.fullmatch(Path(n).name))]
+             if (m := note.fullmatch(Path(n).name))
+             and git("show", f"{branch}:{n}").split("\n", 1)[0] == f"# Handoff: {name}"]
     return [n for *_, n in sorted(found)]
 
 
@@ -741,6 +749,12 @@ def cmd_open(root: Path, args) -> int:
         die(f"open a job from {board.trunk} (the hubnode's checkout)")
     if args.name in board.jobs:
         die(f"job {args.name} already exists")
+    # Notes and gate scratch are named file_safe(job): two open jobs sharing that stem would
+    # each commit the same note path the same day, an add/add conflict at the second merge.
+    twin = [n for n in board.jobs if file_safe(n) == file_safe(args.name)]
+    if twin:
+        die(f"job {args.name} and open job {twin[0]} share the file name {file_safe(args.name)} "
+            "for their handoff notes and gate checkout: pick another name")
     branch = args.branch or args.name
     owns = args.owns or []
     # R4 pre-check: a file another open job already changed is shared, never owned
@@ -1153,10 +1167,10 @@ def cmd_handoff(root: Path, args) -> int:
             f"  Review {head[:12]}, then: python3 {DIR}/jig.py reviewed")
     (root / DIR / "handoffs").mkdir(parents=True, exist_ok=True)
     # handoff_notes reads these names back in order; a change here changes its pattern.
-    path = root / DIR / "handoffs" / f"{name}-{date.today().isoformat()}.md"
+    path = root / DIR / "handoffs" / f"{file_safe(name)}-{date.today().isoformat()}.md"
     i = 2
     while path.exists():
-        path = root / DIR / "handoffs" / f"{name}-{date.today().isoformat()}-{i}.md"
+        path = root / DIR / "handoffs" / f"{file_safe(name)}-{date.today().isoformat()}-{i}.md"
         i += 1
     ran = json.loads(lines[1]) if len(lines) > 1 and lines[1].strip() else {}
     # jig gate reads the Review line back against the spec's Workflow section.
@@ -1279,7 +1293,7 @@ def cmd_gate(root: Path, args) -> int:
         print(f"warning: {weak}", file=sys.stderr)
     # The commit the note names, never the job's live worktree, which may have moved on; and
     # trunk merged in the way `jig sync` merges it, so the gate checks the merge a sync makes.
-    scratch = f"{worktrees_dir()}/gate-{name}"
+    scratch = f"{worktrees_dir()}/gate-{file_safe(name)}"
     where = main_root() / scratch
     if where.exists():
         die(f"{scratch} is left from an earlier gate: `git worktree remove --force {scratch}`, "
@@ -3245,6 +3259,39 @@ def hardware_rows(root: Path, files: list[str]) -> list[tuple[str, list[str]]]:
     return [(f"{BOARD_PAGES}{slug}.md", ["HARDWARE.md"])] if slug else []
 
 
+def handoff_rows(root: Path, files: list[str]) -> tuple[list[tuple[str, list[str]]], set[str]]:
+    """A note a jig wrote at a `/` name's path, `.jig/handoffs/<prefix>/<name>-<date>.md`,
+    moves flat under its file-safe name; with the subfolders it empties, for the cleanup.
+    Only a note whose header names that same path: update itself moves older tools' handoff
+    folders here whole, subfolders included, and those stay as they are."""
+    top = f"{DIR}/handoffs/"
+    taken, rows, folders = set(files), [], set()
+    for f in sorted(files):
+        rel = f[len(top):] if f.startswith(top) else ""
+        m = re.fullmatch(r"(.+/.+)-\d{4}-\d{2}-\d{2}(?:-\d+)?\.md", rel)
+        if not m:
+            continue
+        try:
+            first = (root / f).read_text(errors="replace").split("\n", 1)[0]
+        except OSError:
+            continue
+        if first != f"# Handoff: {m.group(1)}":
+            continue
+        new = top + file_safe(rel)
+        # A clash takes the day's next free -N, as `jig handoff` would; the note's Commit: line,
+        # not its file name, says what was gated.
+        if new in taken:
+            base, n = re.fullmatch(r"(.*-\d{4}-\d{2}-\d{2})(?:-(\d+))?\.md", new).groups()
+            i = int(n or 1) + 1
+            while f"{base}-{i}.md" in taken:
+                i += 1
+            new = f"{base}-{i}.md"
+        taken.add(new)
+        rows.append((new, [f]))
+        folders.add(top + rel.split("/")[0] + "/")
+    return rows, folders
+
+
 STEPS: list = [
     (f"add {STAGING}/ (its .gitignore), where chats drop files for this repo",
      lambda root, after: f"{STAGING}/.gitignore" not in after
@@ -3708,7 +3755,8 @@ def cmd_update(root: Path, args) -> int:
     # A tracked change mid-move would leave jig half-moved; a re-run must still see the old layout.
     dirty = git("status", "--porcelain", "--untracked-files=no")
 
-    plan = plan_moves(files, board_at, version, hardware_rows(root, files))
+    flat_rows, flat = handoff_rows(root, files)
+    plan = plan_moves(files, board_at, version, hardware_rows(root, files) + flat_rows)
     new_board, edits, board_warn, gone = rewrite_board(data, files, plan)
     board_gone += gone
     warnings = plan["warn"] + board_warn
@@ -3908,7 +3956,8 @@ def cmd_update(root: Path, args) -> int:
         ignore.write_bytes(re.sub(r"(?m)^[ \t]*jig/meta-cache/[ \t]*$", f"{CACHE}/", raw).encode())
     git("add", "--", CONFIG, JOBS, *replace, *([".gitignore"] if ignore_lines or cache_line else []),
         check=True)
-    for folder in ({o for o, _ in plan["rows"] if o.endswith("/")}
+    # git mv leaves a flattened note's subfolder behind, empty.
+    for folder in ({o for o, _ in plan["rows"] if o.endswith("/")} | flat
                    | {o for o, _ in untracked} | {d for d in OLD_DIRS if board_at.startswith(d)}):
         for d, _, _ in sorted(os.walk(root / folder), key=lambda w: -len(w[0])):
             try:

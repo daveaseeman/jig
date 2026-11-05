@@ -192,7 +192,8 @@ else stops with the files named, and a person resolves it.
 ## Handoff, gate, merge
 
 1. **The subnode hands off.** Runs the checks, has the diff adversarially reviewed, records it
-   (`jig reviewed`), then `jig handoff` writes a note naming that exact commit. Fill every
+   (`jig reviewed`), then `jig handoff` writes a note naming that exact commit, in
+   `.jig/handoffs/<name>-<date>.md` with a `/` in the job's or branch's name as `-`. Fill every
    heading, commit the note with the work, tell the hubnode the job and the commit.
    A job may hand off several times.
 2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it sets
