@@ -76,6 +76,7 @@ Change what produced the symptoms: give the homes one checkable form, and stop s
 - **Update's AGENTS.md diff goes.** Repo files to review gets an AGENTS.md line in two cases:
   - it doesn't name `.jig/RULES.md`: propose the template's Rulebook line;
   - it doesn't name a `.jig/scripts/<x>` that the template's Commands section names and the repo has: propose that line.
+- **Retired blocks get a row, as retired files already do.** `files_to_review` gains one hand-written row per AGENTS.md block jig cut from the template, keyed on its heading (`## Lanes`, `## Jobs (parallel sessions)`): propose replacing the block, heading to the next heading, with the Rulebook line. A future template cut adds its row in the same commit, as `docs/HARDWARE.md`'s did. Owner, 2026-11-05: rows by heading, not a copy of the template.
 
 ## Done when
 A new section `homes` in `tests/smoke.sh`, listed in `UNITS`. Its repos are built from today's templates with `JIG_CONFIG` and `XDG_CONFIG_HOME` set outside them.
@@ -100,6 +101,7 @@ A new section `homes` in `tests/smoke.sh`, listed in `UNITS`. Its repos are buil
   - The dry run of a changed `jig.py` doesn't print `against the template` or any of the filled text. Its only AGENTS.md line proposes the template's `setup:` line.
   - With that line restored, no AGENTS.md line prints. With the Rulebook line removed, the Rulebook line is proposed.
   - The existing assertion "the dry run shows AGENTS.md against the template" is replaced by these.
+- [ ] **Retired blocks (#3's cleanup).** A repo whose AGENTS.md has a reworded `## Jobs (parallel sessions)` block, and one with `## Lanes`: the dry run proposes replacing each block with the Rulebook line, naming its lines; `--apply` leaves AGENTS.md alone. A repo whose own `## Jobs` heading differs (`## Jobs we run`) gets no proposal.
 - [ ] `grep -nE 'docs/<system>|docs/hardware/|^## (Jobs|Lanes)' plugin/templates/AGENTS.md` prints nothing.
 - [ ] `grep` finds in RULES.md (Documentation) the homes list and the sentence that survey checks each Markdown file against it.
 - [ ] Read-only, in each reporting repo, `python3 <jig>/plugin/templates/jig/jig.py survey` lists:
@@ -108,7 +110,7 @@ A new section `homes` in `tests/smoke.sh`, listed in `UNITS`. Its repos are buil
 - [ ] `bash tests/smoke.sh`, `claude plugin validate ./plugin` and `.jig/scripts/check.sh` pass, with output shown.
 
 ## Out of scope
-- **Paraphrased restatements already in a repo's AGENTS.md**, such as an old Jobs or Lanes block. These need judgment, so the update skill reads AGENTS.md against RULES.md and offers to swap each for the pointer. That isn't fixture-tested. Matching them by shipped text is the history-tracking the owner rejected.
+- **Paraphrased restatements outside a retired block's heading**: the update skill reads AGENTS.md against RULES.md and offers to swap each for the pointer; not fixture-tested. Blocks jig cut are caught by heading (Correction).
 - **Classifying strays** (AdventureStudio's PRD, SPRINT_PLAN, …): `/jig:adopt` step 2, as today.
 - **P2's contract-path rename hole** (`changed_paths`). Tracked in `bug-numbered-pointers.md`'s Out of scope.
 - **A commit hook that refuses a new stray.** Strays are survey's to report, and a hook would block every pre-jig doc on its next edit.
