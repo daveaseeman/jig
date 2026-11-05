@@ -1319,7 +1319,7 @@ DOC_HOMES = {
     "AGENTS.md": "rules, always loaded",
     "CLAUDE.md": "pointer to AGENTS.md",
     "README.md": "for people outside",
-    "docs/": f"what the code is now; docs/<system>/<system>.md each system, {BOARD_PAGES}<board>.md each board",
+    "docs/": f"what the code is now: docs/<system>/<system>.md each system, its subsystems nested the same way, {BOARD_PAGES}<board>.md each board; any other file there has no home",
     COMPONENTS: "<part>/ one folder per part: its datasheets and notes, linked from board pages",
     f"{BOARD_PAGES}<board>/": "one board's files that aren't its page (schematic, a snapshot of its definition)",
     f"{DIR}/specs/": "a task in flight",
@@ -1337,11 +1337,103 @@ def tracked(root: Path) -> list[str]:
     return [p for p in git("ls-files").splitlines() if p]
 
 
-def inbound(root: Path, path: str, files: list[str]) -> int:
-    """How many other tracked files mention this one by name."""
+def naming(root: Path, path: str, files: list[str]) -> dict[str, list[int]]:
+    """The tracked files that name PATH, each with its line numbers: by path, or by bare name
+    when no other tracked file has that name, since a bare `AGENTS.md` could mean any of them.
+    A handoff records what was true then, and jig's own files define the names, so neither cites."""
     base = Path(path).name
-    hits = git("grep", "-l", "-F", "--", base)
-    return len([h for h in hits.splitlines() if h and h != path])
+    pats = [path] + ([base] if base != path and [Path(f).name for f in files].count(base) == 1 else [])
+    out: dict[str, list[int]] = {}
+    hits = git("grep", "-n", "-F", "--null", *[a for p in pats for a in ("-e", p)], "--", ".", cwd=str(root))
+    for hit in hits.splitlines():
+        f, _, rest = hit.partition("\0")
+        if f == path or "/handoffs/" in f"/{f}" or f in (*TOOL_FILES, CONFIG, JOBS):
+            continue
+        out.setdefault(f, []).append(int(re.match(r"\d+", rest).group()))
+    return out
+
+
+def inbound(root: Path, path: str, files: list[str]) -> int:
+    return len(naming(root, path, files))
+
+
+ROOT_DOCS = ("AGENTS.md", "CLAUDE.md", "README.md")
+# Agent instruction files under their standard names. Off root, each is a second rulebook
+# that an agent opening that folder may load in place of the real one.
+RULES_NAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
+PAGE_HEADS = re.compile(r"^ {0,3}#{1,6}[ \t]+(Now|Rules|Checks)\b", re.M)
+
+
+def sentences(text: str) -> set[str]:
+    """Prose sentences long enough that a match is a copy, not a common phrase."""
+    flat = re.sub(r"\s+", " ", text)
+    return {s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-Z`*-])", flat) if len(s.strip()) > 25}
+
+
+def at_home(path: str, entry: list[str]) -> bool:
+    """RULES.md (Documentation) lists these homes; a change there changes this."""
+    parts = path.split("/")
+    return (path in ROOT_DOCS or path.startswith(BOARD_PAGES) or matches(path, entry)
+            or (parts[0] == "docs" and len(parts) >= 3 and parts[-2] == Path(path).stem))
+
+
+def page_home(path: str, have: set[str]) -> str:
+    """Under the nearest folder that has its own page, as a subsystem's page sits in its
+    system's folder; else a system of its own under docs/."""
+    stem, folders = Path(path).stem, path.split("/")[:-1]
+    for i in range(len(folders), 1, -1):
+        d = "/".join(folders[:i])
+        if f"{d}/{folders[i - 1]}.md" in have:
+            return f"{d}/{stem}/{stem}.md"
+    return f"docs/{stem}/{stem}.md"
+
+
+def doc_homes(root: Path, files: list[str], not_docs: list[str],
+              read=None) -> list[dict]:
+    """Every tracked Markdown file with no home, as {path, kind, to, fold, naming, named_at}.
+    Kinds: `rules` an agent instruction file off root, `copy` three or more sentences of
+    RULES.md word for word, `page` Now/Rules/Checks in the wrong place, `stray` anything else.
+    READ maps a path to its text, for update, which judges the files where they will be."""
+    read = read or (lambda f: (root / f).read_text(errors="replace") if (root / f).is_file() else "")
+    rules_md = Path(__file__).resolve().parent / "RULES.md"
+    rules = re.sub(r"\s+", " ", rules_md.read_text()) if rules_md.exists() else ""
+    entry = []
+    if (root / META).exists():
+        try:
+            entry = {**META_DEFAULTS, **json.loads((root / META).read_text() or "{}")}["entry_files"]
+        except ValueError:
+            pass
+    have = set(files)
+    out = []
+    for f in files:
+        if (not f.endswith(".md") or f.startswith(TOOL_DIRS) or matches(f, not_docs)
+                or at_home(f, entry)):
+            continue
+        text, to = read(f), None
+        if "/" in f and Path(f).name in RULES_NAMES:
+            kind = "rules"
+        elif rules and len([s for s in sentences(text) if s in rules]) >= 3:
+            kind = "copy"
+        elif f.startswith("docs/") and set(PAGE_HEADS.findall(text)) == {"Now", "Rules", "Checks"}:
+            kind, to = "page", page_home(f, have)
+        else:
+            kind = "stray"
+        named = naming(root, f, files)
+        out.append({"path": f, "kind": kind, "to": to,
+                    "fold": bool(to and (to in have or (root / to).exists())),
+                    "naming": sorted(named),
+                    "named_at": [f"{n}:{i}" for n in sorted(named) for i in named[n]]})
+    return out
+
+
+def home_fix(h: dict) -> str:
+    """What to do with a rules file or a copy, shared by survey and update."""
+    at = ", ".join(h["named_at"]) or "nothing"
+    if h["kind"] == "rules":
+        return ("a second rulebook: fold what still binds into AGENTS.md or a page's Rules, "
+                f"repoint what names it ({at}), then delete it")
+    return (f"a copy of {DIR}/RULES.md, which update keeps current: delete it, and point what "
+            f"names it ({at}) at {DIR}/RULES.md")
 
 
 # What a repo may already have for coordinating parallel work, under its standard
@@ -1467,17 +1559,18 @@ def cmd_survey(root: Path, args) -> int:
                     "not_docs_unmatched": [g for g in not_docs
                                           if not any(matches(f, [g]) for f in files)]}
 
+    homes = {h["path"]: h for h in doc_homes(root, files, not_docs)}
     for f in md:
         raw = (root / f).read_text(errors="replace").splitlines() if (root / f).exists() else []
         n = len([l for l in raw
                  if l.strip() and not l.lstrip().startswith(("#", "<!--", "-->", "|"))])
         last = git("log", "-1", "--format=%ad", "--date=short", "--", f)
-        entry = {"path": f, "lines": n, "last_commit": last, "inbound": inbound(root, f, files)}
+        home = homes.get(f)
+        entry = {"path": f, "lines": n, "last_commit": last,
+                 "inbound": len(home["naming"]) if home else inbound(root, f, files)}
         report["markdown"].append(entry)
-        at_home = (f in DOC_HOMES or any(f.startswith(d) for d in DOC_HOMES if d.endswith("/"))
-                   or f.startswith(TOOL_DIRS) or matches(f, not_docs))
-        if not at_home:
-            report["homeless"].append(entry)
+        if home:
+            report["homeless"].append({**entry, **{k: home[k] for k in ("kind", "to", "fold", "naming", "named_at")}})
         if f in ("AGENTS.md", "CLAUDE.md") and n > 40:  # rule lines, not raw lines
             report["oversized"].append(entry)
 
@@ -1510,10 +1603,24 @@ def cmd_survey(root: Path, args) -> int:
         print("\nToo long to be always-loaded (cut to 40 lines, move the rest):")
         for e in report["oversized"]:
             print(f"  {e['path']:<40} {e['lines']} lines")
-    if report["homeless"]:
-        linked = sorted((e for e in report["homeless"] if e["inbound"] > 0),
+    for kind, title in (("rules", "Agent instruction files off root"),
+                        ("copy", f"Copies of {DIR}/RULES.md")):
+        found = [e for e in report["homeless"] if e["kind"] == kind]
+        if found:
+            print(f"\n{title}:")
+            for e in found:
+                print(f"  {e['path']}: {home_fix(e)}")
+    misplaced = [e for e in report["homeless"] if e["kind"] == "page"]
+    if misplaced:
+        print(f"\nPages outside the docs tree ({DIR}/RULES.md, Documentation); move each, "
+              "or nest it\nunder its system's folder if it is a subsystem:")
+        for e in misplaced:
+            print(f"  {e['path']} → {e['to']}{' (fold it in: that page exists)' if e['fold'] else ''}")
+    strays = [e for e in report["homeless"] if e["kind"] == "stray"]
+    if strays:
+        linked = sorted((e for e in strays if e["inbound"] > 0),
                         key=lambda e: -e["inbound"])
-        cold = sorted((e for e in report["homeless"] if e["inbound"] == 0),
+        cold = sorted((e for e in strays if e["inbound"] == 0),
                       key=lambda e: -e["lines"])
         if linked:
             print("\nNo home in the taxonomy, but other files point at them — these are"
@@ -3590,6 +3697,56 @@ def files_to_review(root: Path, plan: dict) -> list[tuple[str, str]]:
     return out
 
 
+def home_findings(root: Path, plan: dict, board: dict, board_at: str,
+                  reviewed: list[str]) -> list[tuple[str, str]]:
+    """Survey's home findings for the repo as it will be after the moves, each with the edit
+    proposed: a check of the shape finds any old convention, with no row to remember. Pages
+    are proposed by folder, with everything a move would touch named. REVIEWED are files
+    another row already proposes for."""
+    back = {n: o for o, n in plan["moves"].items()}
+    after = plan["after"]
+
+    def read(f: str) -> str:
+        p = root / back.get(f, f)
+        return p.read_text(errors="replace") if p.is_file() else ""
+    homes = [h for h in doc_homes(root, after, board.get("not_docs") or [], read)
+             if h["path"] not in reviewed]
+    out = [(h["path"], home_fix(h)) for h in homes if h["kind"] in ("rules", "copy")]
+    pages = [h for h in homes if h["kind"] == "page"]
+    try:
+        para = json.loads((root / PARA).read_text()) if (root / PARA).exists() else {}
+    except ValueError:
+        para = {}   # check names a broken para.json; a proposal can go without its rows
+    cached = pointers(root) if para else []
+    for folder in dict.fromkeys(os.path.dirname(h["path"]) + "/" for h in pages):
+        group = [h for h in pages if h["path"].startswith(folder) and "/" not in h["path"][len(folder):]]
+        moves = {h["path"]: h["to"] for h in group}
+        folded = {h["path"] for h in group if h["fold"]}
+        left = [moves.get(f, f) for f in after if f not in folded]
+        emptied = [] if any(f.startswith(folder) for f in left) else [folder]
+        lines = [f"{'fold' if h['fold'] else 'git mv'} {h['path']} {'into ' if h['fold'] else ''}{h['to']}"
+                 for h in group]
+        lines += [f"{CONFIG} docmap: {o}" for o in moves if o in (board.get("docmap") or {})]
+        lines += [f"{PARA} contract_paths: {g}" for g in para.get("contract_paths", [])
+                  if any(matches(o, [g]) and not matches(n, [g]) for o, n in moves.items())]
+        stale = stale_references(root, {"rows": [*moves.items(), *[(d, "") for d in emptied]],
+                                        "moves": moves, "after": left}, board_at)
+        lines += [f"{f}:{i}: {line}" for f, hits in stale.items() if f not in (PARA, BUFFER)
+                  for i, line in hits]
+        ptrs = [(c, p, s) for c, p, s, _ in cached if p in moves]
+        lines += [f"{c} points at {p}{f' § {s}' if s else ''}" for c, p, s in ptrs]
+        if ptrs:
+            lines.append(f"the move's commit carries a {BUFFER} row for each pointer, "
+                         "and the next `jig release` proposes them")
+        out.append((folder, f"{len(group)} page{'s' if len(group) > 1 else ''} outside the docs "
+                    f"tree ({DIR}/RULES.md, Documentation). Ask whether each is a subsystem to "
+                    "nest; then, in one commit:" + "".join(f"\n      {l}" for l in lines)))
+    strays = len([h for h in homes if h["kind"] == "stray"])
+    if strays:
+        out.append((f"{strays} document{'s have' if strays > 1 else ' has'} no home", "`/jig:survey`"))
+    return out
+
+
 def worktree_refusals(root: Path, old_folders: tuple) -> list[str]:
     """One line per worktree git records and per folder in an old worktrees folder, each with
     the command for its case. A repo folder renamed under its worktrees leaves records whose
@@ -3789,6 +3946,7 @@ def cmd_update(root: Path, args) -> int:
             warnings.append(f"{f} names a path jig moved ({len(live)} line{'s' if len(live) > 1 else ''} "
                             "outside comments): code or config the repo's checks may run")
     review = files_to_review(root, plan)
+    review += home_findings(root, plan, new_board, board_at, [f for f, _ in review])
 
     moved_board = board_at != CONFIG or not (root / JOBS).exists()
     actions = bool(plan["moves"] or replace or edits or moved_board or steps or ignore_lines

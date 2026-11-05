@@ -23,6 +23,11 @@ Report the output, then say what it means in a few lines:
   a stale last-commit is a document written once and never read again; git keeps it either way.
   If a directory ships markdown as code, list it under `not_docs` in `.jig/config.json` as a glob
   such as `dir/**`. Survey names any `not_docs` glob that matches no file.
+- **Rules files, copies, pages.** Survey checks every Markdown file against the homes
+  `.jig/RULES.md` (Documentation) lists, by shape. An `AGENTS.md`, `CLAUDE.md` or `GEMINI.md` off
+  root is a second rulebook; a file with three of RULES.md's sentences is a copy that froze; a
+  Now/Rules/Checks page in the wrong folder is printed with where it goes. Each line carries its
+  fix; `/jig:update` proposes the same ones with everything they touch.
 - **No docmap.** Handoff can't tell which page a change touches until pages are mapped to globs.
 - **Missing pieces.** What `/jig:init` would add.
 - **How parallel work is coordinated today.** What the repo already has, under its standard

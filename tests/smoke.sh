@@ -49,7 +49,7 @@ old() {
     cp $t/AGENTS.md $t/CLAUDE.md . && cp -r $t/jig jig && rm jig/docs/HARDWARE.md
     tool=jig; docs=jig/docs; specs=jig/specs
   elif [ "$style" = jig2 ]; then
-    cp $t/AGENTS.md $t/CLAUDE.md . && cp -r $t/jig jig && mkdir -p docs && printf '# Docs\n' > docs/README.md
+    cp $t/AGENTS.md $t/CLAUDE.md . && cp -r $t/jig jig
     tool=jig; docs=docs; specs=jig/specs
   else
     cp $t/AGENTS.md $t/CLAUDE.md . && cp -r $t/ledgers . && mkdir -p docs specs .jig
@@ -436,6 +436,10 @@ for layout in "eaec973 dot" "66a044c dot" "62c8d9f jig" "eaec973 aidev" "5d955a2
   msg="update $name: the dry run lists the moves, board edits and stale references"
   out=$($UP 2>&1)
   expect_pass sh -c "echo \"\$0\" | grep -q '^Moves' && echo \"\$0\" | grep -q '^Board:' && echo \"\$0\" | grep -q '^Stale references'" "$out"
+  if [ "$name" = eaec973-dot ]; then
+    msg="update $name: the seeded docs/README.md is proposed for deletion as a copy of RULES.md, with the AGENTS.md line naming it"
+    expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/README.md: a copy of .jig/RULES.md, which update keeps current: delete it, .*AGENTS.md:[0-9]'" "$out"
+  fi
 
   msg="update $name: --apply renames the repo's files, never edits them"
   $UP --apply >/dev/null 2>&1
@@ -464,7 +468,7 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
     expect_pass sh -c "cmp -s .jig/scripts/setup.sh '$P/jig/scripts/setup.sh' && test -x .jig/scripts/setup.sh && git diff --cached --name-status | grep -q '^A.\.jig/scripts/setup.sh' && grep -q 'hook post-merge' .git/hooks/post-merge"
   fi
 
-  git ls-files > "$T/$name.paths"
+  git ls-files | grep -vx docs/README.md > "$T/$name.paths"   # 0.2.x seeded none
   python3 -c "import json; print(sorted(json.load(open('.jig/config.json'))))" > "$T/$name.keys"
 
   msg="update $name: a second --apply is up to date and changes nothing"
@@ -481,11 +485,13 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
     expect_pass git commit -qm update
   fi
 
-  msg="update $name: after the commit, survey finds no homeless files"
+  # Every layout but 0.2.x's seeded docs/README.md, a copy of the rules that froze.
+  want=$([ "$style" = jig2 ] && echo '[]' || echo "[('docs/README.md', 'copy')]")
+  msg="update $name: after the commit, survey's only homeless file is the seeded docs/README.md, a copy"
   expect_pass python3 -c "
 import json, subprocess
 r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
-assert r['homeless'] == [], r['homeless']"
+assert [(e['path'], e['kind']) for e in r['homeless']] == $want, r['homeless']"
 done
 
 msg="update: all five old layouts end with the same tracked paths and board keys"
@@ -2367,8 +2373,73 @@ expect_pass sh -c "$J repos | grep -q 'tool reports wait in .*/fb/feedback while
 # Sections in file order. Ones joined by a comma share state and run in one process, in
 # order: staging releases metarepo's $M; R6 as ints works in R6 takes' repo $R.
 # The slowest start first, so the run isn't waiting on one that started last.
+# ---------------------------------------------------------------- doc homes
+sec_homes() {
+page() { mkdir -p "$(dirname "$1")" && printf '# %s\n\n## Now\nx\n\n## Rules\n### 1.1 y\n\n## Checks\n- 1.1 review\n' "$1" > "$1"; }
+homes() { python3 -c "
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+h = {e['path']: e for e in r['homeless']}
+$1"; }
+behind() { printf '# behind\n' >> .jig/jig.py && git commit -qam behind; }
+
+HR="$T/homes-rules"; pcnew "$HR" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p docs && printf '# Old rules\n\n- always do x\n' > docs/AGENTS.md
+printf '# App\n\nAgents read [the old rules](docs/AGENTS.md).\n' > README.md
+printf '# Guide\n\nsee AGENTS.md\n' > docs/guide.md && printf '# Notes\n\nsome notes\n' > docs/notes.md
+git add -A && git commit -qm docs
+msg="homes: survey names docs/AGENTS.md as rules, named by README.md alone; docs/notes.md is a stray"
+expect_pass homes "assert h['docs/AGENTS.md']['kind'] == 'rules' and h['docs/AGENTS.md']['naming'] == ['README.md'], h.get('docs/AGENTS.md')
+assert h['docs/notes.md']['kind'] == 'stray', h"
+msg="homes: survey prints docs/AGENTS.md under its own heading, and writes nothing"
+before=$(snap); out=$($J survey 2>&1); after=$(snap)
+expect_pass sh -c "echo \"\$0\" | grep -A1 '^Agent instruction files off root:' | grep -q '^  docs/AGENTS.md: ' && test \"\$1\" = \"\$2\"" "$out" "$before" "$after"
+behind
+msg="homes: the dry run lists docs/AGENTS.md to review, naming README.md:3; --apply leaves both alone"
+out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Repo files to review/,/^\$/p' | grep -q '^  docs/AGENTS.md: .*README.md:3' && test -z \"\$(git status --porcelain docs/AGENTS.md README.md)\" && test -f docs/AGENTS.md" "$out"
+git commit -qm update
+printf '# App\n\nAgents read AGENTS.md.\n' > README.md && git rm -q docs/AGENTS.md && git add -A && git commit -qm "rules: one rulebook"
+msg="homes: once the link is repointed and the file deleted, survey lists neither"
+expect_pass homes "assert 'docs/AGENTS.md' not in h and 'README.md' not in h, h"
+
+HP="$T/homes-pages"; pcnew "$HP" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+page docs/systems/a.md && page docs/systems/b.md && page docs/c/c.md && page docs/c/d.md
+printf -- '- Pages live in `docs/systems/`.\n' >> AGENTS.md
+board "b['docmap'] = {'docs/systems/a.md': ['src/**']}"
+git add -A && git commit -qm pages
+msg="homes: survey gives each page its destination, nested under a folder with its own page, and passes docs/c/c.md"
+expect_pass homes "assert {p: h[p]['to'] for p in h if h[p]['kind'] == 'page'} == {'docs/systems/a.md': 'docs/a/a.md', 'docs/systems/b.md': 'docs/b/b.md', 'docs/c/d.md': 'docs/c/d/d.md'}, h
+assert 'docs/c/c.md' not in h, h"
+behind
+msg="homes: the dry run lists the three moves, the docmap key and the AGENTS.md line naming the folder"
+out=$($UP 2>&1)
+expect_pass sh -c "for w in 'git mv docs/systems/a.md docs/a/a.md' 'git mv docs/systems/b.md docs/b/b.md' 'git mv docs/c/d.md docs/c/d/d.md' '.jig/config.json docmap: docs/systems/a.md' 'AGENTS.md:[0-9]*: - Pages live in .docs/systems/.'; do echo \"\$0\" | grep -q \"^      \$w\" || { echo \"missing \$w\"; exit 1; }; done" "$out"
+$UP --apply >/dev/null 2>&1 && git commit -qm update
+mkdir -p docs/a docs/b docs/c/d && git mv docs/systems/a.md docs/a/a.md && git mv docs/systems/b.md docs/b/b.md && git mv docs/c/d.md docs/c/d/d.md
+sed -i.bak 's|`docs/systems/`|`docs/`|' AGENTS.md && rm AGENTS.md.bak
+board "b['docmap'] = {'docs/a/a.md': ['src/**']}" && git add -A && git commit -qm "docs: pages named for their folders"
+msg="homes: once the moves are carried out, survey lists none of them"
+expect_pass homes "assert not h, h"
+page docs/systems/c.md && git add -A && git commit -qm "c again" && behind
+msg="homes: a page whose destination exists is proposed as a fold, not a move"
+out=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^      fold docs/systems/c.md into docs/c/c.md' && ! echo \"\$0\" | grep -q 'git mv docs/systems/c.md'" "$out"
+
+# A pararepo whose page a metarepo decision points into, as sync_buffer builds one.
+HM="$T/homes-meta"; pcnew "$HM" && git add -A && git commit -qm init && $J init --meta --name hm >/dev/null
+printf '| D-001 | the list rule (`app/docs/systems/a.md § Rules`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
+git add -A && git commit -qm meta-init && $J release >/dev/null
+HA="$T/app"; pcnew "$HA" && page docs/systems/a.md && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para hm --location "$HM" --contract 'docs/systems/a.md' >/dev/null && git add -A && git commit -qm "init --para"
+behind
+msg="homes: in a pararepo, a page's proposal names the cached pointer, BUFFER.md and the contract path"
+out=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^      .jig/meta-cache/DECISIONS.md points at docs/systems/a.md § Rules' && echo \"\$0\" | grep -q '^      the move.s commit carries a .jig/ledgers/BUFFER.md row' && echo \"\$0\" | grep -q '^      .jig/para.json contract_paths: docs/systems/a.md'" "$out"
+}
+
 SLOW="pararepo_commands entry_globs report_fixes sync_buffer"
-UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer feedback"
+UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer feedback homes"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file
