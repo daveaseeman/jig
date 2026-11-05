@@ -69,9 +69,9 @@ In a new smoke section `slash_names`, listed in `UNITS` (`bash tests/smoke.sh sl
 - On an update clash, leaving both files and warning, as `plan_moves` does for other rows. Rejected: that leaves the nested note, which is the thing to clean up. A note's `Commit:` line, not its file name, says what was gated. This reason is [seen]: `cmd_gate` reads `Commit:`.
 
 ## Decisions
-- `a/b` and `a-b` share a stem on purpose. The writer never overwrites: it takes `-2`, `-3` as today. The reader counts a note only when its first line is exactly `# Handoff: <name>`. If both branches are gated at once, the second gate refuses with "left from an earlier gate". Following that message would end the other branch's gate, but the case is rare enough to leave.
+- `a/b` and `a-b` share a stem on purpose. The reader counts a note only when its first line is exactly `# Handoff: <name>`, so a stray note of the other name is never gated. The writer's `-2`, `-3` only avoid overwrites in one checkout: two jobs of one stem handing off the same day would each commit the same path, an add/add conflict at the second merge. So `jig open` refuses a job whose file-safe name equals an open job's, naming the clash (review finding A). Solo has one branch at a time, so it needs no such refusal.
 - When a moved note clashes, it takes the day's next free `-N`. The order of one day's notes matters only on a branch being gated; on trunk they are history.
-- The move is keyed on what update sees in the repo, never on a version, as STEPS are. That means any tracked file in a subfolder of `.jig/handoffs/`, since jig's writer never made one. A clash on a file that isn't shaped like a note gets `plan_moves`' usual "both exist" warning.
+- The move is keyed on what update sees in the repo, never on a version, as STEPS are. It flattens only what this bug wrote: a file at `.jig/handoffs/<prefix>/<name>-<date>[-N].md` whose first line is `# Handoff: <prefix>/<name>`. Update's own LAYOUT moves older tools' handoff folders (`.aidev/handoffs/`, claude-lane's) here whole, subfolders included, and those stay nested (review finding B). `handoff_rows` hands the folders it empties to `--apply`'s cleanup with its rows.
 
 ## Workflow
 spec: tier 2, effort 2

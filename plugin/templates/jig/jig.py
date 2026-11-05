@@ -749,6 +749,12 @@ def cmd_open(root: Path, args) -> int:
         die(f"open a job from {board.trunk} (the hubnode's checkout)")
     if args.name in board.jobs:
         die(f"job {args.name} already exists")
+    # Notes and gate scratch are named file_safe(job): two open jobs sharing that stem would
+    # each commit the same note path the same day, an add/add conflict at the second merge.
+    twin = [n for n in board.jobs if file_safe(n) == file_safe(args.name)]
+    if twin:
+        die(f"job {args.name} and open job {twin[0]} share the file name {file_safe(args.name)} "
+            "for their handoff notes and gate checkout: pick another name")
     branch = args.branch or args.name
     owns = args.owns or []
     # R4 pre-check: a file another open job already changed is shared, never owned
@@ -3253,27 +3259,37 @@ def hardware_rows(root: Path, files: list[str]) -> list[tuple[str, list[str]]]:
     return [(f"{BOARD_PAGES}{slug}.md", ["HARDWARE.md"])] if slug else []
 
 
-def handoff_rows(files: list[str]) -> list[tuple[str, list[str]]]:
-    """A note in a subfolder of .jig/handoffs/, left by a jig that wrote a `/` name as a path,
-    moves flat under its file-safe name. jig never wrote a subfolder there, so any is the bug's."""
+def handoff_rows(root: Path, files: list[str]) -> tuple[list[tuple[str, list[str]]], set[str]]:
+    """A note a jig wrote at a `/` name's path, `.jig/handoffs/<prefix>/<name>-<date>.md`,
+    moves flat under its file-safe name; with the subfolders it empties, for the cleanup.
+    Only a note whose header names that same path: update itself moves older tools' handoff
+    folders here whole, subfolders included, and those stay as they are."""
     top = f"{DIR}/handoffs/"
-    taken, rows = set(files), []
+    taken, rows, folders = set(files), [], set()
     for f in sorted(files):
         rel = f[len(top):] if f.startswith(top) else ""
-        if "/" not in rel:
+        m = re.fullmatch(r"(.+/.+)-\d{4}-\d{2}-\d{2}(?:-\d+)?\.md", rel)
+        if not m:
+            continue
+        try:
+            first = (root / f).read_text(errors="replace").split("\n", 1)[0]
+        except OSError:
+            continue
+        if first != f"# Handoff: {m.group(1)}":
             continue
         new = top + file_safe(rel)
         # A clash takes the day's next free -N, as `jig handoff` would; the note's Commit: line,
-        # not its file name, says what was gated. Not shaped like a note: plan_moves warns.
-        m = re.fullmatch(r"(.*-\d{4}-\d{2}-\d{2})(?:-(\d+))?\.md", new)
-        if m and new in taken:
-            i = int(m.group(2) or 1) + 1
-            while f"{m.group(1)}-{i}.md" in taken:
+        # not its file name, says what was gated.
+        if new in taken:
+            base, n = re.fullmatch(r"(.*-\d{4}-\d{2}-\d{2})(?:-(\d+))?\.md", new).groups()
+            i = int(n or 1) + 1
+            while f"{base}-{i}.md" in taken:
                 i += 1
-            new = f"{m.group(1)}-{i}.md"
+            new = f"{base}-{i}.md"
         taken.add(new)
         rows.append((new, [f]))
-    return rows
+        folders.add(top + rel.split("/")[0] + "/")
+    return rows, folders
 
 
 STEPS: list = [
@@ -3739,7 +3755,8 @@ def cmd_update(root: Path, args) -> int:
     # A tracked change mid-move would leave jig half-moved; a re-run must still see the old layout.
     dirty = git("status", "--porcelain", "--untracked-files=no")
 
-    plan = plan_moves(files, board_at, version, hardware_rows(root, files) + handoff_rows(files))
+    flat_rows, flat = handoff_rows(root, files)
+    plan = plan_moves(files, board_at, version, hardware_rows(root, files) + flat_rows)
     new_board, edits, board_warn, gone = rewrite_board(data, files, plan)
     board_gone += gone
     warnings = plan["warn"] + board_warn
@@ -3940,8 +3957,6 @@ def cmd_update(root: Path, args) -> int:
     git("add", "--", CONFIG, JOBS, *replace, *([".gitignore"] if ignore_lines or cache_line else []),
         check=True)
     # git mv leaves a flattened note's subfolder behind, empty.
-    flat = {f"{DIR}/handoffs/" + o[len(f"{DIR}/handoffs/"):].split("/")[0] + "/"
-            for o in plan["moves"] if o.startswith(f"{DIR}/handoffs/") and "/" in o[len(f"{DIR}/handoffs/"):]}
     for folder in ({o for o, _ in plan["rows"] if o.endswith("/")} | flat
                    | {o for o, _ in untracked} | {d for d in OLD_DIRS if board_at.startswith(d)}):
         for d, _, _ in sorted(os.walk(root / folder), key=lambda w: -len(w[0])):

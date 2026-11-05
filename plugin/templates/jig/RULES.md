@@ -18,7 +18,7 @@ of a job — `jig survey` names what you have and what it maps to.
 **Working alone?** Open no jobs and you are the hubnode of a one-job repo. R1–R5 and R8 go
 quiet — a feature branch in your one checkout is nobody else's problem — while R7, the review
 record, the handoff note, and the gate all still apply. `jig handoff` names the branch
-instead of a job, a `/` in it becoming `-` in the note's file name; `jig gate` with no argument gates the current branch. The discipline is
+instead of a job; `jig gate` with no argument gates the current branch. The discipline is
 identical; only the coordination disappears.
 
 ## The board
@@ -192,7 +192,8 @@ else stops with the files named, and a person resolves it.
 ## Handoff, gate, merge
 
 1. **The subnode hands off.** Runs the checks, has the diff adversarially reviewed, records it
-   (`jig reviewed`), then `jig handoff` writes a note naming that exact commit. Fill every
+   (`jig reviewed`), then `jig handoff` writes a note naming that exact commit, in
+   `.jig/handoffs/<name>-<date>.md` with a `/` in the job's or branch's name as `-`. Fill every
    heading, commit the note with the work, tell the hubnode the job and the commit.
    A job may hand off several times.
 2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it sets

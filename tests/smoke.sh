@@ -2402,6 +2402,9 @@ git checkout -q main
 $J open a/b >/dev/null 2>&1 && git add -A && git commit -qm "open a/b"
 (cd .git/jig/worktrees/a/b && printf 'y=1\n' > src/b.py && git add -A && git commit -qm b \
   && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && git add -A && git commit -qm note)
+msg="slash: open refuses job a-b while a/b is open, naming the shared file name"
+out=$($J open a-b 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'open job a/b share the file name a-b' && ! python3 -c \"import json, sys; sys.exit('a-b' not in json.load(open('.jig/jobs.json')))\"" "$out"
 msg="slash: job a/b's handoff writes .jig/handoffs/a-b-<date>.md, and status on trunk counts it"
 expect_pass sh -c "git show a/b:.jig/handoffs/a-b-$D.md | head -1 | grep -qx '# Handoff: a/b' && $J status | grep -q '^  a/b .*handoffs:1 '"
 
@@ -2419,6 +2422,11 @@ expect_pass sh -c "echo \"\$0\" | sed -n '/^Moves/,/^\$/p' > m && grep -qx '  .j
 $UP --apply >/dev/null 2>&1
 msg="slash: update --apply stages both renames, removes the emptied subfolders, and a rerun is up to date"
 expect_pass sh -c "$(declare -f renamed); renamed .jig/handoffs/a/b-c-2026-01-01.md .jig/handoffs/a-b-c-2026-01-01.md && renamed .jig/handoffs/x/y-2026-01-01.md .jig/handoffs/x-y-2026-01-01-2.md && test ! -e .jig/handoffs/a && test ! -e .jig/handoffs/x && $UP | grep -qx 'up to date'"
+# An older tool's handoff folder that update moves here whole, subfolders and all: not the bug's.
+ax "$T/slash-ax" "mkdir -p .aidev/handoffs/lane-a && printf '# r1\n' > .aidev/handoffs/lane-a/round-1.md && printf '# Handoff: lane-a\n' > .aidev/handoffs/lane-a/lane-a-2026-01-01.md"
+$UP --apply >/dev/null 2>&1; git add -A && git -c core.hooksPath=/dev/null commit -qm update
+msg="slash: a subfolder update moved from .aidev/handoffs/ stays nested, and a second update is up to date"
+expect_pass sh -c "test -f .jig/handoffs/lane-a/round-1.md && test -f .jig/handoffs/lane-a/lane-a-2026-01-01.md && $UP | grep -qx 'up to date'"
 }
 
 UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer feedback slash_names"
