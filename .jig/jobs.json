@@ -1,1 +1,44 @@
-{}
+{
+  "slash-branch": {
+    "spec": ".jig/specs/bug-slash-branch.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/hubnode/SKILL.md"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh"
+    ],
+    "reserved": {}
+  },
+  "numbered-pointers": {
+    "spec": ".jig/specs/bug-numbered-pointers.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "plugin/skills/update/SKILL.md"
+    ],
+    "reserved": {}
+  },
+  "doc-homes": {
+    "spec": ".jig/specs/bug-doc-homes.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/survey/SKILL.md"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "plugin/skills/update/SKILL.md"
+    ],
+    "reserved": {}
+  }
+}
