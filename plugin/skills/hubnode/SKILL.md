@@ -109,7 +109,8 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
    Workflow section: say so to the owner before the merge.
    Its brief says: in any throwaway repo, set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched. Smoke runs need no waiting on each
    other; each uses only its own temp folder. The run's output always goes to
-   `$(git rev-parse --git-common-dir)/jig/gate-<name>.out`, outside `worktrees/`, which the next
+   `$(git rev-parse --git-common-dir)/jig/gate-<name>.out`, named after the scratch checkout
+   `jig gate` printed (`/` in the name as `-`), outside `worktrees/`, which the next
    gate removes; a failure nobody can reproduce is reported with that path, so it can be read.
    A run that can outlast the shell's foreground limit is waited on as `/jig:verify` says:
    background, its exit notice or its pid, never a match.

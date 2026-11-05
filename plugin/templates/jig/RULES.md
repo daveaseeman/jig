@@ -18,7 +18,7 @@ of a job — `jig survey` names what you have and what it maps to.
 **Working alone?** Open no jobs and you are the hubnode of a one-job repo. R1–R5 and R8 go
 quiet — a feature branch in your one checkout is nobody else's problem — while R7, the review
 record, the handoff note, and the gate all still apply. `jig handoff` names the branch
-instead of a job; `jig gate` with no argument gates the current branch. The discipline is
+instead of a job, a `/` in it becoming `-` in the note's file name; `jig gate` with no argument gates the current branch. The discipline is
 identical; only the coordination disappears.
 
 ## The board
