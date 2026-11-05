@@ -2312,6 +2312,71 @@ brow B4 'help page' 'gone' 'pointer' Open >> .jig/ledgers/BUFFER.md && git add -
 printf '# z\n\n- meta: buffered B4\n' > .jig/specs/z.md && git rm -q docs/z.md && git add -A; expect_pass git commit -qm "docs: drop z"
 }
 
+# ---------------------------------------------------------------- pointers
+sec_pointers() {
+# Numbered pointers: `§2` names `## 2. Motes`, as the Documentation rule cites rules. pp is
+# today's pararepo; po is one on v0.6.0, whose P2 let removals through, for update to report.
+PM="$T/pm"; pcnew "$PM" && git add -A && git commit -qm init && $J init --meta --name pm >/dev/null
+printf '\n## Pointers\n`pp/docs/x.md §2.1`, `pp/docs/x.md §2`, `pp/docs/x.md § 10`, `pp/docs/x.md § 3` and `pp/docs/x.md §1`.\nThe rules: `pp/docs/r.md §1`. Gone: `pp/docs/g.md § Gone`.\nThe prose pp/docs/x.md §1.2 (cited by path, for now)\nTwice: `pp/docs/none.md § A` and `pp/docs/none.md § B`.\nThe old app: `po/docs/x.md §2`, `po/docs/w.md §4` and `po/docs/r.md §1`.\n' >> GLOSSARY.md
+printf -- '- GLOSSARY: Pointers\n' >> CHANGELOG.md && git add -A && git commit -qm "GLOSSARY: Pointers" && $J release >/dev/null
+# docs <dir>: the pages the metarepo points into
+docs() { mkdir -p api docs && printf 'x=1\n' > api/a.py && printf '# X\n\n## 2. Motes\n\n### 2.1 Identity\n\n## 10. Open questions\n' > docs/x.md \
+  && printf '# R\n\n## Rules\n\n### 1.1 One\n' > docs/r.md && printf '# G\n\n## Other\n' > docs/g.md && printf '# W\n\n## 4. Keys\n\n## 40 Other\n' > docs/w.md; }
+PP="$T/pp"; pcnew "$PP" && docs && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para pm --location "$PM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
+G=".jig/meta-cache/GLOSSARY.md points to"
+msg="pointers: sync resolves §2.1, §2 and § 10 by number, and reports § 3 and §1, which ## 10. doesn't satisfy"
+out=$($J sync 2>&1)
+expect_pass sh -c "! echo \"\$0\" | grep -qE 'docs/x.md § (2|2.1|10),' && echo \"\$0\" | grep -qx '$G docs/x.md § 3, which docs/x.md has no heading for' && echo \"\$0\" | grep -qx '$G docs/x.md § 1, which docs/x.md has no heading for'" "$out"
+msg="pointers: §1 under ## Rules with ### 1.1 is dangling: 1.1 is not heading 1"
+expect_pass sh -c "echo \"\$0\" | grep -qx '$G docs/r.md § 1, which docs/r.md has no heading for'" "$out"
+msg="pointers: a prose §1.2 (… prints its number whole, and two pointers into a missing file print one line"
+expect_pass sh -c "echo \"\$0\" | grep -qx '$G docs/x.md § 1.2, which docs/x.md has no heading for' && test \$(echo \"\$0\" | grep -c 'docs/none.md') = 1" "$out"
+msg="pointers P2: renaming a file only numbered pointers name is refused, naming the pointer"
+git mv docs/x.md docs/y.md; out=$(git commit -qm "docs: x → y" 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'points to docs/x.md, which'" "$out"
+msg="pointers P2: deleting ### 2.1 Identity is refused, naming docs/x.md § 2.1"
+sed -i.bak '/^### 2.1 Identity$/d' docs/x.md && rm docs/x.md.bak && git add -A; out=$(git commit -qm "docs: drop 2.1" 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'points to docs/x.md § 2.1'" "$out"
+msg="pointers P2: renaming a file whose one pointer already dangled is refused: the file is lost"
+git mv docs/r.md docs/s.md; out=$(git commit -qm "docs: r → s" 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'points to docs/r.md, which'" "$out"
+msg="pointers P2: deleting a file whose one pointer (§ Gone) already dangled is refused"
+git rm -q docs/g.md; out=$(git commit -qm "docs: drop g" 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'points to docs/g.md, which'" "$out"
+msg="pointers P2: an edit that leaves § Gone missing commits"
+printf '\n## More\n' >> docs/g.md && git add -A; expect_pass git commit -qm "docs: g more"
+msg="pointers P2: the x.md rename commits with meta: buffered <id>"
+mkdir -p .jig/ledgers .jig/specs && cp "$P/ledgers/BUFFER.md" .jig/ledgers/BUFFER.md \
+  && printf '| B1 | %s: the pointer to docs/x.md | docs/y.md (rename) | owner, 2026-11-05 | Open |\n' "$G" >> .jig/ledgers/BUFFER.md \
+  && git add -A && git commit -qm "buffer: B1" >/dev/null
+printf '# y\n\n- meta: buffered B1\n' > .jig/specs/y.md && git mv docs/x.md docs/y.md && git add -A; expect_pass git commit -qm "docs: x → y"
+
+# The cleanup: po runs v0.6.0, whose P2 never resolved a number.
+PO="$T/po"; mkdir -p "$PO/.t" && git -C "$JR" archive v0.6.0 plugin/templates | tar -x -C "$PO/.t"
+cd "$PO" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r .t/plugin/templates/jig .jig && cp .t/plugin/templates/AGENTS.md .t/plugin/templates/CLAUDE.md . && rm -rf .t
+docs && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para pm --location "$PM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
+msg="pointers: under v0.6.0's hook, renaming x.md and deleting ## 4. Keys both commit (the bug)"
+git mv docs/x.md docs/y.md && git commit -qm "docs: x → y" >/dev/null 2>&1; a=$?; mv_hash=$(git rev-parse --short HEAD)
+sed -i.bak '/^## 4. Keys$/d' docs/w.md && rm docs/w.md.bak && git add -A && git commit -qm "docs: drop keys" >/dev/null 2>&1; b=$?; keys_hash=$(git rev-parse --short HEAD)
+expect_pass test "$a$b" = 00
+msg="pointers: update's dry run lists Metarepo pointers: the rename and the heading, each with its commit and a BUFFER.md row"
+out=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^Metarepo pointers' && echo \"\$0\" | grep 'docs/x.md, which' | grep \"$mv_hash\" | grep 'docs/y.md' | grep -q 'BUFFER.md' && echo \"\$0\" | grep 'docs/w.md § 4,' | grep \"$keys_hash\" | grep -q 'BUFFER.md'" "$out"
+msg="pointers: update says this repo never had docs/r.md § 1, names jig propose, offers no row, and changes nothing"
+expect_pass sh -c "echo \"\$0\" | grep 'docs/r.md § 1,' | grep 'never had it' | grep -q 'jig propose' && ! echo \"\$0\" | grep 'docs/r.md § 1,' | grep -q 'BUFFER' && test -z \"\$(git status --porcelain)\"" "$out"
+msg="pointers: with an Open row naming docs/x.md committed, update offers no row for it, and --apply leaves BUFFER.md alone"
+mkdir -p .jig/ledgers && cp "$P/ledgers/BUFFER.md" .jig/ledgers/BUFFER.md \
+  && printf '| B1 | %s: the pointer to docs/x.md | docs/y.md, %s | owner, 2026-11-05 | Open |\n' "$G" "$mv_hash" >> .jig/ledgers/BUFFER.md \
+  && git add -A && git commit -qm "buffer: B1" >/dev/null
+out=$($UP 2>&1); before=$(shasum .jig/ledgers/BUFFER.md); $UP --apply >/dev/null 2>&1
+expect_pass sh -c "echo \"\$0\" | grep 'docs/x.md, which' | grep -q 'Open row B1' && ! echo \"\$0\" | grep 'docs/x.md, which' | grep -q 'offer a row' && test \"\$(shasum .jig/ledgers/BUFFER.md)\" = '$before' && test -z \"\$(git status --porcelain -- .jig/ledgers/BUFFER.md)\"" "$out"
+msg="pointers: RULES.md has the number rule and P2's lost-file rule"
+expect_pass sh -c "grep -q '§ 2\` is \`## 2. Motes\`, not \`### 2.1\`' '$P/jig/RULES.md' && grep '^| P2 |' '$P/jig/RULES.md' | grep -q 'a lost file counts even when its heading was already missing'"
+}
+
 # ---------------------------------------------------------------- feedback
 sec_feedback() {
 export JIG_CONFIG="$T/fb/repos.json"      # its feedback/ fallback sits beside it, never the user's
@@ -2368,7 +2433,7 @@ expect_pass sh -c "$J repos | grep -q 'tool reports wait in .*/fb/feedback while
 # order: staging releases metarepo's $M; R6 as ints works in R6 takes' repo $R.
 # The slowest start first, so the run isn't waiting on one that started last.
 SLOW="pararepo_commands entry_globs report_fixes sync_buffer"
-UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer feedback"
+UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers feedback"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file
