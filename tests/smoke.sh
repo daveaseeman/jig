@@ -2317,7 +2317,7 @@ sec_pointers() {
 # Numbered pointers: `§2` names `## 2. Motes`, as the Documentation rule cites rules. pp is
 # today's pararepo; po is one on v0.6.0, whose P2 let removals through, for update to report.
 PM="$T/pm"; pcnew "$PM" && git add -A && git commit -qm init && $J init --meta --name pm >/dev/null
-printf '\n## Pointers\n`pp/docs/x.md §2.1`, `pp/docs/x.md §2`, `pp/docs/x.md § 10`, `pp/docs/x.md § 3` and `pp/docs/x.md §1`.\nThe rules: `pp/docs/r.md §1`. Gone: `pp/docs/g.md § Gone`.\nThe prose pp/docs/x.md §1.2 (cited by path, for now)\nTwice: `pp/docs/none.md § A` and `pp/docs/none.md § B`.\nThe old app: `po/docs/x.md §2`, `po/docs/w.md §4` and `po/docs/r.md §1`.\n' >> GLOSSARY.md
+printf '\n## Pointers\n`pp/docs/x.md §2.1`, `pp/docs/x.md §2`, `pp/docs/x.md § 10`, `pp/docs/x.md § 3` and `pp/docs/x.md §1`.\nThe rules: `pp/docs/r.md §1`. Gone: `pp/docs/g.md § Gone`.\nThe prose pp/docs/x.md §1.2 (cited by path, for now)\nTwice: `pp/docs/none.md § A` and `pp/docs/none.md § B`.\nWords, not numbers: `pp/docs/x.md § 2-factor` and `pp/docs/x.md § 2.a`.\nThe old app: `po/docs/x.md §2`, `po/docs/w.md §4`, `po/docs/r.md §1` and `po/docs/ui.md §4`.\nIts theme: po/docs/ui.md § Colors for the theme\n' >> GLOSSARY.md
 printf -- '- GLOSSARY: Pointers\n' >> CHANGELOG.md && git add -A && git commit -qm "GLOSSARY: Pointers" && $J release >/dev/null
 # docs <dir>: the pages the metarepo points into
 docs() { mkdir -p api docs && printf 'x=1\n' > api/a.py && printf '# X\n\n## 2. Motes\n\n### 2.1 Identity\n\n## 10. Open questions\n' > docs/x.md \
@@ -2332,6 +2332,8 @@ msg="pointers: §1 under ## Rules with ### 1.1 is dangling: 1.1 is not heading 1
 expect_pass sh -c "echo \"\$0\" | grep -qx '$G docs/r.md § 1, which docs/r.md has no heading for'" "$out"
 msg="pointers: a prose §1.2 (… prints its number whole, and two pointers into a missing file print one line"
 expect_pass sh -c "echo \"\$0\" | grep -qx '$G docs/x.md § 1.2, which docs/x.md has no heading for' && test \$(echo \"\$0\" | grep -c 'docs/none.md') = 1" "$out"
+msg="pointers: § 2-factor and § 2.a are words, not heading 2, so they dangle"
+expect_pass sh -c "echo \"\$0\" | grep -qx '$G docs/x.md § 2-factor, which docs/x.md has no heading for' && echo \"\$0\" | grep -qx '$G docs/x.md § 2.a, which docs/x.md has no heading for'" "$out"
 msg="pointers P2: renaming a file only numbered pointers name is refused, naming the pointer"
 git mv docs/x.md docs/y.md; out=$(git commit -qm "docs: x → y" 2>&1); rc=$?; undo
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'points to docs/x.md, which'" "$out"
@@ -2362,17 +2364,26 @@ msg="pointers: under v0.6.0's hook, renaming x.md and deleting ## 4. Keys both c
 git mv docs/x.md docs/y.md && git commit -qm "docs: x → y" >/dev/null 2>&1; a=$?; mv_hash=$(git rev-parse --short HEAD)
 sed -i.bak '/^## 4. Keys$/d' docs/w.md && rm docs/w.md.bak && git add -A && git commit -qm "docs: drop keys" >/dev/null 2>&1; b=$?; keys_hash=$(git rev-parse --short HEAD)
 expect_pass test "$a$b" = 00
+# One commit drops ## Colors and ## 4: Keys and renames ## Values to ## Keystone, answered by a spec.
+printf '# UI\n\n## Colors\n\n## Values\n\n## 4: Keys\n' > docs/ui.md && git add -A && git commit -qm "docs: ui" >/dev/null 2>&1
+mkdir -p .jig/specs && printf '# ui\n\n- meta: none — smoke\n' > .jig/specs/ui.md && printf '# UI\n\n## Keystone\n' > docs/ui.md
+git add -A && git commit -qm "docs: ui rework" >/dev/null 2>&1; ui_hash=$(git log -1 --format=%h --grep='^docs: ui rework$')
 msg="pointers: update's dry run lists Metarepo pointers: the rename and the heading, each with its commit and a BUFFER.md row"
 out=$($UP 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q '^Metarepo pointers' && echo \"\$0\" | grep 'docs/x.md, which' | grep \"$mv_hash\" | grep 'docs/y.md' | grep -q 'BUFFER.md' && echo \"\$0\" | grep 'docs/w.md § 4,' | grep \"$keys_hash\" | grep -q 'BUFFER.md'" "$out"
+msg="pointers: update finds the commit that removed a prose heading (§ Colors for the theme) and a 4: heading, by the resolver"
+expect_pass sh -c "test -n '$ui_hash' && echo \"\$0\" | grep 'docs/ui.md § Colors for the theme,' | grep \"$ui_hash\" | grep -q 'BUFFER.md' && echo \"\$0\" | grep 'docs/ui.md § 4,' | grep \"$ui_hash\" | grep -q 'BUFFER.md'" "$out"
 msg="pointers: update says this repo never had docs/r.md § 1, names jig propose, offers no row, and changes nothing"
 expect_pass sh -c "echo \"\$0\" | grep 'docs/r.md § 1,' | grep 'never had it' | grep -q 'jig propose' && ! echo \"\$0\" | grep 'docs/r.md § 1,' | grep -q 'BUFFER' && test -z \"\$(git status --porcelain)\"" "$out"
 msg="pointers: with an Open row naming docs/x.md committed, update offers no row for it, and --apply leaves BUFFER.md alone"
 mkdir -p .jig/ledgers && cp "$P/ledgers/BUFFER.md" .jig/ledgers/BUFFER.md \
   && printf '| B1 | %s: the pointer to docs/x.md | docs/y.md, %s | owner, 2026-11-05 | Open |\n' "$G" "$mv_hash" >> .jig/ledgers/BUFFER.md \
-  && git add -A && git commit -qm "buffer: B1" >/dev/null
+  && printf '| B2 | %s: the pointer to docs/w.md § 9 | deleted, abc1234 | owner, 2026-11-05 | Open |\n' "$G" >> .jig/ledgers/BUFFER.md \
+  && git add -A && git commit -qm "buffer: B1, B2" >/dev/null
 out=$($UP 2>&1); before=$(shasum .jig/ledgers/BUFFER.md); $UP --apply >/dev/null 2>&1
 expect_pass sh -c "echo \"\$0\" | grep 'docs/x.md, which' | grep -q 'Open row B1' && ! echo \"\$0\" | grep 'docs/x.md, which' | grep -q 'offer a row' && test \"\$(shasum .jig/ledgers/BUFFER.md)\" = '$before' && test -z \"\$(git status --porcelain -- .jig/ledgers/BUFFER.md)\"" "$out"
+msg="pointers: an Open row about another heading of the file (w.md § 9) doesn't stand in for § 4"
+expect_pass sh -c "echo \"\$0\" | grep 'docs/w.md § 4,' | grep -q 'offer a row'" "$out"
 msg="pointers: RULES.md has the number rule and P2's lost-file rule"
 expect_pass sh -c "grep -q '§ 2\` is \`## 2. Motes\`, not \`### 2.1\`' '$P/jig/RULES.md' && grep '^| P2 |' '$P/jig/RULES.md' | grep -q 'a lost file counts even when its heading was already missing'"
 }

@@ -2665,8 +2665,15 @@ RESOLVES, NO_HEADING, NO_FILE = 0, 1, 2
 
 
 def section_number(text: str) -> str | None:
+    """TEXT's leading number when it is one: it ends the text, or at a blank, or at a `.`, `,`,
+    `;`, `:` or `)` that no word follows. `2-factor` and `2.a` are words."""
     m = SECTION_NUMBER.match(text)
-    return m.group(0) if m and not text[m.end():m.end() + 1].isalnum() else None
+    if not m:
+        return None
+    rest = text[m.end():]
+    if not rest or rest[0].isspace() or rest[0] in ".,;:)" and not re.match(r"\w", rest[1:2]):
+        return m.group(0)
+    return None
 
 
 def shown_section(want: str, code: bool) -> str:
@@ -2725,37 +2732,30 @@ def removed_by(commit: str) -> list[tuple[str, str | None]]:
     return out
 
 
-def ere(text: str) -> str:
-    return re.sub(r"([.\[\]()*+?{}|^$\\])", r"\\\1", text)
-
-
 def removal(path: str, section: str | None, code: bool, level: int) -> tuple[str, str] | None:
-    """The commit in this repo's history that removed what a dangling pointer names, and what
-    the repo has now instead ('deleted', or the new path); None when it never had it."""
-    if level == NO_FILE:
-        commit = git("log", "-1", "--format=%h", "--diff-filter=D", "--", path)
-        if not commit:
-            return None
-        new = next((n for o, n in removed_by(commit) if o == path or o.startswith(f"{path}/")), None)
-        return commit, new or "deleted"
-    want = plain(section or "")
-    number = section_number(want)
-    # git's -G is a line regex, so the heading's mark is spelled the way HEADING reads it.
-    # In a POSIX bracket `\t` is two characters, so the tab is a real one.
-    blank = "[ \t]"
-    # A number's heading: `4` then a blank, a `.` that starts no `4.1`, or the end.
-    head = (f"{ere(number)}({blank}|\\.([^0-9]|$)|$)" if number is not None
-            else ere(shown_section(want, code)) + (f"{blank}*#*{blank}*$" if code else ""))
-    commit = git("log", "-1", "--format=%h", "-G", f"^ {{0,3}}#{{1,6}}{blank}+{head}", "--", path)
-    return (commit, path) if commit else None
+    """The newest commit in this repo's history before which the pointer missed less than it
+    does now and after which it missed as much, and what the repo has instead ('deleted', or
+    the new path); None when it never had it. The resolver decides both sides, so what counts
+    as removed is what P2 would have asked about."""
+    def misses(rev: str) -> int:
+        return pointer_gap(path, section, code, body_at(rev, path))[0]
+    for commit in git("log", "--format=%h", "--", path).splitlines():
+        if misses(commit) >= level > misses(f"{commit}^"):
+            if level == NO_HEADING:
+                return commit, path
+            new = next((n for o, n in removed_by(commit) if o == path or o.startswith(f"{path}/")), None)
+            return commit, new or "deleted"
+    return None
 
 
-def buffer_offer(root: Path, claim: str, path: str, now: str) -> str:
-    """What to do about a claim this repo moved away from: the Open row that already names PATH,
-    or the row to add to BUFFER.md, the owner's to accept. Never written here."""
+def buffer_offer(root: Path, claim: str, path: str, now: str, section: str | None = None) -> str:
+    """What to do about a claim this repo moved away from: the Open row that already names PATH
+    (and SECTION, for a heading), or the row to add to BUFFER.md, the owner's to accept. Never
+    written here."""
     ledger = root / BUFFER
     rows = buffer_rows(ledger.read_text()) if ledger.exists() else []
-    named = re.compile(rf"(?<![\w./-]){re.escape(path)}(?![\w/-])")
+    where = re.escape(path) + (rf"[ \t]*§[ \t]*{re.escape(section)}(?!\.?\w)" if section else r"(?![\w/-])")
+    named = re.compile(rf"(?<![\w./-]){where}")
     row = next((r for r in rows if r[-1] == "Open" and any(named.search(c) for c in r[1:-1])), None)
     if row:
         return f"Open row {row[0]} in {BUFFER} already names it"
@@ -2778,9 +2778,10 @@ def pointer_cleanup(root: Path) -> list[str]:
         commit, now = found
         what = (f"renamed to {now} in {commit}" if level == NO_FILE and now != "deleted"
                 else f"removed in {commit}")
-        where = f"{path} § {shown_section(plain(section), code)}" if level == NO_HEADING else path
+        shown = shown_section(plain(section), code) if level == NO_HEADING else None
+        where = f"{path} § {shown}" if shown else path
         out.append(line + f"this repo {what}; "
-                   + buffer_offer(root, f"{f}: the pointer to {where}", path, f"{now}, {commit}"))
+                   + buffer_offer(root, f"{f}: the pointer to {where}", path, f"{now}, {commit}", shown))
     return out
 
 
