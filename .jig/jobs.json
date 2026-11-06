@@ -12,7 +12,9 @@
       "plugin/templates/jig/RULES.md",
       "plugin/templates/jig/jig.py",
       "tests/smoke.sh",
-      "plugin/templates/*.md"
+      "plugin/templates/*.md",
+      "plugin/skills/update/SKILL.md",
+      "plugin/skills/adopt/SKILL.md"
     ],
     "reserved": {}
   }
