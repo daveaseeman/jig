@@ -143,7 +143,7 @@ Section `removals` in `tests/smoke.sh`, listed in `UNITS`.
 - **Fix P2 only**, with its own `--no-renames` diff. Rejected: R3–R5, P1 and P4 have the same hole. Reason is [seen].
 - **Sweep with no answer check.** Rejected: all three of the reporting pararepo's slipped removals carry `meta: none`, so the sweep would offer three wrong rows. Reason is [seen].
 - **Sweep only since the last pin bump.** Rejected: that misses all three, and a bump doesn't mean the metarepo saw them. Reason is [seen].
-- **Sweep in `jig sync`.** Rejected: update brings the fix, as in numbered-pointers. Reason is [assumed].
+- **Sweep in `jig sync`.** Rejected: update brings the fix, as in numbered-pointers, and shows both blocks on its up-to-date path too, so an owner who says "not now" still sees them on the next run. Reason is [seen]: after `--apply` and its commit, a later update printed only "up to date" while the unanswered removal stood in trunk's log, until the blocks were shown there.
 
 ## Decisions
 - **One row per commit, not per path.** A deleted module is one change to the metarepo.

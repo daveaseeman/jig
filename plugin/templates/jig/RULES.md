@@ -51,7 +51,8 @@ go in `shares` from the start, or both jobs get blocked on every commit afterwar
 
 ## The rules
 
-Checked before every commit by a git hook, and by `jig check`.
+Checked before every commit by a git hook, and by `jig check`. A delete changes its path, and
+a rename changes both of its paths: R3–R5, P1, P2 and P4 count each.
 
 - **R1** The trunk checkout stays on trunk. Work in `.git/jig/worktrees/<branch>`.
 - **R2** A job is built in its own worktree.
@@ -188,8 +189,9 @@ no other tracked file has that name.
 Code and the page that documents it move together, or the page starts lying. `jig handoff`
 works out every documentation page that covers a file the branch changed — a file can have
 several, such as its system page and the page of the board it runs on — and writes a
-checklist into the note. `jig gate` refuses while a line is unanswered — each is either
-ticked as updated, or says why no change was needed.
+checklist into the note. A moved file asks the page that covered its old path too. `jig gate`
+refuses while a line is unanswered — each is either ticked as updated, or says why no change
+was needed.
 
 Ownership comes from `docmap` in `config.json`:
 
@@ -344,7 +346,7 @@ under `.jig/` counts, whatever the globs say.
 | M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`) |
 | P1 | an `AGENTS.md` header that differs from what `.jig/para.json` generates |
-| P2 | a contract-path change with none of: a row added or changed in `.jig/ledgers/BUFFER.md` in the same commit, or a spec saying `meta: buffered <row id>`, `meta: <name> proposal <branch>` or `meta: none — <reason>`; the same for a change that deletes or renames a file a cached metarepo pointer names, or the heading its `§` names; a lost file counts even when its heading was already missing. Also, in `BUFFER.md`: a state other than `Open` or `Closed`, a repeated id, an `Open` row deleted, or one closed by any commit but `jig sync`'s |
+| P2 | a contract-path change (an edit, a delete, or a rename from one) with none of: a row added or changed in `.jig/ledgers/BUFFER.md` in the same commit, or a spec saying `meta: buffered <row id>`, `meta: <name> proposal <branch>` or `meta: none — <reason>`; the same for a change that deletes or renames a file a cached metarepo pointer names, or the heading its `§` names; a lost file counts even when its heading was already missing. Also, in `BUFFER.md`: a state other than `Open` or `Closed`, a repeated id, an `Open` row deleted, or one closed by any commit but `jig sync`'s |
 | P4 | a contract-path change while a file targeting the metarepo is staged |
 | P3 | the metarepo's cache (`.jig/meta-cache/`) or its checkout committed into the pararepo |
 

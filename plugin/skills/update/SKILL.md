@@ -51,6 +51,10 @@ line. One that names the commit that removed what it points to offers a `.jig/le
 row: ask, and add the row as offered only on a yes (the next `jig release` proposes it). One the
 repo never had is the metarepo's to fix, by `jig propose`. Never edit the metarepo here.
 
+**Contract removals**, beside it, are trunk commits that deleted or moved away a contract path
+with nothing answering them. Each offers one `BUFFER.md` row: add it only on a yes, and change
+`contract_paths` for a moved file only on the owner's word.
+
 ## After `--apply`
 
 `update` stages its changes, commits nothing, and runs `.jig/scripts/check.sh`. Then:

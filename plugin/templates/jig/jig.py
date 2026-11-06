@@ -262,9 +262,13 @@ def base(trunk: str) -> str:
     return "HEAD"
 
 
-def changed_paths(trunk: str, staged: bool) -> list[str]:
-    args = ["diff", "--name-only", "--diff-filter=ACMRT", base(trunk)]
-    args += ["--cached"] if staged else []
+def changed_paths(trunk: str, staged: bool, removed: bool = False) -> list[str]:
+    """What the change writes: a rename shows under its new path only, and a delete not at all,
+    which is what a rule on content judges. With REMOVED, every path it adds, edits or removes,
+    both sides of a rename included: a rule guarding a path counts taking it away as changing it."""
+    args = (["-c", "core.quotePath=false", "diff", "--name-only", "--no-renames"] if removed
+            else ["diff", "--name-only", "--diff-filter=ACMRT"])
+    args += [base(trunk), *(["--cached"] if staged else [])]
     return [p for p in git(*args).splitlines() if p]
 
 
@@ -289,6 +293,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     trunk = board.trunk
     name, job = board.job_for_branch(branch)
     paths = changed_paths(trunk, staged)
+    guarded = changed_paths(trunk, staged, removed=True)
     meta = load_meta(trunk)
     if meta is not None:
         out += meta_rules(root, board, meta, staged)
@@ -306,7 +311,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
 
     # R5 the board is the hubnode's
     for f in (CONFIG, JOBS):
-        if f in paths and branch != trunk:
+        if f in guarded and branch != trunk:
             out.append(f"R5 the board is the hubnode's: {f} is edited on {trunk} only")
     if CONFIG in paths and (raw := in_index(CONFIG, staged)):
         try:
@@ -377,7 +382,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     owns, shares = job.get("owns", []), job.get("shares", [])
     others = {n: l for n, l in board.open_jobs().items() if n != name}
 
-    for p in paths:
+    for p in guarded:
         if p.startswith(f"{DIR}/handoffs/"):
             continue
         # R4 another open job's owns wins, even over this job's lists
@@ -386,7 +391,8 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
                 out.append(f"R4 {p} is owned by job {on}: ask the hubnode before touching it")
                 break
         else:
-            # R3 only this job's files, or a file new to the repository
+            # R3 only this job's files, or a file new to the repository. Removing a file is
+            # changing it: one trunk has must be declared; one only this job added never was trunk's.
             if matches(p, owns) or matches(p, shares) or matches(p, common):
                 continue
             if not existed_on_trunk(trunk, p):
@@ -761,7 +767,9 @@ def cmd_open(root: Path, args) -> int:
     conflicts = []
     for p in owns:
         for on in board.open_jobs():
-            changed = git("diff", "--name-only", f"{board.trunk}...{board.branch(on)}").splitlines()
+            # A file the job moved away is as much its change as one it edited.
+            changed = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
+                          f"{board.trunk}...{board.branch(on)}").splitlines()
             if any(matches(c, [p]) for c in changed):
                 conflicts.append(f"{p} (changed by open job {on})")
     if conflicts:
@@ -1055,14 +1063,15 @@ def changed_since(commit: str, branch: str, board: "Board") -> list[str]:
                 # No replay to compare with: everything the merge changed counts as the job's.
                 tree, conflicted = parents[0], []
             files = []
-            for f in git("diff", "--name-only", tree, c).splitlines():
+            for f in git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", tree, c).splitlines():
                 if f in conflicted and matches(f, appends):
                     text, ok = resolved_appends(blob(tree, f))
                     if ok and text == blob(c, f):
                         continue
                 files.append(f)
         else:
-            files = git("diff", "--name-only", parents[0], c).splitlines()
+            files = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
+                        parents[0], c).splitlines()
         out += [f for f in files if f and not f.startswith(f"{DIR}/handoffs/") and f not in out]
     return out
 
@@ -1131,8 +1140,11 @@ def foldin_lines(root: Path, board: Board, branch: str) -> str:
     """One line per documentation page covering the code this branch changed."""
     trunk = board.trunk
     rng = f"{trunk}...HEAD" if branch and branch != trunk else "HEAD~1..HEAD"
-    changed = [f for f in git("diff", "--name-only", rng).splitlines()
+    # Both sides of a rename: the page that covered the old path describes it there.
+    changed = [f for f in git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
+                              rng).splitlines()
                if f and not f.startswith((".", f"{DIR}/"))]
+    at_head = set(git("-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", "HEAD").splitlines())
     # A file docmap names is asked about whatever its type (sdkconfig, a devicetree
     # overlay); only source files are flagged when no page covers them.
     pages, unowned = {}, []
@@ -1140,7 +1152,7 @@ def foldin_lines(root: Path, board: Board, branch: str) -> str:
         owners = doc_owners(board, f)
         for page in owners:
             pages.setdefault(page, []).append(f)
-        if not owners and f.endswith(SRC_EXT):
+        if not owners and f.endswith(SRC_EXT) and f in at_head:
             unowned.append(f)
     if not pages and not unowned:
         return "- [ ] no code changed — nothing to fold in"
@@ -2388,8 +2400,10 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
     out: list[str] = []
     trunk = board.trunk
     paths = changed_paths(trunk, staged)
+    # Deletes and both sides of a rename: P1, P2's contract test and P4 guard paths.
+    diffed = changed_paths(trunk, staged, removed=True)
     # P1 the AGENTS.md header says what para.json says
-    if "AGENTS.md" in paths or PARA in paths:
+    if "AGENTS.md" in diffed or PARA in diffed:
         try:
             now = json.loads(in_index(PARA, staged) or "null") or para
         except ValueError:
@@ -2399,7 +2413,7 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
             out.append(f"P1 the AGENTS.md header is generated from {PARA}: edit that, then "
                        "`jig init --para` regenerates it")
     # P2 a contract change carries its metarepo proposal, its buffer row, or says why it needs none
-    touched = [p for p in paths if matches(p, para.get("contract_paths", []))]
+    touched = [p for p in diffed if matches(p, para.get("contract_paths", []))]
     rows = buffer_rows(in_index(BUFFER, staged))
     if BUFFER in paths:
         for r in rows:
@@ -2426,9 +2440,7 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
             out.append(f"P2 {BUFFER} row {r[0]} closed by hand: `jig sync` closes a row once "
                        "the metarepo releases the proposal that carried it as it stands")
     # A pointer this change leaves dangling: the metarepo now points at nothing, so it is owed
-    # what a contract change is. Deletes and renames count here, so the diff keeps them.
-    diffed = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", base(trunk),
-                 *(["--cached"] if staged else [])).splitlines()
+    # what a contract change is.
     # The cache lives in the primary checkout: it is ignored, so a job's worktree has none.
     # Worse than at the base counts: a file lost is still news when its heading was already missing.
     broken = [f"{f} points to {gap}" for f, path, section, code in pointers(root, main_root())
@@ -2880,18 +2892,27 @@ def removal(path: str, section: str | None, code: bool, level: int) -> tuple[str
     return None
 
 
+def naming_row(rows: list[list[str]], path: str, section: str | None = None,
+               states: tuple[str, ...] = ("Open",)) -> list[str] | None:
+    """The first row in one of STATES whose cells name PATH (and SECTION, for a heading)."""
+    where = re.escape(path) + (rf"[ \t]*§[ \t]*{re.escape(section)}(?!\.?\w)" if section else r"(?![\w/-])")
+    named = re.compile(rf"(?<![\w./-]){where}")
+    return next((r for r in rows if r[-1] in states and any(named.search(c) for c in r[1:-1])), None)
+
+
+def row_offer(claim: str, now: str) -> str:
+    return f"offer a row for {BUFFER}: claim \"{claim}\", this repo now \"{now}\""
+
+
 def buffer_offer(root: Path, claim: str, path: str, now: str, section: str | None = None) -> str:
     """What to do about a claim this repo moved away from: the Open row that already names PATH
     (and SECTION, for a heading), or the row to add to BUFFER.md, the owner's to accept. Never
     written here."""
     ledger = root / BUFFER
-    rows = buffer_rows(ledger.read_text()) if ledger.exists() else []
-    where = re.escape(path) + (rf"[ \t]*§[ \t]*{re.escape(section)}(?!\.?\w)" if section else r"(?![\w/-])")
-    named = re.compile(rf"(?<![\w./-]){where}")
-    row = next((r for r in rows if r[-1] == "Open" and any(named.search(c) for c in r[1:-1])), None)
+    row = naming_row(buffer_rows(ledger.read_text()) if ledger.exists() else [], path, section)
     if row:
         return f"Open row {row[0]} in {BUFFER} already names it"
-    return f"offer a row for {BUFFER}: claim \"{claim}\", this repo now \"{now}\""
+    return row_offer(claim, now)
 
 
 def pointer_cleanup(root: Path) -> list[str]:
@@ -2914,6 +2935,86 @@ def pointer_cleanup(root: Path) -> list[str]:
         where = f"{path} § {shown}" if shown else path
         out.append(line + f"this repo {what}; "
                    + buffer_offer(root, f"{f}: the pointer to {where}", path, f"{now}, {commit}", shown))
+    return out
+
+
+def contract_removals(root: Path, trunk: str) -> list[str]:
+    """Update's Contract removals block: each trunk commit that took a contract path away while
+    nothing answered it, which an older P2 let through, and the one BUFFER.md row to offer for
+    it. Each commit is judged by the contract_paths its parent's para.json held, which is what P2
+    read then. Writes nothing."""
+    olds = dict(LAYOUT)
+    para_at = [PARA, *olds[PARA]]
+    spec_dirs = [f"{DIR}/specs/", *olds[f"{DIR}/specs/"]]
+    ledgers = [f"{d}BUFFER.md" for d in (f"{DIR}/ledgers/", *olds[f"{DIR}/ledgers/"])]
+    rows = buffer_rows(at_rev(trunk, BUFFER))
+    # The Metarepo pointers block already speaks for a path a cached pointer names.
+    pointed = {p for _, p, _, _, _, _ in dangling(root)}
+    # A path trunk has again, restored or re-added, was put back: nothing is owed.
+    back = set(git("-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", trunk).splitlines())
+    try:
+        today = json.loads(at_rev(trunk, PARA) or "{}").get("contract_paths") or []
+    except ValueError:
+        today = []
+    # Which first-parent merge brought each commit in: a spec on that branch answered it.
+    brought: dict[str, str] = {}
+    for m in reversed(git("rev-list", "--first-parent", "--merges", trunk).splitlines()):
+        for c in git("rev-list", f"{m}^1..{m}^2").splitlines():
+            brought.setdefault(c, m)
+
+    def answered(rng: list[str], at: str) -> bool:
+        specs = [p for p in git("-c", "core.quotePath=false", *rng, "--name-only", "--diff-filter=ACMRT",
+                                "--", *spec_dirs).splitlines() if p.endswith(".md")]
+        return any(PROPOSAL.search(at_rev(at, s)) for s in specs)
+
+    out = []
+    for line in git("log", "--no-merges", "-M", "--diff-filter=DR", "--format=%H %h %s", trunk).splitlines():
+        commit, short, subject = (line.split(" ", 2) + [""])[:3]
+        raw = next((b for p in para_at if (b := at_rev(f"{commit}^", p))), "")
+        try:
+            globs = (json.loads(raw) if raw else {}).get("contract_paths") or []
+        except ValueError:
+            continue
+        gone = [(o, n) for o, n in removed_by(commit) if matches(o, globs) and o not in back
+                and not any(o == p or o.startswith(f"{p}/") for p in pointed) and not naming_row(rows, o, states=BUFFER_STATES)]
+        if not gone:
+            continue
+        writes = git("-c", "core.quotePath=false", "show", "-M", "--name-only", "--diff-filter=ACMRT",
+                     "--format=", commit).splitlines()
+        if any(matches(w, globs) for w in writes):
+            continue                    # P2 asked then, and its answer covers the commit
+        if answered(["show", "--format=", commit], commit):
+            continue
+        m = brought.get(commit)
+        if m and answered(["diff", f"{m}^1...{m}^2"], f"{m}^2"):
+            continue
+        added = git("show", "--format=", "-U0", commit, "--", *ledgers)
+        if any(r[-1] == "Open" for l in added.splitlines() if l.startswith("+|") for r in buffer_rows(l[1:])):
+            continue
+        what = "; ".join(f"{o} → {n}" if n else f"{o} deleted" for o, n in gone)
+        pin = json.loads(raw).get("pin") or "the pin"
+        now = "; ".join(f"moved to {n}" if n else "deleted" for _, n in gone)
+        text = (f"{short} {subject}: {what}: "
+                + row_offer(f"the contract at {pin}: {', '.join(o for o, _ in gone)}", f"{now}, {short}"))
+        for n in [n for _, n in gone if n and not matches(n, today)]:
+            text += f"; {n} isn't a contract path: add it to contract_paths if it still holds the contract"
+        out.append(text)
+    return out
+
+
+def removal_blocks(root: Path, trunk: str, always: bool) -> list[str]:
+    """A pararepo update's Metarepo pointers and Contract removals blocks. ALWAYS, as a planned
+    update's report shows them; otherwise only a block with something in it, so a repo that is
+    up to date still hears of what an older P2 let through until it answers it."""
+    out = []
+    pointed = pointer_cleanup(root) if always or (root / CACHE).is_dir() else []
+    if pointed:
+        out += ["\nMetarepo pointers (from the cache as the last `jig sync` left it; update "
+                "changes none of them):", *(f"  {l}" for l in pointed)]
+    removed = contract_removals(root, trunk)
+    if removed or always:
+        out += ["\nContract removals (trunk commits an older P2 let take a contract path away "
+                "unanswered; update changes none of them):", *(f"  {l}" for l in removed or ["none"])]
     return out
 
 
@@ -4123,6 +4224,9 @@ def cmd_update(root: Path, args) -> int:
         print("up to date")
         for w in warnings:
             print(f"warning: {w}")
+        if board_at == CONFIG and (root / PARA).exists():
+            for line in removal_blocks(root, trunk, always=False):
+                print(line)
         return 0
     if refused:
         print(f"refused: the repo is behind this jig's layout ({board_at}, version "
@@ -4190,10 +4294,7 @@ def cmd_update(root: Path, args) -> int:
             for f, what in review:
                 print(f"  {f}: {what}")
         if board_at == CONFIG and (root / PARA).exists():
-            print("\nMetarepo pointers (from the cache as the last `jig sync` left it; update "
-                  "changes none of them):")
-            for line in pointer_cleanup(root):
-                print(f"  {line}")
+            print("\n".join(removal_blocks(root, trunk, always=True)))
         template = here.parent / "AGENTS.md"
         if template.exists() and (root / "AGENTS.md").exists() and root.resolve() not in here.parents:
             diff = list(difflib.unified_diff(template.read_text().splitlines(),
