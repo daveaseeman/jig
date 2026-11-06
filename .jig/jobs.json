@@ -11,5 +11,20 @@
       "plugin/skills/update/SKILL.md"
     ],
     "reserved": {}
+  },
+  "agents-template": {
+    "spec": ".jig/specs/bug-doc-homes.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/templates/AGENTS.md"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "tests/smoke.sh",
+      "plugin/skills/update/SKILL.md",
+      "plugin/templates/jig/RULES.md"
+    ],
+    "reserved": {}
   }
 }
