@@ -250,8 +250,8 @@ git add -A && git commit -qm init && $J init >/dev/null && git add -A && git com
 msg="init: root holds only AGENTS.md, CLAUDE.md and .jig/"
 expect_pass test "$(ls -A | grep -v '^\.git$' | LC_ALL=C sort | tr '\n' ' ')" = ".jig AGENTS.md CLAUDE.md "
 
-msg="init: .jig/ holds jig.py, RULES.md, config.json, jobs.json, the four scripts and staging/.gitignore, nothing else"
-expect_pass test "$(find .jig -type f | LC_ALL=C sort | tr '\n' ' ')" = ".jig/RULES.md .jig/config.json .jig/jig.py .jig/jobs.json .jig/scripts/check.sh .jig/scripts/format.sh .jig/scripts/release.sh .jig/scripts/setup.sh .jig/staging/.gitignore "
+msg="init: .jig/ holds jig.py, RULES.md, docs-page.md, config.json, jobs.json, the four scripts and staging/.gitignore, nothing else"
+expect_pass test "$(find .jig -type f | LC_ALL=C sort | tr '\n' ' ')" = ".jig/RULES.md .jig/config.json .jig/docs-page.md .jig/jig.py .jig/jobs.json .jig/scripts/check.sh .jig/scripts/format.sh .jig/scripts/release.sh .jig/scripts/setup.sh .jig/staging/.gitignore "
 
 msg="init: the spec template and both ledgers stay in the plugin until first use"
 expect_pass sh -c "test ! -e .jig/specs -a ! -e .jig/ledgers -a ! -e '$P/jig/specs' -a ! -e '$P/jig/ledgers' && test -f '$P/specs/_template.md' -a -f '$P/ledgers/WORKAROUNDS.md' -a -f '$P/ledgers/DEFERRED.md'"
@@ -446,7 +446,7 @@ for layout in "eaec973 dot" "66a044c dot" "62c8d9f jig" "eaec973 aidev" "5d955a2
   expect_pass python3 -c "
 import subprocess
 allowed = {'$board', '.jig/config.json', '.jig/jobs.json', '.aidev/aidev.py', 'jig/jig.py', '.jig/jig.py',
-           '.aidev/RULES.md', 'jig/RULES.md', '.jig/RULES.md', '.gitignore', '.jig/scripts/setup.sh', '.jig/scripts/release.sh', '.jig/staging/.gitignore'}
+           '.aidev/RULES.md', 'jig/RULES.md', '.jig/RULES.md', '.jig/docs-page.md', '.gitignore', '.jig/scripts/setup.sh', '.jig/scripts/release.sh', '.jig/staging/.gitignore'}
 for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
     status, *paths = line.split('\t')
     assert status == 'R100' or set(paths) <= allowed, line"
@@ -644,7 +644,7 @@ EOF
   expect_pass python3 -c "
 import subprocess, sys
 removed = set(sys.argv[1].split())
-jig = {'.jig/config.json', '.jig/jobs.json', '.jig/jig.py', '.jig/RULES.md', '.jig/scripts/setup.sh', '.jig/scripts/release.sh',
+jig = {'.jig/config.json', '.jig/jobs.json', '.jig/jig.py', '.jig/RULES.md', '.jig/docs-page.md', '.jig/scripts/setup.sh', '.jig/scripts/release.sh',
        '.jig/ledgers/DEFERRED.md', '.jig/staging/.gitignore', '.gitignore'}
 for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
     status, *paths = line.split('\t')
@@ -2774,18 +2774,25 @@ git add -A && git commit -qm "note"
 msg="page contract: the gate refuses while an Undefined line is blank"
 out=$(cd "$PG" && { gate_ok U1; rc=$?; echo "$out"; exit $rc; }); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'unanswered' && echo \"\$0\" | grep -q 'Undefined in docs/ui/ui.md' && ! echo \"\$0\" | grep -q 'no change because ___'" "$out"
-answer $note "import re; n = re.sub(r'- \[ \] (Undefined in .*Offline.*) — built / untouched / departed: ___', r'- [x] \1 — untouched', n); n = re.sub(r'- \[ \] (Undefined in .*Dark.*) — built / untouched / departed: ___', r'- [x] \1 — departed: themes moved to the OS setting', n)"
+answer $note "import re; n = re.sub(r'- \[ \] (Undefined in .*Offline.*) — built / untouched / departed: ___', r'- [x] \1 — Untouched (not this task)', n); n = re.sub(r'- \[ \] (Undefined in .*Dark.*) — built / untouched / departed: ___', r'- [x] \1 — departed: themes moved to the OS setting', n)"
 git commit -qam "answer"
-msg="page contract: the gate passes untouched and departed answers"
+msg="page contract: the gate passes untouched and departed answers, with text after them, in any case"
 expect_pass sh -c "cd '$PG' && $(declare -f gate_ok); J='$J'; gate_ok U1"
-answer $note "n = n.replace('— untouched', '— built')"
+answer $note "n = n.replace('— Untouched (not this task)', '— built — moved into Cache')"
 git commit -qam "built, not moved"
 msg="page contract: the gate refuses built while the entry is still under Undefined"
 out=$(cd "$PG" && { gate_ok U1; rc=$?; echo "$out"; exit $rc; }); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'built means moved, not copied'" "$out"
 python3 -c "
 f = 'docs/ui/ui.md'; s = open(f).read()
-open(f, 'w').write(s.replace('- Offline mode — stops at the cache layer; parked 2026-11-01.\n', '').replace('## Renderer\n\nDraws rows.\n', '## Renderer\n\nDraws rows.\n\n## Cache\n\nWorks offline.\n'))"
+open(f, 'w').write(s.replace('- Offline mode — stops at the cache layer;', '- Offline mode (built, see Cache) — stops at the cache layer;').replace('## Renderer\n\nDraws rows.\n', '## Renderer\n\nDraws rows.\n\n## Cache\n\nWorks offline.\n'))"
+git commit -qam "offline mode: entry reworded, not deleted"
+msg="page contract: the gate refuses built when the entry was reworded instead of deleted"
+out=$(cd "$PG" && { gate_ok U1; rc=$?; echo "$out"; exit $rc; }); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'built means moved, not copied'" "$out"
+python3 -c "
+import re; f = 'docs/ui/ui.md'; s = open(f).read()
+open(f, 'w').write(re.sub(r'- Offline mode .*\n', '', s))"
 git commit -qam "offline mode built" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
 note=$(ls .jig/handoffs/U1-*-2.md)
 msg="page contract: an entry the branch deleted still gets its line, from trunk's page"
@@ -2796,8 +2803,14 @@ msg="page contract: the gate passes built once the entry is gone"
 expect_pass sh -c "cd '$PG' && $(declare -f gate_ok); J='$J'; gate_ok U1"
 answer $note "n = n.replace('— untouched', '— built / untouched')"
 git commit -qam "two answers"
-msg="page contract: the gate refuses a line that keeps more than one answer"
-expect_refuse sh -c "cd '$PG' && $(declare -f gate_ok); J='$J'; gate_ok U1"
+msg="page contract: the gate refuses a line that keeps more than one answer, and says so"
+out=$(cd "$PG" && { gate_ok U1; rc=$?; echo "$out"; exit $rc; }); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'more than one answer kept'" "$out"
+answer $note "n = n.replace('— built / untouched', '— departed')"
+git commit -qam "bare departed"
+msg="page contract: the gate refuses departed with no why"
+out=$(cd "$PG" && { gate_ok U1; rc=$?; echo "$out"; exit $rc; }); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'departed needs its why'" "$out"
 
 cd "$PG" && mkdir -p docs/old docs/inv docs/after docs/nolead docs/hardware docs/misc
 printf '# Old\n\n## Now\nx\n\n## Rules\n### 1.1 y\n\n## Checks\n- 1.1 review\n' > docs/old/old.md
@@ -2820,6 +2833,16 @@ msg="page contract: a misplaced page with an Invariants section is a page, given
 expect_pass pc "assert h['docs/misc/x.md']['kind'] == 'page' and h['docs/misc/x.md']['to'] == 'docs/x/x.md', h"
 msg="page contract: survey prints them under their own heading"
 expect_pass sh -c "$J survey | grep -A9 '^Pages off the page contract' | grep -q '^  docs/old/old.md: old contract — convert'"
+
+PU="$T/page-template"; pcnew "$PU" && rm .jig/docs-page.md && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+msg="page contract: update installs .jig/docs-page.md in a repo that lacks it, and a rerun is up to date"
+$UP --apply >/dev/null 2>&1; git add -A && git commit -qm update
+expect_pass sh -c "cmp -s .jig/docs-page.md '$P/jig/docs-page.md' && $UP | grep -qx 'up to date'"
+msg="page contract: a solo commit on trunk that deletes an Undefined entry still gets its line"
+mkdir -p src docs/s && printf 'x = 1\n' > src/s.py && printf '# S\n\nS is.\n\n## Undefined\n\n- Sync — parked 2026-11-01.\n' > docs/s/s.md
+board "b['docmap'] = {'docs/s/s.md': ['src/**']}" && git add -A && git commit -qm s
+printf 'x = 2\n' > src/s.py && printf '# S\n\nS is, and syncs.\n' > docs/s/s.md && git commit -qam "sync built" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
+expect_pass grep -qF 'Undefined in docs/s/s.md: "Sync' .jig/handoffs/main-*.md
 }
 
 UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes agents_lines page_contract"

@@ -110,7 +110,8 @@ nothing, and a new file opening `-- step 18` takes 18. `"unique": true` is for n
 must also appear once: a second `SCHEMA_VERSION = 17` where trunk has one is refused as "17
 already exists". It is off unless set, because some numbers rightly appear more than once. It
 applies working alone too, with no job open: there is nobody to take a number from, but a
-second 17 still breaks.
+second 17 still breaks. A pattern that captures only the whole part of a dotted number counts
+`17.2` as 17, so a dotted number under a whole number trunk already has takes nothing.
 
 `--reserve <counter>` hands the job max(the highest on trunk, the highest an open job
 holds) + 1, so two jobs open at once never get the same number. `jig reserve <job> <counter>`
@@ -130,8 +131,8 @@ once.
 
 A page describes what is built: what is true of its system on trunk today, in present-tense
 prose. It is not a rulebook; this file holds the rules about documentation, and no page
-restates them. Every page, in this order (jig's docs page template, `templates/docs-page.md`,
-is the skeleton):
+restates them. Every page, in this order (`.jig/docs-page.md`, which `jig update` keeps
+current, is the skeleton):
 
 1. **A lead paragraph**, with no heading of its own: what the system is and why it exists.
 2. **Body sections**, named for the system's own parts — the nouns its code has (Schema,
@@ -221,9 +222,11 @@ checklist into the note. A moved file asks the page that covered its old path to
 asks whether the page still describes the code: it is either ticked as updated — the stale
 sentences edited, deleting text included — or says why none went stale. Each entry under
 `## Undefined` on a covering page gets a line of its own, answered **built**, **untouched**,
-or **departed: <why>**. Built means moved, not copied: the work's description enters the body
-and the entry is deleted in the same change, and the gate refuses a built entry still on the
-page. `jig gate` refuses while a line is unanswered; untouched and departed are answers.
+or **departed: <why>**, with anything after the answer the answerer's to add. Built means
+moved, not copied: the work's description enters the body and the entry is deleted in the same
+change; the gate counts the page's entries and refuses when fewer are gone than were answered
+built, so an entry reworded in place is still there. `jig gate` refuses while a line is
+unanswered; untouched and departed are answers.
 
 Ownership comes from `docmap` in `config.json`:
 
@@ -233,8 +236,8 @@ Ownership comes from `docmap` in `config.json`:
 
 `docmap` can name any file, config such as `sdkconfig` included; a page is asked about
 whenever a file it names changes. A changed source file nothing covers is listed as
-`UNOWNED` — add it to `docmap`, starting a new page from jig's docs page template
-(`templates/docs-page.md`), or answer why it needs no page.
+`UNOWNED` — add it to `docmap`, starting a new page from `.jig/docs-page.md`, or answer why
+it needs no page.
 
 ## Sync
 

@@ -196,7 +196,7 @@ workstream, or nothing — in the trunk checkout:
 
 ```sh
 python3 .jig/jig.py open <name> --branch <its branch> --worktree <where it lives> \
-    --reserve schema=<held> section=<held> --owns <its owns> --shares <its shares> \
+    --reserve schema=<held> --owns <its owns> --shares <its shares> \
     --after <its after> --state <its state>
 ```
 

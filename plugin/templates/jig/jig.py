@@ -445,10 +445,10 @@ def next_number(board: "Board", counter: str, spec: dict) -> int:
 
 def reserved_refusals(root: Path, board: "Board", holds: dict[str, set[int]],
                       who: str, staged: bool, takes: bool = True) -> list[str]:
-    """R6. A scarce number (migration step, section number) belongs to one job.
+    """R6. A scarce number (migration step, schema version) belongs to one job.
     A number is taken when the base has no match for it in the counter's files and the
-    index adds one. A second rule under a section the base already has takes nothing, and
-    editing or moving a heading nets to zero. A counter with "unique" also refuses a number
+    index adds one. A dotted number under a whole number the base already has takes nothing,
+    and editing or moving a match nets to zero. A counter with "unique" also refuses a number
     whose count rises past one: a second migration 17 is a collision of its own. Numbers
     compare as ints, so D-002 is the 2 a job holds; a refusal shows the text it matched.
     With TAKES false (no job open, so nobody to collide with) only "unique" is checked."""
@@ -1164,9 +1164,27 @@ def undefined_entries(text: str) -> list[str]:
 
 
 # The fold-in line for one Undefined entry. The gate parses it back, so a change here
-# changes UNDEF_LINE too.
+# changes UNDEF_LINE too. The quoted entry is for the reader: the gate counts entries rather
+# than matching their text, so a reworded entry can't pass for a deleted one.
 UNDEF_KEY = 60
-UNDEF_LINE = re.compile(r'Undefined in (\S+): "(.*)" — (.*?)\s*$')
+UNDEF_LINE = re.compile(r'Undefined in (\S+): "(.*?)" — (.*?)\s*$')
+
+
+def undef_answer(answer: str) -> str:
+    """Why an Undefined line's answer doesn't count yet, or "" when it does: built,
+    untouched or departed (with its why), in any case, and anything after it."""
+    a = answer.strip()
+    if not a or "___" in a:
+        return "blank: keep one of built, untouched, departed: <why>"
+    if re.match(r"\w+\s*/", a):
+        return "more than one answer kept: keep one"
+    word = re.match(r"[A-Za-z]+", a)
+    kind = word.group(0).lower() if word else ""
+    if kind not in ("built", "untouched", "departed"):
+        return "not built, untouched or departed"
+    if kind == "departed" and not re.search(r"\w", a[len(kind):]):
+        return "departed needs its why"
+    return ""
 
 
 def undef_key(entry: str) -> str:
@@ -1176,7 +1194,8 @@ def undef_key(entry: str) -> str:
 def foldin_lines(root: Path, board: Board, branch: str) -> str:
     """One line per documentation page covering the code this branch changed."""
     trunk = board.trunk
-    rng = f"{trunk}...HEAD" if branch and branch != trunk else "HEAD~1..HEAD"
+    base = trunk if branch and branch != trunk else "HEAD~1"
+    rng = f"{trunk}...HEAD" if base == trunk else "HEAD~1..HEAD"
     # Both sides of a rename: the page that covered the old path describes it there.
     changed = [f for f in git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
                               rng).splitlines()
@@ -1197,12 +1216,12 @@ def foldin_lines(root: Path, board: Board, branch: str) -> str:
     for page, fs in sorted(pages.items()):
         out.append(f"- [ ] {page} — updated / no change because ___   ({len(fs)} file"
                    f"{'s' if len(fs) > 1 else ''})")
-        # The page as trunk has it: an entry this branch already deleted was built here,
+        # The page before this change: an entry the change already deleted was built here,
         # and still needs its answer.
-        text = git("show", f"{trunk}:{page}") or git("show", f"HEAD:{page}")
+        text = git("show", f"{base}:{page}") or git("show", f"HEAD:{page}")
         out += [f'- [ ] Undefined in {page}: "{undef_key(e)}" — built / untouched / departed: ___'
                 for e in undefined_entries(text)]
-    out += [f"- [ ] UNOWNED {f} — add to docmap (a new page starts from jig's templates/docs-page.md), "
+    out += [f"- [ ] UNOWNED {f} — add to docmap (a new page starts from {DIR}/docs-page.md), "
             "or no page needed because ___"
             for f in sorted(unowned)]
     return "\n".join(out)
@@ -1329,26 +1348,39 @@ def cmd_gate(root: Path, args) -> int:
                       and (l.strip().startswith("- [ ]") or "___" in l)]
         m = re.search(r"^Commit: (\w+)", body, re.M)
         at = m.group(1) if m else branch
-        # One answer per Undefined line; built must have taken the entry off the page.
-        still = []
+        # Each Undefined line needs one answer; anything after it is the answerer's to say.
+        built: dict[str, list[str]] = {}
         for l in sec.group(1).splitlines():
             u = UNDEF_LINE.search(l) if l.strip().startswith("- [") else None
             if not u or l in open_lines:
                 continue
-            page, key, answer = u.groups()
-            if not re.fullmatch(r"built|untouched|departed: *\S.*", answer):
-                open_lines.append(l)
-            elif answer == "built" and any(undef_key(e) == key for e in
-                                           undefined_entries(git("show", f"{at}:{page}") or "")):
-                still.append(l)
+            page, _, answer = u.groups()
+            why = undef_answer(answer)
+            if why:
+                open_lines.append(f"{l.strip()}   <- {why}")
+            elif answer.lower().startswith("built"):
+                built.setdefault(page, []).append(l)
+        # Built means moved: the page lost one entry per built answer since the job left trunk.
+        # Counted, not matched, so an entry reworded in place still counts as there.
+        base = git("merge-base", trunk, at) or trunk
+        if base == git("rev-parse", at):
+            base = f"{at}~1"
+        still = []
+        for page, ls in sorted(built.items()):
+            before = len(undefined_entries(git("show", f"{base}:{page}") or ""))
+            now = len(undefined_entries(git("show", f"{at}:{page}") or ""))
+            if now > before - len(ls):
+                still.append(f"{page}: {len(ls)} answered built, but Undefined went from "
+                             f"{before} entries to {now}")
         if open_lines:
             print(f"the fold-in in {note} is unanswered:", file=sys.stderr)
             for l in open_lines[:10]:
                 print(f"  {l.strip()}", file=sys.stderr)
             return 1
         if still:
-            print(f"built means moved, not copied: these entries are still under Undefined at "
-                  f"{at[:12]}; delete each in the change that built it:", file=sys.stderr)
+            print(f"built means moved, not copied: at {at[:12]} Undefined still holds what was "
+                  "answered built. Delete each built entry (rewording it keeps it there), or "
+                  "answer it untouched or departed:", file=sys.stderr)
             for l in still[:10]:
                 print(f"  {l.strip()}", file=sys.stderr)
             return 1
@@ -3538,7 +3570,7 @@ LAYOUT = [
     ("docs/", ["jig/docs/"]),
 ]
 # Written from the running copy, never renamed: their content is jig's, not the repo's.
-TOOL_FILES = (f"{DIR}/jig.py", f"{DIR}/RULES.md")
+TOOL_FILES = (f"{DIR}/jig.py", f"{DIR}/RULES.md", f"{DIR}/docs-page.md")
 # jig's folder under its old names. Nothing moves by this alone — a file there that no row
 # names stays and is flagged — but a board glob over the whole folder meant jig's folder.
 OLD_DIRS = ("jig/", ".aidev/", CLAUDE_LANE)
@@ -4322,7 +4354,8 @@ def cmd_update(root: Path, args) -> int:
                        f"both to each in {board_at} (\"reserve\": {{\"{blind[0]}\": {{\"pattern\": "
                        f"..., \"files\": [...]}}}}), then update again: the pattern is how jig "
                        "knows which numbers are taken")
-    sources = {f"{DIR}/jig.py": Path(__file__).resolve(), f"{DIR}/RULES.md": here / "RULES.md"}
+    sources = {f"{DIR}/jig.py": Path(__file__).resolve(), f"{DIR}/RULES.md": here / "RULES.md",
+               f"{DIR}/docs-page.md": here / "docs-page.md"}
     replace = []
     for dest, src in sources.items():
         if not src.exists():
