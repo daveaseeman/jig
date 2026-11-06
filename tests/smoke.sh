@@ -2318,6 +2318,82 @@ brow B4 'help page' 'gone' 'pointer' Open >> .jig/ledgers/BUFFER.md && git add -
 printf '# z\n\n- meta: buffered B4\n' > .jig/specs/z.md && git rm -q docs/z.md && git add -A; expect_pass git commit -qm "docs: drop z"
 }
 
+# ---------------------------------------------------------------- pointers
+sec_pointers() {
+# Numbered pointers: `§2` names `## 2. Motes`, as the Documentation rule cites rules. pp is
+# today's pararepo; po is one on v0.6.0, whose P2 let removals through, for update to report.
+PM="$T/pm"; pcnew "$PM" && git add -A && git commit -qm init && $J init --meta --name pm >/dev/null
+printf '\n## Pointers\n`pp/docs/x.md §2.1`, `pp/docs/x.md §2`, `pp/docs/x.md § 10`, `pp/docs/x.md § 3` and `pp/docs/x.md §1`.\nThe rules: `pp/docs/r.md §1`. Gone: `pp/docs/g.md § Gone`.\nThe prose pp/docs/x.md §1.2 (cited by path, for now)\nTwice: `pp/docs/none.md § A` and `pp/docs/none.md § B`.\nWords, not numbers: `pp/docs/x.md § 2-factor` and `pp/docs/x.md § 2.a`.\nThe old app: `po/docs/x.md §2`, `po/docs/w.md §4`, `po/docs/r.md §1` and `po/docs/ui.md §4`.\nIts theme: po/docs/ui.md § Colors for the theme\n' >> GLOSSARY.md
+printf -- '- GLOSSARY: Pointers\n' >> CHANGELOG.md && git add -A && git commit -qm "GLOSSARY: Pointers" && $J release >/dev/null
+# docs <dir>: the pages the metarepo points into
+docs() { mkdir -p api docs && printf 'x=1\n' > api/a.py && printf '# X\n\n## 2. Motes\n\n### 2.1 Identity\n\n## 10. Open questions\n' > docs/x.md \
+  && printf '# R\n\n## Rules\n\n### 1.1 One\n' > docs/r.md && printf '# G\n\n## Other\n' > docs/g.md && printf '# W\n\n## 4. Keys\n\n## 40 Other\n' > docs/w.md; }
+PP="$T/pp"; pcnew "$PP" && docs && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para pm --location "$PM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
+G=".jig/meta-cache/GLOSSARY.md points to"
+msg="pointers: sync resolves §2.1, §2 and § 10 by number, and reports § 3 and §1, which ## 10. doesn't satisfy"
+out=$($J sync 2>&1)
+expect_pass sh -c "! echo \"\$0\" | grep -qE 'docs/x.md § (2|2.1|10),' && echo \"\$0\" | grep -qx '$G docs/x.md § 3, which docs/x.md has no heading for' && echo \"\$0\" | grep -qx '$G docs/x.md § 1, which docs/x.md has no heading for'" "$out"
+msg="pointers: §1 under ## Rules with ### 1.1 is dangling: 1.1 is not heading 1"
+expect_pass sh -c "echo \"\$0\" | grep -qx '$G docs/r.md § 1, which docs/r.md has no heading for'" "$out"
+msg="pointers: a prose §1.2 (… prints its number whole, and two pointers into a missing file print one line"
+expect_pass sh -c "echo \"\$0\" | grep -qx '$G docs/x.md § 1.2, which docs/x.md has no heading for' && test \$(echo \"\$0\" | grep -c 'docs/none.md') = 1" "$out"
+msg="pointers: § 2-factor and § 2.a are words, not heading 2, so they dangle"
+expect_pass sh -c "echo \"\$0\" | grep -qx '$G docs/x.md § 2-factor, which docs/x.md has no heading for' && echo \"\$0\" | grep -qx '$G docs/x.md § 2.a, which docs/x.md has no heading for'" "$out"
+msg="pointers P2: renaming a file only numbered pointers name is refused, naming the pointer"
+git mv docs/x.md docs/y.md; out=$(git commit -qm "docs: x → y" 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'points to docs/x.md, which'" "$out"
+msg="pointers P2: deleting ### 2.1 Identity is refused, naming docs/x.md § 2.1"
+sed -i.bak '/^### 2.1 Identity$/d' docs/x.md && rm docs/x.md.bak && git add -A; out=$(git commit -qm "docs: drop 2.1" 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'points to docs/x.md § 2.1'" "$out"
+msg="pointers P2: renaming a file whose one pointer already dangled is refused: the file is lost"
+git mv docs/r.md docs/s.md; out=$(git commit -qm "docs: r → s" 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'points to docs/r.md, which'" "$out"
+msg="pointers P2: deleting a file whose one pointer (§ Gone) already dangled is refused"
+git rm -q docs/g.md; out=$(git commit -qm "docs: drop g" 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'points to docs/g.md, which'" "$out"
+msg="pointers P2: an edit that leaves § Gone missing commits"
+printf '\n## More\n' >> docs/g.md && git add -A; expect_pass git commit -qm "docs: g more"
+msg="pointers P2: the x.md rename commits with meta: buffered <id>"
+mkdir -p .jig/ledgers .jig/specs && cp "$P/ledgers/BUFFER.md" .jig/ledgers/BUFFER.md \
+  && printf '| B1 | %s: the pointer to docs/x.md | docs/y.md (rename) | owner, 2026-11-05 | Open |\n' "$G" >> .jig/ledgers/BUFFER.md \
+  && git add -A && git commit -qm "buffer: B1" >/dev/null
+printf '# y\n\n- meta: buffered B1\n' > .jig/specs/y.md && git mv docs/x.md docs/y.md && git add -A; expect_pass git commit -qm "docs: x → y"
+
+# The cleanup: po runs v0.6.0, whose P2 never resolved a number.
+PO="$T/po"; mkdir -p "$PO/.t" && git -C "$JR" archive v0.6.0 plugin/templates | tar -x -C "$PO/.t"
+cd "$PO" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r .t/plugin/templates/jig .jig && cp .t/plugin/templates/AGENTS.md .t/plugin/templates/CLAUDE.md . && rm -rf .t
+docs && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para pm --location "$PM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
+msg="pointers: under v0.6.0's hook, renaming x.md and deleting ## 4. Keys both commit (the bug)"
+git mv docs/x.md docs/y.md && git commit -qm "docs: x → y" >/dev/null 2>&1; a=$?; mv_hash=$(git rev-parse --short HEAD)
+sed -i.bak '/^## 4. Keys$/d' docs/w.md && rm docs/w.md.bak && git add -A && git commit -qm "docs: drop keys" >/dev/null 2>&1; b=$?; keys_hash=$(git rev-parse --short HEAD)
+expect_pass test "$a$b" = 00
+# One commit drops ## Colors and ## 4: Keys and renames ## Values to ## Keystone, answered by a spec.
+printf '# UI\n\n## Colors\n\n## Values\n\n## 4: Keys\n' > docs/ui.md && git add -A && git commit -qm "docs: ui" >/dev/null 2>&1
+mkdir -p .jig/specs && printf '# ui\n\n- meta: none — smoke\n' > .jig/specs/ui.md && printf '# UI\n\n## Keystone\n' > docs/ui.md
+git add -A && git commit -qm "docs: ui rework" >/dev/null 2>&1; ui_hash=$(git log -1 --format=%h --grep='^docs: ui rework$')
+msg="pointers: update's dry run lists Metarepo pointers: the rename and the heading, each with its commit and a BUFFER.md row"
+out=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^Metarepo pointers' && echo \"\$0\" | grep 'docs/x.md, which' | grep \"$mv_hash\" | grep 'docs/y.md' | grep -q 'BUFFER.md' && echo \"\$0\" | grep 'docs/w.md § 4,' | grep \"$keys_hash\" | grep -q 'BUFFER.md'" "$out"
+msg="pointers: update finds the commit that removed a prose heading (§ Colors for the theme) and a 4: heading, by the resolver"
+expect_pass sh -c "test -n '$ui_hash' && echo \"\$0\" | grep 'docs/ui.md § Colors for the theme,' | grep \"$ui_hash\" | grep -q 'BUFFER.md' && echo \"\$0\" | grep 'docs/ui.md § 4,' | grep \"$ui_hash\" | grep -q 'BUFFER.md'" "$out"
+msg="pointers: update says this repo never had docs/r.md § 1, names jig propose, offers no row, and changes nothing"
+expect_pass sh -c "echo \"\$0\" | grep 'docs/r.md § 1,' | grep 'never had it' | grep -q 'jig propose' && ! echo \"\$0\" | grep 'docs/r.md § 1,' | grep -q 'BUFFER' && test -z \"\$(git status --porcelain)\"" "$out"
+msg="pointers: with an Open row naming docs/x.md committed, update offers no row for it, and --apply leaves BUFFER.md alone"
+mkdir -p .jig/ledgers && cp "$P/ledgers/BUFFER.md" .jig/ledgers/BUFFER.md \
+  && printf '| B1 | %s: the pointer to docs/x.md | docs/y.md, %s | owner, 2026-11-05 | Open |\n' "$G" "$mv_hash" >> .jig/ledgers/BUFFER.md \
+  && printf '| B2 | %s: the pointer to docs/w.md § 9 | deleted, abc1234 | owner, 2026-11-05 | Open |\n' "$G" >> .jig/ledgers/BUFFER.md \
+  && git add -A && git commit -qm "buffer: B1, B2" >/dev/null
+out=$($UP 2>&1); before=$(shasum .jig/ledgers/BUFFER.md); $UP --apply >/dev/null 2>&1
+expect_pass sh -c "echo \"\$0\" | grep 'docs/x.md, which' | grep -q 'Open row B1' && ! echo \"\$0\" | grep 'docs/x.md, which' | grep -q 'offer a row' && test \"\$(shasum .jig/ledgers/BUFFER.md)\" = '$before' && test -z \"\$(git status --porcelain -- .jig/ledgers/BUFFER.md)\"" "$out"
+msg="pointers: an Open row about another heading of the file (w.md § 9) doesn't stand in for § 4"
+expect_pass sh -c "echo \"\$0\" | grep 'docs/w.md § 4,' | grep -q 'offer a row'" "$out"
+msg="pointers: RULES.md has the number rule and P2's lost-file rule"
+expect_pass sh -c "grep -q '§ 2\` is \`## 2. Motes\`, not \`### 2.1\`' '$P/jig/RULES.md' && grep '^| P2 |' '$P/jig/RULES.md' | grep -q 'a lost file counts even when its heading was already missing'"
+}
+
 # ---------------------------------------------------------------- feedback
 sec_feedback() {
 export JIG_CONFIG="$T/fb/repos.json"      # its feedback/ fallback sits beside it, never the user's
@@ -2465,7 +2541,68 @@ expect_pass sh -c "echo \"\$0\" | grep -q '^      .jig/meta-cache/DECISIONS.md p
 }
 
 SLOW="pararepo_commands entry_globs report_fixes sync_buffer"
-UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer feedback homes"
+# ---------------------------------------------------------------- a / in a branch or job name
+sec_slash_names() {
+SL="$T/slash"; D=$(date +%F)
+mkdir -p "$SL" && cd "$SL" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p src && printf 'x=1\n' > src/a.py
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+
+git checkout -q -b a/b-c
+printf 'x=2\n' > src/a.py && git commit -qam work
+$J reviewed --tier 2 --effort 2 >/dev/null
+out=$($J handoff --spec .jig/specs/x.md 2>&1); rc=$?
+msg="slash: solo on a/b-c, handoff writes the flat .jig/handoffs/a-b-c-<date>.md and no subfolder"
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'wrote .jig/handoffs/a-b-c-$D.md' && test ! -e .jig/handoffs/a" "$out"
+foldin && git add -A && git commit -qm note
+head=$(git rev-parse HEAD~1)
+out=$($J gate 2>&1); rc=$?
+msg="slash: gate finds the note, exits 0, and never says the report's 'has filed no handoff note'"
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'a/b-c: gate ${head:0:12} from .jig/handoffs/a-b-c-$D.md on a/b-c' && ! echo \"\$0\" | grep -q 'has filed no handoff note'" "$out"
+msg="slash: the gate's scratch is the flat gate-a-b-c, and its printed cleanup leaves worktrees/ empty"
+rm_line=$(echo "$out" | grep -o 'git worktree remove --force [^ ]*' | head -1)
+expect_pass sh -c "test -d .git/jig/worktrees/gate-a-b-c && test '$rm_line' = 'git worktree remove --force .git/jig/worktrees/gate-a-b-c' && $rm_line && test -z \"\$(ls -A .git/jig/worktrees)\""
+
+# Branch a-b-c's note on a/b-c: one stem, another name in its header.
+printf '# Handoff: a-b-c\n\nCommit: %s\n' "$(git rev-parse HEAD~2)" > ".jig/handoffs/a-b-c-$D-2.md"
+git add -A && git commit -qm "a-b-c's note"
+out=$($J gate 2>&1); rc=$?
+git worktree remove --force .git/jig/worktrees/gate-a-b-c 2>/dev/null
+msg="slash: a note whose header names a-b-c is not a/b-c's, so gate still takes a-b-c-<date>.md"
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'a/b-c: gate ${head:0:12} from .jig/handoffs/a-b-c-$D.md on a/b-c'" "$out"
+
+git checkout -q main
+$J open a/b >/dev/null 2>&1 && git add -A && git commit -qm "open a/b"
+(cd .git/jig/worktrees/a/b && printf 'y=1\n' > src/b.py && git add -A && git commit -qm b \
+  && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && git add -A && git commit -qm note)
+msg="slash: open refuses job a-b while a/b is open, naming the shared file name"
+out=$($J open a-b 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'open job a/b share the file name a-b' && ! python3 -c \"import json, sys; sys.exit('a-b' not in json.load(open('.jig/jobs.json')))\"" "$out"
+msg="slash: job a/b's handoff writes .jig/handoffs/a-b-<date>.md, and status on trunk counts it"
+expect_pass sh -c "git show a/b:.jig/handoffs/a-b-$D.md | head -1 | grep -qx '# Handoff: a/b' && $J status | grep -q '^  a/b .*handoffs:1 '"
+
+SU="$T/slash-up"
+mkdir -p "$SU" && cd "$SU" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init && $J init >/dev/null
+mkdir -p .jig/handoffs/a .jig/handoffs/x
+printf '# Handoff: a/b-c\n' > .jig/handoffs/a/b-c-2026-01-01.md
+printf '# Handoff: x/y\n' > .jig/handoffs/x/y-2026-01-01.md
+printf '# Handoff: x-y\n' > .jig/handoffs/x-y-2026-01-01.md
+git add -A && git -c core.hooksPath=/dev/null commit -qm "notes the bug left"
+out=$($UP 2>&1)
+msg="slash: update's dry run flattens both nested notes, a clash taking -2, and changes nothing"
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Moves/,/^\$/p' > m && grep -qx '  .jig/handoffs/a/b-c-2026-01-01.md → .jig/handoffs/a-b-c-2026-01-01.md' m && grep -qx '  .jig/handoffs/x/y-2026-01-01.md → .jig/handoffs/x-y-2026-01-01-2.md' m && rm m && test -z \"\$(git status --porcelain)\"" "$out"
+$UP --apply >/dev/null 2>&1
+msg="slash: update --apply stages both renames, removes the emptied subfolders, and a rerun is up to date"
+expect_pass sh -c "$(declare -f renamed); renamed .jig/handoffs/a/b-c-2026-01-01.md .jig/handoffs/a-b-c-2026-01-01.md && renamed .jig/handoffs/x/y-2026-01-01.md .jig/handoffs/x-y-2026-01-01-2.md && test ! -e .jig/handoffs/a && test ! -e .jig/handoffs/x && $UP | grep -qx 'up to date'"
+# An older tool's handoff folder that update moves here whole, subfolders and all: not the bug's.
+ax "$T/slash-ax" "mkdir -p .aidev/handoffs/lane-a && printf '# r1\n' > .aidev/handoffs/lane-a/round-1.md && printf '# Handoff: lane-a\n' > .aidev/handoffs/lane-a/lane-a-2026-01-01.md"
+$UP --apply >/dev/null 2>&1; git add -A && git -c core.hooksPath=/dev/null commit -qm update
+msg="slash: a subfolder update moved from .aidev/handoffs/ stays nested, and a second update is up to date"
+expect_pass sh -c "test -f .jig/handoffs/lane-a/round-1.md && test -f .jig/handoffs/lane-a/lane-a-2026-01-01.md && $UP | grep -qx 'up to date'"
+}
+
+UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers feedback slash_names homes"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file

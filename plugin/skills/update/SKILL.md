@@ -46,6 +46,11 @@ its own; then make every line the proposal names in one commit — the `git mv`s
 `contract_paths`, the stale lines and, in a pararepo, a `BUFFER.md` row per cached pointer. Carry
 out each finding on a yes. Never propose adding a line that restates `.jig/RULES.md`: point at it.
 
+**Metarepo pointers**, in a pararepo, are the cached metarepo pointers that dangle. Show each
+line. One that names the commit that removed what it points to offers a `.jig/ledgers/BUFFER.md`
+row: ask, and add the row as offered only on a yes (the next `jig release` proposes it). One the
+repo never had is the metarepo's to fix, by `jig propose`. Never edit the metarepo here.
+
 ## After `--apply`
 
 `update` stages its changes, commits nothing, and runs `.jig/scripts/check.sh`. Then:
