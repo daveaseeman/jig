@@ -1,19 +1,4 @@
 {
-  "doc-homes": {
-    "spec": ".jig/specs/bug-doc-homes.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/skills/survey/SKILL.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh",
-      "plugin/skills/update/SKILL.md"
-    ],
-    "reserved": {}
-  },
   "p2-removals": {
     "spec": ".jig/specs/bug-p2-removals.md",
     "state": "claimed",
