@@ -391,8 +391,8 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
                 out.append(f"R4 {p} is owned by job {on}: ask the hubnode before touching it")
                 break
         else:
-            # R3 only this job's files, or a file new to the repository. A removed path
-            # existed on trunk, so it is never new; a rename's new side still is.
+            # R3 only this job's files, or a file new to the repository. Removing a file is
+            # changing it: one trunk has must be declared; one only this job added never was trunk's.
             if matches(p, owns) or matches(p, shares) or matches(p, common):
                 continue
             if not existed_on_trunk(trunk, p):
@@ -768,7 +768,7 @@ def cmd_open(root: Path, args) -> int:
     for p in owns:
         for on in board.open_jobs():
             # A file the job moved away is as much its change as one it edited.
-            changed = git("diff", "--name-only", "--no-renames",
+            changed = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
                           f"{board.trunk}...{board.branch(on)}").splitlines()
             if any(matches(c, [p]) for c in changed):
                 conflicts.append(f"{p} (changed by open job {on})")
@@ -1063,14 +1063,15 @@ def changed_since(commit: str, branch: str, board: "Board") -> list[str]:
                 # No replay to compare with: everything the merge changed counts as the job's.
                 tree, conflicted = parents[0], []
             files = []
-            for f in git("diff", "--name-only", tree, c).splitlines():
+            for f in git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", tree, c).splitlines():
                 if f in conflicted and matches(f, appends):
                     text, ok = resolved_appends(blob(tree, f))
                     if ok and text == blob(c, f):
                         continue
                 files.append(f)
         else:
-            files = git("diff", "--name-only", parents[0], c).splitlines()
+            files = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
+                        parents[0], c).splitlines()
         out += [f for f in files if f and not f.startswith(f"{DIR}/handoffs/") and f not in out]
     return out
 
@@ -2831,6 +2832,8 @@ def contract_removals(root: Path, trunk: str) -> list[str]:
     rows = buffer_rows(at_rev(trunk, BUFFER))
     # The Metarepo pointers block already speaks for a path a cached pointer names.
     pointed = {p for _, p, _, _, _, _ in dangling(root)}
+    # A path trunk has again, restored or re-added, was put back: nothing is owed.
+    back = set(git("-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", trunk).splitlines())
     try:
         today = json.loads(at_rev(trunk, PARA) or "{}").get("contract_paths") or []
     except ValueError:
@@ -2854,7 +2857,7 @@ def contract_removals(root: Path, trunk: str) -> list[str]:
             globs = (json.loads(raw) if raw else {}).get("contract_paths") or []
         except ValueError:
             continue
-        gone = [(o, n) for o, n in removed_by(commit) if matches(o, globs)
+        gone = [(o, n) for o, n in removed_by(commit) if matches(o, globs) and o not in back
                 and not any(o == p or o.startswith(f"{p}/") for p in pointed) and not naming_row(rows, o, states=BUFFER_STATES)]
         if not gone:
             continue
@@ -2878,6 +2881,22 @@ def contract_removals(root: Path, trunk: str) -> list[str]:
         for n in [n for _, n in gone if n and not matches(n, today)]:
             text += f"; {n} isn't a contract path: add it to contract_paths if it still holds the contract"
         out.append(text)
+    return out
+
+
+def removal_blocks(root: Path, trunk: str, always: bool) -> list[str]:
+    """A pararepo update's Metarepo pointers and Contract removals blocks. ALWAYS, as a planned
+    update's report shows them; otherwise only a block with something in it, so a repo that is
+    up to date still hears of what an older P2 let through until it answers it."""
+    out = []
+    pointed = pointer_cleanup(root) if always or (root / CACHE).is_dir() else []
+    if pointed:
+        out += ["\nMetarepo pointers (from the cache as the last `jig sync` left it; update "
+                "changes none of them):", *(f"  {l}" for l in pointed)]
+    removed = contract_removals(root, trunk)
+    if removed or always:
+        out += ["\nContract removals (trunk commits an older P2 let take a contract path away "
+                "unanswered; update changes none of them):", *(f"  {l}" for l in removed or ["none"])]
     return out
 
 
@@ -4036,6 +4055,9 @@ def cmd_update(root: Path, args) -> int:
         print("up to date")
         for w in warnings:
             print(f"warning: {w}")
+        if board_at == CONFIG and (root / PARA).exists():
+            for line in removal_blocks(root, trunk, always=False):
+                print(line)
         return 0
     if refused:
         print(f"refused: the repo is behind this jig's layout ({board_at}, version "
@@ -4103,15 +4125,7 @@ def cmd_update(root: Path, args) -> int:
             for f, what in review:
                 print(f"  {f}: {what}")
         if board_at == CONFIG and (root / PARA).exists():
-            print("\nMetarepo pointers (from the cache as the last `jig sync` left it; update "
-                  "changes none of them):")
-            for line in pointer_cleanup(root):
-                print(f"  {line}")
-        if board_at == CONFIG and (root / PARA).exists():
-            print("\nContract removals (trunk commits an older P2 let take a contract path away "
-                  "unanswered; update changes none of them):")
-            for line in contract_removals(root, trunk) or ["none"]:
-                print(f"  {line}")
+            print("\n".join(removal_blocks(root, trunk, always=True)))
         template = here.parent / "AGENTS.md"
         if template.exists() and (root / "AGENTS.md").exists() and root.resolve() not in here.parents:
             diff = list(difflib.unified_diff(template.read_text().splitlines(),

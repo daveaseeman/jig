@@ -2439,7 +2439,8 @@ msg="removals R3: git rm src/ui/w.py in A commits"; git rm -q src/ui/w.py; expec
 msg="removals fold-in: a move asks the old page and the new, and UNOWNED names only the new path"
 mkdir -p lib tools/x && git mv src/ui/a.py lib/a.py && git mv tools/t.py tools/x/t.py && git commit -qm "move a, t"
 $J reviewed >/dev/null 2>&1; $J handoff >/dev/null 2>&1; note=$(cat .jig/handoffs/A-*.md 2>/dev/null)
-expect_pass sh -c "echo \"\$0\" | grep -q 'docs/ui/ui.md' && echo \"\$0\" | grep -q 'docs/lib/lib.md' && echo \"\$0\" | grep -q 'UNOWNED tools/x/t.py' && ! echo \"\$0\" | grep -q 'UNOWNED tools/t.py'" "$note"
+# ui.md counts src/ui/w.py, dropped earlier, and src/ui/a.py's old side: two files, not one.
+expect_pass sh -c "echo \"\$0\" | grep 'docs/ui/ui.md' | grep -q '(2 files)' && echo \"\$0\" | grep -q 'docs/lib/lib.md' && echo \"\$0\" | grep -q 'UNOWNED tools/x/t.py' && ! echo \"\$0\" | grep -q 'UNOWNED tools/t.py'" "$note"
 msg="removals open: jig open C --owns src/ui/a.py is refused, naming job A, which moved it"
 cd "$PJ"; out=$($J open C --spec t --owns src/ui/a.py 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'open job A'" "$out"
@@ -2448,7 +2449,7 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'open job A'" "$out"
 PO="$T/po"; mkdir -p "$PO/.t" && git -C "$JR" archive v0.6.0 plugin/templates | tar -x -C "$PO/.t"
 cd "$PO" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r .t/plugin/templates/jig .jig && cp .t/plugin/templates/AGENTS.md .t/plugin/templates/CLAUDE.md . && rm -rf .t
-mkf api/a.py api/b.py api/c.py api/d.py api/e.py && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkf api/a.py api/b.py api/c.py api/d.py api/e.py api/f.py && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 $J init --para rm --location "$RM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
 msg="removals: under v0.6.0's hook a move, a drop, an answered drop and a rowed drop all commit (the bug)"
 mkdir -p lib .jig/specs .jig/ledgers
@@ -2459,15 +2460,16 @@ cp "$P/ledgers/BUFFER.md" .jig/ledgers/BUFFER.md && printf '| B1 | the contract:
 git rm -q api/d.py && git add -A && git commit -qm "drop d" >/dev/null 2>&1; d=$?
 # v0.6.0 already refused losing a file a pointer names, so this one slipped past its hook another way.
 git rm -q api/e.py && git commit -q --no-verify -m "drop e" >/dev/null 2>&1; e=$?
-expect_pass test "$a$b$c$d$e" = 00000
+git rm -q api/f.py && git commit -qm "drop f" >/dev/null 2>&1 && git checkout -q HEAD~1 -- api/f.py && printf '# f\n\n- meta: none — smoke\n' > .jig/specs/f.md && git add -A && git commit -qm "restore f" >/dev/null 2>&1; f=$?
+expect_pass test "$a$b$c$d$e$f" = 000000
 out=$($UP 2>&1)
 removals=$(echo "$out" | sed -n '/^Contract removals/,/^$/p'); pointed=$(echo "$out" | sed -n '/^Metarepo pointers/,/^$/p')
 msg="removals: update's dry run lists the move with its hash, api/a.py → lib/a.py, that lib/a.py isn't a contract path, and a BUFFER.md row"
 expect_pass sh -c "echo \"\$0\" | grep \"$mv_hash\" | grep 'api/a.py → lib/a.py' | grep \"lib/a.py isn't a contract path\" | grep -q 'BUFFER.md'" "$removals"
 msg="removals: it lists the drop with its hash, api/b.py deleted, and a BUFFER.md row"
 expect_pass sh -c "echo \"\$0\" | grep \"$b_hash\" | grep 'api/b.py deleted' | grep -q 'BUFFER.md'" "$removals"
-msg="removals: no line for the answered drop (api/c.py) or the rowed one (api/d.py), and update changes nothing"
-expect_pass sh -c "! echo \"\$0\" | grep -qE 'api/(c|d).py' && test -z \"\$(git status --porcelain)\"" "$removals"
+msg="removals: no line for the answered drop (api/c.py), the rowed one (api/d.py) or the restored one (api/f.py), and update changes nothing"
+expect_pass sh -c "! echo \"\$0\" | grep -qE 'api/(c|d|f).py' && test -z \"\$(git status --porcelain)\"" "$removals"
 msg="removals: a contract path a cached pointer names (po/api/e.py) is under Metarepo pointers, not Contract removals"
 expect_pass sh -c "echo \"\$0\" | grep -q 'api/e.py' && ! echo \"\$1\" | grep -q 'api/e.py'" "$pointed" "$removals"
 msg="removals: with an Open row naming api/b.py committed, update offers no row for it, and --apply leaves BUFFER.md alone"
@@ -2475,6 +2477,9 @@ printf '| B2 | the contract: api/b.py | deleted, %s | owner, 2026-11-05 | Open |
 out=$($UP 2>&1); before=$(shasum .jig/ledgers/BUFFER.md); $UP --apply >/dev/null 2>&1
 removals=$(echo "$out" | sed -n '/^Contract removals/,/^$/p')
 expect_pass sh -c "echo \"\$0\" | grep -q \"$mv_hash\" && ! echo \"\$0\" | grep -q 'api/b.py' && test \"\$(shasum .jig/ledgers/BUFFER.md)\" = '$before'" "$removals"
+msg="removals: once the update is committed, update is up to date and still lists the unanswered move and the pointer"
+git add -A && git -c core.hooksPath=/dev/null commit -qm update; out=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -qx 'up to date' && echo \"\$0\" | sed -n '/^Contract removals/,/^\$/p' | grep -q \"$mv_hash\" && echo \"\$0\" | sed -n '/^Metarepo pointers/,/^\$/p' | grep -q 'api/e.py'" "$out"
 
 msg="removals M1: a metarepo branch removing a code file committed with --no-verify commits"
 cd "$RM" && printf 'x=1\n' > tool.py && git add tool.py && git commit -q --no-verify -m code
