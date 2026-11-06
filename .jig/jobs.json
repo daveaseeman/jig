@@ -14,7 +14,8 @@
       "tests/smoke.sh",
       "plugin/templates/*.md",
       "plugin/skills/update/SKILL.md",
-      "plugin/skills/adopt/SKILL.md"
+      "plugin/skills/adopt/SKILL.md",
+      "plugin/templates/jig/docs-page.md"
     ],
     "reserved": {}
   }
