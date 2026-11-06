@@ -47,9 +47,13 @@ its own; then make every line the proposal names in one commit — the `git mv`s
 out each finding on a yes. Never propose adding a line that restates `.jig/RULES.md`: point at it.
 
 The **AGENTS.md** lines are the few the template still needs there: the Rulebook line, a
-Commands line for a `.jig/scripts/` file the repo has, and a block jig retired to replace with
-the Rulebook line. The rest of `AGENTS.md` is the repo's wording; there is no template diff to
-read. Show each line with where it goes and make it only on a yes.
+Commands line for a `.jig/scripts/` file the repo has or this run adds, and a block jig retired
+to replace with the Rulebook line, or delete when the line is already outside it. Show each line
+with where it goes and make it only on a yes. Then read `AGENTS.md` against `.jig/RULES.md`: a
+line that restates what RULES.md holds (where documents live, the docs shape, a board's page,
+the job rules) is an old template line frozen in place; offer, one at a time, to replace it with
+the template's line that points at RULES.md instead. Every other line is the repo's wording,
+and there is no template diff to read.
 
 **Metarepo pointers**, in a pararepo, are the cached metarepo pointers that dangle. Show each
 line. One that names the commit that removed what it points to offers a `.jig/ledgers/BUFFER.md`

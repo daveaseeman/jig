@@ -3935,7 +3935,8 @@ def left_behind(root: Path, files: list[str], plan: dict, handled: list[str]) ->
     return out
 
 
-def files_to_review(root: Path, plan: dict, template: Path | None = None) -> list[tuple[str, str]]:
+def files_to_review(root: Path, plan: dict, template: Path | None = None,
+                    arriving: set[str] = frozenset()) -> list[tuple[str, str]]:
     """The repo's own files an old convention left behind, each with the edit proposed for
     it. update shows these and never applies them: they are the repo's."""
     back = {n: o for o, n in plan["moves"].items()}
@@ -3961,7 +3962,7 @@ def files_to_review(root: Path, plan: dict, template: Path | None = None) -> lis
         else:
             out.append((".claude/skills/_skill-template/", "differs from the old template, "
                         "so it is the repo's now: left as it is"))
-    return out + agents_lines(root, template)
+    return out + agents_lines(root, template, arriving)
 
 
 # AGENTS.md blocks jig cut from its template, by heading. A cut adds its heading here in the
@@ -3969,9 +3970,10 @@ def files_to_review(root: Path, plan: dict, template: Path | None = None) -> lis
 RETIRED_BLOCKS = ("## Lanes (parallel sessions)", "## Jobs (parallel sessions)")
 
 
-def agents_lines(root: Path, template: Path | None) -> list[tuple[str, str]]:
+def agents_lines(root: Path, template: Path | None, arriving: set[str]) -> list[tuple[str, str]]:
     """The lines of AGENTS.md that jig's template still needs there, each proposed by itself.
-    The rest of the file is the repo's to word: jig keeps no copy of its own to diff it with."""
+    The rest of the file is the repo's to word: jig keeps no copy of its own to diff it with.
+    `arriving` is what this run puts in place, so the run that adds a script proposes its line."""
     mine = root / "AGENTS.md"
     # In the repo that ships the template, it is the product, not a default for that repo.
     if (not (template and template.exists() and mine.exists())
@@ -3981,16 +3983,24 @@ def agents_lines(root: Path, template: Path | None) -> list[tuple[str, str]]:
     text = mine.read_text(errors="replace")
     lines = text.splitlines()
     rulebook = next((l for l in tpl if l.startswith("- Rulebook ")), "")
-    out = []
+    blocks = []
     for i, line in enumerate(lines):
         if line.strip() in RETIRED_BLOCKS:
             end = next((j for j in range(i + 1, len(lines)) if lines[j].startswith("## ")), len(lines))
             while end > i + 1 and not lines[end - 1].strip():
                 end -= 1
-            out.append(("AGENTS.md", f"lines {i + 1}–{end}, `{line.strip()}`, are a block jig "
-                        f"retired: replace it, heading to the next heading, with `{rulebook}`"))
-    # A citation of one section, `.jig/RULES.md` (Documentation), doesn't load the rulebook.
-    if not out and rulebook and not re.search(r"\.jig/RULES\.md(?!`?[ \t]*[(§])", text):
+            blocks.append((i, end))
+    outside = "\n".join(l for k, l in enumerate(lines) if not any(i <= k < e for i, e in blocks))
+    # A citation of one section, `.jig/RULES.md` (Documentation) or § Roles, doesn't load the
+    # rulebook; a plain mention or an aside, `.jig/RULES.md` (the rulebook), does.
+    has_rulebook = re.search(r"\.jig/RULES\.md(?!`?[ \t]*(?:\([A-Z]|§))", outside)
+    out = []
+    for i, end in blocks:
+        fix = ("delete it, heading to the next heading: the Rulebook line is already outside it"
+               if has_rulebook else f"replace it, heading to the next heading, with `{rulebook}`")
+        out.append(("AGENTS.md", f"lines {i + 1}–{end}, `{lines[i].strip()}`, are a block jig "
+                    f"retired: {fix}"))
+    if not blocks and rulebook and not has_rulebook:
         out.append(("AGENTS.md", f"names no `{DIR}/RULES.md`: add under ## Workflow `{rulebook}`"))
     in_commands = False
     for line in tpl:
@@ -3998,7 +4008,7 @@ def agents_lines(root: Path, template: Path | None) -> list[tuple[str, str]]:
             in_commands = line.strip() == "## Commands"
             continue
         for script in re.findall(r"\.jig/scripts/[\w.-]+", line) if in_commands else []:
-            if (root / script).exists() and script not in text:
+            if (script in arriving or (root / script).exists()) and script not in text:
                 out.append(("AGENTS.md", f"names no `{script}`: add under ## Commands `{line.strip()}`"))
     return out
 
@@ -4252,7 +4262,8 @@ def cmd_update(root: Path, args) -> int:
         if live and not f.endswith(".md"):
             warnings.append(f"{f} names a path jig moved ({len(live)} line{'s' if len(live) > 1 else ''} "
                             "outside comments): code or config the repo's checks may run")
-    review = files_to_review(root, plan, here.parent / "AGENTS.md")
+    arriving = set(plan["after"]) | set(replace) | {SETUP for s in steps if s[2] is add_setup}
+    review = files_to_review(root, plan, here.parent / "AGENTS.md", arriving)
     review += home_findings(root, plan, new_board, board_at, [f for f, _ in review])
 
     moved_board = board_at != CONFIG or not (root / JOBS).exists()

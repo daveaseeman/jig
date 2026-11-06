@@ -594,6 +594,8 @@ msg="update: the dry run lists docs/HARDWARE.md and the old skill template as re
 expect_pass sh -c "echo \"\$0\" | grep -q '^Repo files to review' && echo \"\$0\" | grep -q \"docs/HARDWARE.md: still the template's TODOs: remove it\" && echo \"\$0\" | grep -q '.claude/skills/_skill-template/: the old blank skill template, unchanged: remove it'" "$out"
 msg="update: no template diff; eaec973's Lanes block is proposed for replacement with the Rulebook line, by its lines"
 expect_pass sh -c "! echo \"\$0\" | grep -q 'against the template' && echo \"\$0\" | grep -q '^  AGENTS.md: lines 24–28, .## Lanes (parallel sessions)., are a block jig retired: replace it, heading to the next heading, with .- Rulebook .\.jig/RULES\.md.'" "$out"
+msg="update: on the run that adds .jig/scripts/setup.sh to eaec973's layout, its setup: line is proposed"
+expect_pass sh -c "test ! -e .jig/scripts/setup.sh && echo \"\$0\" | grep -q '^  AGENTS.md: names no .\.jig/scripts/setup\.sh.: add under ## Commands .- setup:'" "$out"
 msg="update: a HARDWARE.md that holds a board is proposed as docs/hardware/<board>.md"
 sed -i.bak 's/^- MCU \/ board: TODO.*/- MCU \/ board: ESP32-S3-DevKitC-1 (N16R8)/' docs/HARDWARE.md && rm docs/HARDWARE.md.bak
 git commit -qam board-page
@@ -2642,24 +2644,28 @@ expect_pass sh -c "echo \"\$0\" | grep -q '^      .jig/meta-cache/DECISIONS.md p
 
 # ---------------------------------------------------------------- update's AGENTS.md lines
 sec_agents_lines() {
-behind() { printf '# behind\n' >> .jig/jig.py && git commit -qam behind; }
-lines() { $UP 2>&1 | grep '^  AGENTS.md: '; }
+abehind() { printf '# behind\n' >> .jig/jig.py && git commit -qam behind; }
+alines() { $UP 2>&1 | grep '^  AGENTS.md: '; }
 AL="$T/agents-lines"; pcnew "$AL"
 sed -i.bak -e 's/`TODO`/`make filled-cmd`/' -e 's/^TODO: one sentence.*/A filled-project sentence./' -e '/^- setup:/d' AGENTS.md
 python3 -c "
 s = open('AGENTS.md').read(); a = s.index('## Firmware'); b = s.index('## Context')
 open('AGENTS.md', 'w').write(s[:a] + s[b:])"
 rm AGENTS.md.bak && test -f .jig/scripts/setup.sh && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
-behind
+abehind
 out=$($UP 2>&1)
 msg="agents lines: no template diff and none of the filled text; the one AGENTS.md line proposes the template's setup: line"
 expect_pass sh -c "! echo \"\$0\" | grep -qE 'against the template|filled-' && test \"\$(echo \"\$0\" | grep -c '^  AGENTS.md: ')\" = 1 && echo \"\$0\" | grep -q '^  AGENTS.md: names no .\.jig/scripts/setup\.sh.: add under ## Commands .- setup:  .\.jig/scripts/setup\.sh. (runs itself'" "$out"
 grep '^- setup:' "$P/AGENTS.md" > s.tmp && sed -i.bak '/^- check:/r s.tmp' AGENTS.md && rm s.tmp AGENTS.md.bak && git commit -qam setup
 msg="agents lines: with the setup: line restored, no AGENTS.md line prints"
-out=$(lines); expect_pass test -z "$out"
+out=$(alines); expect_pass test -z "$out"
+sed -i.bak 's/^- Rulebook .*/- Read `.jig\/RULES.md` (the rulebook) first./' AGENTS.md && rm AGENTS.md.bak && git commit -qam aside
+msg="agents lines: a mention of RULES.md with an aside after it counts as the Rulebook line"
+out=$(alines); expect_pass test -z "$out"
+git checkout -q HEAD~1 -- AGENTS.md && git commit -qm "rulebook back"
 sed -i.bak '/^- Rulebook /d' AGENTS.md && rm AGENTS.md.bak && git commit -qam "no rulebook"
 msg="agents lines: with the Rulebook line removed, it is proposed, though the docs lines cite RULES.md (Documentation)"
-out=$(lines); want="  AGENTS.md: names no \`.jig/RULES.md\`: add under ## Workflow \`$(grep '^- Rulebook ' "$P/AGENTS.md")\`"
+out=$(alines); want="  AGENTS.md: names no \`.jig/RULES.md\`: add under ## Workflow \`$(grep '^- Rulebook ' "$P/AGENTS.md")\`"
 expect_pass sh -c "grep -q 'RULES.md. (Documentation)' AGENTS.md && test \"\$0\" = \"\$1\"" "$out" "$want"
 git checkout -q HEAD~1 -- AGENTS.md && git commit -qm rulebook
 
@@ -2669,15 +2675,15 @@ open('AGENTS.md', 'w').write(s[:i] + '## Jobs (parallel sessions)\n- We split wo
 git commit -qam "a reworded Jobs block"
 n=$(grep -n '^## Jobs (parallel sessions)' AGENTS.md | cut -d: -f1)
 out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
-msg="agents lines: a reworded Jobs block is proposed for replacement with the Rulebook line, naming its lines; --apply leaves AGENTS.md alone"
-expect_pass sh -c "echo \"\$0\" | grep -q \"^  AGENTS.md: lines $n–$((n + 2)), .## Jobs (parallel sessions)., are a block jig retired: replace it, heading to the next heading, with .- Rulebook \" && test -z \"\$(git status --porcelain AGENTS.md)\"" "$out"
+msg="agents lines: a reworded Jobs block, the Rulebook line already under Workflow, is proposed for deletion, naming its lines; --apply leaves AGENTS.md alone"
+expect_pass sh -c "echo \"\$0\" | grep -q \"^  AGENTS.md: lines $n–$((n + 2)), .## Jobs (parallel sessions)., are a block jig retired: delete it, heading to the next heading: the Rulebook line is already outside it\" && test -z \"\$(git status --porcelain AGENTS.md)\"" "$out"
 git commit -qm update
-sed -i.bak 's/^## Jobs (parallel sessions)$/## Lanes (parallel sessions)/' AGENTS.md && rm AGENTS.md.bak && git commit -qam lanes && behind
+sed -i.bak 's/^## Jobs (parallel sessions)$/## Lanes (parallel sessions)/' AGENTS.md && rm AGENTS.md.bak && git commit -qam lanes && abehind
 msg="agents lines: the same block under Lanes is proposed too"
-out=$(lines); expect_pass sh -c "echo \"\$0\" | grep -q \"lines $n–$((n + 2)), .## Lanes (parallel sessions)., are a block jig retired\"" "$out"
+out=$(alines); expect_pass sh -c "echo \"\$0\" | grep -q \"lines $n–$((n + 2)), .## Lanes (parallel sessions)., are a block jig retired\"" "$out"
 sed -i.bak 's/^## Lanes (parallel sessions)$/## Jobs we run/' AGENTS.md && rm AGENTS.md.bak && git commit -qam "our own jobs"
 msg="agents lines: a repo's own ## Jobs we run gets no proposal"
-out=$(lines); expect_pass sh -c "test -z \"\$0\" && grep -q '^## Jobs we run' AGENTS.md" "$out"
+out=$(alines); expect_pass sh -c "test -z \"\$0\" && grep -q '^## Jobs we run' AGENTS.md" "$out"
 }
 
 SLOW="pararepo_commands entry_globs report_fixes sync_buffer"
