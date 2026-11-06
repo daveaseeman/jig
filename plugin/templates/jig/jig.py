@@ -7,6 +7,7 @@ rules it is judged by. Stdlib only.
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import json
 import os
@@ -1164,9 +1165,24 @@ def undefined_entries(text: str) -> list[str]:
 
 
 # The fold-in line for one Undefined entry. The gate parses it back, so a change here
-# changes UNDEF_LINE too. The quoted entry is for the reader: the gate counts entries rather
-# than matching their text, so a reworded entry can't pass for a deleted one.
+# changes UNDEF_LINE too.
 UNDEF_KEY = 60
+# How alike a new Undefined entry's name must be to a built one's to be that entry reworded.
+UNDEF_CLOSE = 0.6
+
+
+def undef_name(entry: str) -> str:
+    """What was parked, without the where-it-stops and the date every entry shares: compared
+    whole, any two entries in the template's shape look alike."""
+    head = entry.split(" — ", 1)[0] if " — " in entry else entry
+    return re.sub(r"[;,.]?\s*parked \d{4}-\d\d-\d\d\.?\s*$", "", head).strip().lower()
+
+
+def undef_reworded(a: str, b: str) -> bool:
+    """B is A reworded: one name holds the other, or they are close in wording."""
+    x, y = undef_name(a), undef_name(b)
+    return bool(x and y) and (x in y or y in x
+                              or difflib.SequenceMatcher(None, x, y).ratio() >= UNDEF_CLOSE)
 UNDEF_LINE = re.compile(r'Undefined in (\S+): "(.*?)" — (.*?)\s*$')
 
 
@@ -1349,38 +1365,44 @@ def cmd_gate(root: Path, args) -> int:
         m = re.search(r"^Commit: (\w+)", body, re.M)
         at = m.group(1) if m else branch
         # Each Undefined line needs one answer; anything after it is the answerer's to say.
-        built: dict[str, list[str]] = {}
+        built: dict[str, list[tuple[str, str]]] = {}
         for l in sec.group(1).splitlines():
             u = UNDEF_LINE.search(l) if l.strip().startswith("- [") else None
             if not u or l in open_lines:
                 continue
-            page, _, answer = u.groups()
+            page, key, answer = u.groups()
             why = undef_answer(answer)
             if why:
                 open_lines.append(f"{l.strip()}   <- {why}")
             elif answer.lower().startswith("built"):
-                built.setdefault(page, []).append(l)
-        # Built means moved: the page lost one entry per built answer since the job left trunk.
-        # Counted, not matched, so an entry reworded in place still counts as there.
+                built.setdefault(page, []).append((l, key))
+        # Built means moved: the entry is gone from the page, not reworded in place. A new
+        # entry close to the built one is that rewording; one unlike it is new work, which
+        # the owner may park on the same branch.
         base = git("merge-base", trunk, at) or trunk
         if base == git("rev-parse", at):
             base = f"{at}~1"
         still = []
-        for page, ls in sorted(built.items()):
-            before = len(undefined_entries(git("show", f"{base}:{page}") or ""))
-            now = len(undefined_entries(git("show", f"{at}:{page}") or ""))
-            if now > before - len(ls):
-                still.append(f"{page}: {len(ls)} answered built, but Undefined went from "
-                             f"{before} entries to {now}")
+        for page, answers in sorted(built.items()):
+            before = undefined_entries(git("show", f"{base}:{page}") or "")
+            now = undefined_entries(git("show", f"{at}:{page}") or "")
+            added = [e for e in now if e not in before]
+            for l, key in answers:
+                entry = next((e for e in before if undef_key(e) == key), key)
+                close = [e for e in added if undef_reworded(entry, e)]
+                if entry in now:
+                    still.append(f"{page}: still under Undefined: {undef_key(entry)}")
+                elif close:
+                    still.append(f"{page}: reworded, still under Undefined: {undef_key(close[0])}")
         if open_lines:
             print(f"the fold-in in {note} is unanswered:", file=sys.stderr)
             for l in open_lines[:10]:
                 print(f"  {l.strip()}", file=sys.stderr)
             return 1
         if still:
-            print(f"built means moved, not copied: at {at[:12]} Undefined still holds what was "
-                  "answered built. Delete each built entry (rewording it keeps it there), or "
-                  "answer it untouched or departed:", file=sys.stderr)
+            print(f"built means moved, not copied: at {at[:12]} these entries answered built are "
+                  "still on their page. Delete each in the change that built it; a reworded "
+                  "entry is still the entry:", file=sys.stderr)
             for l in still[:10]:
                 print(f"  {l.strip()}", file=sys.stderr)
             return 1

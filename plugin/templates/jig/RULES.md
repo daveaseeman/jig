@@ -224,8 +224,9 @@ sentences edited, deleting text included — or says why none went stale. Each e
 `## Undefined` on a covering page gets a line of its own, answered **built**, **untouched**,
 or **departed: <why>**, with anything after the answer the answerer's to add. Built means
 moved, not copied: the work's description enters the body and the entry is deleted in the same
-change; the gate counts the page's entries and refuses when fewer are gone than were answered
-built, so an entry reworded in place is still there. `jig gate` refuses while a line is
+change. The gate refuses a built entry still on the page, word for word or reworded: a new
+entry whose name (the text before its first ` — `) holds the built one's, or is close to it, is
+that entry. A new entry unlike it is new parked work, and passes. `jig gate` refuses while a line is
 unanswered; untouched and departed are answers.
 
 Ownership comes from `docmap` in `config.json`:

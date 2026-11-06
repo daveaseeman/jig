@@ -2786,20 +2786,21 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'built means moved, n
 python3 -c "
 f = 'docs/ui/ui.md'; s = open(f).read()
 open(f, 'w').write(s.replace('- Offline mode — stops at the cache layer;', '- Offline mode (built, see Cache) — stops at the cache layer;').replace('## Renderer\n\nDraws rows.\n', '## Renderer\n\nDraws rows.\n\n## Cache\n\nWorks offline.\n'))"
-git commit -qam "offline mode: entry reworded, not deleted"
-msg="page contract: the gate refuses built when the entry was reworded instead of deleted"
+git commit -qam "offline mode: entry reworded, not deleted" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
+fold2() { answer $1 "import re; n = n.replace('- [ ] docs/ui/ui.md — updated / no change because ___', '- [x] docs/ui/ui.md — updated: Cache'); n = re.sub(r'- \[ \] (Undefined in .*Offline.*) — built / untouched / departed: ___', r'- [x] \1 — built', n); n = re.sub(r'- \[ \] (Undefined in .*Dark.*) — built / untouched / departed: ___', r'- [x] \1 — untouched', n)"; }
+fold2 $(ls .jig/handoffs/U1-*-2.md) && git add -A && git commit -qm "note 2"
+msg="page contract: the gate refuses built when the entry was reworded instead of deleted, and names it"
 out=$(cd "$PG" && { gate_ok U1; rc=$?; echo "$out"; exit $rc; }); rc=$?
-expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'built means moved, not copied'" "$out"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'a reworded entry is still the entry' && echo \"\$0\" | grep -q 'reworded, still under Undefined: Offline mode (built, see Cache)'" "$out"
 python3 -c "
 import re; f = 'docs/ui/ui.md'; s = open(f).read()
-open(f, 'w').write(re.sub(r'- Offline mode .*\n', '', s))"
-git commit -qam "offline mode built" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
-note=$(ls .jig/handoffs/U1-*-2.md)
+open(f, 'w').write(re.sub(r'- Offline mode .*\n', '', s) + '- Export to CSV — stops at the file picker; parked 2026-11-06.\n')"
+git commit -qam "offline mode built; export parked" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
+note=$(ls .jig/handoffs/U1-*-3.md)
 msg="page contract: an entry the branch deleted still gets its line, from trunk's page"
 expect_pass grep -qF 'Undefined in docs/ui/ui.md: "Offline mode' $note
-answer $note "import re; n = n.replace('- [ ] docs/ui/ui.md — updated / no change because ___', '- [x] docs/ui/ui.md — updated: Cache'); n = re.sub(r'- \[ \] (Undefined in .*Offline.*) — built / untouched / departed: ___', r'- [x] \1 — built', n); n = re.sub(r'- \[ \] (Undefined in .*Dark.*) — built / untouched / departed: ___', r'- [x] \1 — untouched', n)"
-git add -A && git commit -qm "note 2"
-msg="page contract: the gate passes built once the entry is gone"
+fold2 $note && git add -A && git commit -qm "note 3"
+msg="page contract: the gate passes built once the entry is gone, beside an unrelated new entry"
 expect_pass sh -c "cd '$PG' && $(declare -f gate_ok); J='$J'; gate_ok U1"
 answer $note "n = n.replace('— untouched', '— built / untouched')"
 git commit -qam "two answers"
