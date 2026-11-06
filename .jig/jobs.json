@@ -1,7 +1,7 @@
 {
   "p2-removals": {
     "spec": ".jig/specs/bug-p2-removals.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
