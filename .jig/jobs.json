@@ -1,1 +1,19 @@
-{}
+{
+  "docs-page-contract": {
+    "spec": ".jig/specs/docs-page-contract.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/survey/SKILL.md",
+      "plugin/skills/retro/SKILL.md",
+      "plugin/skills/spec/SKILL.md"
+    ],
+    "shares": [
+      "plugin/templates/jig/RULES.md",
+      "plugin/templates/jig/jig.py",
+      "tests/smoke.sh",
+      "plugin/templates/*.md"
+    ],
+    "reserved": {}
+  }
+}
