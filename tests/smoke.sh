@@ -2388,6 +2388,101 @@ msg="pointers: RULES.md has the number rule and P2's lost-file rule"
 expect_pass sh -c "grep -q '§ 2\` is \`## 2. Motes\`, not \`### 2.1\`' '$P/jig/RULES.md' && grep '^| P2 |' '$P/jig/RULES.md' | grep -q 'a lost file counts even when its heading was already missing'"
 }
 
+sec_removals() {
+# Removals: a delete changes its path and a rename changes both, for every rule that guards a
+# path. rp is today's pararepo; po is one on v0.6.0, whose P2 let removals through.
+RM="$T/rm"; pcnew "$RM" && git add -A && git commit -qm init && $J init --meta --name rm >/dev/null
+printf '\n## Pointers\nThe old app: `po/api/e.py`.\n' >> GLOSSARY.md
+printf -- '- GLOSSARY: Pointers\n' >> CHANGELOG.md && git add -A && git commit -qm "GLOSSARY: Pointers" && $J release >/dev/null
+RP="$T/rp"; pcnew "$RP" && mkf api/a.py api/b.py && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para rm --location "$RM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
+msg="removals P2: git mv api/a.py lib/a.py is refused, naming P2 api/a.py"
+mkdir -p lib && git mv api/a.py lib/a.py; out=$(git commit -qm "mv a" 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'P2 api/a.py'" "$out"
+msg="removals P2: git rm api/b.py is refused, naming P2 api/b.py"
+git rm -q api/b.py; out=$(git commit -qm "rm b" 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'P2 api/b.py'" "$out"
+msg="removals P4: git rm api/b.py, answered, is refused while a file for the metarepo is staged"
+mkdir -p .jig/staging .jig/specs && stage note.md rm doc new docs/n.md
+printf '# b\n\n- meta: none — smoke\n' > .jig/specs/b.md && git rm -q api/b.py && git add -A; out=$(git commit -qm "rm b" 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'P4 api/b.py'" "$out"
+rm .jig/staging/note.md
+msg="removals P2: the rm commits with a spec saying meta: none"
+expect_pass git commit -qm "rm b"
+msg="removals P2: the mv commits with a spec saying meta: none"
+printf '# a\n\n- meta: none — smoke\n' > .jig/specs/a.md && mkdir -p lib && git mv api/a.py lib/a.py && git add -A
+expect_pass git commit -qm "mv a"
+msg="removals P1: git rm AGENTS.md is refused, naming P1"
+git rm -q AGENTS.md; out=$(git commit -qm "rm agents" 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'P1 the AGENTS.md header'" "$out"
+msg="removals P3: untracking a tracked .jig/meta-cache/PIN commits"
+git add -f .jig/meta-cache/PIN && git commit -q --no-verify -m cache && git rm -q --cached .jig/meta-cache/PIN
+expect_pass git commit -qm "untrack PIN"
+
+# Jobs: A owns src/ui/** and tools/**, shares lib/**; B owns src/core/**.
+PJ="$T/pj"; pcnew "$PJ" && mkf other/o.py src/core/b.py src/ui/a.py src/ui/w.py tools/t.py docs/ui/ui.md docs/lib/lib.md
+git add -A && git commit -qm init && $J init >/dev/null
+board "b['docmap'] = {'docs/ui/ui.md': ['src/ui/**'], 'docs/lib/lib.md': ['lib/**']}"
+git add -A && git commit -qm board
+$J open A --spec t --owns 'src/ui/**' 'tools/**' --shares 'lib/**' >/dev/null 2>&1 && $J open B --spec t --owns 'src/core/**' >/dev/null 2>&1
+git add -A && git commit -qm "open A, B"
+cd .git/jig/worktrees/A
+# refused <rule> <what>: commit what's staged, expect a refusal naming the rule, undo
+refused() { out=$(git commit -qm "$2" 2>&1); rc=$?; undo
+  expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '$1 '" "$out"; }
+msg="removals R3: git rm other/o.py in A is refused"; git rm -q other/o.py; refused R3 rm-o
+msg="removals R3: git mv other/o.py src/ui/o.py in A is refused"; git mv other/o.py src/ui/o.py; refused R3 mv-o
+msg="removals R4: git rm src/core/b.py in A is refused"; git rm -q src/core/b.py; refused R4 rm-b
+msg="removals R4: git mv src/core/b.py src/ui/b.py in A is refused"; git mv src/core/b.py src/ui/b.py; refused R4 mv-b
+msg="removals R5: git rm .jig/config.json in A is refused"; git rm -q .jig/config.json; refused R5 rm-config
+msg="removals R3: git rm src/ui/w.py in A commits"; git rm -q src/ui/w.py; expect_pass git commit -qm "rm w"
+msg="removals fold-in: a move asks the old page and the new, and UNOWNED names only the new path"
+mkdir -p lib tools/x && git mv src/ui/a.py lib/a.py && git mv tools/t.py tools/x/t.py && git commit -qm "move a, t"
+$J reviewed >/dev/null 2>&1; $J handoff >/dev/null 2>&1; note=$(cat .jig/handoffs/A-*.md 2>/dev/null)
+expect_pass sh -c "echo \"\$0\" | grep -q 'docs/ui/ui.md' && echo \"\$0\" | grep -q 'docs/lib/lib.md' && echo \"\$0\" | grep -q 'UNOWNED tools/x/t.py' && ! echo \"\$0\" | grep -q 'UNOWNED tools/t.py'" "$note"
+msg="removals open: jig open C --owns src/ui/a.py is refused, naming job A, which moved it"
+cd "$PJ"; out=$($J open C --spec t --owns src/ui/a.py 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'open job A'" "$out"
+
+# The cleanup: po runs v0.6.0, whose P2 never saw a removal.
+PO="$T/po"; mkdir -p "$PO/.t" && git -C "$JR" archive v0.6.0 plugin/templates | tar -x -C "$PO/.t"
+cd "$PO" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r .t/plugin/templates/jig .jig && cp .t/plugin/templates/AGENTS.md .t/plugin/templates/CLAUDE.md . && rm -rf .t
+mkf api/a.py api/b.py api/c.py api/d.py api/e.py && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para rm --location "$RM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
+msg="removals: under v0.6.0's hook a move, a drop, an answered drop and a rowed drop all commit (the bug)"
+mkdir -p lib .jig/specs .jig/ledgers
+git mv api/a.py lib/a.py && git commit -qm "move a" >/dev/null 2>&1; a=$?; mv_hash=$(git rev-parse --short HEAD)
+git rm -q api/b.py && git commit -qm "drop b" >/dev/null 2>&1; b=$?; b_hash=$(git rev-parse --short HEAD)
+printf '# c\n\n- meta: none — smoke\n' > .jig/specs/c.md && git rm -q api/c.py && git add -A && git commit -qm "drop c" >/dev/null 2>&1; c=$?
+cp "$P/ledgers/BUFFER.md" .jig/ledgers/BUFFER.md && printf '| B1 | the contract: api/d.py | deleted | owner, 2026-11-05 | Open |\n' >> .jig/ledgers/BUFFER.md
+git rm -q api/d.py && git add -A && git commit -qm "drop d" >/dev/null 2>&1; d=$?
+# v0.6.0 already refused losing a file a pointer names, so this one slipped past its hook another way.
+git rm -q api/e.py && git commit -q --no-verify -m "drop e" >/dev/null 2>&1; e=$?
+expect_pass test "$a$b$c$d$e" = 00000
+out=$($UP 2>&1)
+removals=$(echo "$out" | sed -n '/^Contract removals/,/^$/p'); pointed=$(echo "$out" | sed -n '/^Metarepo pointers/,/^$/p')
+msg="removals: update's dry run lists the move with its hash, api/a.py → lib/a.py, that lib/a.py isn't a contract path, and a BUFFER.md row"
+expect_pass sh -c "echo \"\$0\" | grep \"$mv_hash\" | grep 'api/a.py → lib/a.py' | grep \"lib/a.py isn't a contract path\" | grep -q 'BUFFER.md'" "$removals"
+msg="removals: it lists the drop with its hash, api/b.py deleted, and a BUFFER.md row"
+expect_pass sh -c "echo \"\$0\" | grep \"$b_hash\" | grep 'api/b.py deleted' | grep -q 'BUFFER.md'" "$removals"
+msg="removals: no line for the answered drop (api/c.py) or the rowed one (api/d.py), and update changes nothing"
+expect_pass sh -c "! echo \"\$0\" | grep -qE 'api/(c|d).py' && test -z \"\$(git status --porcelain)\"" "$removals"
+msg="removals: a contract path a cached pointer names (po/api/e.py) is under Metarepo pointers, not Contract removals"
+expect_pass sh -c "echo \"\$0\" | grep -q 'api/e.py' && ! echo \"\$1\" | grep -q 'api/e.py'" "$pointed" "$removals"
+msg="removals: with an Open row naming api/b.py committed, update offers no row for it, and --apply leaves BUFFER.md alone"
+printf '| B2 | the contract: api/b.py | deleted, %s | owner, 2026-11-05 | Open |\n' "$b_hash" >> .jig/ledgers/BUFFER.md && git add -A && git commit -qm "buffer: B2" >/dev/null 2>&1
+out=$($UP 2>&1); before=$(shasum .jig/ledgers/BUFFER.md); $UP --apply >/dev/null 2>&1
+removals=$(echo "$out" | sed -n '/^Contract removals/,/^$/p')
+expect_pass sh -c "echo \"\$0\" | grep -q \"$mv_hash\" && ! echo \"\$0\" | grep -q 'api/b.py' && test \"\$(shasum .jig/ledgers/BUFFER.md)\" = '$before'" "$removals"
+
+msg="removals M1: a metarepo branch removing a code file committed with --no-verify commits"
+cd "$RM" && printf 'x=1\n' > tool.py && git add tool.py && git commit -q --no-verify -m code
+git switch -q -c drop-tool && git rm -q tool.py; expect_pass git commit -qm "TOOL: drop tool"
+msg="removals: RULES.md says a delete and a rename count, and P2's row names them"
+expect_pass sh -c "grep -q 'a rename changes both of its paths: R3–R5, P1, P2 and P4 count each' '$P/jig/RULES.md' && grep '^| P2 |' '$P/jig/RULES.md' | grep -q 'a delete, or a rename from one'"
+}
+
 # ---------------------------------------------------------------- feedback
 sec_feedback() {
 export JIG_CONFIG="$T/fb/repos.json"      # its feedback/ fallback sits beside it, never the user's
@@ -2505,7 +2600,7 @@ msg="slash: a subfolder update moved from .aidev/handoffs/ stays nested, and a s
 expect_pass sh -c "test -f .jig/handoffs/lane-a/round-1.md && test -f .jig/handoffs/lane-a/lane-a-2026-01-01.md && $UP | grep -qx 'up to date'"
 }
 
-UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers feedback slash_names"
+UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file
