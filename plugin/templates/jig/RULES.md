@@ -184,6 +184,11 @@ even when it quotes this file; anything else is a stray. A package's own rules f
 on the owner's word. A file names a document by its path, or by its bare name only when
 no other tracked file has that name.
 
+Each kind of document has one home: rules in `AGENTS.md` and the pages' Rules; what the code
+is now in `docs/`; a task in flight in `.jig/specs/`; patches in the code in
+`.jig/ledgers/WORKAROUNDS.md`; review findings not taken in `.jig/ledgers/DEFERRED.md`; know-how
+in the agent's skills; what outsiders need in `README.md`; history in git.
+
 ## Fold-in
 
 Code and the page that documents it move together, or the page starts lying. `jig handoff`

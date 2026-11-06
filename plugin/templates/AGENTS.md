@@ -21,12 +21,7 @@ Risk: R0 — personal prototype, single user, nothing shipped. Optimize for spee
 - Commit often; the git hook runs the rules. Never `--no-verify`.
 - A mergeable chunk is a handoff: checks pass → adversarial review (/jig:review) → `jig reviewed` → `jig handoff`. Review happens once per handoff, not per commit.
 - Same fix twice → write a skill (see /jig:retro).
-
-## Jobs (parallel sessions)
 - Rulebook `.jig/RULES.md`, enforced by `python3 .jig/jig.py`. Roles: /jig:hubnode, /jig:subnode.
-- Only the hubnode touches trunk, the board, and merges; a subnode stays in its worktree and its listed files.
-- Keep merges mechanical: append rather than edit shared prose; new routes, tests, and fixtures each in a file of your own.
-- Scarce numbers (migrations, sections) come from the board, never from what looks free.
 
 ## Code
 - Comments explain *why*. A comment restating the code is a naming failure — rename instead — and it rots the moment the code moves on.
@@ -35,11 +30,11 @@ Risk: R0 — personal prototype, single user, nothing shipped. Optimize for spee
 - A workaround is allowed when it's the right fix. It gets a `WORKAROUND:` comment and a row in `.jig/ledgers/WORKAROUNDS.md`. Never silently.
 - A review finding you defer or reject gets a row in `.jig/ledgers/DEFERRED.md` at handoff.
 - No new dependencies without saying so in the spec.
-- Documentation is one page per system, `docs/<system>/<system>.md`, shaped as `.jig/RULES.md` (Documentation) says; a change isn't done until its page is current. Rules written in a documentation page bind as if they stood in this file.
-- One job, one home per document: AGENTS.md rules · the docs tree what the code is now · .jig/specs/ a task in flight · .jig/ledgers/WORKAROUNDS.md patches in the code · .jig/ledgers/DEFERRED.md findings not in it · .claude/skills/ know-how · README.md outsiders · git history. A new `.md` elsewhere means its home wasn't found. `jig survey` lists the strays.
+- Documentation is shaped and housed as `.jig/RULES.md` (Documentation) says; a change isn't done until its page is current. Rules written in a documentation page bind as if they stood in this file.
+- A new `.md` outside the homes `.jig/RULES.md` (Documentation) lists means its home wasn't found. `jig survey` lists the strays.
 
 ## Firmware (delete if not applicable)
-- Each board this repo builds for gets a page in `docs/hardware/<board>.md` (/jig:hardware) before code for it passes the gate; a part's datasheets go in `docs/hardware/components/<part>/`, a board's other files in `docs/hardware/<board>/`. Where one exists, read it before touching a pin, bus, or peripheral, and load the skills it lists.
+- Each board this repo builds for gets its page, where `.jig/RULES.md` (Documentation) says, before code for it passes the gate (/jig:hardware). Where one exists, read it before touching a pin, bus, or peripheral, and load the skills it lists.
 - Logic gets unit tests. Driver code gets run on hardware. Don't mock a bus to make a driver "testable."
 - Graphics: emulate first. Everything else: flash as soon as confident it won't brick.
 

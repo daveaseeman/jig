@@ -1,17 +1,1 @@
-{
-  "agents-template": {
-    "spec": ".jig/specs/bug-doc-homes.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/templates/AGENTS.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "tests/smoke.sh",
-      "plugin/skills/update/SKILL.md",
-      "plugin/templates/jig/RULES.md"
-    ],
-    "reserved": {}
-  }
-}
+{}
