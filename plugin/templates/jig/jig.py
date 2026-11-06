@@ -1340,16 +1340,24 @@ def tracked(root: Path) -> list[str]:
 def naming(root: Path, path: str, files: list[str]) -> dict[str, list[int]]:
     """The tracked files that name PATH, each with its line numbers: by path, or by bare name
     when no other tracked file has that name, since a bare `AGENTS.md` could mean any of them.
+    A match needs a path boundary on both sides, so `ui.md` is not `touch_ui.md` and
+    `docs/ui.md` is not `app/docs/ui.md`; a leading `./` or `../` still counts.
     A handoff records what was true then, and jig's own files define the names, so neither cites."""
     base = Path(path).name
     pats = [path] + ([base] if base != path and [Path(f).name for f in files].count(base) == 1 else [])
+    bound = re.compile(r"(?:(?<![\w./-])|(?<=\./))(?:" + "|".join(map(re.escape, pats)) + r")(?![\w/-])")
+    # -I: a datasheet or firmware image that happens to hold the bytes is no citation. Any
+    # tracked text may be in any encoding, so the lines are decoded leniently.
+    hits = subprocess.run(["git", "grep", "-I", "-n", "-F", "--null",
+                           *[a for p in pats for a in ("-e", p)], "--", "."],
+                          capture_output=True, cwd=root).stdout.decode(errors="replace")
     out: dict[str, list[int]] = {}
-    hits = git("grep", "-n", "-F", "--null", *[a for p in pats for a in ("-e", p)], "--", ".", cwd=str(root))
     for hit in hits.splitlines():
-        f, _, rest = hit.partition("\0")
-        if f == path or "/handoffs/" in f"/{f}" or f in (*TOOL_FILES, CONFIG, JOBS):
+        f, line, text = (hit.split("\0", 2) + ["", ""])[:3]
+        if (not line.isdigit() or f == path or "/handoffs/" in f"/{f}"
+                or f in (*TOOL_FILES, CONFIG, JOBS) or not bound.search(text)):
             continue
-        out.setdefault(f, []).append(int(re.match(r"\d+", rest).group()))
+        out.setdefault(f, []).append(int(line))
     return out
 
 
@@ -1357,7 +1365,8 @@ def inbound(root: Path, path: str, files: list[str]) -> int:
     return len(naming(root, path, files))
 
 
-ROOT_DOCS = ("AGENTS.md", "CLAUDE.md", "README.md")
+# CHANGELOG.md is the release log in any repo, and a metarepo's release requires it.
+ROOT_DOCS = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md", "CHANGELOG.md")
 # Agent instruction files under their standard names. Off root, each is a second rulebook
 # that an agent opening that folder may load in place of the real one.
 RULES_NAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
@@ -1391,8 +1400,8 @@ def page_home(path: str, have: set[str]) -> str:
 def doc_homes(root: Path, files: list[str], not_docs: list[str],
               read=None) -> list[dict]:
     """Every tracked Markdown file with no home, as {path, kind, to, fold, naming, named_at}.
-    Kinds: `rules` an agent instruction file off root, `copy` three or more sentences of
-    RULES.md word for word, `page` Now/Rules/Checks in the wrong place, `stray` anything else.
+    Kinds: `rules` an agent instruction file off root, `page` Now/Rules/Checks in the wrong
+    place, `copy` three or more sentences of RULES.md word for word, `stray` anything else.
     READ maps a path to its text, for update, which judges the files where they will be."""
     read = read or (lambda f: (root / f).read_text(errors="replace") if (root / f).is_file() else "")
     rules_md = Path(__file__).resolve().parent / "RULES.md"
@@ -1410,12 +1419,13 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
                 or at_home(f, entry)):
             continue
         text, to = read(f), None
+        # A page first: one that quotes the rulebook is still the repo's page, not a copy.
         if "/" in f and Path(f).name in RULES_NAMES:
             kind = "rules"
-        elif rules and len([s for s in sentences(text) if s in rules]) >= 3:
-            kind = "copy"
         elif f.startswith("docs/") and set(PAGE_HEADS.findall(text)) == {"Now", "Rules", "Checks"}:
             kind, to = "page", page_home(f, have)
+        elif rules and len([s for s in sentences(text) if s in rules]) >= 3:
+            kind = "copy"
         else:
             kind = "stray"
         named = naming(root, f, files)
@@ -1431,7 +1441,8 @@ def home_fix(h: dict) -> str:
     at = ", ".join(h["named_at"]) or "nothing"
     if h["kind"] == "rules":
         return ("a second rulebook: fold what still binds into AGENTS.md or a page's Rules, "
-                f"repoint what names it ({at}), then delete it")
+                f"repoint what names it ({at}), then delete it. A package's own rules file may "
+                "stay on the owner's word: ask, don't presume the delete")
     return (f"a copy of {DIR}/RULES.md, which update keeps current: delete it, and point what "
             f"names it ({at}) at {DIR}/RULES.md")
 

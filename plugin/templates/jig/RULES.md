@@ -170,7 +170,7 @@ to one that doesn't exist.
 `jig survey` checks each Markdown file the repo tracks against this list, outside tool folders
 (`.jig/`, `.claude/`, `.github/`, …) and `not_docs`:
 
-- `AGENTS.md`, `CLAUDE.md` and `README.md` at the root;
+- `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md` and `CHANGELOG.md` at the root;
 - under `docs/`, a page named for its folder, `docs/…/<x>/<x>.md`;
 - `docs/hardware/<board>.md`, and anything under `docs/hardware/*/`;
 - in a metarepo, what `entry_files` names.
@@ -178,8 +178,9 @@ to one that doesn't exist.
 Any other file has no home, and survey says which kind: an `AGENTS.md`, `CLAUDE.md` or
 `GEMINI.md` off root is a second rulebook; three or more sentences of this file word for word
 is a copy, which freezes while this file moves on; a page with Now, Rules and Checks outside
-its folder goes under the nearest folder that has its own page, or to `docs/<name>/<name>.md`;
-anything else is a stray. A file names a document by its path, or by its bare name only when
+its folder goes under the nearest folder that has its own page, or to `docs/<name>/<name>.md`,
+even when it quotes this file; anything else is a stray. A package's own rules file stays only
+on the owner's word. A file names a document by its path, or by its bare name only when
 no other tracked file has that name.
 
 ## Fold-in

@@ -2426,6 +2426,32 @@ msg="homes: a page whose destination exists is proposed as a fold, not a move"
 out=$($UP 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q '^      fold docs/systems/c.md into docs/c/c.md' && ! echo \"\$0\" | grep -q 'git mv docs/systems/c.md'" "$out"
 
+# What a citation is not: bytes in a binary, a longer name, the same path under another repo.
+HB="$T/homes-bytes"; pcnew "$HB" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+printf 'x\0README.md docs/ui.md\0' > blob.bin && printf 'caf\351: see README.md\n' > notes.txt
+mkdir -p docs && printf '# UI\n' > docs/ui.md && printf 'see touch_ui.md and app/docs/ui.md\n' > other.txt
+printf '# Gemini\n' > GEMINI.md && git add -A && git commit -qm bytes
+msg="homes: a binary and a Latin-1 file naming README.md: survey and the update dry run both exit 0"
+s=$(code $J survey); behind; u=$(code $UP)
+expect_pass test "$s$u" = 00
+msg="homes: a longer name or another repo's path is no citation; a root GEMINI.md is at home"
+expect_pass homes "assert h['docs/ui.md']['naming'] == [], h['docs/ui.md']
+assert 'GEMINI.md' not in h, h"
+
+msg="homes: a misplaced page that quotes three RULES.md sentences is a page, not a copy"
+python3 - <<'PY'
+import re
+rules = open('.jig/RULES.md').read()
+quoted = [s for s in re.split(r'(?<=[.!?])\s+', re.sub(r'\s+', ' ', rules)) if len(s) > 40 and s[0].isupper()][:3]
+open('docs/quoting.md', 'w').write('# Q\n\n## Now\n' + ' '.join(quoted) + '\n\n## Rules\nx\n\n## Checks\ny\n')
+PY
+git add -A && git commit -qm quoting
+expect_pass homes "assert h['docs/quoting.md']['kind'] == 'page', h['docs/quoting.md']"
+
+HX="$T/homes-meta-fresh"; pcnew "$HX" && git add -A && git commit -qm init && $J init --meta --name hx >/dev/null && git add -A && git commit -qm meta
+msg="homes: a fresh metarepo, its CHANGELOG.md included, has no homeless files"
+expect_pass homes "assert not h, h"
+
 # A pararepo whose page a metarepo decision points into, as sync_buffer builds one.
 HM="$T/homes-meta"; pcnew "$HM" && git add -A && git commit -qm init && $J init --meta --name hm >/dev/null
 printf '| D-001 | the list rule (`app/docs/systems/a.md § Rules`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
