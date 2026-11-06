@@ -46,6 +46,11 @@ its own; then make every line the proposal names in one commit — the `git mv`s
 `contract_paths`, the stale lines and, in a pararepo, a `BUFFER.md` row per cached pointer. Carry
 out each finding on a yes. Never propose adding a line that restates `.jig/RULES.md`: point at it.
 
+The **AGENTS.md** lines are the few the template still needs there: the Rulebook line, a
+Commands line for a `.jig/scripts/` file the repo has, and a block jig retired to replace with
+the Rulebook line. The rest of `AGENTS.md` is the repo's wording; there is no template diff to
+read. Show each line with where it goes and make it only on a yes.
+
 **Metarepo pointers**, in a pararepo, are the cached metarepo pointers that dangle. Show each
 line. One that names the commit that removed what it points to offers a `.jig/ledgers/BUFFER.md`
 row: ask, and add the row as offered only on a yes (the next `jig release` proposes it). One the
