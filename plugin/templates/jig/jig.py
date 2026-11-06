@@ -2312,10 +2312,11 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
     diffed = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", base(trunk),
                  *(["--cached"] if staged else [])).splitlines()
     # The cache lives in the primary checkout: it is ignored, so a job's worktree has none.
+    # Worse than at the base counts: a file lost is still news when its heading was already missing.
     broken = [f"{f} points to {gap}" for f, path, section, code in pointers(root, main_root())
               if any(d == path or d.startswith(f"{path}/") for d in diffed)
-              and not pointer_gap(path, section, code, body_at(base(trunk), path))
-              and (gap := pointer_gap(path, section, code, body_now(path, staged)))]
+              for level, gap in [pointer_gap(path, section, code, body_now(path, staged))]
+              if level > pointer_gap(path, section, code, body_at(base(trunk), path))[0]]
     if touched or broken:
         specs = {p for p in paths if p.startswith(f"{DIR}/specs/") and p.endswith(".md")}
         branch = git("branch", "--show-current")
@@ -2670,24 +2671,132 @@ def body_now(path: str, staged: bool) -> str | None:
     return Path(path).read_text(errors="replace") if Path(path).is_file() else "" if Path(path).is_dir() else None
 
 
-def pointer_gap(path: str, section: str | None, code: bool, body: str | None) -> str:
-    """What a pointer names that BODY, the file as it stands (None: no file), lacks; '' if nothing.
-    A prose section resolves when some heading begins it, a whole word or more."""
+# A section's leading number, `2` or `2.1`: the Documentation rule makes it the rule's heading
+# and its citation. Whole, so `2` is neither `2.1` nor `20`.
+SECTION_NUMBER = re.compile(r"\d+(?:\.\d+)*")
+# How badly a pointer misses, in order: P2 asks only when a change makes it worse.
+RESOLVES, NO_HEADING, NO_FILE = 0, 1, 2
+
+
+def section_number(text: str) -> str | None:
+    """TEXT's leading number when it is one: it ends the text, or at a blank, or at a `.`, `,`,
+    `;`, `:` or `)` that no word follows. `2-factor` and `2.a` are words."""
+    m = SECTION_NUMBER.match(text)
+    if not m:
+        return None
+    rest = text[m.end():]
+    if not rest or rest[0].isspace() or rest[0] in ".,;:)" and not re.match(r"\w", rest[1:2]):
+        return m.group(0)
+    return None
+
+
+def shown_section(want: str, code: bool) -> str:
+    """A section as a report prints it: a number whole; prose words up to where the sentence or
+    clause ends, a `.` inside a token never cutting."""
+    if (number := section_number(want)) is not None:
+        return number
+    return want if code else re.split(r"[(,;:)|]|\.(?!\S)", want)[0].strip()
+
+
+def pointer_gap(path: str, section: str | None, code: bool, body: str | None) -> tuple[int, str]:
+    """How a pointer misses BODY, the file as it stands (None: no file), and what it lacks;
+    (RESOLVES, '') if nothing. A numbered section names the heading with that number; any other
+    prose section resolves when some heading begins it, a whole word or more."""
     if body is None:
-        return f"{path}, which this repo doesn't have"
+        return NO_FILE, f"{path}, which this repo doesn't have"
     if not section:
-        return ""
+        return RESOLVES, ""
     want, heads = plain(section), [plain(h) for h in HEADING.findall(body)]
-    if want in heads or not code and any(h and re.match(rf"{re.escape(h)}(?!\w)", want) for h in heads):
-        return ""
-    shown = want if code else re.split(r"[.,;:)|]", want)[0].strip()
-    return f"{path} § {shown}, which {path} has no heading for"
+    number = section_number(want)
+    if number is not None:
+        if number in {section_number(h) for h in heads}:
+            return RESOLVES, ""
+    elif want in heads or not code and any(h and re.match(rf"{re.escape(h)}(?!\w)", want) for h in heads):
+        return RESOLVES, ""
+    return NO_HEADING, f"{path} § {shown_section(want, code)}, which {path} has no heading for"
+
+
+def dangling(root: Path) -> list[tuple[str, str, str | None, bool, int, str]]:
+    """Each cached pointer that misses this repo's HEAD, as (cache file, path, section, code,
+    level, gap), one per line a report prints: pointers into a missing file read the same."""
+    seen, out = set(), []
+    for f, path, section, code in pointers(root):
+        level, gap = pointer_gap(path, section, code, body_at("HEAD", path))
+        if level and (f, gap) not in seen:
+            seen.add((f, gap))
+            out.append((f, path, section, code, level, gap))
+    return out
 
 
 def stale_pointers(root: Path) -> list[str]:
     """Reported, never refused: the fix is the metarepo's, through the buffer."""
-    return [f"{f} points to {gap}" for f, path, section, code in pointers(root)
-            if (gap := pointer_gap(path, section, code, body_at("HEAD", path)))]
+    return [f"{f} points to {gap}" for f, _, _, _, _, gap in dangling(root)]
+
+
+def removed_by(commit: str) -> list[tuple[str, str | None]]:
+    """What COMMIT took away: each deleted path with None, each renamed one with where it went."""
+    out = []
+    for line in git("-c", "core.quotePath=false", "show", "-M", "--name-status", "--format=",
+                    commit).splitlines():
+        cells = line.split("\t")
+        if cells[0] == "D":
+            out.append((cells[1], None))
+        elif cells[0].startswith("R") and len(cells) == 3:
+            out.append((cells[1], cells[2]))
+    return out
+
+
+def removal(path: str, section: str | None, code: bool, level: int) -> tuple[str, str] | None:
+    """The newest commit in this repo's history before which the pointer missed less than it
+    does now and after which it missed as much, and what the repo has instead ('deleted', or
+    the new path); None when it never had it. The resolver decides both sides, so what counts
+    as removed is what P2 would have asked about."""
+    def misses(rev: str) -> int:
+        return pointer_gap(path, section, code, body_at(rev, path))[0]
+    for commit in git("log", "--format=%h", "--", path).splitlines():
+        if misses(commit) >= level > misses(f"{commit}^"):
+            if level == NO_HEADING:
+                return commit, path
+            new = next((n for o, n in removed_by(commit) if o == path or o.startswith(f"{path}/")), None)
+            return commit, new or "deleted"
+    return None
+
+
+def buffer_offer(root: Path, claim: str, path: str, now: str, section: str | None = None) -> str:
+    """What to do about a claim this repo moved away from: the Open row that already names PATH
+    (and SECTION, for a heading), or the row to add to BUFFER.md, the owner's to accept. Never
+    written here."""
+    ledger = root / BUFFER
+    rows = buffer_rows(ledger.read_text()) if ledger.exists() else []
+    where = re.escape(path) + (rf"[ \t]*§[ \t]*{re.escape(section)}(?!\.?\w)" if section else r"(?![\w/-])")
+    named = re.compile(rf"(?<![\w./-]){where}")
+    row = next((r for r in rows if r[-1] == "Open" and any(named.search(c) for c in r[1:-1])), None)
+    if row:
+        return f"Open row {row[0]} in {BUFFER} already names it"
+    return f"offer a row for {BUFFER}: claim \"{claim}\", this repo now \"{now}\""
+
+
+def pointer_cleanup(root: Path) -> list[str]:
+    """Update's Metarepo pointers block: each cached pointer that dangles, and its fix. An older
+    P2 let some of these through; the update that brings the fix is where the repo hears of them."""
+    if not (root / CACHE).is_dir():
+        return [f"no metarepo cache ({CACHE}): run `jig sync`, then update again"]
+    out = []
+    for f, path, section, code, level, gap in dangling(root):
+        line = f"{f} points to {gap}: "
+        found = removal(path, section, code, level)
+        if found is None:
+            out.append(line + "this repo never had it, so the metarepo's pointer is what's wrong; "
+                       "fix it there with `jig propose`")
+            continue
+        commit, now = found
+        what = (f"renamed to {now} in {commit}" if level == NO_FILE and now != "deleted"
+                else f"removed in {commit}")
+        shown = shown_section(plain(section), code) if level == NO_HEADING else None
+        where = f"{path} § {shown}" if shown else path
+        out.append(line + f"this repo {what}; "
+                   + buffer_offer(root, f"{f}: the pointer to {where}", path, f"{now}, {commit}", shown))
+    return out
 
 
 def cmd_propose(root: Path, args) -> int:
@@ -3911,6 +4020,11 @@ def cmd_update(root: Path, args) -> int:
             print("\nRepo files to review (update never applies these):")
             for f, what in review:
                 print(f"  {f}: {what}")
+        if board_at == CONFIG and (root / PARA).exists():
+            print("\nMetarepo pointers (from the cache as the last `jig sync` left it; update "
+                  "changes none of them):")
+            for line in pointer_cleanup(root):
+                print(f"  {line}")
         template = here.parent / "AGENTS.md"
         if template.exists() and (root / "AGENTS.md").exists() and root.resolve() not in here.parents:
             diff = list(difflib.unified_diff(template.read_text().splitlines(),

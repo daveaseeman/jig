@@ -115,7 +115,7 @@ pararepo `pp`. `pp/docs/x.md` has `## 2. Motes`, `### 2.1 Identity` and `## 10. 
 ## Alternatives considered
 - **(b), RULES.md says a number alone isn't a pointer.** Rejected: the owner chose (a), and (b) contradicts the Documentation rule and rewrites ten pointers in the reporting metarepo's entry files. Reason is [seen].
 - **P2 with no base comparison** (refuse any change to a file a dangling pointer names). Rejected because it would refuse every edit to a page that has an old dangling pointer. The reporting pararepo's `ui.md` has four such pointers and has been edited five times since 0.6.0. Reason is [seen].
-- **The lookup in `jig sync` instead of update.** Rejected: sync already lists each dangling pointer on every pull. Catching up on what an older P2 let through belongs to the update that brings the fix. Reason is [assumed].
+- **The lookup in `jig sync` instead of update.** Rejected: sync already lists each dangling pointer on every pull. Catching up on what an older P2 let through belongs to the update that brings the fix. Reason is [seen]: `jig sync` printed every dangling pointer on each run in the `pointers` smoke section, and `cmd_update` replaces `.jig/jig.py` whenever its bytes differ (Givens), so update's report is the one run each repo gets as the fix arrives.
 - **Update writes the BUFFER.md rows or edits the metarepo.** Rejected: update never applies the repo's own files without a yes, and a pararepo writes the metarepo only by branch (RULES.md, Metarepo and pararepos, rule 1). Reason is [seen].
 
 ## Decisions
