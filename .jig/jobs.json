@@ -1,7 +1,7 @@
 {
   "docs-page-contract": {
     "spec": ".jig/specs/docs-page-contract.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/survey/SKILL.md",
