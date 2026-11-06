@@ -34,7 +34,7 @@ changes: `trunk`, `common`, `append_files`, `reserve`, `docmap`, `not_docs`, `re
 | `after` | jobs this one is gated behind |
 | `owns` | existing files only this job may change while it is open |
 | `shares` | existing files it may change alongside others |
-| `reserved` | scarce numbers handed out centrally (migration steps, section numbers) |
+| `reserved` | scarce numbers handed out centrally (migration steps, schema versions) |
 
 A job's branch is its name, and its worktree is `.git/jig/worktrees/<branch>`. A job
 adopted on another branch, or checked out somewhere else, stores `branch` or `worktree` —
@@ -93,27 +93,24 @@ Conventions so two jobs rarely meet in one hunk:
 
 ## Reserved numbers
 
-Some things are scarce across the whole repo: migration step numbers, section numbers in a
-shared document, anything a runner stores and compares. Each counter in `config.json` says how
+Some things are scarce across the whole repo: migration step numbers, schema versions,
+anything a runner stores and compares. Each counter in `config.json` says how
 to find its numbers:
 
 ```json
 "reserve": {
-  "section": {"pattern": "^### (\\d+)\\.\\d+", "files": ["docs/**/*.md"]},
+  "step": {"pattern": "^-- step (\\d+)", "files": ["db/migrations/*.sql"]},
   "schema": {"pattern": "SCHEMA_VERSION\\s*=\\s*(\\d+)", "files": ["**/storage.py"], "unique": true}
 }
 ```
 
 A number is taken where trunk had no match for it, in any of the counter's files, and the
-change adds one. So `### 31.2` under a section 31 that trunk has takes nothing, and `### 32.1`
-takes section 32. `"unique": true` is for numbers that must also appear once: a second
-`SCHEMA_VERSION = 17` where trunk has one is refused as "17 already exists". It is off unless
-set, because a section number appears once per rule under it. It applies working alone too,
-with no job open: there is nobody to take a number from, but a second 17 still breaks.
-
-A section's rule numbers (`### 31.2`) belong to whoever holds the section. R6 counts whole
-numbers, so within a section trunk already has, nothing stops two jobs adding the same rule
-number: give each job its own section, or settle it at the merge.
+change adds one. So editing the file that opens `-- step 17`, where trunk has it, takes
+nothing, and a new file opening `-- step 18` takes 18. `"unique": true` is for numbers that
+must also appear once: a second `SCHEMA_VERSION = 17` where trunk has one is refused as "17
+already exists". It is off unless set, because some numbers rightly appear more than once. It
+applies working alone too, with no job open: there is nobody to take a number from, but a
+second 17 still breaks.
 
 `--reserve <counter>` hands the job max(the highest on trunk, the highest an open job
 holds) + 1, so two jobs open at once never get the same number. `jig reserve <job> <counter>`
@@ -129,16 +126,32 @@ One page per system, `docs/<system>/<system>.md`. A subsystem's page sits in a f
 own inside its system's, `docs/<system>/<subsystem>/<subsystem>.md`, and its parts nest the
 same way. Every page is named for its folder, so the path alone says what it covers. The tree
 names the product's own parts, not its files, so a rule that touches several files lives
-once. Every page has three headings:
+once.
 
-- **Now** — what is true on trunk today.
-- **Rules** — what binds, as if the text stood in `AGENTS.md`; that is how the always-loaded
-  file stays under 40 lines. Number every rule; the number is the heading (`### 31.1 …`), so
-  a citation resolves by search wherever the text moves.
-- **Checks** — one line per rule naming what holds it: a named test, "review", or "on screen".
+A page describes what is built: what is true of its system on trunk today, in present-tense
+prose. It is not a rulebook; this file holds the rules about documentation, and no page
+restates them. Every page, in this order (jig's docs page template, `templates/docs-page.md`,
+is the skeleton):
 
-When Now and Rules disagree, Rules wins and Now gets fixed. A moved rule leaves no forwarding
-address behind — that is history, and git keeps it.
+1. **A lead paragraph**, with no heading of its own: what the system is and why it exists.
+2. **Body sections**, named for the system's own parts — the nouns its code has (Schema,
+   Renderer, Sync) — never for a lifecycle or a genre (Overview, Notes, Misc, Changes). A
+   section that outgrows a screen, or gets files of its own, becomes a subsystem folder with
+   its own page, and the parent's section shrinks to a paragraph and a link.
+3. **`## Invariants`**, optional: only the facts that are load-bearing. Each entry states,
+   inline, why it must hold and what holds it — a named test, review, or on screen:
+   `- Rows are at least 44px — the touch-target minimum; held by test_touch_targets.` An
+   entry without a why and a holder is description, and goes in the body or nowhere.
+4. **`## Undefined`**, optional and always last: work parked mid-build, written only on the
+   owner's word. Each entry says what was parked, where it stops, and the date. Nothing in it
+   binds, and nothing in it is a promise. It is parked work, placed where the work lives;
+   review findings not taken go in `.jig/ledgers/DEFERRED.md` instead, never in both.
+
+Trunk's code is reality. A page that disagrees with the code is a stale page, and gets fixed.
+An invariant the code breaks is a finding the handoff surfaces for a person to rule on, never
+an instruction to bend the code. Cite a page by its heading (`docs/ui/ui.md § Invariants`),
+not by a number. A moved rule leaves no forwarding address behind — that is history, and
+git keeps it.
 
 In `docmap`, a subsystem's page names its own files and its system's page names the rest:
 fold-in asks every page that covers a changed file, so a system page whose globs reach into
@@ -178,25 +191,39 @@ to one that doesn't exist.
 
 Any other file has no home, and survey says which kind: an `AGENTS.md`, `CLAUDE.md` or
 `GEMINI.md` off root is a second rulebook; three or more sentences of this file word for word
-is a copy, which freezes while this file moves on; a page with Now, Rules and Checks outside
-its folder goes under the nearest folder that has its own page, or to `docs/<name>/<name>.md`,
-even when it quotes this file; anything else is a stray. A package's own rules file stays only
-on the owner's word. A file names a document by its path, or by its bare name only when
-no other tracked file has that name.
+is a copy, which freezes while this file moves on; a page outside its folder — one with an
+Invariants or Undefined section, or the old Now, Rules and Checks headings — goes under the
+nearest folder that has its own page, or to `docs/<name>/<name>.md`, even when it quotes this
+file; anything else is a stray. A package's own rules file stays only on the owner's word. A
+file names a document by its path, or by its bare name only when no other tracked file has
+that name.
 
-Each kind of document has one home: rules in `AGENTS.md` and the pages' Rules; what the code
-is now in `docs/`; a task in flight in `.jig/specs/`; patches in the code in
-`.jig/ledgers/WORKAROUNDS.md`; review findings not taken in `.jig/ledgers/DEFERRED.md`; know-how
-in the agent's skills; what outsiders need in `README.md`; history in git.
+Each kind of document has one home: rules in `AGENTS.md`, and the rules about documentation
+here; what the code is now, its invariants and its parked work in `docs/`; a task in flight in
+`.jig/specs/`; patches in the code in `.jig/ledgers/WORKAROUNDS.md`; review findings not taken
+in `.jig/ledgers/DEFERRED.md`; know-how in the agent's skills; what outsiders need in
+`README.md`; history in git.
+
+`jig survey` also reads each page at home under `docs/`, board pages aside, against the
+contract above, and names a page in the old Now, Rules and Checks shape (convert it: fold
+what it says into description, delete what no longer holds, keep as Invariants only what
+passes the test), an Invariants entry with no why (` — `) or no holder (`held by`), any
+section after `## Undefined`, and a page whose first line of text after its title is a
+heading rather than a lead paragraph. `jig update` brings this file, not the pages: converting
+a repo's pages is a job of its own there.
 
 ## Fold-in
 
 Code and the page that documents it move together, or the page starts lying. `jig handoff`
 works out every documentation page that covers a file the branch changed — a file can have
 several, such as its system page and the page of the board it runs on — and writes a
-checklist into the note. A moved file asks the page that covered its old path too. `jig gate`
-refuses while a line is unanswered — each is either ticked as updated, or says why no change
-was needed.
+checklist into the note. A moved file asks the page that covered its old path too. Each line
+asks whether the page still describes the code: it is either ticked as updated — the stale
+sentences edited, deleting text included — or says why none went stale. Each entry under
+`## Undefined` on a covering page gets a line of its own, answered **built**, **untouched**,
+or **departed: <why>**. Built means moved, not copied: the work's description enters the body
+and the entry is deleted in the same change, and the gate refuses a built entry still on the
+page. `jig gate` refuses while a line is unanswered; untouched and departed are answers.
 
 Ownership comes from `docmap` in `config.json`:
 
@@ -206,7 +233,8 @@ Ownership comes from `docmap` in `config.json`:
 
 `docmap` can name any file, config such as `sdkconfig` included; a page is asked about
 whenever a file it names changes. A changed source file nothing covers is listed as
-`UNOWNED` — add it to `docmap`, or answer why it needs no page.
+`UNOWNED` — add it to `docmap`, starting a new page from jig's docs page template
+(`templates/docs-page.md`), or answer why it needs no page.
 
 ## Sync
 
@@ -321,10 +349,8 @@ heading (`§`) the pararepo doesn't have, and P2 asks a commit that leaves one d
 contract change needs. A pointer is `<repo>/<path>` or `<repo>:<path>`, best written in backticks
 (`` `app/docs/ui.md § Build (release)` ``): there the section is the span's text, matched whole;
 in prose it is any heading the text after `§` begins with. A section that starts with a number,
-`2` or `2.1`, names the heading whose leading number is exactly that, as the Documentation rule
-cites rules: `§ 2` is `## 2. Motes`, not `### 2.1` or `## 20`, and words after the number aren't
-compared. A page whose rules sit under `## Rules` has no heading `31`, so cite a rule by its
-whole number (`§ 31.1`) or the section by its heading (`§ Rules`). Headings are compared as read, code
+`2` or `2.1`, names the heading whose leading number is exactly that: `§ 2` is `## 2. Motes`, not `### 2.1`
+or `## 20`, and words after the number aren't compared. Headings are compared as read, code
 and emphasis marks dropped. The name folds case (`App/…` is `app/…`); the path and heading
 don't. A superseded or rejected decision row isn't checked.
 
