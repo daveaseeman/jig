@@ -1,7 +1,7 @@
 {
   "doc-homes": {
     "spec": ".jig/specs/bug-doc-homes.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/survey/SKILL.md"
