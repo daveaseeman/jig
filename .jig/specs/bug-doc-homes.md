@@ -144,7 +144,7 @@ Both edit `report()`, and so does `bug-numbered-pointers`. Their hunks are separ
 - **A `files_to_review` row per old convention** (`docs/systems/`, the seeded README, the Jobs block). This is the existing pattern, and it's rejected as the whole fix: fab8888 and bce4fd1 show that the row gets forgotten. Reason is [seen].
 - **`--apply` makes the page moves, as it does for a root HARDWARE.md.** Rejected: the pages are the repo's. A move also needs docmap, `contract_paths`, metarepo rows and a nesting call, all the owner's. Reason is [seen].
 - **Keep the diff and add one skill line** (the report's fix 4 alone). Rejected because the restatements still freeze, and the reader still has to find 1 real line among 50. Reason is [seen].
-- **Count inbound by path only.** Rejected: a uniquely named doc cited by bare name would read as cold, and survey would advise dropping a cited file. Reason is [assumed].
+- **Count inbound by path only.** Rejected: a uniquely named doc cited by bare name would read as cold, and survey would advise dropping a cited file. Reason is [seen]: AdventureStudio's `src/lib/role-colors.ts:3` cites `DESIGN.md` by bare name only.
 
 ## Decisions
 - **What a page is.** It has all three of Now, Rules and Checks. A doc without them is a stray, and the move proposal is only for pages.

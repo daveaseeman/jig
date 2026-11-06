@@ -1,16 +1,29 @@
 {
-  "doc-homes": {
-    "spec": ".jig/specs/bug-doc-homes.md",
+  "p2-removals": {
+    "spec": ".jig/specs/bug-p2-removals.md",
     "state": "claimed",
     "after": [],
-    "owns": [
-      "plugin/skills/survey/SKILL.md"
-    ],
+    "owns": [],
     "shares": [
       "plugin/templates/jig/jig.py",
       "plugin/templates/jig/RULES.md",
       "tests/smoke.sh",
       "plugin/skills/update/SKILL.md"
+    ],
+    "reserved": {}
+  },
+  "agents-template": {
+    "spec": ".jig/specs/bug-doc-homes.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/templates/AGENTS.md"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "tests/smoke.sh",
+      "plugin/skills/update/SKILL.md",
+      "plugin/templates/jig/RULES.md"
     ],
     "reserved": {}
   }
