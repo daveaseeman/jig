@@ -26,8 +26,15 @@ Report the output, then say what it means in a few lines:
 - **Rules files, copies, pages.** Survey checks every Markdown file against the homes
   `.jig/RULES.md` (Documentation) lists, by shape. An `AGENTS.md`, `CLAUDE.md` or `GEMINI.md` off
   root is a second rulebook; a file with three of RULES.md's sentences is a copy that froze; a
-  Now/Rules/Checks page in the wrong folder is printed with where it goes. Each line carries its
-  fix; `/jig:update` proposes the same ones with everything they touch.
+  page in the wrong folder (an Invariants or Undefined section, or the old Now/Rules/Checks) is
+  printed with where it goes. Each line carries its fix; `/jig:update` proposes the same ones
+  with everything they touch.
+- **Pages off the page contract.** A page describes what is built: a lead paragraph, sections
+  named for the system's parts, optional Invariants, optional Undefined last. Survey names an
+  old Now/Rules/Checks page ("old contract — convert", a job of its own in this repo: fold what
+  it says into description, delete what no longer holds, keep as Invariants only entries with a
+  why and a holder), an invariant missing its why or holder, a section after Undefined, and a
+  page with no lead paragraph.
 - **No docmap.** Handoff can't tell which page a change touches until pages are mapped to globs.
 - **Missing pieces.** What `/jig:init` would add.
 - **How parallel work is coordinated today.** What the repo already has, under its standard

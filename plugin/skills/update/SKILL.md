@@ -38,7 +38,7 @@ That is a dry run. It changes nothing, and its exit code says what you have:
 one's proposed edit and ask about each; make it only on a yes. `--apply` never touches them.
 
 Some of them are survey's home findings. A **rules** file off root: fold what still binds into
-`AGENTS.md` or a page's Rules, repoint the lines named, delete it — but a package's own rules
+`AGENTS.md` or a page's Invariants, repoint the lines named, delete it — but a package's own rules
 file in a monorepo may stay on the owner's word, so ask before proposing the delete. A **copy** of `.jig/RULES.md`:
 delete it and point what names it at `.jig/RULES.md`. A folder of **pages**: before the moves,
 ask whether each page is a subsystem to nest under its system's folder rather than a system of

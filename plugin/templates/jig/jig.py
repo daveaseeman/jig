@@ -7,6 +7,7 @@ rules it is judged by. Stdlib only.
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import json
 import os
@@ -445,10 +446,10 @@ def next_number(board: "Board", counter: str, spec: dict) -> int:
 
 def reserved_refusals(root: Path, board: "Board", holds: dict[str, set[int]],
                       who: str, staged: bool, takes: bool = True) -> list[str]:
-    """R6. A scarce number (migration step, section number) belongs to one job.
+    """R6. A scarce number (migration step, schema version) belongs to one job.
     A number is taken when the base has no match for it in the counter's files and the
-    index adds one. A second rule under a section the base already has takes nothing, and
-    editing or moving a heading nets to zero. A counter with "unique" also refuses a number
+    index adds one. A dotted number under a whole number the base already has takes nothing,
+    and editing or moving a match nets to zero. A counter with "unique" also refuses a number
     whose count rises past one: a second migration 17 is a collision of its own. Numbers
     compare as ints, so D-002 is the 2 a job holds; a refusal shows the text it matched.
     With TAKES false (no job open, so nobody to collide with) only "unique" is checked."""
@@ -1118,10 +1119,13 @@ Spec: {spec}
 <!-- findings from the adversarial review, and what you did about each -->
 
 ## Fold-in
-<!-- Every documentation page that covers code this changed. Replace each ___ and tick the
-     box: the page is updated, or it needed no change and this says why. The gate refuses
-     an unanswered line. An UNOWNED file has no page covering it: add it to docmap in the
-     board, or say why it needs none. -->
+<!-- Every documentation page that covers code this changed: does it still describe the
+     code? Replace each ___ and tick the box: the stale sentences are edited (deleting
+     counts), or none went stale and this says why. Each Undefined entry on those pages has
+     its own line: keep one answer, built, untouched or departed: <why>. Built means the
+     entry is deleted from the page in this change. The gate refuses an unanswered line. An
+     UNOWNED file has no page covering it: add it to docmap in the board, or say why it
+     needs none. -->
 {foldin}
 
 ## Shared files changed
@@ -1135,10 +1139,79 @@ Spec: {spec}
 """
 
 
+def page_sections(text: str) -> list[tuple[str, list[str]]]:
+    """A page's `## ` sections in order, each with its lines; what precedes the first is ''.
+    Fenced code is skipped, so a page quoting a heading inside ``` doesn't gain a section."""
+    out, fence = [("", [])], False
+    for line in text.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            fence = not fence
+        m = None if fence else re.match(r"^ {0,3}##[ \t]+(.*?)[ \t#]*$", line)
+        if m:
+            out.append((m.group(1).strip(), []))
+        else:
+            out[-1][1].append(line)
+    return out
+
+
+def section_items(lines: list[str]) -> list[str]:
+    """The top-level list items of a section, each as its first line without the marker."""
+    return [re.sub(r"^[-*+][ \t]+", "", l).strip() for l in lines if re.match(r"^[-*+][ \t]+\S", l)]
+
+
+def undefined_entries(text: str) -> list[str]:
+    return [i for name, lines in page_sections(text) if name == "Undefined"
+            for i in section_items(lines)]
+
+
+# The fold-in line for one Undefined entry. The gate parses it back, so a change here
+# changes UNDEF_LINE too.
+UNDEF_KEY = 60
+# How alike a new Undefined entry's name must be to a built one's to be that entry reworded.
+UNDEF_CLOSE = 0.6
+
+
+def undef_name(entry: str) -> str:
+    """What was parked, without the where-it-stops and the date every entry shares: compared
+    whole, any two entries in the template's shape look alike."""
+    head = entry.split(" — ", 1)[0] if " — " in entry else entry
+    return re.sub(r"[;,.]?\s*parked \d{4}-\d\d-\d\d\.?\s*$", "", head).strip().lower()
+
+
+def undef_reworded(a: str, b: str) -> bool:
+    """B is A reworded: one name holds the other, or they are close in wording."""
+    x, y = undef_name(a), undef_name(b)
+    return bool(x and y) and (x in y or y in x
+                              or difflib.SequenceMatcher(None, x, y).ratio() >= UNDEF_CLOSE)
+UNDEF_LINE = re.compile(r'Undefined in (\S+): "(.*?)" — (.*?)\s*$')
+
+
+def undef_answer(answer: str) -> str:
+    """Why an Undefined line's answer doesn't count yet, or "" when it does: built,
+    untouched or departed (with its why), in any case, and anything after it."""
+    a = answer.strip()
+    if not a or "___" in a:
+        return "blank: keep one of built, untouched, departed: <why>"
+    if re.match(r"\w+\s*/", a):
+        return "more than one answer kept: keep one"
+    word = re.match(r"[A-Za-z]+", a)
+    kind = word.group(0).lower() if word else ""
+    if kind not in ("built", "untouched", "departed"):
+        return "not built, untouched or departed"
+    if kind == "departed" and not re.search(r"\w", a[len(kind):]):
+        return "departed needs its why"
+    return ""
+
+
+def undef_key(entry: str) -> str:
+    return entry if len(entry) <= UNDEF_KEY else entry[:UNDEF_KEY].rstrip() + "…"
+
+
 def foldin_lines(root: Path, board: Board, branch: str) -> str:
     """One line per documentation page covering the code this branch changed."""
     trunk = board.trunk
-    rng = f"{trunk}...HEAD" if branch and branch != trunk else "HEAD~1..HEAD"
+    base = trunk if branch and branch != trunk else "HEAD~1"
+    rng = f"{trunk}...HEAD" if base == trunk else "HEAD~1..HEAD"
     # Both sides of a rename: the page that covered the old path describes it there.
     changed = [f for f in git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
                               rng).splitlines()
@@ -1155,9 +1228,17 @@ def foldin_lines(root: Path, board: Board, branch: str) -> str:
             unowned.append(f)
     if not pages and not unowned:
         return "- [ ] no code changed — nothing to fold in"
-    out = [f"- [ ] {page} — updated / no change because ___   ({len(fs)} file"
-           f"{'s' if len(fs) > 1 else ''})" for page, fs in sorted(pages.items())]
-    out += [f"- [ ] UNOWNED {f} — add to docmap, or no page needed because ___"
+    out = []
+    for page, fs in sorted(pages.items()):
+        out.append(f"- [ ] {page} — updated / no change because ___   ({len(fs)} file"
+                   f"{'s' if len(fs) > 1 else ''})")
+        # The page before this change: an entry the change already deleted was built here,
+        # and still needs its answer.
+        text = git("show", f"{base}:{page}") or git("show", f"HEAD:{page}")
+        out += [f'- [ ] Undefined in {page}: "{undef_key(e)}" — built / untouched / departed: ___'
+                for e in undefined_entries(text)]
+    out += [f"- [ ] UNOWNED {f} — add to docmap (a new page starts from {DIR}/docs-page.md), "
+            "or no page needed because ___"
             for f in sorted(unowned)]
     return "\n".join(out)
 
@@ -1281,9 +1362,48 @@ def cmd_gate(root: Path, args) -> int:
         open_lines = [l for l in sec.group(1).splitlines()
                       if l.strip().startswith("- [")
                       and (l.strip().startswith("- [ ]") or "___" in l)]
+        m = re.search(r"^Commit: (\w+)", body, re.M)
+        at = m.group(1) if m else branch
+        # Each Undefined line needs one answer; anything after it is the answerer's to say.
+        built: dict[str, list[tuple[str, str]]] = {}
+        for l in sec.group(1).splitlines():
+            u = UNDEF_LINE.search(l) if l.strip().startswith("- [") else None
+            if not u or l in open_lines:
+                continue
+            page, key, answer = u.groups()
+            why = undef_answer(answer)
+            if why:
+                open_lines.append(f"{l.strip()}   <- {why}")
+            elif answer.lower().startswith("built"):
+                built.setdefault(page, []).append((l, key))
+        # Built means moved: the entry is gone from the page, not reworded in place. A new
+        # entry close to the built one is that rewording; one unlike it is new work, which
+        # the owner may park on the same branch.
+        base = git("merge-base", trunk, at) or trunk
+        if base == git("rev-parse", at):
+            base = f"{at}~1"
+        still = []
+        for page, answers in sorted(built.items()):
+            before = undefined_entries(git("show", f"{base}:{page}") or "")
+            now = undefined_entries(git("show", f"{at}:{page}") or "")
+            added = [e for e in now if e not in before]
+            for l, key in answers:
+                entry = next((e for e in before if undef_key(e) == key), key)
+                close = [e for e in added if undef_reworded(entry, e)]
+                if entry in now:
+                    still.append(f"{page}: still under Undefined: {undef_key(entry)}")
+                elif close:
+                    still.append(f"{page}: reworded, still under Undefined: {undef_key(close[0])}")
         if open_lines:
             print(f"the fold-in in {note} is unanswered:", file=sys.stderr)
             for l in open_lines[:10]:
+                print(f"  {l.strip()}", file=sys.stderr)
+            return 1
+        if still:
+            print(f"built means moved, not copied: at {at[:12]} these entries answered built are "
+                  "still on their page. Delete each in the change that built it; a reworded "
+                  "entry is still the entry:", file=sys.stderr)
+            for l in still[:10]:
                 print(f"  {l.strip()}", file=sys.stderr)
             return 1
     m = re.search(r"^Commit: (\w+)", body, re.M)
@@ -1395,7 +1515,39 @@ ROOT_DOCS = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md", "CHANGELOG.md")
 # Agent instruction files under their standard names. Off root, each is a second rulebook
 # that an agent opening that folder may load in place of the real one.
 RULES_NAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
+# The page shape jig used before the descriptive contract: a page with all three is in it.
 PAGE_HEADS = re.compile(r"^ {0,3}#{1,6}[ \t]+(Now|Rules|Checks)\b", re.M)
+# Sections only the page contract has, so a file carrying one is a page wherever it sits.
+CONTRACT_HEADS = re.compile(r"^ {0,3}##[ \t]+(Invariants|Undefined)[ \t#]*$", re.M)
+
+
+def old_contract(text: str) -> bool:
+    return set(PAGE_HEADS.findall(text)) == {"Now", "Rules", "Checks"}
+
+
+def page_problems(text: str) -> list[str]:
+    """What a page at home does against the page contract (RULES.md, Documentation)."""
+    if old_contract(text):
+        return ["old contract — convert: Now / Rules / Checks; fold what it says into "
+                "description, delete what no longer holds, keep as Invariants only what has a "
+                "why and a holder"]
+    out, secs = [], page_sections(text)
+    lead = [l.strip() for l in secs[0][1] if l.strip() and not l.lstrip().startswith("<!--")]
+    # The title is the page's one `# ` line; whatever follows it first is the lead, or isn't.
+    if lead and lead[0].startswith("# "):
+        lead = lead[1:]
+    if not lead or lead[0].startswith("#"):
+        out.append("no lead paragraph: open with what the system is and why it exists")
+    for name, lines in secs:
+        if name == "Invariants":
+            for item in section_items(lines):
+                if " — " not in item or "held by" not in item.lower():
+                    out.append(f'invariant without a why (" — ") or a holder ("held by"): {undef_key(item)}')
+    names = [n for n, _ in secs[1:]]
+    if "Undefined" in names and names.index("Undefined") != len(names) - 1:
+        out.append("sections after ## Undefined: "
+                   + ", ".join(names[names.index("Undefined") + 1:]) + " — Undefined is last")
+    return out
 
 
 def sentences(text: str) -> set[str]:
@@ -1425,8 +1577,8 @@ def page_home(path: str, have: set[str]) -> str:
 def doc_homes(root: Path, files: list[str], not_docs: list[str],
               read=None) -> list[dict]:
     """Every tracked Markdown file with no home, as {path, kind, to, fold, naming, named_at}.
-    Kinds: `rules` an agent instruction file off root, `page` Now/Rules/Checks in the wrong
-    place, `copy` three or more sentences of RULES.md word for word, `stray` anything else.
+    Kinds: `rules` an agent instruction file off root, `page` a page, old shape or new, in the
+    wrong place, `copy` three or more sentences of RULES.md word for word, `stray` anything else.
     READ maps a path to its text, for update, which judges the files where they will be."""
     read = read or (lambda f: (root / f).read_text(errors="replace") if (root / f).is_file() else "")
     rules_md = Path(__file__).resolve().parent / "RULES.md"
@@ -1447,7 +1599,7 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
         # A page first: one that quotes the rulebook is still the repo's page, not a copy.
         if "/" in f and Path(f).name in RULES_NAMES:
             kind = "rules"
-        elif f.startswith("docs/") and set(PAGE_HEADS.findall(text)) == {"Now", "Rules", "Checks"}:
+        elif f.startswith("docs/") and (old_contract(text) or CONTRACT_HEADS.search(text)):
             kind, to = "page", page_home(f, have)
         elif rules and len([s for s in sentences(text) if s in rules]) >= 3:
             kind = "copy"
@@ -1465,7 +1617,7 @@ def home_fix(h: dict) -> str:
     """What to do with a rules file or a copy, shared by survey and update."""
     at = ", ".join(h["named_at"]) or "nothing"
     if h["kind"] == "rules":
-        return ("a second rulebook: fold what still binds into AGENTS.md or a page's Rules, "
+        return ("a second rulebook: fold what still binds into AGENTS.md or a page's Invariants, "
                 f"repoint what names it ({at}), then delete it. A package's own rules file may "
                 "stay on the owner's word: ask, don't presume the delete")
     return (f"a copy of {DIR}/RULES.md, which update keeps current: delete it, and point what "
@@ -1625,6 +1777,12 @@ def cmd_survey(root: Path, args) -> int:
     pages = board_pages(md)
     report["boards_unmapped"] = [f for f in pages if f not in (board.get("docmap") or {})]
     report["components_unlinked"], report["components_missing"] = component_links(root, files, pages)
+    # Board pages have a template of their own; the page contract is for system pages.
+    report["page_contract"] = [
+        {"path": f, "problems": probs} for f in md
+        if f.startswith("docs/") and not f.startswith(BOARD_PAGES) and f not in homes
+        and not matches(f, not_docs)
+        and (probs := page_problems((root / f).read_text(errors="replace") if (root / f).exists() else ""))]
     if args.json:
         print(json.dumps(report, indent=2))
         return 0
@@ -1683,6 +1841,11 @@ def cmd_survey(root: Path, args) -> int:
               "\nmatch the code. Map each to the code that targets its board:")
         for f in report["boards_unmapped"]:
             print(f"  {f}")
+    if report["page_contract"]:
+        print(f"\nPages off the page contract ({DIR}/RULES.md, Documentation):")
+        for e in report["page_contract"]:
+            for p in e["problems"]:
+                print(f"  {e['path']}: {p}")
     if report["components_unlinked"]:
         print(f"\nFiles under {COMPONENTS} that no board page links: link each from the"
               "\nComponents table of the page whose checks lean on it, or drop it:")
@@ -3429,7 +3592,7 @@ LAYOUT = [
     ("docs/", ["jig/docs/"]),
 ]
 # Written from the running copy, never renamed: their content is jig's, not the repo's.
-TOOL_FILES = (f"{DIR}/jig.py", f"{DIR}/RULES.md")
+TOOL_FILES = (f"{DIR}/jig.py", f"{DIR}/RULES.md", f"{DIR}/docs-page.md")
 # jig's folder under its old names. Nothing moves by this alone — a file there that no row
 # names stays and is flagged — but a board glob over the whole folder meant jig's folder.
 OLD_DIRS = ("jig/", ".aidev/", CLAUDE_LANE)
@@ -4213,7 +4376,8 @@ def cmd_update(root: Path, args) -> int:
                        f"both to each in {board_at} (\"reserve\": {{\"{blind[0]}\": {{\"pattern\": "
                        f"..., \"files\": [...]}}}}), then update again: the pattern is how jig "
                        "knows which numbers are taken")
-    sources = {f"{DIR}/jig.py": Path(__file__).resolve(), f"{DIR}/RULES.md": here / "RULES.md"}
+    sources = {f"{DIR}/jig.py": Path(__file__).resolve(), f"{DIR}/RULES.md": here / "RULES.md",
+               f"{DIR}/docs-page.md": here / "docs-page.md"}
     replace = []
     for dest, src in sources.items():
         if not src.exists():
