@@ -12,7 +12,8 @@
       "tests/smoke.sh",
       "plugin/skills/survey/SKILL.md",
       "plugin/templates/jig/jig.py",
-      ".jig/specs/redocument.md"
+      ".jig/specs/redocument.md",
+      "plugin/templates/jig/RULES.md"
     ],
     "reserved": {}
   }
