@@ -125,8 +125,8 @@ Otherwise:
    that owns every old path and `.jig/redocument.md`. In a metarepo (`.jig/meta.json` on
    trunk), it is the final job: M4 refuses a trunk commit outside `.jig/`. In a pararepo it is
    the final job too, its spec carrying the pointers spec's `meta:` line: deleting a page a
-   cached pointer names is the contract event, and P2 reads its answer only from a spec the
-   change touches. A pararepo's cleanup refuses to start until the proposal branch exists in the
+   cached pointer names is the contract event, and a commit on trunk is no job, so P2 finds no
+   spec to answer it. A pararepo's cleanup refuses to start until the proposal branch exists in the
    metarepo checkout (`git -C <checkout> rev-parse --verify <branch>`) and `jig staging` lists
    no file for the metarepo (P4). It does not wait for the metarepo to release the proposal:
    cached pointers dangle against a pending proposal until the pin moves, and `jig sync` and
@@ -165,9 +165,7 @@ Your spec carries the job's remap rows and the Sources. You write only your page
    A cited claim is never deleted as stale. If tracing finds the code diverges from it, that is
    a divergence that was already there, now found, not a format change: flag it, and on the
    owner's word it is a row in `.jig/ledgers/BUFFER.md` in your change. Pointer moves go in the
-   proposal; claim changes go in the buffer. In a pararepo, P2 reads its answer only from a
-   spec the change touches, so the commit that first edits a contract-path page or a cited
-   heading stages your spec with it (a line under its `## Decisions` will do).
+   proposal; claim changes go in the buffer.
 
    Provenance lives in the report, not the page: the page is clean prose, with no rule
    numbers, no "formerly", no citations to the old file.

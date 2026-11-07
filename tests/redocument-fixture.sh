@@ -162,8 +162,5 @@ $J open store --spec .jig/specs/redocument-store.md --owns docs/store/store.md >
 git add -A && git commit -qm 'open store'
 cd .git/jig/worktrees/store
 printf '# Store\n\nThe store keeps rows in SQLite.\n\n## Schema\n\nSchema changes go through a migration step.\n' > docs/store/store.md
-echo "-- the page rewrite alone (spec unchanged on the branch)"
-git add -A && { git commit -qm 'store: page contract' 2>&1 | grep -o '^jig: P2 [^:]*' || true; }
-echo "-- the same commit with the spec staged"
-printf -- '- rewritten %s; § Rules landed in § Schema\n' "$(date +%F)" >> .jig/specs/redocument-store.md
+echo "-- the page rewrite alone: the job's spec on trunk answers P2"
 git add -A && git commit -qm 'store: page contract' && echo "committed: P2 answered by $meta"

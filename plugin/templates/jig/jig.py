@@ -2619,8 +2619,15 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
             specs |= {p for p in git("diff", "--name-only", f"{trunk}...HEAD", "--",
                                      f"{DIR}/specs/").splitlines() if p.endswith(".md")}
         ids = {r[0] for r in rows if r[-1] == "Open"}
+        texts = [in_index(s, staged) for s in specs]
+        # The job's own spec, from trunk's board and trunk's copy: whoever controls trunk put
+        # the answer there, so a branch can't forge it. A spec that is one line is its own text.
+        # A detached HEAD (the gate's scratch checkout) is no job, and commits nothing new.
+        _, job = board.job_for_branch(branch) if branch else (None, None)
+        if job and job.get("spec"):
+            texts.append(at_rev(trunk, job["spec"]) or job["spec"])
         answered = any((not m.group("row") or m.group("row") in ids)
-                       for s in specs for m in PROPOSAL.finditer(in_index(s, staged)))
+                       for t in texts for m in PROPOSAL.finditer(t))
         # A row added or changed in this commit answers it, the way R7's ledger row does.
         diff = git("diff", "-U0", base(trunk), *(["--cached"] if staged else []), "--", BUFFER) \
             if BUFFER in paths else ""

@@ -82,6 +82,8 @@ Kickoff carries the job's remap rows and the Sources definitions.
   and a pararepo whose remap marks a cited page and whose job answers P2 from the proposal
 - plugin/templates/jig/jig.py, plugin/skills/survey/SKILL.md: survey points a repo with
   old-contract pages at /jig:redocument instead of /jig:adopt
+- plugin/templates/jig/jig.py, plugin/templates/jig/RULES.md: P2 reads the job's own spec
+  from trunk
 
 ## Alternatives considered
 - Batch subnodes by system instead of per page — rejected because per-surviving-page
@@ -131,9 +133,11 @@ Kickoff carries the job's remap rows and the Sources definitions.
   Pointer moves go in the proposal; claim changes go in the buffer. Cleanup is the contract
   event: a final job, refused until the proposal branch exists and staging holds nothing for
   the metarepo (P4); it does not wait for the metarepo's release
-- P2 reads its answer only from specs the change touches, so a job spec committed on trunk
-  doesn't answer for the job: the subnode stages its spec with the first commit that edits a
-  contract-path page or a cited heading (asked of the hubnode: or teach P2 the board's spec)
+- P2 also reads the job's own spec: the board's `spec`, from trunk's board and trunk's copy (a
+  one-line spec is its own text), beside the specs the change touches (owner, 2026-11-06:
+  strictly stronger — the answer comes from trunk). So a job spec's `meta:` line answers P2 for
+  every commit of the job, with nothing staged. A commit on trunk is no job, so a pararepo's
+  cleanup stays a final job
 
 ## Workflow
 spec: tier 2, effort 2

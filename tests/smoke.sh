@@ -1154,6 +1154,24 @@ msg="update: a metarepo's two-part tag_pattern is widened to take vX.Y.Z"
 expect_pass sh -c "cd '$MR' && python3 '$P/jig/jig.py' update | grep -q 'widen .jig/meta.json'"
 git -C "$MR" checkout -q -- .jig/meta.json
 
+# P2 also reads the job's own spec: the board's, as trunk has it; a one-line spec is its own text.
+cd "$PR" && printf '# pj\n\n## Decisions\n- meta: docs proposal propose/pr-fmt\n' > .jig/specs/pj.md && printf '# pk\n' > .jig/specs/pk.md
+git add .jig/specs && git commit -qm "specs: pj, pk" >/dev/null 2>&1
+for j in pj pk; do $J open $j --spec .jig/specs/$j.md --shares api/a.py >/dev/null 2>&1; done
+$J open pl --spec "meta: none — a comment's typo, no contract change" --shares api/a.py >/dev/null 2>&1
+git add -A && git commit -qm "open pj, pk, pl" >/dev/null 2>&1
+for j in pj pk pl; do (cd .git/jig/worktrees/$j && printf '%s=1\n' $j >> api/a.py && git add api/a.py); done
+msg="para P2: a job whose spec on trunk says meta: <name> proposal <branch> changes a contract path, no spec in the commit"
+expect_pass git -C .git/jig/worktrees/pj commit -qm "api: pj"
+msg="para P2: a job whose trunk spec has no meta: line, and no spec in the commit, is refused"
+out=$(git -C .git/jig/worktrees/pk commit -qm "api: pk" 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^jig: P2 api/a.py is a contract path'" "$out"
+msg="para P2: the same job answers it with a spec it commits on its branch"
+(cd .git/jig/worktrees/pk && printf -- '- meta: none — a rename inside the module\n' >> .jig/specs/pk.md && git add .jig/specs/pk.md)
+expect_pass git -C .git/jig/worktrees/pk commit -qm "api: pk"
+msg="para P2: a one-line board spec carrying meta: none — <reason> answers it"
+expect_pass git -C .git/jig/worktrees/pl commit -qm "api: pl"
+
 msg="plugin: no instance names or the instance's decision prefix"
 expect_refuse grep -rnE 'Maige|maige|"E-' "$P/.."
 }
