@@ -3195,6 +3195,13 @@ def pointer_cleanup(root: Path) -> list[str]:
     if not (root / CACHE).is_dir():
         return [f"no metarepo cache ({CACHE}): run `jig sync`, then update again"]
     out = []
+    try:
+        para = json.loads((root / PARA).read_text()) if (root / PARA).exists() else {}
+    except ValueError:
+        para = {}
+    meta, pin = para.get("meta", ""), para.get("pin", "")
+    loc = meta_checkout(root, para) if para else None
+    olds = dict(LAYOUT)
     for f, path, section, code, level, gap in dangling(root):
         line = f"{f} points to {gap}: "
         found = removal(path, section, code, level)
@@ -3205,17 +3212,22 @@ def pointer_cleanup(root: Path) -> list[str]:
         commit, now = found
         what = (f"renamed to {now} in {commit}" if level == NO_FILE and now != "deleted"
                 else f"removed in {commit}")
-        olds = dict(LAYOUT)
-        pending = [x.group("pbranch") or x.group("branch") for x in
-                   trunk_answers(commit, Board.trunk_name(root), [f"{DIR}/specs/", *olds[f"{DIR}/specs/"]])
-                   if x.group("pbranch") or x.group("branch")]
+        # A branch answer from this repo's metarepo: its rewrite is pending until the pin holds
+        # the branch. Once the pin holds it and the pointer still dangles, the rewrite missed it,
+        # and nothing else will fix it. A metarepo out of reach can't say, so it stays pending.
+        branches = [x.group("pbranch") or x.group("branch") for x in
+                    trunk_answers(commit, Board.trunk_name(root), [f"{DIR}/specs/", *olds[f"{DIR}/specs/"]])
+                    if (x.group("pbranch") or x.group("branch")) and (x.group("pmeta") or x.group("meta")) == meta]
+        pinned = [b for b in branches if loc is not None and pin and proposal_in(loc, b, pin)]
+        pending = [b for b in branches if b not in pinned]
         if pending:
             out.append(line + f"this repo {what}, and the metarepo's rewrite is pending on "
                        f"{pending[0]}: it resolves when the pin holds that branch")
             continue
         shown = shown_section(plain(section), code) if level == NO_HEADING else None
         where = f"{path} § {shown}" if shown else path
-        out.append(line + f"this repo {what}; "
+        missed = f"the metarepo's rewrite in {pinned[0]} missed it; " if pinned else ""
+        out.append(line + f"this repo {what}; " + missed
                    + buffer_offer(root, f"{f}: the pointer to {where}", path, f"{now}, {commit}", shown))
     return out
 

@@ -107,7 +107,9 @@ Kickoff carries the job's remap rows and the Sources definitions.
   pointers branches
 - plugin/skills/review/SKILL.md, plugin/skills/spec/SKILL.md: the `pointers` answer, and
   review's check that a `pointers` spec changes no claim
-- .jig/ledgers/DEFERRED.md: a pointers branch only on a remote-tracking ref
+- .jig/ledgers/DEFERRED.md: a pointers branch only on a remote-tracking ref; `base()` judging
+  a job's auto-committed merge of a sibling branch against trunk; and the fourth review's
+  deferred optionals
 
 ## Alternatives considered
 - Batch subnodes by system instead of per page — rejected because per-surviving-page
@@ -187,9 +189,11 @@ Kickoff carries the job's remap rows and the Sources definitions.
   so a pararepo's cleanup stays a final job. Update's Contract removals and Metarepo pointers
   blocks read the answers the same way (the job a merge deleted from the board): Contract
   removals lists no removal any answer covered, and Metarepo pointers shows a dangling pointer
-  whose removal a `pointers` or `proposal` answer covered as pending on that branch, with no
-  BUFFER row offered (a `none` or `buffered` answer still gets the offer: nothing will fix the
-  pointer)
+  whose removal a `pointers` or `proposal` answer from this repo's metarepo covered as pending on
+  that branch, with no BUFFER row offered, until the pin holds the branch; a pointer still
+  dangling then is one the rewrite missed, and gets the offer, naming the branch. A `none` or
+  `buffered` answer, or one naming another metarepo, still gets the offer: nothing will fix the
+  pointer
 - P2's fifth answer, `meta: <name> pointers <branch>` (`jig propose --pointers`), with the
   gate checking the branch is on this repo's metarepo (or merged into its trunk, released or
   not) and not waiting for its release (owner, 2026-11-06, Option A). It means pointer rewrites pending on

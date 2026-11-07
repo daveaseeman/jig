@@ -1261,6 +1261,25 @@ msg="para gate: a pointers answer whose metarepo can't be reached is refused"
 mv mrclone ../mrclone-away; out=$($J gate pu 2>&1); rc=$?; mv ../mrclone-away mrclone; git worktree remove --force .git/jig/worktrees/gate-pu 2>/dev/null
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"pointers branch propose/pr-ptr, and docs can't be reached to check it\"" "$out"
 
+# Update once the pin holds a branch answer: a pointer still dangling is one the rewrite missed.
+# `jig sync` above refilled the cache, so the pointers go back in as the cache would hold them.
+printf '| D-077 | the api doc (`pr/api/doc.md § Old`) | accepted | 2026-11-01 |\n' >> .jig/meta-cache/DECISIONS.md
+git -C mrclone tag v9.9.9 main
+cp .jig/para.json "$T/para.keep" && setjson .jig/para.json pin v9.9.9
+msg="update: a pointer still dangling once the pin holds its pointers branch gets a BUFFER.md row, naming the missed rewrite"
+pointed=$($UP 2>&1 | sed -n '/^Metarepo pointers/,/^$/p')
+expect_pass sh -c "echo \"\$0\" | grep 'api/doc.md § Old' | grep \"rewrite in propose/pr-ptr missed it\" | grep -q 'BUFFER.md' && ! echo \"\$0\" | grep 'api/doc.md' | grep -q 'pending on'" "$pointed"
+cp "$T/para.keep" .jig/para.json; git -C mrclone tag -d v9.9.9 >/dev/null
+msg="update: a pointer removal its job answered with meta: none still gets a BUFFER.md row"
+printf '# None\n\nThe api.\n\n## Gone\n\nx\n' > api/none.md && printf '# none\n\n- meta: none — a page to rename\n' > .jig/specs/none.md
+git add api/none.md .jig/specs/none.md && git commit -qm "api: none" >/dev/null 2>&1
+$J open pn --spec "meta: none — rename inside the api docs" --owns api/none.md >/dev/null 2>&1 && git add -A && git commit -qm "open pn" >/dev/null 2>&1
+printf '| D-078 | the none doc (`pr/api/none.md § Gone`) | accepted | 2026-11-01 |\n' >> .jig/meta-cache/DECISIONS.md
+(cd .git/jig/worktrees/pn && sed -i.bak 's/^## Gone$/## Here/' api/none.md && rm api/none.md.bak && git add api/none.md && git commit -qm "api: rename Gone" >/dev/null 2>&1); pnote pn
+$J merge pn >/dev/null 2>&1
+pointed=$($UP 2>&1 | sed -n '/^Metarepo pointers/,/^$/p')
+expect_pass sh -c "git log --oneline -1 | grep -q 'merge pn' && echo \"\$0\" | grep 'api/none.md § Gone' | grep -q 'BUFFER.md' && ! echo \"\$0\" | grep 'api/none.md' | grep -q 'pending on'" "$pointed"
+
 msg="plugin: no instance names or the instance's decision prefix"
 expect_refuse grep -rnE 'Maige|maige|"E-' "$P/.."
 }
