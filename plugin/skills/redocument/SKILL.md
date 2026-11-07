@@ -41,16 +41,29 @@ Otherwise:
    where survey says each goes), and its strays under `docs/` are the first rows. Every
    tracked doc under `docs/` gets a row or an explicit `drop`; board pages
    (`docs/hardware/`) are left out unless the owner adds them.
+
+   **In a pararepo** (`.jig/para.json` on trunk), also find every cached metarepo pointer into
+   this repo's docs, `<repo>/<path> § <heading>`:
+
+   ```sh
+   grep -rniE '(^|[^[:alnum:]_-])<repo>[/:]docs/' .jig/meta-cache/
+   ```
+
+   `<repo>` is the board's `name`, and the name folds case. Give the table a Cited column: on
+   each old page's row, every `§ <heading>` a pointer names (or the bare path). The remap is
+   then the pointer crosswalk too. Migration moves pointers; it never changes a claim.
 2. **Propose it as a table** and iterate with the owner until approved:
 
-   | Old path(s) | New path | Verb | Notes |
-   |---|---|---|---|
-   | `docs/store/store.md` | `docs/store/store.md` | rewrite | path kept: rewritten in place |
-   | `docs/notes/sync.md` | `docs/store/sync/sync.md` | move | a subsystem of store |
-   | `docs/a/a.md`, `docs/b/b.md` | `docs/ab/ab.md` | merge | one system, two pages |
-   | `docs/big/big.md` | `docs/big/x/x.md`, `docs/big/y/y.md` | split | |
-   | — | `docs/gap/gap.md` | new | code with no page |
-   | `docs/old/old.md` | — | drop | describes code that is gone |
+   | Old path(s) | New path | Verb | Notes | Cited |
+   |---|---|---|---|---|
+   | `docs/store/store.md` | `docs/store/store.md` | rewrite | path kept: rewritten in place | § Rules |
+   | `docs/notes/sync.md` | `docs/store/sync/sync.md` | move | a subsystem of store | |
+   | `docs/a/a.md`, `docs/b/b.md` | `docs/ab/ab.md` | merge | one system, two pages | |
+   | `docs/big/big.md` | `docs/big/x/x.md`, `docs/big/y/y.md` | split | | |
+   | — | `docs/gap/gap.md` | new | code with no page | |
+   | `docs/old/old.md` | — | drop | describes code that is gone | |
+
+   Cited is only for a pararepo.
 
    Verbs are `rewrite`, `merge`, `split`, `move`, `new`, `drop`. A new path is
    `docs/<system>/<system>.md`, nesting subsystems the same way. Name the cleanup route in
@@ -70,9 +83,26 @@ Otherwise:
    A session archive is a source only if this section names it, and it is cited as the
    query that recovers the passage (`grep -n "offline mode" <archive>`), never as a memory.
    Then the table.
+
+   **In a pararepo,** open the metarepo proposal now, at approval, not at the end: an in-place
+   rewrite of a contract-path page edits a contract path, and renaming a heading a cached
+   pointer names fires P2 on that very commit. Write `.jig/specs/redocument-pointers.md`, the
+   pointer rewrite: one line per cached citation, `<old path> § <heading> → <new path> §
+   <heading>`, the new side filled in as reports land. Then:
+
+   ```sh
+   jig propose .jig/specs/redocument-pointers.md redocument-pointers
+   ```
+
+   It opens the branch on the metarepo and records `- meta: <name> proposal <branch>` in that
+   spec. Commit both files on trunk. That line answers P2 for the whole run: every job spec
+   below carries it. Never a BUFFER row per renamed page or heading: a rename is no claim
+   change, and junk rows bury the real divergences.
 4. **Open one job per surviving page** (every row but `drop`). Write each one a spec,
    `.jig/specs/redocument-<page>.md`: its remap rows, the `## Sources` section, and the
-   Done-when "page lands on the contract; the conversion report is in the handoff note".
+   Done-when "page lands on the contract; the conversion report is in the handoff note". In
+   a pararepo it also carries, under `## Decisions`, the pointers spec's `meta:` line, and its
+   rows' Cited headings.
    A page keeping its path is rewritten in place, and the job owns that path. A page that
    moves, merges or splits is written as a **new file**; the old docs stay standing until
    the end, so the whole remap is recoverable from git. Assign each old file to exactly one
@@ -87,10 +117,20 @@ Otherwise:
    `${CLAUDE_PLUGIN_ROOT}/skills/redocument/SKILL.md` in the hubnode's session. The subnode
    cannot load this skill itself.
 5. **As each job merges,** write that page's `docmap` entries on trunk from the Docmap list in
-   its handoff note's conversion report (R5: subnodes propose them, never write them).
+   its handoff note's conversion report (R5: subnodes propose them, never write them). In a
+   pararepo, also fill that page's lines in `.jig/specs/redocument-pointers.md` from the
+   report's Cited list, and write the same rewrite on the proposal branch in the metarepo
+   checkout (`jig propose` printed where).
 6. **When every job has merged,** clean up in one change: a commit on trunk, or a final job
    that owns every old path and `.jig/redocument.md`. In a metarepo (`.jig/meta.json` on
-   trunk), it is the final job: M4 refuses a trunk commit outside `.jig/`. The change:
+   trunk), it is the final job: M4 refuses a trunk commit outside `.jig/`. In a pararepo it is
+   the final job too, its spec carrying the pointers spec's `meta:` line: deleting a page a
+   cached pointer names is the contract event, and P2 reads its answer only from a spec the
+   change touches. A pararepo's cleanup refuses to start until the proposal branch exists in the
+   metarepo checkout (`git -C <checkout> rev-parse --verify <branch>`) and `jig staging` lists
+   no file for the metarepo (P4). It does not wait for the metarepo to release the proposal:
+   cached pointers dangle against a pending proposal until the pin moves, and `jig sync` and
+   release report them meanwhile, as for any change worked ahead. The change:
    - deletes every superseded old doc, the `drop` rows' files, and `.jig/redocument.md`;
    - removes every old path's `docmap` key from `.jig/config.json`, `drop` rows included
      (on trunk, by the hubnode, either route);
@@ -121,6 +161,14 @@ Your spec carries the job's remap rows and the Sources. You write only your page
      once the owner confirms it;
    - **stale or unverifiable** → deleted, and listed in the report.
 
+   **A cited heading** (a pararepo's spec names it) adds one thing: say where its claim landed.
+   A cited claim is never deleted as stale. If tracing finds the code diverges from it, that is
+   a divergence that was already there, now found, not a format change: flag it, and on the
+   owner's word it is a row in `.jig/ledgers/BUFFER.md` in your change. Pointer moves go in the
+   proposal; claim changes go in the buffer. In a pararepo, P2 reads its answer only from a
+   spec the change touches, so the commit that first edits a contract-path page or a cited
+   heading stages your spec with it (a line under its `## Decisions` will do).
+
    Provenance lives in the report, not the page: the page is clean prose, with no rule
    numbers, no "formerly", no citations to the old file.
 3. **Review.** Write the conversion report into your handoff note, under a heading of its own
@@ -134,10 +182,13 @@ Your spec carries the job's remap rows and the Sources. You write only your page
    - <old rule> — <why: stale, contradicted by <code>, or unverifiable>
    ### Docmap
    - "<new path>": ["<glob>", …]
+   ### Cited (a pararepo only)
+   - <old path> § <heading> → <new path> § <heading>
    ### Flagged (the owner's call)
    - Undefined candidate: <entry> — <source>
    - Failed admission: <would-be invariant> — missing <why | holder>
    - Contradiction: <page claim> vs <code path> — which wins
+   - Divergence (a cited claim): <claim> vs <code path> — a BUFFER row on the owner's word
    ```
 
    **Clean** means every claim is verified against the code and nothing is flagged; the owner

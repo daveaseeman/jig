@@ -78,7 +78,8 @@ Kickoff carries the job's remap rows and the Sources definitions.
 - plugin/templates/ only if the remap file wants a template (it didn't: the format is in the skill)
 - README.md: the skill in the list, a usage block, and the user-only list
 - tests/smoke.sh: redocument in the pinned user-only set; survey's footer pointing at it
-- tests/redocument-fixture.sh (new): the fixture, the remap seed, both refusals, the resume
+- tests/redocument-fixture.sh (new): the fixture, the remap seed, both refusals, the resume,
+  and a pararepo whose remap marks a cited page and whose job answers P2 from the proposal
 - plugin/templates/jig/jig.py, plugin/skills/survey/SKILL.md: survey points a repo with
   old-contract pages at /jig:redocument instead of /jig:adopt
 
@@ -97,6 +98,11 @@ Kickoff carries the job's remap rows and the Sources definitions.
   skill runs /jig:update first and its cleanup does the same set for the old paths it retires;
   two tools proposing different moves for the same files is the failure avoided — reason is
   [seen] (review, Nov 6)
+- In a pararepo, skip contract-path pages — rejected: it leaves the most-cited pages in the
+  old format, which defeats the migration — reason is [seen] (owner, Nov 6)
+- In a pararepo, a BUFFER row per renamed page or heading — rejected: buffer rows are
+  claim-level (the claim at the pin, what this repo does now); a heading rename is no claim
+  change, and dozens of junk rows bury the real divergences — reason is [seen] (owner, Nov 6)
 
 ## Decisions
 - The remap is the hubnode's file, frozen on approval; owner changes only
@@ -115,6 +121,19 @@ Kickoff carries the job's remap rows and the Sources definitions.
   metarepo it is a final job, since M4 refuses a trunk commit outside `.jig/`
 - `.jig/redocument.md` on trunk means a run is under way: a restart resumes at the first
   unfinished step and skips the refusals
+- In a pararepo, redocument is a format migration, not a claim change (owner, Nov 6). The remap
+  marks every page and heading a cached metarepo pointer cites (grep of `.jig/meta-cache/`), so
+  it is the pointer crosswalk too. At approval the hubnode writes
+  `.jig/specs/redocument-pointers.md` and opens the metarepo proposal from it with
+  `jig propose`; every job spec carries its `meta: <name> proposal <branch>` line as the P2
+  answer, and the proposal fills in as reports land. A subnode reports where each cited claim
+  landed and never deletes one as stale; a real divergence is a BUFFER row on the owner's word.
+  Pointer moves go in the proposal; claim changes go in the buffer. Cleanup is the contract
+  event: a final job, refused until the proposal branch exists and staging holds nothing for
+  the metarepo (P4); it does not wait for the metarepo's release
+- P2 reads its answer only from specs the change touches, so a job spec committed on trunk
+  doesn't answer for the job: the subnode stages its spec with the first commit that edits a
+  contract-path page or a cited heading (asked of the hubnode: or teach P2 the board's spec)
 
 ## Workflow
 spec: tier 2, effort 2
