@@ -1,1 +1,16 @@
-{}
+{
+  "redocument": {
+    "spec": ".jig/specs/redocument.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/redocument/**"
+    ],
+    "shares": [
+      "README.md",
+      "plugin/templates/*.md",
+      "tests/smoke.sh"
+    ],
+    "reserved": {}
+  }
+}
