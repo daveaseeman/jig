@@ -73,7 +73,7 @@ sys.exit(0 if old else 1)
 EOF
   local status; status="$($J status)"
   if [ "$status" != "no jobs open" ]; then
-    echo "jobs open: $(echo "$status" | awk 'NR>1 {print $1}' | paste -sd, - | sed 's/,/, /g'); redocument runs on a quiet board"
+    echo "jobs open: $(echo "$status" | awk '/^  [^ ]/ {print $1}' | paste -sd, - | sed 's/,/, /g'); redocument runs on a quiet board"
     return
   fi
   echo "start: old-format pages found, board quiet"
@@ -163,4 +163,6 @@ git add -A && git commit -qm 'open store'
 cd .git/jig/worktrees/store
 printf '# Store\n\nThe store keeps rows in SQLite.\n\n## Schema\n\nSchema changes go through a migration step.\n' > docs/store/store.md
 echo "-- the page rewrite alone: the job's spec on trunk answers P2"
-git add -A && git commit -qm 'store: page contract' && echo "committed: P2 answered by $meta"
+git add -A
+if git commit -qm 'store: page contract'; then echo "committed: P2 answered by $meta"
+else echo "FAIL: the job's trunk spec did not answer P2" >&2; exit 1; fi

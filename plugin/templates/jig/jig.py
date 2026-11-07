@@ -1877,7 +1877,9 @@ def cmd_survey(root: Path, args) -> int:
     print("\nDoc homes: " + "; ".join(f"{k} = {v}" for k, v in DOC_HOMES.items()))
     old = old_board(root)
     # A repo already on jig with old pages has a migration of its own; adopt would replan the repo.
-    old_pages = any(p.startswith("old contract") for e in report["page_contract"] for p in e["problems"])
+    old_pages = any(p.startswith("old contract") for e in report["page_contract"] for p in e["problems"]) \
+        or any(h["kind"] == "page" and old_contract((root / h["path"]).read_text(errors="replace"))
+               for h in report["homeless"] if (root / h["path"]).is_file())
     print(f"An older jig's board is at {old}: run /jig:update first, not /jig:adopt or /jig:init."
           if old else "Pages in the old Now / Rules / Checks shape: run /jig:redocument to convert them."
           if old_pages else "Run /jig:adopt to turn this into a migration plan.")
@@ -2560,6 +2562,29 @@ def ignore_line(root: Path, line: str) -> None:
         ignore.write_text(text + ("" if not text or text.endswith("\n") else "\n") + line + "\n")
 
 
+def job_of_change(board: "Board", branch: str) -> dict | None:
+    """The open job a change belongs to. On its branch, that job. A merge that commits on trunk
+    (`jig merge`) brings the job in as MERGE_HEAD; the gate's scratch checkout is the job's
+    commit, detached, with trunk merged into it. Either way the job is the one whose branch
+    holds the side of the merge trunk doesn't already have; trunk's board still lists it."""
+    if branch and branch != board.trunk:
+        return board.job_for_branch(branch)[1]
+    ours = [] if branch else [git("rev-parse", "-q", "--verify", "HEAD")]
+    for c in filter(None, [*merging_commits(), *ours]):
+        if is_ancestor(c, board.trunk):
+            continue
+        for name, job in board.jobs.items():
+            tip = git("rev-parse", "-q", "--verify", f"refs/heads/{board.branch(name)}")
+            if tip and is_ancestor(c, tip):
+                return job
+    return None
+
+
+def is_ancestor(a: str, b: str) -> bool:
+    return subprocess.run(["git", "merge-base", "--is-ancestor", a, b],
+                          capture_output=True).returncode == 0
+
+
 def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str]:
     """P1–P3: what a pararepo may commit."""
     out: list[str] = []
@@ -2622,8 +2647,7 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
         texts = [in_index(s, staged) for s in specs]
         # The job's own spec, from trunk's board and trunk's copy: whoever controls trunk put
         # the answer there, so a branch can't forge it. A spec that is one line is its own text.
-        # A detached HEAD (the gate's scratch checkout) is no job, and commits nothing new.
-        _, job = board.job_for_branch(branch) if branch else (None, None)
+        job = job_of_change(board, branch)
         if job and job.get("spec"):
             texts.append(at_rev(trunk, job["spec"]) or job["spec"])
         answered = any((not m.group("row") or m.group("row") in ids)
@@ -2634,9 +2658,9 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
         rowed = any(r[-1] == "Open" for l in diff.splitlines() if l.startswith("+|")
                     for r in buffer_rows(l[1:]))
         answer = (f"add or edit its row in {BUFFER} in this commit (the first row creates the "
-                  "file from jig's ledger template), or a spec in this change needs `meta: "
-                  "buffered <row id>`, `meta: <name> proposal <branch>` (`jig propose`) or "
-                  "`meta: none — <reason>`")
+                  "file from jig's ledger template), or a spec in this change, or the job's own "
+                  "spec on trunk, needs `meta: buffered <row id>`, `meta: <name> proposal "
+                  "<branch>` (`jig propose`) or `meta: none — <reason>`")
         if not answered and not rowed and touched:
             out.append(f"P2 {', '.join(touched)} is a contract path: {answer}")
         if not answered and not rowed and broken:

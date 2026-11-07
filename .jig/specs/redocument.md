@@ -105,6 +105,12 @@ Kickoff carries the job's remap rows and the Sources definitions.
 - In a pararepo, a BUFFER row per renamed page or heading — rejected: buffer rows are
   claim-level (the claim at the pin, what this repo does now); a heading rename is no claim
   change, and dozens of junk rows bury the real divergences — reason is [seen] (owner, Nov 6)
+- For P2, answer only at merge from MERGE_HEAD, or have the hubnode commit the `meta:` line onto
+  each job's branch — rejected: the first leaves every commit on the branch refused until the
+  merge; the second is the hubnode writing on a subnode's branch, and still a ritual. Reading
+  the job's spec from trunk answers on the branch, at the gate's scratch merge and at
+  `jig merge` alike, resolving the job from the side of the merge trunk lacks — reason is
+  [seen] (review, Nov 6)
 
 ## Decisions
 - The remap is the hubnode's file, frozen on approval; owner changes only
@@ -136,8 +142,9 @@ Kickoff carries the job's remap rows and the Sources definitions.
 - P2 also reads the job's own spec: the board's `spec`, from trunk's board and trunk's copy (a
   one-line spec is its own text), beside the specs the change touches (owner, 2026-11-06:
   strictly stronger — the answer comes from trunk). So a job spec's `meta:` line answers P2 for
-  every commit of the job, with nothing staged. A commit on trunk is no job, so a pararepo's
-  cleanup stays a final job
+  every commit of the job, with nothing staged, and at its gate and `jig merge`, where the job
+  is found from the merge's side that trunk lacks. A plain commit on trunk is no job, so a
+  pararepo's cleanup stays a final job
 
 ## Workflow
 spec: tier 2, effort 2

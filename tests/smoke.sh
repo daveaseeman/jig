@@ -1157,20 +1157,32 @@ git -C "$MR" checkout -q -- .jig/meta.json
 # P2 also reads the job's own spec: the board's, as trunk has it; a one-line spec is its own text.
 cd "$PR" && printf '# pj\n\n## Decisions\n- meta: docs proposal propose/pr-fmt\n' > .jig/specs/pj.md && printf '# pk\n' > .jig/specs/pk.md
 git add .jig/specs && git commit -qm "specs: pj, pk" >/dev/null 2>&1
-for j in pj pk; do $J open $j --spec .jig/specs/$j.md --shares api/a.py >/dev/null 2>&1; done
-$J open pl --spec "meta: none — a comment's typo, no contract change" --shares api/a.py >/dev/null 2>&1
+for j in pj pk; do $J open $j --spec .jig/specs/$j.md >/dev/null 2>&1; done
+$J open pl --spec "meta: none — a comment's typo, no contract change" >/dev/null 2>&1
 git add -A && git commit -qm "open pj, pk, pl" >/dev/null 2>&1
-for j in pj pk pl; do (cd .git/jig/worktrees/$j && printf '%s=1\n' $j >> api/a.py && git add api/a.py); done
+for j in pj pk pl; do (cd .git/jig/worktrees/$j && printf '%s=1\n' $j > api/$j.py && git add api/$j.py); done
 msg="para P2: a job whose spec on trunk says meta: <name> proposal <branch> changes a contract path, no spec in the commit"
 expect_pass git -C .git/jig/worktrees/pj commit -qm "api: pj"
 msg="para P2: a job whose trunk spec has no meta: line, and no spec in the commit, is refused"
 out=$(git -C .git/jig/worktrees/pk commit -qm "api: pk" 2>&1); rc=$?
-expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^jig: P2 api/a.py is a contract path'" "$out"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^jig: P2 api/pk.py is a contract path'" "$out"
 msg="para P2: the same job answers it with a spec it commits on its branch"
 (cd .git/jig/worktrees/pk && printf -- '- meta: none — a rename inside the module\n' >> .jig/specs/pk.md && git add .jig/specs/pk.md)
 expect_pass git -C .git/jig/worktrees/pk commit -qm "api: pk"
 msg="para P2: a one-line board spec carrying meta: none — <reason> answers it"
 expect_pass git -C .git/jig/worktrees/pl commit -qm "api: pl"
+# The job's spec answers at the gate's scratch merge and at `jig merge` too, where no branch is the job's.
+for j in pk pl pj; do (cd .git/jig/worktrees/$j && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $j" >/dev/null 2>&1); done
+msg="para P2: the gate's scratch merge of a job answered by its one-line board spec passes"
+expect_pass gate_ok pl
+msg="para P2: jig merge of a job answered by its one-line board spec passes"
+expect_pass $J merge pl
+msg="para P2: the gate's scratch merge of a job answered by a spec on its branch passes"
+expect_pass gate_ok pk
+msg="para P2: jig merge of a job answered by a spec on its branch passes"
+expect_pass $J merge pk
+msg="para P2: jig merge of a job answered by meta: <name> proposal <branch> in its trunk spec passes"
+expect_pass $J merge pj
 
 msg="plugin: no instance names or the instance's decision prefix"
 expect_refuse grep -rnE 'Maige|maige|"E-' "$P/.."
@@ -2853,6 +2865,10 @@ expect_pass pc "assert h['docs/misc/x.md']['kind'] == 'page' and h['docs/misc/x.
 msg="page contract: survey prints them under their own heading"
 expect_pass sh -c "$J survey | grep -A9 '^Pages off the page contract' | grep -q '^  docs/old/old.md: old contract — convert'"
 msg="page contract: survey points a repo with old-contract pages at /jig:redocument, not /jig:adopt"
+expect_pass sh -c "$J survey | tail -1 | grep -q 'run /jig:redocument to convert them'"
+msg="page contract: an old-format page outside the docs tree points at /jig:redocument too"
+PO="$T/page-outside"; pcnew "$PO" && mkdir -p docs/notes && printf '# Sync\n\n## Now\nx\n\n## Rules\n### 1.1 y\n\n## Checks\n- 1.1 review\n' > docs/notes/sync.md
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 expect_pass sh -c "$J survey | tail -1 | grep -q 'run /jig:redocument to convert them'"
 
 PU="$T/page-template"; pcnew "$PU" && rm .jig/docs-page.md && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board

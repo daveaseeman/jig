@@ -17,15 +17,17 @@ owner's time goes to the remap and to flagged pages, not to diffs.
 **A resume?** If `.jig/redocument.md` is on trunk, a run is under way. Skip the refusals
 and the remap: read the file and carry on at the first step not done — a surviving row with
 no job opened or merged (step 4), a merged page whose docmap entries aren't written yet
-(step 5), or, with every job merged, the cleanup (step 6). The run's own open jobs are not
-"other jobs".
+(step 5), or, with every job merged, the cleanup (step 6). In a pararepo, a remap with no
+`.jig/specs/redocument-pointers.md`, or one with no `meta:` line, resumes at step 3's pararepo
+half: open the proposal before any job. The run's own open jobs are not "other jobs".
 
 Otherwise:
 
-1. **Bring the layout current.** Run `/jig:update` first and land what it proposes. A page
-   outside the docs tree is a move `update` already makes, with everything it touches;
-   starting from a current layout means the two never propose different moves for the same
-   files.
+1. **Bring the layout current.** Run `/jig:update` first and land what it proposes, except
+   its page moves for old-contract pages: decline those, because the remap places them (and
+   in a pararepo `update` would add a BUFFER row per cached pointer, which this run's
+   proposal replaces). Starting from a current layout means the two never propose different
+   moves for the same files.
 2. **Refuse unless old-format pages exist.** Run `jig survey`. Go on only if it names at
    least one page "old contract — convert" under *Pages off the page contract*, or a page
    under *Pages outside the docs tree* whose file has the Now, Rules and Checks headings.
@@ -49,7 +51,8 @@ Otherwise:
    grep -rniE '(^|[^[:alnum:]_-])<repo>[/:]docs/' .jig/meta-cache/
    ```
 
-   `<repo>` is the board's `name`, and the name folds case. Give the table a Cited column: on
+   `<repo>` is each name this repo goes by, one grep per name: the board's `name`, the
+   checkout's folder name, and any alias `jig repos` lists for this checkout. Names fold case. Give the table a Cited column: on
    each old page's row, every `§ <heading>` a pointer names (or the bare path). The remap is
    then the pointer crosswalk too. Migration moves pointers; it never changes a claim.
 2. **Propose it as a table** and iterate with the owner until approved:
@@ -126,12 +129,16 @@ Otherwise:
    trunk), it is the final job: M4 refuses a trunk commit outside `.jig/`. In a pararepo it is
    the final job too, its spec carrying the pointers spec's `meta:` line: deleting a page a
    cached pointer names is the contract event, and a commit on trunk is no job, so P2 finds no
-   spec to answer it. A pararepo's cleanup refuses to start until the proposal branch exists in the
-   metarepo checkout (`git -C <checkout> rev-parse --verify <branch>`) and `jig staging` lists
-   no file for the metarepo (P4). It does not wait for the metarepo to release the proposal:
+   spec to answer it. A pararepo's cleanup refuses to start until every line of
+   `.jig/specs/redocument-pointers.md` has its new side, the proposal branch carries each
+   rewrite (`git -C <checkout> diff <pin>...<branch>` names every new path § heading), and
+   `jig staging` lists no file for the metarepo (P4). It does not wait for the metarepo to release the proposal:
    cached pointers dangle against a pending proposal until the pin moves, and `jig sync` and
    release report them meanwhile, as for any change worked ahead. The change:
-   - deletes every superseded old doc, the `drop` rows' files, and `.jig/redocument.md`;
+   - deletes every superseded old doc, the `drop` rows' files, `.jig/redocument.md`, and the
+     per-job `.jig/specs/redocument-<page>.md` specs; git history keeps them. In a pararepo
+     `.jig/specs/redocument-pointers.md` stays: it records the proposal until `jig sync` takes
+     the release that holds it;
    - removes every old path's `docmap` key from `.jig/config.json`, `drop` rows included
      (on trunk, by the hubnode, either route);
    - repoints every tracked reference to an old path — README, `AGENTS.md`, other pages,
