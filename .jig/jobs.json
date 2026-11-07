@@ -13,7 +13,9 @@
       "plugin/skills/survey/SKILL.md",
       "plugin/templates/jig/jig.py",
       ".jig/specs/redocument.md",
-      "plugin/templates/jig/RULES.md"
+      "plugin/templates/jig/RULES.md",
+      "plugin/skills/review/SKILL.md",
+      "plugin/skills/spec/SKILL.md"
     ],
     "reserved": {}
   }
