@@ -15,7 +15,8 @@
       ".jig/specs/redocument.md",
       "plugin/templates/jig/RULES.md",
       "plugin/skills/review/SKILL.md",
-      "plugin/skills/spec/SKILL.md"
+      "plugin/skills/spec/SKILL.md",
+      "plugin/skills/update/SKILL.md"
     ],
     "reserved": {}
   }
