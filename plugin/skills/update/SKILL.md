@@ -58,7 +58,11 @@ and there is no template diff to read.
 **Metarepo pointers**, in a pararepo, are the cached metarepo pointers that dangle. Show each
 line. One that names the commit that removed what it points to offers a `.jig/ledgers/BUFFER.md`
 row: ask, and add the row as offered only on a yes (the next `jig release` proposes it). One the
-repo never had is the metarepo's to fix, by `jig propose`. Never edit the metarepo here.
+repo never had is the metarepo's to fix, by `jig propose`. One that says "pending on <branch>"
+was covered by a `pointers` or `proposal` answer whose branch the pin doesn't hold yet: offer
+nothing, since it resolves when the pin moves. One that says "the metarepo's rewrite in <branch>
+missed it" is pinned and still dangling: offer its row like any other. Never edit the metarepo
+here.
 
 **Contract removals**, beside it, are trunk commits that deleted or moved away a contract path
 with nothing answering them. Each offers one `BUFFER.md` row: add it only on a yes, and change
