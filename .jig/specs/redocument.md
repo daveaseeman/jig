@@ -12,18 +12,26 @@ supervised pass: propose a remap of systems and subsystems, get it approved, lan
 surviving page through subnodes, and leave git history as the record of the move —
 while keeping the owner's review time on the judgment calls, not the diffs.
 
+In a pararepo the pass is a format migration, never a claim change, and jig's P2 learned what
+that needs: an answer read from the job's spec on trunk, and a `pointers` answer for metarepo
+pointer rewrites worked ahead of (Decisions).
+
 ## Process
 
 ### Hubnode: the remap
-1. Run `jig survey`; its old-format flags, strays and homeless files seed the remap.
-   Every tracked doc gets a row or an explicit drop.
+1. Run `/jig:update` first (declining its moves of old-contract pages), then `jig survey`; its
+   old-format flags, strays and homeless files seed the remap. Every tracked doc gets a row or
+   an explicit drop. In a pararepo the remap also marks every page and heading a cached
+   metarepo pointer cites.
 2. Propose the remap to the owner as a table: `old path(s) → new path, verb
    (rewrite / merge / split / move / new / drop), notes`. Iterate until approved.
 3. Write the approved remap to `.jig/redocument.md` on trunk — the hubnode's working
    file, frozen once approved; changes go back through the owner. It opens with a
    `## Sources` section defining the named sources valid for this process only
-   (see Tracing). The file is deleted in the final cleanup commit; git history keeps it.
-4. Open one job per surviving page. A page keeping its path is rewritten in place (the
+   (see Tracing). The file is deleted in the final cleanup commit; git history keeps it. In a
+   pararepo, approval also opens the metarepo pointers branch (`jig propose --pointers`).
+4. Open one job per surviving page, each with a spec of its own from its remap rows. A page
+   keeping its path is rewritten in place (the
    job owns that path). A page that moves, merges or splits is written as a **new file**;
    the old docs stay standing until the end, so the whole remap is recoverable from git
    history. Each old file is assigned to exactly one job for derivation bookkeeping;
@@ -31,8 +39,10 @@ while keeping the owner's review time on the judgment calls, not the diffs.
 5. As each job merges, the hubnode rewrites that page's `docmap` entries on trunk (R5 —
    subnodes propose entries in their report, never write them).
 6. When all jobs have merged: one cleanup commit on trunk (or a final job owning all old
-   paths) deletes every superseded old doc and `.jig/redocument.md`. Run `jig survey`;
-   it must come back clean.
+   paths; always a job in a metarepo or a pararepo) deletes every superseded old doc,
+   `.jig/redocument.md` and the run's specs, drops the old paths' docmap keys and repoints
+   every reference to them. Run `jig survey`; it must come back clean, with no docmap key
+   naming a missing file and no old path left in `git grep`.
 
 Run with a quiet board: no other jobs open, so fold-in never asks a dying page about
 live code changes.
@@ -53,7 +63,7 @@ Kickoff carries the job's remap rows and the Sources definitions.
    - a parked intent → `## Undefined` candidate, written only once the owner confirms
    - stale or unverifiable → deleted, listed in the report
    Provenance lives in the report, not the page: pages stay clean prose.
-3. **Review.** Deliver the page plus a conversion report: what moved where, what was
+3. **Review.** Deliver the page plus a conversion report, in the handoff note: what moved where, what was
    deleted and why, proposed docmap entries, and a flagged list needing the owner's call
    (Undefined candidates, failed-admission invariants, doc-vs-code contradictions). Mark
    the page **clean** (every claim verified against code, nothing flagged) or
@@ -66,11 +76,20 @@ Kickoff carries the job's remap rows and the Sources definitions.
       clean/flagged report; `claude plugin validate ./plugin` passes
 - [ ] a dry run on a test fixture repo produces a remap proposal from survey output
 - [ ] the skill refuses to start when survey shows no old-format pages, or when other
-      jobs are open
+      jobs are open, and resumes a run whose remap is on trunk
+- [ ] survey's footer points a repo with old-format pages, at home or outside the docs tree,
+      at /jig:redocument
+- [ ] P2 accepts a job's answer from its spec on trunk: on its branch, at the gate's scratch
+      merge and at `jig merge`, for one job only (never a stacked job's or an octopus)
+- [ ] P2 accepts `meta: <name> pointers <branch>`; the gate refuses it for another metarepo,
+      a branch the metarepo neither has nor merged, or a metarepo it can't reach, and doesn't
+      wait for a release; update's Contract removals and Metarepo pointers blocks read the
+      same answers
 
 ## Out of scope
 - Running it on any real repo (owner's call, after docs-page-contract ships)
-- New jig.py commands — the skill composes survey, open, handoff, gate, merge
+- New jig.py commands — the skill composes update, survey, open, propose, handoff, gate,
+  merge (a `--pointers` flag on `jig propose` is the one addition)
 - Changing the page contract itself
 
 ## Touches
@@ -83,7 +102,12 @@ Kickoff carries the job's remap rows and the Sources definitions.
 - plugin/templates/jig/jig.py, plugin/skills/survey/SKILL.md: survey points a repo with
   old-contract pages at /jig:redocument instead of /jig:adopt
 - plugin/templates/jig/jig.py, plugin/templates/jig/RULES.md: P2 reads the job's own spec
-  from trunk; the `pointers` answer, `jig propose --pointers`, and the gate's branch check
+  from trunk; the `pointers` answer, `jig propose --pointers`, and the gate's branch check;
+  update's Contract removals and Metarepo pointers read the same answers; `jig sync` lists
+  pointers branches
+- plugin/skills/review/SKILL.md, plugin/skills/spec/SKILL.md: the `pointers` answer, and
+  review's check that a `pointers` spec changes no claim
+- .jig/ledgers/DEFERRED.md: a pointers branch only on a remote-tracking ref
 
 ## Alternatives considered
 - Batch subnodes by system instead of per page — rejected because per-surviving-page
@@ -143,22 +167,30 @@ Kickoff carries the job's remap rows and the Sources definitions.
 - In a pararepo, redocument is a format migration, not a claim change (owner, Nov 6). The remap
   marks every page and heading a cached metarepo pointer cites (grep of `.jig/meta-cache/`), so
   it is the pointer crosswalk too. At approval the hubnode writes
-  `.jig/specs/redocument-pointers.md` and opens the metarepo proposal from it with
-  `jig propose`; every job spec carries its `meta: <name> proposal <branch>` line as the P2
-  answer, and the proposal fills in as reports land. A subnode reports where each cited claim
-  landed and never deletes one as stale; a real divergence is a BUFFER row on the owner's word.
-  Pointer moves go in the proposal; claim changes go in the buffer. Cleanup is the contract
-  event: a final job, refused until the proposal branch exists and staging holds nothing for
-  the metarepo (P4); it does not wait for the metarepo's release
+  `.jig/specs/redocument-pointers.md` and opens the metarepo pointers branch from it with
+  `jig propose --pointers`; every job spec, the cleanup job's included, carries its
+  `meta: <name> pointers <branch>` line as the P2 answer, and the branch fills in as reports
+  land. A subnode reports where each cited claim landed and never deletes one as stale; a real
+  divergence is a BUFFER row on the owner's word. Pointer moves go on the pointers branch;
+  claim changes go in the buffer. Cleanup is the contract event: a final job, opened once every
+  crosswalk line has its new side and is on the branch; the gate checks the branch and doesn't
+  wait for the metarepo's release
 - P2 also reads the job's own spec: the board's `spec`, from trunk's board and trunk's copy (a
   one-line spec is its own text), beside the specs the change touches (owner, 2026-11-06:
   strictly stronger — the answer comes from trunk). So a job spec's `meta:` line answers P2 for
   every commit of the job, with nothing staged, and at its gate and `jig merge`, where the job
-  is found from the merge's side that trunk lacks. A plain commit on trunk is no job, so a
-  pararepo's cleanup stays a final job
+  is found from the merge's side that trunk lacks: the branch tip itself, else the one job whose
+  first-parent line holds it. Anything ambiguous, a job stacked on another, or an octopus merge
+  belongs to no job and gets only the change's own answers. A plain commit on trunk is no job,
+  so a pararepo's cleanup stays a final job. Update's Contract removals and Metarepo pointers
+  blocks read the answers the same way (the job a merge deleted from the board): Contract
+  removals lists no removal any answer covered, and Metarepo pointers shows a dangling pointer
+  whose removal a `pointers` or `proposal` answer covered as pending on that branch, with no
+  BUFFER row offered (a `none` or `buffered` answer still gets the offer: nothing will fix the
+  pointer)
 - P2's fifth answer, `meta: <name> pointers <branch>` (`jig propose --pointers`), with the
-  gate checking the branch is on this repo's metarepo (merged and released counts) and not
-  waiting for its release (owner, 2026-11-06, Option A). It means pointer rewrites pending on
+  gate checking the branch is on this repo's metarepo (or merged into its trunk, released or
+  not) and not waiting for its release (owner, 2026-11-06, Option A). It means pointer rewrites pending on
   that branch and no metarepo claim change; review, not P2, holds a spec to that. The vocabulary
   then matches: claim changes → a BUFFER row; pointer moves → `pointers <branch>`; a real
   dependency on a metarepo change → `proposal <branch>`, which waits. Every redocument job spec,

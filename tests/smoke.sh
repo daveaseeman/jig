@@ -1219,6 +1219,48 @@ msg="para gate: a pointers answer naming another metarepo is refused"
 out=$($J gate pr 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-pr 2>/dev/null
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'pointers branch propose/pr-ptr on other, but this repo.s metarepo is docs'" "$out"
 
+pnote() { (cd .git/jig/worktrees/$1 && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $1" >/dev/null 2>&1); }
+msg="update: a cited heading a pointers answer covered is pending on its branch, with no BUFFER.md row offered"
+pointed=$($UP 2>&1 | sed -n '/^Metarepo pointers/,/^$/p')
+expect_pass sh -c "echo \"\$0\" | grep 'api/doc.md § Old' | grep -q 'pending on propose/pr-ptr' && ! echo \"\$0\" | grep 'api/doc.md' | grep -q 'BUFFER.md'" "$pointed"
+msg="update: a contract file a job deleted, answered by its trunk spec, is not a Contract removal"
+printf 'dead=1\n' > api/dead.py && printf '# dead\n\n- meta: none — a file to delete\n' > .jig/specs/dead.md && git add -A && git commit -qm "api: dead" >/dev/null 2>&1
+$J open p1 --spec "meta: none — dead code, no contract" --owns api/dead.py >/dev/null 2>&1 && git add -A && git commit -qm "open p1" >/dev/null 2>&1
+(cd .git/jig/worktrees/p1 && git rm -q api/dead.py && git commit -qm "api: drop dead" >/dev/null 2>&1); pnote p1
+$J merge p1 >/dev/null 2>&1
+expect_pass sh -c "test -z \"\$(git ls-files api/dead.py)\" && ! $UP 2>&1 | sed -n '/^Contract removals/,/^\$/p' | grep -q 'api/dead.py'"
+
+# One job per merge: a job stacked on another, or an octopus, gets no job's answer.
+$J open jb --spec "meta: none — jb" >/dev/null 2>&1; $J open jc --spec "jc, with no answer" >/dev/null 2>&1
+$J open jd --spec "meta: none — jd" >/dev/null 2>&1
+git add -A && git commit -qm "open jb jc jd" >/dev/null 2>&1; top=$(git rev-parse HEAD)
+(cd .git/jig/worktrees/jc && printf 'c=1\n' > api/jc.py && git add api/jc.py && git commit -qm "api: jc" --no-verify >/dev/null 2>&1)
+# --no-commit: an auto-committed merge is judged against trunk, which has the board jb lacks.
+(cd .git/jig/worktrees/jb && git merge -q --no-ff --no-commit jc >/dev/null 2>&1 && git commit -q --no-edit >/dev/null 2>&1)
+(cd .git/jig/worktrees/jd && printf 'd=1\n' > api/jd.py && git add api/jd.py && git commit -qm "api: jd" >/dev/null 2>&1)
+git branch -q xo main && (git worktree add -q "$T/wxo" xo && cd "$T/wxo" && printf 'q=1\n' > api/xo.py && git add api/xo.py && git commit -qm "api: xo" --no-verify >/dev/null 2>&1); git worktree remove --force "$T/wxo"
+msg="para P2: (setup) jb holds jc's commit, and jd and xo are each ahead of trunk"
+expect_pass sh -c "git merge-base --is-ancestor jc jb && ! git merge-base --is-ancestor jd main && ! git merge-base --is-ancestor xo main"
+msg="para P2: merging a job that a stacked job also holds reads its own spec, not the stacking job's"
+expect_refuse git merge --no-ff --no-edit jc; git merge --abort 2>/dev/null; git reset -q --hard "$top"
+msg="para P2: an octopus of an answered job and a branch with no answer gets no job's answer"
+expect_refuse git merge --no-edit jd xo; git merge --abort 2>/dev/null; git reset -q --hard "$top"
+msg="para P2: the answered job alone still merges on its trunk spec"
+expect_pass git merge --no-ff --no-edit jd; git reset -q --hard "$top"
+
+msg="para gate: a pointers branch merged into the metarepo and deleted, not yet released, passes"
+(cd mrclone && git switch -q propose/pr-ptr && printf 'ptr\n' > ptr.md && git add -A && git commit -qm "ptr: rewrite" \
+  && git switch -q main && git merge -q --no-ff --no-edit propose/pr-ptr && git branch -q -D propose/pr-ptr) >/dev/null 2>&1
+$J open ps --spec "meta: docs pointers propose/pr-ptr" >/dev/null 2>&1 && $J open pu --spec "meta: docs pointers propose/pr-ptr" >/dev/null 2>&1
+git add -A && git commit -qm "open ps pu" >/dev/null 2>&1
+for j in ps pu; do (cd .git/jig/worktrees/$j && printf '%s=1\n' $j > api/$j.py && git add -A && git commit -qm "api: $j" >/dev/null 2>&1); pnote $j; done
+expect_pass gate_ok ps
+msg="sync: lists a pointers branch and its state"
+expect_pass sh -c "$J sync 2>&1 | grep -q 'pointers propose/pr-ptr (.jig/specs/pp.md): merged, not released'"
+msg="para gate: a pointers answer whose metarepo can't be reached is refused"
+mv mrclone ../mrclone-away; out=$($J gate pu 2>&1); rc=$?; mv ../mrclone-away mrclone; git worktree remove --force .git/jig/worktrees/gate-pu 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"pointers branch propose/pr-ptr, and docs can't be reached to check it\"" "$out"
+
 msg="plugin: no instance names or the instance's decision prefix"
 expect_refuse grep -rnE 'Maige|maige|"E-' "$P/.."
 }

@@ -36,7 +36,10 @@ Its job is to find the reason this change is wrong. Its questions:
 5. What would make this fail that the author didn't consider? One concrete scenario, or say
    there isn't one.
 6. In a pararepo: does it change a contract path without a buffer row, a metarepo
-   proposal, or a `meta: none` reason that holds? Does a buffer row say what the code now does?
+   proposal, a `meta: <name> pointers <branch>`, or a `meta: none` reason that holds? Does a
+   buffer row say what the code now does? A `pointers` spec moves pointers only: if its diff
+   changes a metarepo claim, that is a finding (the claim change needs a buffer row or a
+   proposal).
 7. In a metarepo: does a changed claim still stand, in other words, anywhere the spec didn't
    list (Every copy)? Does older text it contradicts still read as current, Accepted or not
    (Newer wins)? Is each changed claim stated only at its home, with a pointer everywhere else

@@ -1954,7 +1954,10 @@ def merging_commits() -> list[str]:
     MERGE_HEAD, but git names what it merges in GIT_REFLOG_ACTION ("merge <ref>...")."""
     head = git("rev-parse", "-q", "--verify", "MERGE_HEAD")
     if head:
-        return [head]
+        # An octopus writes one line per head; rev-parse reads only the first.
+        f = Path(git("rev-parse", "--git-path", "MERGE_HEAD"))
+        heads = [l.split()[0] for l in f.read_text().splitlines() if l.strip()] if f.is_file() else []
+        return heads or [head]
     action = os.environ.get("GIT_REFLOG_ACTION", "")
     if AUTO_MERGE and action.startswith("merge "):
         return [c for c in (git("rev-parse", "-q", "--verify", f"{r}^{{commit}}")
@@ -2568,17 +2571,25 @@ def job_of_change(board: "Board", branch: str) -> dict | None:
     """The open job a change belongs to. On its branch, that job. A merge that commits on trunk
     (`jig merge`) brings the job in as MERGE_HEAD; the gate's scratch checkout is the job's
     commit, detached, with trunk merged into it. Either way the job is the one whose branch
-    holds the side of the merge trunk doesn't already have; trunk's board still lists it."""
+    holds the side of the merge trunk doesn't already have; trunk's board still lists it. It
+    must be one job: the branch tip itself, else the one branch whose own line (first parents)
+    holds it. A job stacked on another holds its commits too, but off its own line; anything
+    still ambiguous, or an octopus merge, belongs to no job, so no spec but the change's answers."""
     if branch and branch != board.trunk:
         return board.job_for_branch(branch)[1]
+    merging = merging_commits()
+    if len(merging) > 1:
+        return None
     ours = [] if branch else [git("rev-parse", "-q", "--verify", "HEAD")]
-    for c in filter(None, [*merging_commits(), *ours]):
+    tips = {name: git("rev-parse", "-q", "--verify", f"refs/heads/{board.branch(name)}")
+            for name in board.jobs}
+    for c in filter(None, [*merging, *ours]):
         if is_ancestor(c, board.trunk):
             continue
-        for name, job in board.jobs.items():
-            tip = git("rev-parse", "-q", "--verify", f"refs/heads/{board.branch(name)}")
-            if tip and is_ancestor(c, tip):
-                return job
+        exact = [n for n, t in tips.items() if t == c]
+        own = exact or [n for n, t in tips.items() if t and c in
+                        git("rev-list", "--first-parent", t, f"^{board.trunk}").split()]
+        return board.jobs[own[0]] if len(own) == 1 else None
     return None
 
 
@@ -2811,11 +2822,11 @@ def unreleased_proposals(root: Path, para: dict, trunk: str, commit: str, named:
             out.append(f"{what} on {m.group('pmeta')}, but this repo's metarepo is {name}")
         elif loc is None:
             out.append(f"{what}, and {name} can't be reached to check it (see `jig repos`)")
-        # Merged and deleted is real too: a release then holds it.
+        # Merged and deleted is real too, released or not: the metarepo's trunk then holds it.
         elif not git("rev-parse", "-q", "--verify", f"refs/heads/{m.group('pbranch')}", cwd=str(loc)) \
-                and not any(proposal_in(loc, m.group("pbranch"), t) for t in released_tags(str(loc))):
-            out.append(f"{what}, which {name} has no branch for and no release holds: open it "
-                       "with `jig propose`")
+                and not proposal_in(loc, m.group("pbranch"), Board.trunk_name(loc)):
+            out.append(f"{what}, which {name} has no branch for and hasn't merged: open it "
+                       "with `jig propose --pointers`")
     for spec, m in cited:
         what = f"{spec} cites proposal {m.group('branch')}"
         if m.group("meta") != name:
@@ -2868,6 +2879,15 @@ def sync_meta(root: Path) -> int:
                 rows = [i for i, r in proposed_copy(text).items() if tuple(r) in still]
                 if rows:
                     buffered.append((spec, m.group("branch"), rows))
+            elif m.group("pbranch") and m.group("pmeta") == name:
+                b = m.group("pbranch")
+                first = next((t for t in sorted(set(tags) | {pin}, key=version_key)
+                              if proposal_in(loc, b, t)), None)
+                state = (f"released by {first}" if first else "merged, not released"
+                         if proposal_in(loc, b, Board.trunk_name(loc)) else "open"
+                         if git("rev-parse", "-q", "--verify", f"refs/heads/{b}", cwd=str(loc))
+                         else "missing")
+                print(f"pointers {b} ({spec.relative_to(root)}): {state}")
     uncovered_paths(root, loc, para)
     # The buffer settles when the metarepo releases its proposal: the pin moves to the first
     # release that holds one, and its rows close in that same commit. A pin already holding it
@@ -3129,6 +3149,46 @@ def buffer_offer(root: Path, claim: str, path: str, now: str, section: str | Non
     return row_offer(claim, now)
 
 
+_BROUGHT: dict[str, dict[str, str]] = {}
+
+
+def brought_by(trunk: str) -> dict[str, str]:
+    """Which first-parent merge on TRUNK brought each commit in."""
+    if trunk not in _BROUGHT:
+        out: dict[str, str] = {}
+        for m in reversed(git("rev-list", "--first-parent", "--merges", trunk).splitlines()):
+            for c in git("rev-list", f"{m}^1..{m}^2").splitlines():
+                out.setdefault(c, m)
+        _BROUGHT[trunk] = out
+    return _BROUGHT[trunk]
+
+
+def trunk_answers(commit: str, trunk: str, spec_dirs: list[str]) -> list["re.Match"]:
+    """The P2 answers that covered COMMIT on trunk, read the way P2 read them: the specs it
+    touched; and, for a commit a merge brought in, the specs its branch changed and the spec of
+    the job whose entry that merge deleted (`jig merge` deletes it there), as trunk held it then
+    (a one-line spec is its own text). Update reads these so it never offers a BUFFER row for
+    what an answer already covered."""
+    def specs_of(*rng: str) -> list[str]:
+        return [p for p in git("-c", "core.quotePath=false", *rng, "--name-only", "--diff-filter=ACMRT",
+                               "--", *spec_dirs).splitlines() if p.endswith(".md")]
+    full = git("rev-parse", "-q", "--verify", f"{commit}^{{commit}}") or commit
+    texts = [at_rev(full, s) for s in specs_of("show", "--format=", full)]
+    m = brought_by(trunk).get(full)
+    if m:
+        texts += [at_rev(f"{m}^2", s) for s in specs_of("diff", f"{m}^1...{m}^2")]
+        try:
+            before = json.loads(at_rev(f"{m}^1", JOBS) or "{}")
+            after = json.loads(at_rev(m, JOBS) or "{}")
+        except ValueError:
+            before, after = {}, {}
+        for name in [n for n in before if n not in after]:
+            spec = (before[name] or {}).get("spec") or ""
+            if spec:
+                texts.append(at_rev(f"{m}^1", spec) or spec)
+    return [x for t in texts for x in PROPOSAL.finditer(t)]
+
+
 def pointer_cleanup(root: Path) -> list[str]:
     """Update's Metarepo pointers block: each cached pointer that dangles, and its fix. An older
     P2 let some of these through; the update that brings the fix is where the repo hears of them."""
@@ -3145,6 +3205,14 @@ def pointer_cleanup(root: Path) -> list[str]:
         commit, now = found
         what = (f"renamed to {now} in {commit}" if level == NO_FILE and now != "deleted"
                 else f"removed in {commit}")
+        olds = dict(LAYOUT)
+        pending = [x.group("pbranch") or x.group("branch") for x in
+                   trunk_answers(commit, Board.trunk_name(root), [f"{DIR}/specs/", *olds[f"{DIR}/specs/"]])
+                   if x.group("pbranch") or x.group("branch")]
+        if pending:
+            out.append(line + f"this repo {what}, and the metarepo's rewrite is pending on "
+                       f"{pending[0]}: it resolves when the pin holds that branch")
+            continue
         shown = shown_section(plain(section), code) if level == NO_HEADING else None
         where = f"{path} § {shown}" if shown else path
         out.append(line + f"this repo {what}; "
@@ -3170,17 +3238,6 @@ def contract_removals(root: Path, trunk: str) -> list[str]:
         today = json.loads(at_rev(trunk, PARA) or "{}").get("contract_paths") or []
     except ValueError:
         today = []
-    # Which first-parent merge brought each commit in: a spec on that branch answered it.
-    brought: dict[str, str] = {}
-    for m in reversed(git("rev-list", "--first-parent", "--merges", trunk).splitlines()):
-        for c in git("rev-list", f"{m}^1..{m}^2").splitlines():
-            brought.setdefault(c, m)
-
-    def answered(rng: list[str], at: str) -> bool:
-        specs = [p for p in git("-c", "core.quotePath=false", *rng, "--name-only", "--diff-filter=ACMRT",
-                                "--", *spec_dirs).splitlines() if p.endswith(".md")]
-        return any(PROPOSAL.search(at_rev(at, s)) for s in specs)
-
     out = []
     for line in git("log", "--no-merges", "-M", "--diff-filter=DR", "--format=%H %h %s", trunk).splitlines():
         commit, short, subject = (line.split(" ", 2) + [""])[:3]
@@ -3197,10 +3254,7 @@ def contract_removals(root: Path, trunk: str) -> list[str]:
                      "--format=", commit).splitlines()
         if any(matches(w, globs) for w in writes):
             continue                    # P2 asked then, and its answer covers the commit
-        if answered(["show", "--format=", commit], commit):
-            continue
-        m = brought.get(commit)
-        if m and answered(["diff", f"{m}^1...{m}^2"], f"{m}^2"):
+        if trunk_answers(commit, trunk, spec_dirs):
             continue
         added = git("show", "--format=", "-U0", commit, "--", *ledgers)
         if any(r[-1] == "Open" for l in added.splitlines() if l.startswith("+|") for r in buffer_rows(l[1:])):
