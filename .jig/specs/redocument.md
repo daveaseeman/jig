@@ -149,7 +149,9 @@ Kickoff carries the job's remap rows and the Sources definitions.
 
 ## Decisions
 - The remap is the hubnode's file, frozen on approval; owner changes only
-- Old docs are deleted only at the end, in one commit, after survey comes back clean
+- Old docs and the remap file are deleted only at the end, in one commit;
+  jig survey then runs on the result and must come back clean before the
+  run is called done
 - Sessions are defined as sources only inside the remap's `## Sources` section; a
   session citation is the query that recovers it
 - Unchanged-path pages are the one in-place exception to every-doc-is-a-new-doc
