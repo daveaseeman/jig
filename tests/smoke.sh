@@ -1181,8 +1181,43 @@ msg="para P2: the gate's scratch merge of a job answered by a spec on its branch
 expect_pass gate_ok pk
 msg="para P2: jig merge of a job answered by a spec on its branch passes"
 expect_pass $J merge pk
+msg="para P2: the gate still waits for a proposal <branch> the pinned release doesn't hold"
+out=$($J gate pj 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-pj 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'cites proposal propose/pr-fmt, which is not in docs'" "$out"
 msg="para P2: jig merge of a job answered by meta: <name> proposal <branch> in its trunk spec passes"
 expect_pass $J merge pj
+
+# meta: <name> pointers <branch>: pointer rewrites worked ahead of, no claim change. The gate
+# checks the branch is real and doesn't wait for its release.
+printf '# Doc\n\nThe api.\n\n## Old\n\nx\n' > api/doc.md && printf '# pp\n' > .jig/specs/pp.md
+printf '# pq\n\n## Decisions\n- meta: docs pointers propose/pr-nope\n' > .jig/specs/pq.md
+printf '# pr\n\n## Decisions\n- meta: other pointers propose/pr-ptr\n' > .jig/specs/pr.md
+git add -A && git commit -qm "api: doc; specs pp, pq, pr" >/dev/null 2>&1
+msg="propose --pointers records meta: <name> pointers <branch>"
+$J propose .jig/specs/pp.md ptr --pointers >/dev/null
+expect_pass sh -c "grep -qx -- '- meta: docs pointers propose/pr-ptr' .jig/specs/pp.md && git -C mrclone rev-parse -q --verify refs/heads/propose/pr-ptr"
+git add -A && git commit -qm "specs: pp pointers" >/dev/null 2>&1
+# A metarepo pointer into api/doc.md's heading, as the cache would hold it.
+printf '| D-077 | the api doc (`pr/api/doc.md § Old`) | accepted | 2026-11-01 |\n' >> .jig/meta-cache/DECISIONS.md
+$J open pp --spec .jig/specs/pp.md --owns api/doc.md >/dev/null 2>&1
+for j in pq pr; do $J open $j --spec .jig/specs/$j.md >/dev/null 2>&1; done
+git add -A && git commit -qm "open pp, pq, pr" >/dev/null 2>&1
+(cd .git/jig/worktrees/pp && sed -i.bak 's/^## Old$/## New/' api/doc.md && rm api/doc.md.bak && printf 'pp=1\n' > api/pp.py && git add -A)
+for j in pq pr; do (cd .git/jig/worktrees/$j && printf '%s=1\n' $j > api/$j.py && git add -A); done
+msg="para P2: a pointers answer in the job's trunk spec covers a contract edit and a renamed cited heading"
+expect_pass git -C .git/jig/worktrees/pp commit -qm "api: pp, rename Old"
+for j in pq pr; do git -C .git/jig/worktrees/$j commit -qm "api: $j" >/dev/null 2>&1; done
+for j in pp pq pr; do (cd .git/jig/worktrees/$j && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $j" >/dev/null 2>&1); done
+msg="para gate: a pointers branch that exists passes, its proposal unreleased"
+expect_pass gate_ok pp
+msg="para P2: jig merge of the pointers job passes, the proposal unreleased"
+expect_pass $J merge pp
+msg="para gate: a pointers branch the metarepo doesn't have is refused"
+out=$($J gate pq 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-pq 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'pointers branch propose/pr-nope, which docs has no branch for'" "$out"
+msg="para gate: a pointers answer naming another metarepo is refused"
+out=$($J gate pr 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-pr 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'pointers branch propose/pr-ptr on other, but this repo.s metarepo is docs'" "$out"
 
 msg="plugin: no instance names or the instance's decision prefix"
 expect_refuse grep -rnE 'Maige|maige|"E-' "$P/.."

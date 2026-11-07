@@ -2294,10 +2294,12 @@ PARA = f"{DIR}/para.json"
 CACHE = f"{DIR}/meta-cache"
 HEADER_BEGIN = f"<!-- jig:meta — generated from {PARA} by `jig init --para`; edit that, not this -->"
 HEADER_END = "<!-- jig:meta end -->"
-# How a spec says what its contract change means for the metarepo: a proposal branch, a row of
+# How a spec says what its contract change means for the metarepo: a proposal branch it waits
+# for, a pointers branch it works ahead of (pointer rewrites only, no claim changes), a row of
 # the buffer, or why none.
 PROPOSAL = re.compile(r"^\s*-?\s*meta: (?:none — \S.*|buffered (?P<row>\S+)|"
-                      r"(?P<meta>\S+) proposal (?P<branch>\S+))\s*$", re.M)
+                      r"(?P<meta>\S+) proposal (?P<branch>\S+)|"
+                      r"(?P<pmeta>\S+) pointers (?P<pbranch>\S+))\s*$", re.M)
 # The sync buffer: each metarepo claim this repo has moved away from, held until a release
 # proposes them all at once. Rows are Open until the release that settles them is pinned.
 BUFFER = f"{DIR}/ledgers/BUFFER.md"
@@ -2660,7 +2662,8 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
         answer = (f"add or edit its row in {BUFFER} in this commit (the first row creates the "
                   "file from jig's ledger template), or a spec in this change, or the job's own "
                   "spec on trunk, needs `meta: buffered <row id>`, `meta: <name> proposal "
-                  "<branch>` (`jig propose`) or `meta: none — <reason>`")
+                  "<branch>` (`jig propose`), `meta: <name> pointers <branch>` (`jig propose "
+                  "--pointers`) or `meta: none — <reason>`")
         if not answered and not rowed and touched:
             out.append(f"P2 {', '.join(touched)} is a contract path: {answer}")
         if not answered and not rowed and broken:
@@ -2784,20 +2787,35 @@ def proposal_in(loc: Path, branch: str, tag: str) -> bool:
 
 def unreleased_proposals(root: Path, para: dict, trunk: str, commit: str, named: list[str]) -> list[str]:
     """Why the job at COMMIT can't merge yet: a spec it builds on cites a metarepo proposal that
-    isn't in trunk's pinned release. Its specs are the ones it changed and the ones the board
-    and its note name, which may sit on trunk already (`jig propose` there, then `jig open`).
-    Read at the commit, because the hubnode gates from trunk."""
+    isn't in trunk's pinned release, or a pointers branch the metarepo doesn't have. Its specs
+    are the ones it changed and the ones the board and its note name, which may sit on trunk
+    already (`jig propose` there, then `jig open`); a one-line board spec is its own text. Read
+    at the commit, because the hubnode gates from trunk."""
     changed = [p for p in git("diff", "--name-only", f"{trunk}...{commit}", "--",
                               f"{DIR}/specs/").splitlines() if p.endswith(".md")]
     specs = list(dict.fromkeys([*filter(None, named), *changed]))
-    cited = [(s, m) for s in specs
-             for m in PROPOSAL.finditer(git("show", f"{commit}:{s}") or git("show", f"{trunk}:{s}"))
-             if m.group("branch")]
-    if not cited:
+    found = [(s, m) for s in specs
+             for m in PROPOSAL.finditer(git("show", f"{commit}:{s}") or git("show", f"{trunk}:{s}") or s)]
+    cited = [(s, m) for s, m in found if m.group("branch")]
+    ahead = [(s, m) for s, m in found if m.group("pbranch")]
+    if not cited and not ahead:
         return []
     name, pin = para.get("meta", ""), para.get("pin", "")
     loc = meta_checkout(root, para)
     out = []
+    # A pointers branch is work ahead, not a dependency: it needn't be released, only real, or
+    # the answer is a free-text pass whose only failure signal is a dangling-pointer report.
+    for spec, m in ahead:
+        what = f"{spec} answers with pointers branch {m.group('pbranch')}"
+        if m.group("pmeta") != name:
+            out.append(f"{what} on {m.group('pmeta')}, but this repo's metarepo is {name}")
+        elif loc is None:
+            out.append(f"{what}, and {name} can't be reached to check it (see `jig repos`)")
+        # Merged and deleted is real too: a release then holds it.
+        elif not git("rev-parse", "-q", "--verify", f"refs/heads/{m.group('pbranch')}", cwd=str(loc)) \
+                and not any(proposal_in(loc, m.group("pbranch"), t) for t in released_tags(str(loc))):
+            out.append(f"{what}, which {name} has no branch for and no release holds: open it "
+                       "with `jig propose`")
     for spec, m in cited:
         what = f"{spec} cites proposal {m.group('branch')}"
         if m.group("meta") != name:
@@ -3239,12 +3257,12 @@ def cmd_propose(root: Path, args) -> int:
               f"the rows close when `jig sync` takes the release that holds it.")
         return 0
     if not (args.spec and args.slug):
-        die("usage: jig propose <spec> <slug>, or jig propose --buffer [slug]", 2)
+        die("usage: jig propose <spec> <slug> [--pointers], or jig propose --buffer [slug]", 2)
     spec = root / args.spec
     if not spec.exists():
         die(f"no spec at {args.spec}", 2)
     branch = open_proposal(para, loc, args.slug)
-    line = f"- meta: {para['meta']} proposal {branch}"
+    line = f"- meta: {para['meta']} {'pointers' if args.pointers else 'proposal'} {branch}"
     text = spec.read_text()
     if re.search(r"^## Decisions\s*$", text, re.M):
         text = re.sub(r"^(## Decisions\s*\n)", rf"\1{line}\n", text, count=1, flags=re.M)
@@ -4687,6 +4705,8 @@ def main(argv: list[str] | None = None) -> int:
     pp.add_argument("spec", nargs="?")
     pp.add_argument("slug", nargs="?")
     pp.add_argument("--buffer", action="store_true", help="every Open row of the sync buffer, in one proposal")
+    pp.add_argument("--pointers", action="store_true",
+                    help="record it as pointer rewrites worked ahead of, not a proposal to wait for")
     st = sub.add_parser("staging", help="list staged files, or resolve or drop one")
     st.add_argument("action", nargs="?", choices=["resolve", "drop"])
     st.add_argument("file", nargs="?")

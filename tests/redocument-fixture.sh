@@ -151,10 +151,10 @@ repo "$T/app" && old_pages
 $J init --para hm --location "$T/hm" --contract 'docs/store/**' >/dev/null && git add -A && git commit -qm 'init --para'
 echo "-- the cache grep"; grep -rniE '(^|[^[:alnum:]_-])app[/:]docs/' .jig/meta-cache/
 echo "-- remap seed, with Cited"; seed
-echo "-- at approval: the pointers spec and its proposal"
+echo "-- at approval: the pointers spec and its pointers branch"
 mkdir -p .jig/specs
 printf '# redocument: pointers\n\n- docs/store/store.md § Rules → docs/store/store.md § ___\n' > .jig/specs/redocument-pointers.md
-$J propose .jig/specs/redocument-pointers.md redocument-pointers | head -1
+$J propose .jig/specs/redocument-pointers.md redocument-pointers --pointers | head -1
 meta="$(sed -n 's/^- \(meta: .*\)$/\1/p' .jig/specs/redocument-pointers.md)"
 printf '# redocument: docs/store/store.md\n\n## Decisions\n- %s\n- cited: docs/store/store.md § Rules\n' "$meta" > .jig/specs/redocument-store.md
 git add -A && git commit -qm 'redocument: remap, pointers proposal'
@@ -166,3 +166,11 @@ echo "-- the page rewrite alone: the job's spec on trunk answers P2"
 git add -A
 if git commit -qm 'store: page contract'; then echo "committed: P2 answered by $meta"
 else echo "FAIL: the job's trunk spec did not answer P2" >&2; exit 1; fi
+echo "-- hand off, gate and merge store, the pointers branch unreleased"
+$J reviewed >/dev/null && $J handoff >/dev/null 2>&1
+sed -i.bak -e 's/^- \[ \]/- [x]/' -e 's/___/fixture/g' .jig/handoffs/*.md && rm .jig/handoffs/*.bak
+git add -A && git commit -qm 'note store'
+cd "$T/app"
+if gated="$($J gate store 2>&1)"; then echo "$gated" | grep "^job store: gate"; git worktree remove --force .git/jig/worktrees/gate-store
+else echo "$gated" >&2; echo "FAIL: the gate refused store" >&2; exit 1; fi
+if $J merge store; then :; else echo "FAIL: jig merge refused store" >&2; exit 1; fi

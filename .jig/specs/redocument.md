@@ -83,7 +83,7 @@ Kickoff carries the job's remap rows and the Sources definitions.
 - plugin/templates/jig/jig.py, plugin/skills/survey/SKILL.md: survey points a repo with
   old-contract pages at /jig:redocument instead of /jig:adopt
 - plugin/templates/jig/jig.py, plugin/templates/jig/RULES.md: P2 reads the job's own spec
-  from trunk
+  from trunk; the `pointers` answer, `jig propose --pointers`, and the gate's branch check
 
 ## Alternatives considered
 - Batch subnodes by system instead of per page — rejected because per-surviving-page
@@ -100,6 +100,17 @@ Kickoff carries the job's remap rows and the Sources definitions.
   skill runs /jig:update first and its cleanup does the same set for the old paths it retires;
   two tools proposing different moves for the same files is the failure avoided — reason is
   [seen] (review, Nov 6)
+- For a pararepo's pointer rewrites, B: each job spec answers P2 with `meta: none — format
+  migration; no claim changes; pointer rewrites in proposal <branch>`, no rule change, the
+  proposal linked only in prose — rejected: prose routing around a gap in the tool; a `none`
+  that means "one is pending, trust the reason text" makes the form a lie and the link
+  unchecked — reason is [seen] (owner, 2026-11-06)
+- For a pararepo's pointer rewrites, C: jobs keep `meta: <name> proposal <branch>` and nothing
+  gates until every report is in, the metarepo releases the proposal and the pin moves; then
+  every job gates and merges, cleanup last — rejected: it doesn't just stall, it inverts the
+  dangling window (cache ahead of trunk instead of behind), which is more confusing than the
+  normal work-ahead state, and it leaves finished jobs drifting against trunk while a metarepo
+  release blocks mid-run — reason is [seen] (owner, 2026-11-06)
 - In a pararepo, skip contract-path pages — rejected: it leaves the most-cited pages in the
   old format, which defeats the migration — reason is [seen] (owner, Nov 6)
 - In a pararepo, a BUFFER row per renamed page or heading — rejected: buffer rows are
@@ -145,6 +156,14 @@ Kickoff carries the job's remap rows and the Sources definitions.
   every commit of the job, with nothing staged, and at its gate and `jig merge`, where the job
   is found from the merge's side that trunk lacks. A plain commit on trunk is no job, so a
   pararepo's cleanup stays a final job
+- P2's fifth answer, `meta: <name> pointers <branch>` (`jig propose --pointers`), with the
+  gate checking the branch is on this repo's metarepo (merged and released counts) and not
+  waiting for its release (owner, 2026-11-06, Option A). It means pointer rewrites pending on
+  that branch and no metarepo claim change; review, not P2, holds a spec to that. The vocabulary
+  then matches: claim changes → a BUFFER row; pointer moves → `pointers <branch>`; a real
+  dependency on a metarepo change → `proposal <branch>`, which waits. Every redocument job spec,
+  the cleanup job's included, carries the `pointers` line. Chosen over B (a `none` whose prose
+  names the proposal) and C (every job waits for the release) — see Alternatives considered
 
 ## Workflow
 spec: tier 2, effort 2

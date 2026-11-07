@@ -381,7 +381,7 @@ under `.jig/` counts, whatever the globs say.
 | M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`) |
 | P1 | an `AGENTS.md` header that differs from what `.jig/para.json` generates |
-| P2 | a contract-path change (an edit, a delete, or a rename from one) with none of: a row added or changed in `.jig/ledgers/BUFFER.md` in the same commit, or a spec saying `meta: buffered <row id>`, `meta: <name> proposal <branch>` or `meta: none — <reason>` (a spec the change touches, or the job's own: the board's `spec`, read as trunk has it, a one-line spec being its own text); the same for a change that deletes or renames a file a cached metarepo pointer names, or the heading its `§` names; a lost file counts even when its heading was already missing. Also, in `BUFFER.md`: a state other than `Open` or `Closed`, a repeated id, an `Open` row deleted, or one closed by any commit but `jig sync`'s |
+| P2 | a contract-path change (an edit, a delete, or a rename from one) with none of: a row added or changed in `.jig/ledgers/BUFFER.md` in the same commit, or a spec saying `meta: buffered <row id>`, `meta: <name> proposal <branch>`, `meta: <name> pointers <branch>` or `meta: none — <reason>` (a spec the change touches, or the job's own: the board's `spec`, read as trunk has it, a one-line spec being its own text); the same for a change that deletes or renames a file a cached metarepo pointer names, or the heading its `§` names; a lost file counts even when its heading was already missing. Also, in `BUFFER.md`: a state other than `Open` or `Closed`, a repeated id, an `Open` row deleted, or one closed by any commit but `jig sync`'s |
 | P4 | a contract-path change while a file targeting the metarepo is staged |
 | P3 | the metarepo's cache (`.jig/meta-cache/`) or its checkout committed into the pararepo |
 
@@ -395,7 +395,16 @@ for a rename or a reversed decision. A pararepo pins a release, never `main`, an
 a commit of its own, `meta: <name> v0.3.0 → v0.4.0`, with the report `jig sync` prints on its
 trunk as the body. A two-part pin (`v0.3`), from before releases had three parts, keeps
 working: it sorts below `v0.3.0`. `jig gate` refuses a job whose spec cites a proposal that isn't in
-the pinned release.
+the pinned release, and one whose `pointers` branch isn't on the metarepo it names (merged and
+released counts), or names another metarepo; a metarepo it can't reach refuses too.
+
+**Pointers ahead of the metarepo.** `meta: <name> pointers <branch>` (`jig propose --pointers`)
+means the metarepo's pointers into this change are being rewritten on that metarepo branch, and
+no metarepo claim changes. A job answered that way merges without waiting for the release:
+cached pointers dangle against the pending branch until the pin moves, and `jig sync` and the
+release report them meanwhile. A claim change is a `BUFFER.md` row; a dependency on a metarepo
+change is `proposal <branch>`, which the gate waits for. P2 can't tell a pointer move from a claim
+change, so review holds a `pointers` spec to this sentence.
 
 **The sync buffer.** A pararepo may work ahead of its metarepo: change what a metarepo claim
 describes, as often as testing needs, and commit and push each change. Every such difference
@@ -475,6 +484,7 @@ jig workflow                each step's model tier and effort in effect
 jig handoff [--spec path]   write the note for HEAD
 jig gate <name>             hubnode: verify, set up the scratch checkout, print its check
 jig propose <spec> <slug>   pararepo: open a proposal branch on the metarepo
+jig propose <spec> <slug> --pointers  the same, recorded as pointer rewrites worked ahead of
 jig propose --buffer [slug]  pararepo: every Open row of the sync buffer, in one proposal
 ```
 
