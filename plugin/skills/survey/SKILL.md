@@ -31,15 +31,16 @@ Report the output, then say what it means in a few lines:
   with everything they touch.
 - **Pages off the page contract.** A page describes what is built: a lead paragraph, sections
   named for the system's parts, optional Invariants, optional Undefined last. Survey names an
-  old Now/Rules/Checks page ("old contract — convert", a job of its own in this repo: fold what
-  it says into description, delete what no longer holds, keep as Invariants only entries with a
-  why and a holder), an invariant missing its why or holder, a section after Undefined, and a
-  page with no lead paragraph.
+  old Now/Rules/Checks page ("old contract — convert", a job of its own in this repo,
+  `/jig:redocument`: fold what it says into description, delete what no longer holds, keep as
+  Invariants only entries with a why and a holder), an invariant missing its why or holder, a
+  section after Undefined, and a page with no lead paragraph.
 - **No docmap.** Handoff can't tell which page a change touches until pages are mapped to globs.
 - **Missing pieces.** What `/jig:init` would add.
 - **How parallel work is coordinated today.** What the repo already has, under its standard
   name (`CODEOWNERS`, PR template, husky, worktrees, unmerged branches, a homebrew board), and
   what each maps to in jig. Speak in the repo's terms when reporting this.
 
-Offer, in one line: `/jig:adopt` to turn this into a migration plan, or fix the one or two
-things that stand out now. Don't start moving files in this skill.
+Offer, in one line: `/jig:adopt` to turn this into a migration plan (`/jig:redocument` when the
+footer names old-contract pages), or fix the one or two things that stand out now. Don't start
+moving files in this skill.

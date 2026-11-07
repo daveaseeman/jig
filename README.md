@@ -71,7 +71,8 @@ repo already has.
 This repo holds two things:
 
 - **A Claude Code plugin** in `plugin/`. Its skills run the loop (`spec`, `bug`, `verify`,
-  `review`, `retro`), set a repo up (`init`, `survey`, `adopt`, `update`), coordinate parallel
+  `review`, `retro`), set a repo up (`init`, `survey`, `adopt`, `update`), move its docs onto the current page
+  contract (`redocument`), coordinate parallel
   sessions (`hubnode`, `subnode`), spec a circuit board and install the skills it needs
   (`hardware`), land files from other chats (`stage`, `repos`), cut releases (`release`), and report bugs in jig itself
   (`feedback`).
@@ -112,6 +113,13 @@ before touching any file of yours:
 /jig:update
 ```
 
+A repo on jig whose `docs/` still use the old Now / Rules / Checks pages. The hubnode proposes a
+remap for you to approve, then lands one page per job and deletes the old docs at the end:
+
+```
+/jig:redocument
+```
+
 Day to day:
 
 ```
@@ -127,9 +135,9 @@ Day to day:
 
 Every rule the hooks enforce is written in `.jig/RULES.md` after init.
 
-`/jig:init`, `/jig:adopt`, `/jig:update`, `/jig:release`, `/jig:repos` and `/jig:feedback` don't
-show in the slash list, and an agent can't start them on its own: each changes the repo, tags a
-release, writes your repo list or files a report on jig, so only you do. Type them in full at the start of a message.
+`/jig:init`, `/jig:adopt`, `/jig:update`, `/jig:redocument`, `/jig:release`, `/jig:repos` and
+`/jig:feedback` don't show in the slash list, and an agent can't start them on its own: each
+changes the repo, tags a release, writes your repo list or files a report on jig, so only you do. Type them in full at the start of a message.
 
 ## 📦 Installation
 

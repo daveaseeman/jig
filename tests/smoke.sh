@@ -1012,7 +1012,7 @@ git add -A; msg="staging: and M3 refuses that commit until the line is there"; e
 git reset -q --hard && git switch -q main
 
 msg="plugin: only the skills that change the repo, tag, write user config or report on jig are user-only; read-only ones stay listed"
-expect_pass test "$(grep -l '^disable-model-invocation: true' $P/../skills/*/SKILL.md | xargs -n1 dirname | xargs -n1 basename | sort | tr '\n' ' ')" = "adopt feedback init release repos update "
+expect_pass test "$(grep -l '^disable-model-invocation: true' $P/../skills/*/SKILL.md | xargs -n1 dirname | xargs -n1 basename | sort | tr '\n' ' ')" = "adopt feedback init redocument release repos update "
 
 msg="plugin: no skill description holds angle brackets (the desktop app reads them as XML tags)"
 expect_refuse grep -lE '^description:.*[<>]' $P/../skills/*/SKILL.md $P/skills/*/SKILL.md
@@ -1153,6 +1153,132 @@ msg="update: a metarepo's two-part tag_pattern is widened to take vX.Y.Z"
 (cd "$MR" && python3 -c "import json; m = json.load(open('.jig/meta.json')); m['tag_pattern'] = r'^v\\d+\\.\\d+$'; json.dump(m, open('.jig/meta.json', 'w'), indent=2)")
 expect_pass sh -c "cd '$MR' && python3 '$P/jig/jig.py' update | grep -q 'widen .jig/meta.json'"
 git -C "$MR" checkout -q -- .jig/meta.json
+
+# P2 also reads the job's own spec: the board's, as trunk has it; a one-line spec is its own text.
+cd "$PR" && printf '# pj\n\n## Decisions\n- meta: docs proposal propose/pr-fmt\n' > .jig/specs/pj.md && printf '# pk\n' > .jig/specs/pk.md
+git add .jig/specs && git commit -qm "specs: pj, pk" >/dev/null 2>&1
+for j in pj pk; do $J open $j --spec .jig/specs/$j.md >/dev/null 2>&1; done
+$J open pl --spec "meta: none — a comment's typo, no contract change" >/dev/null 2>&1
+git add -A && git commit -qm "open pj, pk, pl" >/dev/null 2>&1
+for j in pj pk pl; do (cd .git/jig/worktrees/$j && printf '%s=1\n' $j > api/$j.py && git add api/$j.py); done
+msg="para P2: a job whose spec on trunk says meta: <name> proposal <branch> changes a contract path, no spec in the commit"
+expect_pass git -C .git/jig/worktrees/pj commit -qm "api: pj"
+msg="para P2: a job whose trunk spec has no meta: line, and no spec in the commit, is refused"
+out=$(git -C .git/jig/worktrees/pk commit -qm "api: pk" 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^jig: P2 api/pk.py is a contract path'" "$out"
+msg="para P2: the same job answers it with a spec it commits on its branch"
+(cd .git/jig/worktrees/pk && printf -- '- meta: none — a rename inside the module\n' >> .jig/specs/pk.md && git add .jig/specs/pk.md)
+expect_pass git -C .git/jig/worktrees/pk commit -qm "api: pk"
+msg="para P2: a one-line board spec carrying meta: none — <reason> answers it"
+expect_pass git -C .git/jig/worktrees/pl commit -qm "api: pl"
+# The job's spec answers at the gate's scratch merge and at `jig merge` too, where no branch is the job's.
+for j in pk pl pj; do (cd .git/jig/worktrees/$j && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $j" >/dev/null 2>&1); done
+msg="para P2: the gate's scratch merge of a job answered by its one-line board spec passes"
+expect_pass gate_ok pl
+msg="para P2: jig merge of a job answered by its one-line board spec passes"
+expect_pass $J merge pl
+msg="para P2: the gate's scratch merge of a job answered by a spec on its branch passes"
+expect_pass gate_ok pk
+msg="para P2: jig merge of a job answered by a spec on its branch passes"
+expect_pass $J merge pk
+msg="para P2: the gate still waits for a proposal <branch> the pinned release doesn't hold"
+out=$($J gate pj 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-pj 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'cites proposal propose/pr-fmt, which is not in docs'" "$out"
+msg="para P2: jig merge of a job answered by meta: <name> proposal <branch> in its trunk spec passes"
+expect_pass $J merge pj
+
+# meta: <name> pointers <branch>: pointer rewrites worked ahead of, no claim change. The gate
+# checks the branch is real and doesn't wait for its release.
+printf '# Doc\n\nThe api.\n\n## Old\n\nx\n' > api/doc.md && printf '# pp\n' > .jig/specs/pp.md
+printf '# pq\n\n## Decisions\n- meta: docs pointers propose/pr-nope\n' > .jig/specs/pq.md
+printf '# pr\n\n## Decisions\n- meta: other pointers propose/pr-ptr\n' > .jig/specs/pr.md
+git add -A && git commit -qm "api: doc; specs pp, pq, pr" >/dev/null 2>&1
+msg="propose --pointers records meta: <name> pointers <branch>"
+$J propose .jig/specs/pp.md ptr --pointers >/dev/null
+expect_pass sh -c "grep -qx -- '- meta: docs pointers propose/pr-ptr' .jig/specs/pp.md && git -C mrclone rev-parse -q --verify refs/heads/propose/pr-ptr"
+git add -A && git commit -qm "specs: pp pointers" >/dev/null 2>&1
+# A metarepo pointer into api/doc.md's heading, as the cache would hold it.
+printf '| D-077 | the api doc (`pr/api/doc.md § Old`) | accepted | 2026-11-01 |\n' >> .jig/meta-cache/DECISIONS.md
+$J open pp --spec .jig/specs/pp.md --owns api/doc.md >/dev/null 2>&1
+for j in pq pr; do $J open $j --spec .jig/specs/$j.md >/dev/null 2>&1; done
+git add -A && git commit -qm "open pp, pq, pr" >/dev/null 2>&1
+(cd .git/jig/worktrees/pp && sed -i.bak 's/^## Old$/## New/' api/doc.md && rm api/doc.md.bak && printf 'pp=1\n' > api/pp.py && git add -A)
+for j in pq pr; do (cd .git/jig/worktrees/$j && printf '%s=1\n' $j > api/$j.py && git add -A); done
+msg="para P2: a pointers answer in the job's trunk spec covers a contract edit and a renamed cited heading"
+expect_pass git -C .git/jig/worktrees/pp commit -qm "api: pp, rename Old"
+for j in pq pr; do git -C .git/jig/worktrees/$j commit -qm "api: $j" >/dev/null 2>&1; done
+for j in pp pq pr; do (cd .git/jig/worktrees/$j && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $j" >/dev/null 2>&1); done
+msg="para gate: a pointers branch that exists passes, its proposal unreleased"
+expect_pass gate_ok pp
+msg="para P2: jig merge of the pointers job passes, the proposal unreleased"
+expect_pass $J merge pp
+msg="para gate: a pointers branch the metarepo doesn't have is refused"
+out=$($J gate pq 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-pq 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'pointers branch propose/pr-nope, which docs has no branch for'" "$out"
+msg="para gate: a pointers answer naming another metarepo is refused"
+out=$($J gate pr 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-pr 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'pointers branch propose/pr-ptr on other, but this repo.s metarepo is docs'" "$out"
+
+pnote() { (cd .git/jig/worktrees/$1 && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $1" >/dev/null 2>&1); }
+msg="update: a cited heading a pointers answer covered is pending on its branch, with no BUFFER.md row offered"
+pointed=$($UP 2>&1 | sed -n '/^Metarepo pointers/,/^$/p')
+expect_pass sh -c "echo \"\$0\" | grep 'api/doc.md § Old' | grep -q 'pending on propose/pr-ptr' && ! echo \"\$0\" | grep 'api/doc.md' | grep -q 'BUFFER.md'" "$pointed"
+msg="update: a contract file a job deleted, answered by its trunk spec, is not a Contract removal"
+printf 'dead=1\n' > api/dead.py && printf '# dead\n\n- meta: none — a file to delete\n' > .jig/specs/dead.md && git add -A && git commit -qm "api: dead" >/dev/null 2>&1
+$J open p1 --spec "meta: none — dead code, no contract" --owns api/dead.py >/dev/null 2>&1 && git add -A && git commit -qm "open p1" >/dev/null 2>&1
+(cd .git/jig/worktrees/p1 && git rm -q api/dead.py && git commit -qm "api: drop dead" >/dev/null 2>&1); pnote p1
+$J merge p1 >/dev/null 2>&1
+expect_pass sh -c "test -z \"\$(git ls-files api/dead.py)\" && ! $UP 2>&1 | sed -n '/^Contract removals/,/^\$/p' | grep -q 'api/dead.py'"
+
+# One job per merge: a job stacked on another, or an octopus, gets no job's answer.
+$J open jb --spec "meta: none — jb" >/dev/null 2>&1; $J open jc --spec "jc, with no answer" >/dev/null 2>&1
+$J open jd --spec "meta: none — jd" >/dev/null 2>&1
+git add -A && git commit -qm "open jb jc jd" >/dev/null 2>&1; top=$(git rev-parse HEAD)
+(cd .git/jig/worktrees/jc && printf 'c=1\n' > api/jc.py && git add api/jc.py && git commit -qm "api: jc" --no-verify >/dev/null 2>&1)
+# --no-commit: an auto-committed merge is judged against trunk, which has the board jb lacks.
+(cd .git/jig/worktrees/jb && git merge -q --no-ff --no-commit jc >/dev/null 2>&1 && git commit -q --no-edit >/dev/null 2>&1)
+(cd .git/jig/worktrees/jd && printf 'd=1\n' > api/jd.py && git add api/jd.py && git commit -qm "api: jd" >/dev/null 2>&1)
+git branch -q xo main && (git worktree add -q "$T/wxo" xo && cd "$T/wxo" && printf 'q=1\n' > api/xo.py && git add api/xo.py && git commit -qm "api: xo" --no-verify >/dev/null 2>&1); git worktree remove --force "$T/wxo"
+msg="para P2: (setup) jb holds jc's commit, and jd and xo are each ahead of trunk"
+expect_pass sh -c "git merge-base --is-ancestor jc jb && ! git merge-base --is-ancestor jd main && ! git merge-base --is-ancestor xo main"
+msg="para P2: merging a job that a stacked job also holds reads its own spec, not the stacking job's"
+expect_refuse git merge --no-ff --no-edit jc; git merge --abort 2>/dev/null; git reset -q --hard "$top"
+msg="para P2: an octopus of an answered job and a branch with no answer gets no job's answer"
+expect_refuse git merge --no-edit jd xo; git merge --abort 2>/dev/null; git reset -q --hard "$top"
+msg="para P2: the answered job alone still merges on its trunk spec"
+expect_pass git merge --no-ff --no-edit jd; git reset -q --hard "$top"
+
+msg="para gate: a pointers branch merged into the metarepo and deleted, not yet released, passes"
+(cd mrclone && git switch -q propose/pr-ptr && printf 'ptr\n' > ptr.md && git add -A && git commit -qm "ptr: rewrite" \
+  && git switch -q main && git merge -q --no-ff --no-edit propose/pr-ptr && git branch -q -D propose/pr-ptr) >/dev/null 2>&1
+$J open ps --spec "meta: docs pointers propose/pr-ptr" >/dev/null 2>&1 && $J open pu --spec "meta: docs pointers propose/pr-ptr" >/dev/null 2>&1
+git add -A && git commit -qm "open ps pu" >/dev/null 2>&1
+for j in ps pu; do (cd .git/jig/worktrees/$j && printf '%s=1\n' $j > api/$j.py && git add -A && git commit -qm "api: $j" >/dev/null 2>&1); pnote $j; done
+expect_pass gate_ok ps
+msg="sync: lists a pointers branch and its state"
+expect_pass sh -c "$J sync 2>&1 | grep -q 'pointers propose/pr-ptr (.jig/specs/pp.md): merged, not released'"
+msg="para gate: a pointers answer whose metarepo can't be reached is refused"
+mv mrclone ../mrclone-away; out=$($J gate pu 2>&1); rc=$?; mv ../mrclone-away mrclone; git worktree remove --force .git/jig/worktrees/gate-pu 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"pointers branch propose/pr-ptr, and docs can't be reached to check it\"" "$out"
+
+# Update once the pin holds a branch answer: a pointer still dangling is one the rewrite missed.
+# `jig sync` above refilled the cache, so the pointers go back in as the cache would hold them.
+printf '| D-077 | the api doc (`pr/api/doc.md § Old`) | accepted | 2026-11-01 |\n' >> .jig/meta-cache/DECISIONS.md
+git -C mrclone tag v9.9.9 main
+cp .jig/para.json "$T/para.keep" && setjson .jig/para.json pin v9.9.9
+msg="update: a pointer still dangling once the pin holds its pointers branch gets a BUFFER.md row, naming the missed rewrite"
+pointed=$($UP 2>&1 | sed -n '/^Metarepo pointers/,/^$/p')
+expect_pass sh -c "echo \"\$0\" | grep 'api/doc.md § Old' | grep \"rewrite in propose/pr-ptr missed it\" | grep -q 'BUFFER.md' && ! echo \"\$0\" | grep 'api/doc.md' | grep -q 'pending on'" "$pointed"
+cp "$T/para.keep" .jig/para.json; git -C mrclone tag -d v9.9.9 >/dev/null
+msg="update: a pointer removal its job answered with meta: none still gets a BUFFER.md row"
+printf '# None\n\nThe api.\n\n## Gone\n\nx\n' > api/none.md && printf '# none\n\n- meta: none — a page to rename\n' > .jig/specs/none.md
+git add api/none.md .jig/specs/none.md && git commit -qm "api: none" >/dev/null 2>&1
+$J open pn --spec "meta: none — rename inside the api docs" --owns api/none.md >/dev/null 2>&1 && git add -A && git commit -qm "open pn" >/dev/null 2>&1
+printf '| D-078 | the none doc (`pr/api/none.md § Gone`) | accepted | 2026-11-01 |\n' >> .jig/meta-cache/DECISIONS.md
+(cd .git/jig/worktrees/pn && sed -i.bak 's/^## Gone$/## Here/' api/none.md && rm api/none.md.bak && git add api/none.md && git commit -qm "api: rename Gone" >/dev/null 2>&1); pnote pn
+$J merge pn >/dev/null 2>&1
+pointed=$($UP 2>&1 | sed -n '/^Metarepo pointers/,/^$/p')
+expect_pass sh -c "git log --oneline -1 | grep -q 'merge pn' && echo \"\$0\" | grep 'api/none.md § Gone' | grep -q 'BUFFER.md' && ! echo \"\$0\" | grep 'api/none.md' | grep -q 'pending on'" "$pointed"
 
 msg="plugin: no instance names or the instance's decision prefix"
 expect_refuse grep -rnE 'Maige|maige|"E-' "$P/.."
@@ -2834,6 +2960,12 @@ msg="page contract: a misplaced page with an Invariants section is a page, given
 expect_pass pc "assert h['docs/misc/x.md']['kind'] == 'page' and h['docs/misc/x.md']['to'] == 'docs/x/x.md', h"
 msg="page contract: survey prints them under their own heading"
 expect_pass sh -c "$J survey | grep -A9 '^Pages off the page contract' | grep -q '^  docs/old/old.md: old contract — convert'"
+msg="page contract: survey points a repo with old-contract pages at /jig:redocument, not /jig:adopt"
+expect_pass sh -c "$J survey | tail -1 | grep -q 'run /jig:redocument to convert them'"
+msg="page contract: an old-format page outside the docs tree points at /jig:redocument too"
+PO="$T/page-outside"; pcnew "$PO" && mkdir -p docs/notes && printf '# Sync\n\n## Now\nx\n\n## Rules\n### 1.1 y\n\n## Checks\n- 1.1 review\n' > docs/notes/sync.md
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+expect_pass sh -c "$J survey | tail -1 | grep -q 'run /jig:redocument to convert them'"
 
 PU="$T/page-template"; pcnew "$PU" && rm .jig/docs-page.md && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 msg="page contract: update installs .jig/docs-page.md in a repo that lacks it, and a rerun is up to date"
