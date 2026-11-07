@@ -1,7 +1,7 @@
 {
   "redocument": {
     "spec": ".jig/specs/redocument.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/redocument/**"
