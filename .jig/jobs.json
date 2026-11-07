@@ -9,7 +9,10 @@
     "shares": [
       "README.md",
       "plugin/templates/*.md",
-      "tests/smoke.sh"
+      "tests/smoke.sh",
+      "plugin/skills/survey/SKILL.md",
+      "plugin/templates/jig/jig.py",
+      ".jig/specs/redocument.md"
     ],
     "reserved": {}
   }
