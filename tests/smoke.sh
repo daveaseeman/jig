@@ -2834,6 +2834,8 @@ msg="page contract: a misplaced page with an Invariants section is a page, given
 expect_pass pc "assert h['docs/misc/x.md']['kind'] == 'page' and h['docs/misc/x.md']['to'] == 'docs/x/x.md', h"
 msg="page contract: survey prints them under their own heading"
 expect_pass sh -c "$J survey | grep -A9 '^Pages off the page contract' | grep -q '^  docs/old/old.md: old contract — convert'"
+msg="page contract: survey points a repo with old-contract pages at /jig:redocument, not /jig:adopt"
+expect_pass sh -c "$J survey | tail -1 | grep -q 'run /jig:redocument to convert them'"
 
 PU="$T/page-template"; pcnew "$PU" && rm .jig/docs-page.md && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 msg="page contract: update installs .jig/docs-page.md in a repo that lacks it, and a rerun is up to date"

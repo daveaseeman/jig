@@ -75,7 +75,12 @@ Kickoff carries the job's remap rows and the Sources definitions.
 
 ## Touches
 - plugin/skills/redocument/SKILL.md (new)
-- plugin/templates/ only if the remap file wants a template
+- plugin/templates/ only if the remap file wants a template (it didn't: the format is in the skill)
+- README.md: the skill in the list, a usage block, and the user-only list
+- tests/smoke.sh: redocument in the pinned user-only set; survey's footer pointing at it
+- tests/redocument-fixture.sh (new): the fixture, the remap seed, both refusals, the resume
+- plugin/templates/jig/jig.py, plugin/skills/survey/SKILL.md: survey points a repo with
+  old-contract pages at /jig:redocument instead of /jig:adopt
 
 ## Alternatives considered
 - Batch subnodes by system instead of per page — rejected because per-surviving-page
@@ -87,6 +92,11 @@ Kickoff carries the job's remap rows and the Sources definitions.
   reason is [seen]
 - Keep the remap file after the work — rejected: it's a working artifact; history keeps it —
   reason is [seen]
+- Reimplement page moves in the cleanup — rejected: `jig update` already makes a page-outside-
+  the-tree move with every docmap key, contract path and stale reference it touches, so the
+  skill runs /jig:update first and its cleanup does the same set for the old paths it retires;
+  two tools proposing different moves for the same files is the failure avoided — reason is
+  [seen] (review, Nov 6)
 
 ## Decisions
 - The remap is the hubnode's file, frozen on approval; owner changes only
@@ -94,6 +104,17 @@ Kickoff carries the job's remap rows and the Sources definitions.
 - Sessions are defined as sources only inside the remap's `## Sources` section; a
   session citation is the query that recovers it
 - Unchanged-path pages are the one in-place exception to every-doc-is-a-new-doc
+- `disable-model-invocation: true`: only the owner starts it, like adopt and update, because
+  it opens jobs and deletes docs. Subnodes therefore read its Subnode section by the absolute
+  path the hubnode's kickoff gives, not by loading the skill
+- Each job gets a real spec, `.jig/specs/redocument-<page>.md`, from its remap rows, so
+  `jig handoff --spec` works and the job's record has a file home
+- The conversion report lives in the subnode's handoff note under its own heading; the hubnode
+  reads the docmap proposals from there
+- Cleanup removes old docmap keys and repoints every reference, not only deletes files; in a
+  metarepo it is a final job, since M4 refuses a trunk commit outside `.jig/`
+- `.jig/redocument.md` on trunk means a run is under way: a restart resumes at the first
+  unfinished step and skips the refusals
 
 ## Workflow
 spec: tier 2, effort 2

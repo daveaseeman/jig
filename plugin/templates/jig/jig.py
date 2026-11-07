@@ -1876,8 +1876,11 @@ def cmd_survey(root: Path, args) -> int:
         print("  none found — a single-session repo; jobs need no setup until a second session starts")
     print("\nDoc homes: " + "; ".join(f"{k} = {v}" for k, v in DOC_HOMES.items()))
     old = old_board(root)
+    # A repo already on jig with old pages has a migration of its own; adopt would replan the repo.
+    old_pages = any(p.startswith("old contract") for e in report["page_contract"] for p in e["problems"])
     print(f"An older jig's board is at {old}: run /jig:update first, not /jig:adopt or /jig:init."
-          if old else "Run /jig:adopt to turn this into a migration plan.")
+          if old else "Pages in the old Now / Rules / Checks shape: run /jig:redocument to convert them."
+          if old_pages else "Run /jig:adopt to turn this into a migration plan.")
     return 0
 
 # ------------------------------------------------------------------- metarepo
