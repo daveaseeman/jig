@@ -1012,7 +1012,7 @@ git add -A; msg="staging: and M3 refuses that commit until the line is there"; e
 git reset -q --hard && git switch -q main
 
 msg="plugin: only the skills that change the repo, tag, write user config or report on jig are user-only; read-only ones stay listed"
-expect_pass test "$(grep -l '^disable-model-invocation: true' $P/../skills/*/SKILL.md | xargs -n1 dirname | xargs -n1 basename | sort | tr '\n' ' ')" = "adopt feedback init release repos update "
+expect_pass test "$(grep -l '^disable-model-invocation: true' $P/../skills/*/SKILL.md | xargs -n1 dirname | xargs -n1 basename | sort | tr '\n' ' ')" = "adopt feedback init redocument release repos update "
 
 msg="plugin: no skill description holds angle brackets (the desktop app reads them as XML tags)"
 expect_refuse grep -lE '^description:.*[<>]' $P/../skills/*/SKILL.md $P/skills/*/SKILL.md
