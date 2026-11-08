@@ -2252,6 +2252,8 @@ def cmd_release(root: Path, args) -> int:
     # What the globs match before the build, by mtime: a file counts only if this run wrote it.
     before = {f: f.stat().st_mtime_ns for g in globs for f in root.glob(g) if f.is_file()}
     def run(script: Path, argv: list) -> int:
+        # Piped, Python's stdout is block-buffered: flush so jig's lines come before the script's.
+        sys.stdout.flush()
         cmd = ([str(script)] if os.access(script, os.X_OK) else ["bash", str(script)]) + argv
         return subprocess.run(cmd, cwd=root, env=env).returncode
 
@@ -2301,7 +2303,8 @@ def cmd_release(root: Path, args) -> int:
         print(f"proposed {', '.join(listed_rows(proposed[0].read_text()))} to {para['meta']} as "
               f"{proposed[1]} ({proposed[0].relative_to(root)}): write the change there; "
               f"`jig sync` closes the rows once {para['meta']} releases it.")
-    built = [str(f.relative_to(root)) for fs in made.values() for f in sorted(fs)]
+    # Overlapping globs match one file twice; publish.sh gets each file once, in glob order.
+    built = list(dict.fromkeys(str(f.relative_to(root)) for fs in made.values() for f in sorted(fs)))
     for f in built:
         print(f"  {f}")
     publish = root / PUBLISH
@@ -2313,8 +2316,10 @@ def cmd_release(root: Path, args) -> int:
     rc = run(publish, [version, *built])
     if rc:
         # The tag may already be pushed, so it stays: the release happened, the publish didn't.
+        again = ([] if os.access(publish, os.X_OK) else ["bash"]) + [PUBLISH, version, *built]
+        # The release may have run from a subfolder; the command works from anywhere.
         print(f"released {tag} at {commit[:12]}, but {PUBLISH} exited {rc}. Run it again:\n"
-              f"  {shlex.join([PUBLISH, version, *built])}", file=sys.stderr)
+              f"  cd {shlex.quote(str(root))} && {shlex.join(again)}", file=sys.stderr)
         return 1
     return 0
 
