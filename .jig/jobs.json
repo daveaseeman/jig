@@ -1,1 +1,17 @@
-{}
+{
+  "release-publish": {
+    "spec": ".jig/specs/release-publish.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/templates/jig/scripts/publish.sh",
+      "plugin/skills/release/**"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh"
+    ],
+    "reserved": {}
+  }
+}
