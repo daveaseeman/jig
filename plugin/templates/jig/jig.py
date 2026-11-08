@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -2120,6 +2121,8 @@ def cmd_meta_init(root: Path, args) -> int:
 
 RELEASE = f"{DIR}/scripts/release.sh"
 RELEASE_TODO = "# TODO: release protocol."
+PUBLISH = f"{DIR}/scripts/publish.sh"
+PUBLISH_TODO = "# TODO: publish steps."
 VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 
 
@@ -2140,6 +2143,18 @@ def release_script(root: Path, meta: bool = False) -> bool:
         return False
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(text)
+    dest.chmod(0o755)
+    return True
+
+
+def publish_script(root: Path) -> bool:
+    """Add publish.sh from the template, TODO line included, if it's missing."""
+    dest = root / PUBLISH
+    src = Path(__file__).resolve().parent / "scripts" / "publish.sh"
+    if dest.exists() or not src.exists():
+        return False
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(src.read_text())
     dest.chmod(0o755)
     return True
 
@@ -2236,11 +2251,14 @@ def cmd_release(root: Path, args) -> int:
     globs = (board.data.get("release") or {}).get("artifacts", [])
     # What the globs match before the build, by mtime: a file counts only if this run wrote it.
     before = {f: f.stat().st_mtime_ns for g in globs for f in root.glob(g) if f.is_file()}
+    def run(script: Path, argv: list) -> int:
+        cmd = ([str(script)] if os.access(script, os.X_OK) else ["bash", str(script)]) + argv
+        return subprocess.run(cmd, cwd=root, env=env).returncode
+
     for script, argv in ((root / DIR / "scripts" / "check.sh", []), (root / RELEASE, [version])):
         if not script.exists():
             continue
-        cmd = ([str(script)] if os.access(script, os.X_OK) else ["bash", str(script)]) + argv
-        rc = subprocess.run(cmd, cwd=root, env=env).returncode
+        rc = run(script, argv)
         if rc:
             return undo(f"{script.relative_to(root)} exited {rc}")
     # Only files this run wrote count: last release's build left in dist/ proves nothing.
@@ -2283,10 +2301,21 @@ def cmd_release(root: Path, args) -> int:
         print(f"proposed {', '.join(listed_rows(proposed[0].read_text()))} to {para['meta']} as "
               f"{proposed[1]} ({proposed[0].relative_to(root)}): write the change there; "
               f"`jig sync` closes the rows once {para['meta']} releases it.")
-    for fs in made.values():
-        for f in sorted(fs):
-            print(f"  {f.relative_to(root)}")
-    print("Push it: git push --follow-tags")
+    built = [str(f.relative_to(root)) for fs in made.values() for f in sorted(fs)]
+    for f in built:
+        print(f"  {f}")
+    publish = root / PUBLISH
+    # The TODO line means the repo hasn't said what a release publishes yet: it never blocks.
+    if not publish.exists() or any(l.startswith(PUBLISH_TODO)
+                                   for l in publish.read_text().splitlines()):
+        print("Push it: git push --follow-tags")
+        return 0
+    rc = run(publish, [version, *built])
+    if rc:
+        # The tag may already be pushed, so it stays: the release happened, the publish didn't.
+        print(f"released {tag} at {commit[:12]}, but {PUBLISH} exited {rc}. Run it again:\n"
+              f"  {shlex.join([PUBLISH, version, *built])}", file=sys.stderr)
+        return 1
     return 0
 
 # ------------------------------------------------------------------- pararepo
@@ -3756,6 +3785,11 @@ def add_release(root: Path, here: Path) -> None:
         git("add", "--", RELEASE, check=True)
 
 
+def add_publish(root: Path, here: Path) -> None:
+    if publish_script(root):
+        git("add", "--", PUBLISH, check=True)
+
+
 def meta_pattern_old(root: Path) -> bool:
     f = root / META
     try:
@@ -3912,6 +3946,10 @@ STEPS: list = [
      "on the first `jig release`", lambda root, after: RELEASE not in after
      and not (root / RELEASE).exists()
      and (Path(__file__).resolve().parent / "scripts" / "release.sh").exists(), add_release),
+    (f"add {PUBLISH} from the template: what a release publishes after the tag, which "
+     "/jig:release fills in", lambda root, after: PUBLISH not in after
+     and not (root / PUBLISH).exists()
+     and (Path(__file__).resolve().parent / "scripts" / "publish.sh").exists(), add_publish),
     (f"widen {META}'s tag_pattern to accept vX.Y.Z: every repo now releases with three parts",
      lambda root, after: meta_pattern_old(root), widen_meta_pattern),
     (ledger_step, lambda root, after: REVIEW_LEDGER in after, fold_ledger),

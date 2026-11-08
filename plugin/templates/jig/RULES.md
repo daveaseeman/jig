@@ -459,12 +459,19 @@ Open nor Closed or shares its id (P2); a newer metarepo release, a cited path ou
 `contract_paths`, or a metarepo pointer to a file or heading this repo doesn't have, is reported as `jig sync` reports it and refuses nothing. Then the release
 settles the sync buffer (above).
 
+After the tag, the release runs `.jig/scripts/publish.sh <version> <artifact>…`: what the repo
+sends out (a push, a hosted release, a store upload), with the files this run built as paths
+from the repo root. While the script still holds its `# TODO: publish steps.` line, the
+publish isn't decided yet: jig skips it and prints the push command. A repo that publishes
+nothing deletes the line. A publish that fails leaves the tag, which may already be pushed:
+jig prints the command to run it again and exits 1.
+
 ## Commands
 
 ```
 jig init [--trunk main]     config.json, jobs.json, git hooks
 jig init --meta | --para <metarepo> --contract <globs>   ... as a metarepo / pararepo
-jig release [--major|--minor|--patch|--version X.Y.Z] [--force]   the repo's release protocol, then tag
+jig release [--major|--minor|--patch|--version X.Y.Z] [--force]   the repo's release protocol, then tag, then publish
 jig survey [--json]         inventory the repo against the jig shape
 jig update [--apply]        bring the repo to the current jig layout (dry run without --apply)
 jig staging [resolve|drop <file>]   list staged files, or land / drop one
