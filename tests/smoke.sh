@@ -2802,11 +2802,11 @@ git commit -qam "a reworded Jobs block"
 n=$(grep -n '^## Jobs (parallel sessions)' AGENTS.md | cut -d: -f1)
 out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
 msg="agents lines: a reworded Jobs block, the Rulebook line already under Workflow, is proposed for deletion, naming its lines; --apply leaves AGENTS.md alone"
-expect_pass sh -c "echo \"\$0\" | grep -q \"^  AGENTS.md: lines $n–$((n + 2)), .## Jobs (parallel sessions)., are a block jig retired: delete it, heading to the next heading: the Rulebook line is already outside it\" && test -z \"\$(git status --porcelain AGENTS.md)\"" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -q \"^  AGENTS.md: lines ${n}–$((n + 2)), .## Jobs (parallel sessions)., are a block jig retired: delete it, heading to the next heading: the Rulebook line is already outside it\" && test -z \"\$(git status --porcelain AGENTS.md)\"" "$out"
 git commit -qm update
 sed -i.bak 's/^## Jobs (parallel sessions)$/## Lanes (parallel sessions)/' AGENTS.md && rm AGENTS.md.bak && git commit -qam lanes && abehind
 msg="agents lines: the same block under Lanes is proposed too"
-out=$(alines); expect_pass sh -c "echo \"\$0\" | grep -q \"lines $n–$((n + 2)), .## Lanes (parallel sessions)., are a block jig retired\"" "$out"
+out=$(alines); expect_pass sh -c "echo \"\$0\" | grep -q \"lines ${n}–$((n + 2)), .## Lanes (parallel sessions)., are a block jig retired\"" "$out"
 sed -i.bak 's/^## Lanes (parallel sessions)$/## Jobs we run/' AGENTS.md && rm AGENTS.md.bak && git commit -qam "our own jobs"
 msg="agents lines: a repo's own ## Jobs we run gets no proposal"
 out=$(alines); expect_pass sh -c "test -z \"\$0\" && grep -q '^## Jobs we run' AGENTS.md" "$out"
