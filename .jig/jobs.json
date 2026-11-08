@@ -1,7 +1,7 @@
 {
   "release-publish": {
     "spec": ".jig/specs/release-publish.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [
       "plugin/templates/jig/scripts/publish.sh",
