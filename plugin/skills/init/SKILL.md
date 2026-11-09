@@ -56,7 +56,8 @@ Then:
    user asks: a linked environment hides an undeclared dependency from the gate.
    Leave `.jig/scripts/release.sh` as the template: in a plain repo the first `jig release` refuses until
    it is filled, and `/jig:release` fills it with the user then. A metarepo or pararepo releases
-   with jig's defaults.
+   with jig's defaults. Leave `.jig/scripts/publish.sh` as the template too: until its TODO line
+   goes, a release skips it, and `/jig:release` asks what a release publishes on the next release.
 4. Write one sentence for the Project line in `AGENTS.md` from the README or the code. Mark it `(inferred)` so the user corrects it.
 5. If the repo already has a `CLAUDE.md` with content, don't replace it; append `@AGENTS.md` and say so.
 6. Offer to register the repo with `/jig:repos add repo` (or `add meta` / `add para`), so a chat can find its `.jig/staging/`.

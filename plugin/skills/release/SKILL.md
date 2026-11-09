@@ -1,6 +1,6 @@
 ---
 name: release
-description: Release this repo with jig release - its own build and version bump from .jig/scripts/release.sh, then a vX.Y.Z tag. Defines the release protocol with the user the first time. Use on "/jig:release", "cut a release", or "ship a version".
+description: Release this repo with jig release - its own build and version bump from .jig/scripts/release.sh, then a vX.Y.Z tag, then what .jig/scripts/publish.sh sends out. Defines the release protocol with the user the first time. Use on "/jig:release", "cut a release", or "ship a version".
 disable-model-invocation: true
 ---
 
@@ -11,6 +11,14 @@ Run the repo's copy, from trunk with a clean tree:
 ```sh
 python3 .jig/jig.py release            # --minor, --major, or --version X.Y.Z for the first
 ```
+
+## Before it runs
+
+When the release protocol is being defined (below), or `.jig/scripts/publish.sh` still holds
+its `# TODO: publish steps.` line, ask what a release publishes and where: a push, a GitHub
+release with the artifacts, a store or registry upload. Write the steps into `publish.sh`,
+which receives `<version> <artifact>…` after the tag, and delete the TODO line. If the answer
+is "nothing", delete the line and leave no steps. Commit it before the release.
 
 ## When it refuses
 
@@ -52,5 +60,9 @@ rows once the metarepo releases it.
 
 ## After
 
-Report the tag and the artifacts it printed. Pushing (`git push --follow-tags`) and
-publishing the artifacts anywhere are the user's call: ask first.
+Report the tag, the artifacts, and what `publish.sh` printed. The owner's word for the release
+covers the publish: don't ask again. A test clone with no remote stays exempt from that word.
+
+If `publish.sh` failed, the release still happened and the tag stays. Show its output, fix the
+cause with the user, and run the command jig printed. With the TODO line still there, jig
+printed `Push it: git push --follow-tags` instead: the publish isn't decided, so ask.

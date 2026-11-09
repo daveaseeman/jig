@@ -250,8 +250,8 @@ git add -A && git commit -qm init && $J init >/dev/null && git add -A && git com
 msg="init: root holds only AGENTS.md, CLAUDE.md and .jig/"
 expect_pass test "$(ls -A | grep -v '^\.git$' | LC_ALL=C sort | tr '\n' ' ')" = ".jig AGENTS.md CLAUDE.md "
 
-msg="init: .jig/ holds jig.py, RULES.md, docs-page.md, config.json, jobs.json, the four scripts and staging/.gitignore, nothing else"
-expect_pass test "$(find .jig -type f | LC_ALL=C sort | tr '\n' ' ')" = ".jig/RULES.md .jig/config.json .jig/docs-page.md .jig/jig.py .jig/jobs.json .jig/scripts/check.sh .jig/scripts/format.sh .jig/scripts/release.sh .jig/scripts/setup.sh .jig/staging/.gitignore "
+msg="init: .jig/ holds jig.py, RULES.md, docs-page.md, config.json, jobs.json, the five scripts and staging/.gitignore, nothing else"
+expect_pass test "$(find .jig -type f | LC_ALL=C sort | tr '\n' ' ')" = ".jig/RULES.md .jig/config.json .jig/docs-page.md .jig/jig.py .jig/jobs.json .jig/scripts/check.sh .jig/scripts/format.sh .jig/scripts/publish.sh .jig/scripts/release.sh .jig/scripts/setup.sh .jig/staging/.gitignore "
 
 msg="init: the spec template and both ledgers stay in the plugin until first use"
 expect_pass sh -c "test ! -e .jig/specs -a ! -e .jig/ledgers -a ! -e '$P/jig/specs' -a ! -e '$P/jig/ledgers' && test -f '$P/specs/_template.md' -a -f '$P/ledgers/WORKAROUNDS.md' -a -f '$P/ledgers/DEFERRED.md'"
@@ -446,7 +446,7 @@ for layout in "eaec973 dot" "66a044c dot" "62c8d9f jig" "eaec973 aidev" "5d955a2
   expect_pass python3 -c "
 import subprocess
 allowed = {'$board', '.jig/config.json', '.jig/jobs.json', '.aidev/aidev.py', 'jig/jig.py', '.jig/jig.py',
-           '.aidev/RULES.md', 'jig/RULES.md', '.jig/RULES.md', '.jig/docs-page.md', '.gitignore', '.jig/scripts/setup.sh', '.jig/scripts/release.sh', '.jig/staging/.gitignore'}
+           '.aidev/RULES.md', 'jig/RULES.md', '.jig/RULES.md', '.jig/docs-page.md', '.gitignore', '.jig/scripts/setup.sh', '.jig/scripts/release.sh', '.jig/scripts/publish.sh', '.jig/staging/.gitignore'}
 for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
     status, *paths = line.split('\t')
     assert status == 'R100' or set(paths) <= allowed, line"
@@ -457,8 +457,11 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
   msg="update $name: hooks read trunk's .jig/jig.py and none was kept as .local; .git/jig/enabled, no .git/aidev, no old ignore line"
   expect_pass sh -c "grep -q 'git show main:.jig/jig.py' .git/hooks/pre-commit && ! ls .git/hooks/*.local && test -f .git/jig/enabled && test ! -e .git/aidev && ! grep -q worktrees .gitignore"
 
-  msg="update $name: nothing tracked is left in jig/, .aidev/, specs/ or ledgers/; the config is stamped 8, with release.sh added"
-  expect_pass sh -c "test -z \"\$(git ls-files jig .aidev specs ledgers .jig/lanes.json)\" && ! grep -q payload .jig/config.json && grep -q '\"version\": 9' .jig/config.json && git ls-files --error-unmatch .jig/scripts/release.sh"
+  msg="update $name: nothing tracked is left in jig/, .aidev/, specs/ or ledgers/; the config is stamped 8, with release.sh and publish.sh added"
+  expect_pass sh -c "test -z \"\$(git ls-files jig .aidev specs ledgers .jig/lanes.json)\" && ! grep -q payload .jig/config.json && grep -q '\"version\": 9' .jig/config.json && git ls-files --error-unmatch .jig/scripts/release.sh .jig/scripts/publish.sh"
+
+  msg="update $name: publish.sh is added from the template, TODO line included, and staged"
+  expect_pass sh -c "git diff --cached --name-status | grep -q '^A.\.jig/scripts/publish.sh$' && grep -q '^# TODO: publish steps\.' .jig/scripts/publish.sh && test -x .jig/scripts/publish.sh"
 
   if [ -n "$had_setup" ]; then
     msg="update $name: its setup.sh moves to .jig/scripts/ untouched"
@@ -644,7 +647,7 @@ EOF
   expect_pass python3 -c "
 import subprocess, sys
 removed = set(sys.argv[1].split())
-jig = {'.jig/config.json', '.jig/jobs.json', '.jig/jig.py', '.jig/RULES.md', '.jig/docs-page.md', '.jig/scripts/setup.sh', '.jig/scripts/release.sh',
+jig = {'.jig/config.json', '.jig/jobs.json', '.jig/jig.py', '.jig/RULES.md', '.jig/docs-page.md', '.jig/scripts/setup.sh', '.jig/scripts/release.sh', '.jig/scripts/publish.sh',
        '.jig/ledgers/DEFERRED.md', '.jig/staging/.gitignore', '.gitignore'}
 for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
     status, *paths = line.split('\t')
@@ -1298,6 +1301,8 @@ msg="release: no artifacts named on the board refuses too"
 out=$($J release --version 1.0.0 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'release.artifacts is empty'" "$out"
 printf 'printf "%%s\\n" "$version" > VERSION\nmkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/release.sh
 board "b['release'] = {'artifacts': ['dist/app-*.zip']}"
+# A step under the TODO line proves the script is skipped, not merely empty.
+printf 'touch "%s"\n' "$T/rl-published" >> .jig/scripts/publish.sh
 git add -A && git commit -qm "release protocol"
 msg="release: a dirty tree refuses"
 printf 'x\n' >> VERSION; expect_refuse $J release --version 1.0.0; git checkout -q -- VERSION
@@ -1311,6 +1316,8 @@ out=$($J release 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'no v\* tag ye
 msg="release: --version 1.0.0 runs the script, commits what it changed, tags v1.0.0, prints the artifact"
 out=$($J release --version 1.0.0 2>&1)
 expect_pass sh -c "git tag | grep -qx v1.0.0 && test \"\$(git show v1.0.0:VERSION)\" = 1.0.0 && test \"\$(git log -1 --format=%s v1.0.0)\" = 'release v1.0.0' && echo \"\$0\" | grep -q 'dist/app-1.0.0.zip' && test -z \"\$(git status --porcelain)\"" "$out"
+msg="release: publish.sh still holding its TODO line is skipped, and the push line printed"
+expect_pass sh -c "test ! -e '$T/rl-published' && echo \"\$0\" | grep -q 'Push it: git push --follow-tags'" "$out"
 msg="release: patch is the default; --minor and --major bump their part"
 expect_pass sh -c "$J release >/dev/null && $J release --minor >/dev/null && $J release --major >/dev/null && git tag | grep -qx v1.0.1 && git tag | grep -qx v1.1.0 && git tag | grep -qx v2.0.0"
 msg="release: refused while a file is staged, listing it"
@@ -1340,6 +1347,33 @@ msg="release: run from a subfolder, a release commits every tracked change"
 board "b['release']['artifacts'] = ['dist/app-*.zip']"; git add -A && git commit -qm "release: zip only"
 (cd sub && python3 ../.jig/jig.py release >/dev/null 2>&1)
 expect_pass sh -c "git tag | grep -qx v2.0.2 && test \"\$(git show v2.0.2:VERSION)\" = 2.0.2 && test -z \"\$(git status --porcelain)\""
+msg="release: publish.sh with steps runs after the tag, given the version and the built artifacts"
+cat > .jig/scripts/publish.sh <<PUB
+#!/usr/bin/env bash
+set -eu
+git tag > "$T/rl-pub-tags"; echo "\$*" > "$T/rl-pub-args"
+PUB
+git add -A && git commit -qm "publish steps"
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && grep -qx v2.0.3 '$T/rl-pub-tags' && test \"\$(cat '$T/rl-pub-args')\" = '2.0.3 dist/app-2.0.3.zip' && ! echo \"\$0\" | grep -q 'Push it'" "$out"
+msg="release: a refused release never runs publish.sh"
+rm -f "$T/rl-pub-args"; cp .jig/scripts/release.sh "$T/rl-release.sh"; printf 'exit 3\n' >> .jig/scripts/release.sh; git add -A && git commit -qm "release: broken"
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && test ! -e '$T/rl-pub-args' && ! git tag | grep -qx v2.0.4" "$out"
+cp "$T/rl-release.sh" .jig/scripts/release.sh; git add -A && git commit -qm "release: fixed"
+msg="release: an artifact two globs match reaches publish.sh once"
+board "b['release']['artifacts'].append('dist/app-*')"; git add -A && git commit -qm "release: overlapping globs"
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && test \"\$(cat '$T/rl-pub-args')\" = '2.0.4 dist/app-2.0.4.zip' && test \"\$(echo \"\$0\" | grep -c 'dist/app-2.0.4.zip')\" = 1" "$out"
+board "b['release']['artifacts'] = ['dist/app-*.zip']"; git add -A && git commit -qm "release: zip only"
+msg="release: a publish.sh that exits 3 leaves the tag, prints a rerun command that works from anywhere, and exits 1; jig's lines come first"
+printf 'exit 3\n' >> .jig/scripts/publish.sh; git add -A && git commit -qm "publish: broken"
+out=$($J release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 1 && git tag | grep -qx v2.0.5 && echo \"\$0\" | head -1 | grep -q '^jig release: rl' && echo \"\$0\" | grep -q 'released v2.0.5 at [0-9a-f]*, but .jig/scripts/publish.sh exited 3' && echo \"\$0\" | grep -qx '  cd [^ ]*/rl && .jig/scripts/publish.sh 2.0.5 dist/app-2.0.5.zip'" "$out"
+msg="release: with publish.sh not executable, the rerun command runs it with bash"
+chmod -x .jig/scripts/publish.sh; git add -A && git commit -qm "publish: not executable"
+out=$(cd sub && python3 ../.jig/jig.py release 2>&1); rc=$?
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q ' && bash .jig/scripts/publish.sh 2.0.6 dist/app-2.0.6.zip\$' && (cd / && sh -c \"\$(echo \"\$0\" | tail -1)\"; test \$? = 3)" "$out"
 msg="release: off trunk it refuses"
 git switch -q -c side && expect_refuse $J release; git switch -q main
 }

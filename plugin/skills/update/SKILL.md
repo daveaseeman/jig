@@ -83,7 +83,8 @@ with nothing answering them. Each offers one `BUFFER.md` row: add it only on a y
    main checkout's environment, `ln -s` steps in a skill — and offer to remove each once
    `setup.sh` covers it.
    If it added `.jig/scripts/release.sh`, leave the TODO: `/jig:release` fills it on the first
-   release.
+   release. If it added `.jig/scripts/publish.sh`, leave its TODO too: `/jig:release` asks what
+   a release publishes on the next release.
 3. Commit on trunk. The hooks read trunk's `.jig/jig.py`. Coming from `jig/`, `.aidev/` or
    claude-lane's `.claude/claude-lane/`, it exists only once this commit lands, so this one
    commit goes unchecked. Coming from the
