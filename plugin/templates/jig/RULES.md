@@ -25,7 +25,8 @@ identical; only the coordination disappears.
 
 Two files on trunk, written only by the hubnode. `.jig/config.json` holds what rarely
 changes: `name`, `trunk`, `common`, `append_files`, `reserve`, `docmap`, `not_docs`,
-`release`, `reference_files`, `workflow` (optional; see Workflow) and the layout's `version`.
+`release`, `reference_files`, `workflow` (optional; see Workflow), `deep_subsystems`
+(optional; see Documentation) and the layout's `version`.
 `.jig/jobs.json` holds the open jobs, nothing else. Per job:
 
 | Key | Meaning |
@@ -125,10 +126,23 @@ database already past a number never runs a step of that number that merges late
 ## Documentation
 
 One page per system, `docs/<system>/<system>.md`. A subsystem's page sits in a folder of its
-own inside its system's, `docs/<system>/<subsystem>/<subsystem>.md`, and its parts nest the
-same way. Every page is named for its folder, so the path alone says what it covers. The tree
-names the product's own parts, not its files, so a rule that touches several files lives
-once.
+own inside its system's, `docs/<system>/<subsystem>/<subsystem>.md`. Every page is named for
+its folder, so the path alone says what it covers. The tree names the product's own parts, not
+its files, so a rule that touches several files lives once.
+
+A **subsystem** is a part of a system that works independently of the rest of it. It has files
+of its own, which the system's other parts don't edit, and the rest of the system reaches it
+only through the interfaces between them. A car's cooling system is separate from its
+suspension and its drivetrain, even where they touch. A section with no files of its own stays
+a section, however long it gets.
+
+The tree is two levels deep: systems and their subsystems. A subsystem inside a subsystem needs
+the owner's word. It is proposed with a rationale: what it is independent of, and the files it
+has of its own. On a yes, it is recorded on trunk in `config.json`'s `deep_subsystems`, a map
+from its folder to that rationale: `{"docs/power/battery/cells": "own firmware module and test
+rig; independent of pack thermal"}`. An entry with an empty rationale doesn't count, and each
+deeper level needs an entry of its own. `jig survey` lists any other deeper page to fold into
+its subsystem's page or to propose. Board pages under `docs/hardware/` keep their own homes.
 
 A page describes what is built: what is true of its system on trunk today, in present-tense
 prose. It is not a rulebook; this file holds the rules about documentation, and no page
@@ -138,8 +152,8 @@ current, is the skeleton):
 1. **A lead paragraph**, with no heading of its own: what the system is and why it exists.
 2. **Body sections**, named for the system's own parts — the nouns its code has (Schema,
    Renderer, Sync) — never for a lifecycle or a genre (Overview, Notes, Misc, Changes). A
-   section that outgrows a screen, or gets files of its own, becomes a subsystem folder with
-   its own page, and the parent's section shrinks to a paragraph and a link.
+   part that becomes a subsystem, with files of its own, moves to a subsystem folder with its
+   own page, and the parent's section shrinks to a paragraph and a link.
 3. **`## Invariants`**, optional: only the facts that are load-bearing. Each entry states,
    inline, why it must hold and what holds it — a named test, review, or on screen:
    `- Rows are at least 44px — the touch-target minimum; held by test_touch_targets.` An

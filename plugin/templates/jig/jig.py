@@ -53,6 +53,7 @@ BOARD_DEFAULTS = {
 # them. Each new optional key goes here, or update calls it unknown.
 BOARD_OPTIONAL = (
     "workflow",            # overrides WORKFLOW_DEFAULTS
+    "deep_subsystems",     # {"docs/<system>/<subsystem>/<folder>": rationale}: owner-approved deeper pages
 )
 # Who runs each step, as numbers the tool maps to its own models and efforts. Tier 1 is the
 # tool's best model, a higher number a lesser one; effort 0 is its highest, each number up one
@@ -1470,7 +1471,7 @@ DOC_HOMES = {
     "AGENTS.md": "rules, always loaded",
     "CLAUDE.md": "pointer to AGENTS.md",
     "README.md": "for people outside",
-    "docs/": f"what the code is now: docs/<system>/<system>.md each system, its subsystems nested the same way, {BOARD_PAGES}<board>.md each board; any other file there has no home",
+    "docs/": f"what the code is now: docs/<system>/<system>.md each system, docs/<system>/<subsystem>/<subsystem>.md its subsystems one level down (deeper only where {CONFIG} deep_subsystems approves it), {BOARD_PAGES}<board>.md each board; any other file there has no home",
     COMPONENTS: "<part>/ one folder per part: its datasheets and notes, linked from board pages",
     f"{BOARD_PAGES}<board>/": "one board's files that aren't its page (schematic, a snapshot of its definition)",
     f"{DIR}/specs/": "a task in flight",
@@ -1562,29 +1563,57 @@ def sentences(text: str) -> set[str]:
     return {s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-Z`*-])", flat) if len(s.strip()) > 25}
 
 
-def at_home(path: str, entry: list[str]) -> bool:
-    """RULES.md (Documentation) lists these homes; a change there changes this."""
+def folder_page(path: str) -> bool:
+    """docs/<...>/<name>/<name>.md: a page named for its folder, the shape of every docs page."""
     parts = path.split("/")
+    return parts[0] == "docs" and len(parts) >= 3 and parts[-2] == Path(path).stem
+
+
+def depth_ok(folder: str, deep: dict) -> bool:
+    """A docs folder may hold a page: docs/<system> and docs/<system>/<subsystem> always, each
+    level below that only with the owner's rationale in config.json's deep_subsystems. The key
+    is trunk-only (R5), so the agent proposing a level can't approve it. Every level needs its
+    own entry: approving docs/a/b/c says nothing about docs/a/b/c/d."""
+    parts = folder.split("/")
+    if parts[0] != "docs" or (folder + "/").startswith(BOARD_PAGES):
+        return True   # board pages keep their own homes
+    return all(isinstance(r := deep.get("/".join(parts[:i])), str) and r.strip()
+               for i in range(4, len(parts) + 1))
+
+
+def at_home(path: str, entry: list[str], deep: dict) -> bool:
+    """RULES.md (Documentation) lists these homes; a change there changes this."""
     return (path in ROOT_DOCS or path.startswith(BOARD_PAGES) or matches(path, entry)
-            or (parts[0] == "docs" and len(parts) >= 3 and parts[-2] == Path(path).stem))
+            or (folder_page(path) and depth_ok(os.path.dirname(path), deep)))
 
 
-def page_home(path: str, have: set[str]) -> str:
+def page_home(path: str, have: set[str], deep: dict) -> str:
     """Under the nearest folder that has its own page, as a subsystem's page sits in its
-    system's folder; else a system of its own under docs/."""
+    system's folder; else a system of its own under docs/. Where a folder of its own there would
+    be deeper than the docs tree allows, the nearest page itself: fold it in."""
     stem, folders = Path(path).stem, path.split("/")[:-1]
     for i in range(len(folders), 1, -1):
         d = "/".join(folders[:i])
-        if f"{d}/{folders[i - 1]}.md" in have:
-            return f"{d}/{stem}/{stem}.md"
+        if f"{d}/{folders[i - 1]}.md" in have and depth_ok(d, deep):
+            return f"{d}/{stem}/{stem}.md" if depth_ok(f"{d}/{stem}", deep) else f"{d}/{folders[i - 1]}.md"
     return f"docs/{stem}/{stem}.md"
 
 
+def deep_home(path: str, deep: dict) -> str:
+    """The page of the nearest folder above PATH's own that the docs tree allows."""
+    d = os.path.dirname(os.path.dirname(path))
+    while not depth_ok(d, deep):
+        d = os.path.dirname(d)
+    return f"{d}/{os.path.basename(d)}.md"
+
+
 def doc_homes(root: Path, files: list[str], not_docs: list[str],
-              read=None) -> list[dict]:
+              read=None, deep: dict | None = None) -> list[dict]:
     """Every tracked Markdown file with no home, as {path, kind, to, fold, naming, named_at}.
-    Kinds: `rules` an agent instruction file off root, `page` a page, old shape or new, in the
+    Kinds: `rules` an agent instruction file off root, `deep` a page named for its folder below
+    a subsystem that deep_subsystems doesn't approve, `page` a page, old shape or new, in the
     wrong place, `copy` three or more sentences of RULES.md word for word, `stray` anything else.
+    DEEP is the board's deep_subsystems.
     READ maps a path to its text, for update, which judges the files where they will be."""
     read = read or (lambda f: (root / f).read_text(errors="replace") if (root / f).is_file() else "")
     rules_md = Path(__file__).resolve().parent / "RULES.md"
@@ -1595,18 +1624,21 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
             entry = {**META_DEFAULTS, **json.loads((root / META).read_text() or "{}")}["entry_files"]
         except ValueError:
             pass
+    deep = deep if isinstance(deep, dict) else {}
     have = set(files)
     out = []
     for f in files:
         if (not f.endswith(".md") or f.startswith(TOOL_DIRS) or matches(f, not_docs)
-                or at_home(f, entry)):
+                or at_home(f, entry, deep)):
             continue
         text, to = read(f), None
         # A page first: one that quotes the rulebook is still the repo's page, not a copy.
         if "/" in f and Path(f).name in RULES_NAMES:
             kind = "rules"
+        elif folder_page(f):
+            kind, to = "deep", deep_home(f, deep)
         elif f.startswith("docs/") and (old_contract(text) or CONTRACT_HEADS.search(text)):
-            kind, to = "page", page_home(f, have)
+            kind, to = "page", page_home(f, have, deep)
         elif rules and len([s for s in sentences(text) if s in rules]) >= 3:
             kind = "copy"
         else:
@@ -1753,7 +1785,7 @@ def cmd_survey(root: Path, args) -> int:
                     "not_docs_unmatched": [g for g in not_docs
                                           if not any(matches(f, [g]) for f in files)]}
 
-    homes = {h["path"]: h for h in doc_homes(root, files, not_docs)}
+    homes = {h["path"]: h for h in doc_homes(root, files, not_docs, deep=board.get("deep_subsystems"))}
     for f in md:
         raw = (root / f).read_text(errors="replace").splitlines() if (root / f).exists() else []
         n = len([l for l in raw
@@ -1816,6 +1848,12 @@ def cmd_survey(root: Path, args) -> int:
               "or nest it\nunder its system's folder if it is a subsystem:")
         for e in misplaced:
             print(f"  {e['path']} → {e['to']}{' (fold it in: that page exists)' if e['fold'] else ''}")
+    deep = [e for e in report["homeless"] if e["kind"] == "deep"]
+    if deep:
+        print(f"\nPages below a subsystem ({DIR}/RULES.md, Documentation); fold each into its "
+              f"subsystem's page,\nor propose it to the owner with its rationale for {CONFIG} deep_subsystems:")
+        for e in deep:
+            print(f"  {e['path']} → fold into {e['to']}, or ask for {os.path.dirname(e['path'])}")
     strays = [e for e in report["homeless"] if e["kind"] == "stray"]
     if strays:
         linked = sorted((e for e in strays if e["inbound"] > 0),
@@ -4357,9 +4395,13 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
     def read(f: str) -> str:
         p = root / back.get(f, f)
         return p.read_text(errors="replace") if p.is_file() else ""
-    homes = [h for h in doc_homes(root, after, board.get("not_docs") or [], read)
+    homes = [h for h in doc_homes(root, after, board.get("not_docs") or [], read,
+                                  board.get("deep_subsystems"))
              if h["path"] not in reviewed]
     out = [(h["path"], home_fix(h)) for h in homes if h["kind"] in ("rules", "copy")]
+    out += [(h["path"], f"below a subsystem ({DIR}/RULES.md, Documentation): fold it into "
+             f"{h['to']}, or ask the owner to approve {os.path.dirname(h['path'])} in {CONFIG} "
+             "deep_subsystems, with its rationale") for h in homes if h["kind"] == "deep"]
     pages = [h for h in homes if h["kind"] == "page"]
     try:
         para = json.loads((root / PARA).read_text()) if (root / PARA).exists() else {}
