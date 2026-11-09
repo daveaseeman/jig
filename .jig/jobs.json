@@ -1,7 +1,7 @@
 {
   "docs-subsystems": {
     "spec": ".jig/specs/docs-subsystems.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [
       "bug-workflow-unknown-key"
     ],
