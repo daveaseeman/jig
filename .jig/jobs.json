@@ -1,7 +1,7 @@
 {
   "feature-request": {
     "spec": ".jig/specs/feature-request.md",
-    "state": "ready",
+    "state": "gated",
     "after": [
       "roadmap"
     ],
