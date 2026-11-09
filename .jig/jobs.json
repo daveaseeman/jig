@@ -1,7 +1,7 @@
 {
   "flatten-hardware": {
     "spec": ".jig/specs/flatten-hardware.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [
       "docs-subsystems"
     ],
