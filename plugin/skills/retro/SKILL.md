@@ -5,7 +5,7 @@ description: Turn a repeated fix or discovery into a reusable skill or a line in
 
 Ask: did anything in this task get solved that will need solving again?
 
-- Hardware quirk (init order, pull-up, timing, voltage) → one line in that board's page, `docs/hardware/<board>.md` → Known failure modes.
+- Hardware quirk (init order, pull-up, timing, voltage) → one line in that board's page, `docs/<board>/<board>.md` or a subsystem's in a larger system (the pages `boards` in `.jig/config.json` lists) → Known failure modes.
 - Framework/peripheral knowledge (how to make X work on Y) → `.claude/skills/<platform>-<peripheral>/SKILL.md` from `${CLAUDE_PLUGIN_ROOT}/templates/skills/_template/SKILL.md`. Mark `verified: false` until it has produced working code on the board, and list it under Skills in each board page it applies to.
 - A board page lists a skill under Skills that jig ships and `.claude/skills/` lacks → install it from `${CLAUDE_PLUGIN_ROOT}/templates/skills/<name>/`, never overwriting.
 - Process friction (the check was wrong, the spec template missed something) → edit the process file directly.

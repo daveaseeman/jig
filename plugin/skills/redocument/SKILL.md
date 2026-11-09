@@ -29,9 +29,10 @@ Otherwise:
    pointers branch replaces). Starting from a current layout means the two never propose
    different moves for the same files.
 2. **Refuse unless old-format pages exist.** Run `jig survey`. Go on only if it names at
-   least one page "old contract — convert" under *Pages off the page contract*, or a page
-   under *Pages outside the docs tree* whose file has the Now, Rules and Checks headings.
-   Otherwise say `no old-format pages: nothing to redocument` and stop.
+   least one page "old contract — convert" under *Pages off the page contract*, a page
+   under *Pages outside the docs tree* whose file has the Now, Rules and Checks headings, or
+   any file under *Board files in the old docs/hardware/ layout*. Otherwise say
+   `no old-format pages: nothing to redocument` and stop.
 3. **Refuse unless the board is quiet.** Run `jig status`. Go on only if it says
    `no jobs open`. Otherwise say `jobs open: <names>; redocument runs on a quiet board` and
    stop: fold-in would ask a page that is about to die about live code changes. Those jobs
@@ -41,8 +42,13 @@ Otherwise:
 
 1. **Seed it from survey.** Its old-contract pages, its pages outside the docs tree (with
    where survey says each goes), and its strays under `docs/` are the first rows. Every
-   tracked doc under `docs/` gets a row or an explicit `drop`; board pages
-   (`docs/hardware/`) are left out unless the owner adds them.
+   tracked doc under `docs/` gets a row or an explicit `drop`, board pages included. A board
+   page in an older layout, `docs/hardware/<board>.md`, gets a row to `docs/<board>/<board>.md`
+   with its `boards` entry; `docs/hardware/<board>/` moves into that folder, its vendor PDFs
+   into the folder's `datasheets/` (a PDF the repo wrote, a schematic, stays beside the page);
+   and each file of `docs/hardware/components/<part>/` moves into the `datasheets/` of the
+   page that links the part, or `docs/datasheets/` when two board pages link it. Survey's rows
+   say where each file goes.
 
    **In a pararepo** (`.jig/para.json` on trunk), also find every cached metarepo pointer into
    this repo's docs, `<repo>/<path> § <heading>`:
