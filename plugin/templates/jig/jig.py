@@ -4089,6 +4089,8 @@ def from_claude_lane(data: dict) -> tuple[dict, list[str]]:
                     gone.append(f"board: lanes.{name} (merged)")
                 else:
                     out["lanes"][name] = job
+        # Not BOARD_OPTIONAL: claude-lane boards predate those keys, so one by that name meant
+        # something else there and is dropped with the rest.
         elif key in BOARD_DEFAULTS:
             out[key] = value
         else:
