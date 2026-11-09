@@ -78,7 +78,7 @@ the code always matches it, and the check at the gate would catch nothing.
    matches, the gate refuses until it is answered, and "no page needed" is never an answer
    for that code. The gate also refuses a board-build file (`sdkconfig*`, `platformio.ini`,
    `idf_component.yml`, `west.yml`, `*.ino`, `*.overlay`) no registered board page's globs
-   cover, and a `boards` entry whose page is missing. The
+   cover, and a branch that deletes or moves a page `boards` lists. The
    config is the hubnode's: in a job, hand it both lines; working solo on trunk, write them.
 
 Report the page, the reference files saved and their hashes, each mismatch and how it was

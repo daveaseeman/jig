@@ -1491,8 +1491,9 @@ DATASHEETS = "datasheets"
 # file goes now; nothing writes there.
 OLD_BOARDS = "docs/hardware/"
 OLD_PARTS = f"{OLD_BOARDS}components/"
-# What /jig:init reads as firmware. A branch adding or changing one builds for a board, and a
-# board has a page: the gate refuses one that no registered board page's docmap covers.
+# Board-build files, by name. A branch adding or changing one builds for a board, and a board
+# has a page: the gate refuses one no registered board page's docmap covers. /jig:init also
+# reads a main/ with C as firmware, which no file name can say, so this list is the gate's own.
 BOARD_BUILD = ("sdkconfig*", "platformio.ini", "idf_component.yml", "west.yml", "*.ino", "*.overlay")
 # Where each kind of document lives: a file by name, a folder by its trailing "/".
 DOC_HOMES = {
@@ -1613,12 +1614,13 @@ def reserved_page(path: str) -> bool:
 
 
 def old_board_rows(files: list[str], read) -> list[dict]:
-    """Every file in the old docs/hardware/ layout, as {path, to, board}: a page to
+    """Every file in the old docs/hardware/ layout, as {path, to, board, why}: a page to
     docs/<board>/<board>.md (BOARD: its boards entry); a board's files into that folder, its
     vendor PDFs into the folder's datasheets/; a part's files into the datasheets/ of the one
     board page that links the part, or docs/datasheets/ when two do, or none. A part's folder
-    goes: a datasheet is a file in the page's datasheets/, named for the part where two would
-    collide. TO is None for a file that names no board."""
+    goes: a datasheet is a file in a page's datasheets/. Two files bound for one place, or one
+    bound for a file already there, are named for where they came from (the part, the board).
+    TO is None, and WHY says so, for a file with no one place to go: the owner places it."""
     pages = [f for f in files if f.startswith(OLD_BOARDS) and f.endswith(".md")
              and "/" not in f[len(OLD_BOARDS):]]
     users = {}
@@ -1626,25 +1628,46 @@ def old_board_rows(files: list[str], read) -> list[dict]:
         for t in link_targets(page, read(page)):
             if t.startswith(OLD_PARTS) and "/" in t[len(OLD_PARTS):]:
                 users.setdefault(t[len(OLD_PARTS):].split("/")[0], set()).add(Path(page).stem)
-    rows, taken = [], {}
+    rows = []
     for f in (f for f in files if f.startswith(OLD_BOARDS)):
-        rest, to, board = f[len(OLD_BOARDS):], None, False
+        rest, to, board, why, origin = f[len(OLD_BOARDS):], None, False, "", ""
         if f in pages:
             to, board = f"docs/{Path(f).stem}/{Path(f).stem}.md", True
+            if to == f:
+                to, board, why = None, False, "the old layout's own index, not a board: fold it in or drop it"
         elif f.startswith(OLD_PARTS):
-            part = f[len(OLD_PARTS):].split("/")[0]
-            who = sorted(users.get(part, ()))
-            to = f"docs/{who[0]}/{DATASHEETS}/" if len(who) == 1 else f"docs/{DATASHEETS}/"
-            taken.setdefault(to + Path(f).name, []).append(len(rows))
-            to += Path(f).name
+            origin = f[len(OLD_PARTS):].split("/")[0]
+            who = sorted(users.get(origin, ()))
+            to = (f"docs/{who[0]}/{DATASHEETS}/" if len(who) == 1 else f"docs/{DATASHEETS}/") + Path(f).name
         elif "/" in rest:
-            folder = rest.split("/", 1)[0]
-            to = (f"docs/{folder}/{DATASHEETS}/{Path(f).name}" if f.lower().endswith(".pdf")
-                  else f"docs/{rest}")
-        rows.append({"path": f, "to": to, "board": board, "fold": False})
-    for i in (i for ix in taken.values() if len(ix) > 1 for i in ix):
-        r = rows[i]
-        r["to"] = f"{os.path.dirname(r['to'])}/{r['path'][len(OLD_PARTS):].split('/')[0]}-{Path(r['to']).name}"
+            origin = rest.split("/", 1)[0]
+            if f"{OLD_BOARDS}{origin}.md" not in pages:
+                why = f"{OLD_BOARDS}{origin}/ has no board page beside it: place it by hand"
+            elif f.lower().endswith(".pdf"):
+                to = f"docs/{origin}/{DATASHEETS}/{Path(f).name}"
+            else:
+                to = f"docs/{rest}"
+        else:
+            why = "names no board: place it by hand"
+        rows.append({"path": f, "to": to, "board": board, "fold": False, "why": why, "origin": origin})
+    there = {f for f in files if not f.startswith(OLD_BOARDS)}
+    for r in (r for r in rows if r["board"] and r["to"] in there):
+        r["to"], r["board"], r["why"] = None, False, f"{r['to']} is there already: fold the two by hand"
+    for _ in range(2):
+        bound = {}
+        for r in rows:
+            if r["to"]:
+                bound.setdefault(r["to"], []).append(r)
+        for to, rs in bound.items():
+            if len(rs) < 2 and to not in there:
+                continue
+            for r in (r for r in rs if not r["board"]):
+                if r["origin"] and not Path(to).name.startswith(f"{r['origin']}-"):
+                    r["to"] = f"{os.path.dirname(to)}/{r['origin']}-{Path(to).name}"
+                else:
+                    r["to"], r["why"] = None, f"would land on {to}, which another file takes: place it by hand"
+    for r in rows:
+        del r["origin"]
     return rows
 
 
@@ -1848,21 +1871,44 @@ def board_like_json(root: Path, files: list[str]) -> list[str]:
     return out
 
 
-def board_refusals(board: dict, trunk: str, at: str) -> list[str]:
-    """Every board has a page: a board-build file the branch adds or changes that no registered
-    board page's docmap covers, and a boards entry whose page is missing at AT. A repo that
-    builds for no board has nothing here to refuse."""
+def board_build(f: str) -> bool:
+    return any(fnmatch.fnmatchcase(Path(f).name, b) for b in BOARD_BUILD)
+
+
+def unpaged_build(board: dict, files: list[str]) -> list[tuple[str, str]]:
+    """Each board-build file in FILES no registered board page's docmap covers, with the page
+    docmap maps it to when there is one: that page is the board's, missing only from boards
+    (an old-layout repo after update), and needs listing, not writing."""
     docmap = board.get("docmap") if isinstance(board.get("docmap"), dict) else {}
     pages = board_pages(board)
     globs = [g for p in pages for g in (docmap.get(p) or [])]
+    return [(f, next((p for p, gs in docmap.items() if isinstance(gs, list) and matches(f, gs)), ""))
+            for f in files if board_build(f) and not matches(f, globs)]
+
+
+def unpaged_fix(f: str, page: str) -> str:
+    if page:
+        return f"docmap maps {f} to {page}, which {CONFIG} boards doesn't list: add it to boards"
+    return (f"write the board's page with /jig:hardware, list it in {CONFIG} boards, and map "
+            f"{f} to it in docmap")
+
+
+def board_refusals(board: dict, trunk: str, at: str) -> list[str]:
+    """Every board has a page: a board-build file the branch adds or changes that no registered
+    board page's docmap covers, and a registered board page the branch deletes or moves. A
+    boards entry naming a page that is nowhere yet is survey's to report: the page may be on
+    another job's branch, and refusing here would hold every job until that one merges. A repo
+    that builds for no board has nothing here to refuse."""
+    rng = f"{trunk}...{at}"
     changed = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
-                  "--diff-filter=AM", f"{trunk}...{at}").splitlines()
-    out = [f"{f} builds for a board no page covers: write the board's page with /jig:hardware, "
-           f"list it in {CONFIG} boards, and map {f} to it in docmap"
-           for f in changed if any(fnmatch.fnmatchcase(Path(f).name, b) for b in BOARD_BUILD)
-           and not matches(f, globs)]
-    out += [f"{CONFIG} boards names {p}, which is missing at {at[:12]}: write it, or drop the entry"
-            for p in pages if not git("ls-tree", "--name-only", at, "--", p)]
+                  "--diff-filter=AM", rng).splitlines()
+    out = [f"{f} builds for a board no page covers: {unpaged_fix(f, page)}"
+           for f, page in unpaged_build(board, changed)]
+    gone = set(git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
+                   "--diff-filter=D", rng).splitlines())
+    out += [f"{p} is a board page {CONFIG} boards lists, and this branch deletes or moves it: "
+            "keep it, or move its boards and docmap entries with it on trunk first"
+            for p in board_pages(board) if p in gone]
     return out
 
 
@@ -1893,24 +1939,43 @@ def link_targets(page: str, text: str) -> list[str]:
     return out
 
 
+def shared_home(a: str, b: str, have: set[str]) -> str:
+    """The datasheets/ of the nearest folder above both A and B that has a page of its own,
+    docs/datasheets/ at the top."""
+    common = os.path.commonpath([a, b]).split("/")
+    while len(common) > 1 and f"{'/'.join(common)}/{common[-1]}.md" not in have:
+        common.pop()
+    return f"{'/'.join(common)}/{DATASHEETS}/"
+
+
 def datasheet_links(root: Path, files: list[str], pages: list[str], deep: dict,
-                    not_docs: list[str]) -> tuple[list[str], list[tuple[str, str]]]:
-    """Files in a page's folder, or in docs/datasheets/, that no page links; and links from
-    pages into a datasheets/ folder that point at nothing on disk. Disk, not git: an ignored
-    datasheet that was fetched is present."""
-    linked, missing = set(), []
-    for page in pages:
+                    not_docs: list[str]) -> tuple[list[str], list[tuple[str, str]], list[tuple[str, str, str]]]:
+    """Files in a page's folder, or in docs/datasheets/, that no page or note there links;
+    links into a datasheets/ folder that point at nothing on disk (disk, not git: an ignored
+    datasheet that was fetched is present); and links into the datasheets/ of a page that is
+    not the linker's own or above it, with the shared folder the file belongs in."""
+    have = set(files)
+    notes = [f for f in files if f.endswith(".md") and f not in pages and f.startswith("docs/")
+             and not reference_file(f) and not matches(f, not_docs) and owner_page(f, have, deep)]
+    linked, missing, misplaced = set(), [], []
+    for page in pages + notes:
         text = (root / page).read_text(errors="replace") if (root / page).exists() else ""
         for path in link_targets(page, text):
             linked.add(path)
-            if reference_file(path) and not (root / path).exists() and (page, path) not in missing:
+            if not reference_file(path):
+                continue
+            if not (root / path).exists() and (page, path) not in missing:
                 missing.append((page, path))
-    have, pool = set(files), f"docs/{DATASHEETS}/"
+            owner = path[:path.index(f"/{DATASHEETS}/")]
+            here = os.path.dirname(page)
+            if here != owner and not here.startswith(f"{owner}/"):
+                misplaced.append((page, path, shared_home(owner, here, have)))
+    pool = f"docs/{DATASHEETS}/"
     unlinked = [f for f in files if f not in linked and f not in pages and not matches(f, not_docs)
                 and not f.startswith(OLD_BOARDS)
                 and (f.startswith(pool) or (f.startswith("docs/") and not folder_page(f)
                                             and owner_page(f, have, deep)))]
-    return unlinked, missing
+    return unlinked, missing, misplaced
 
 
 def cmd_survey(root: Path, args) -> int:
@@ -1968,8 +2033,9 @@ def cmd_survey(root: Path, args) -> int:
     boards = board_pages(board)
     report["boards_unmapped"] = [f for f in boards if f not in (board.get("docmap") or {})]
     report["boards_missing"] = [f for f in boards if f not in files]
+    report["boards_unpaged"] = [{"path": f, "page": p} for f, p in unpaged_build(board, files)]
     pages = [f for f in md if folder_page(f) and f not in homes and not matches(f, not_docs)]
-    report["datasheets_unlinked"], report["datasheets_missing"] = datasheet_links(
+    report["datasheets_unlinked"], report["datasheets_missing"], report["datasheets_misplaced"] = datasheet_links(
         root, files, pages, deep, not_docs)
     have = set(files)
     report["datasheets_orphan"] = [f for f in files if reference_file(f) and not f.endswith(".md")
@@ -2018,7 +2084,7 @@ def cmd_survey(root: Path, args) -> int:
               "board is a\nsystem now. Move each file (/jig:redocument carries the moves), and list "
               f"each page\nunder boards in {CONFIG}:")
         for e in report["old_boards"]:
-            print(f"  {e['path']} → {e['to'] or '? (names no board: move it by hand)'}"
+            print(f"  {e['path']} → {e['to'] or '? (' + e['why'] + ')'}"
                   + (f"   + boards: {e['to']}" if e["board"] else ""))
     below = [e for e in report["homeless"] if e["kind"] == "deep"]
     if below:
@@ -2061,6 +2127,10 @@ def cmd_survey(root: Path, args) -> int:
         print(f"\n{CONFIG} boards entries that name no tracked page:")
         for f in report["boards_missing"]:
             print(f"  {f}")
+    if report["boards_unpaged"]:
+        print("\nBoard-build files no board page covers: jig gate refuses a branch that changes one:")
+        for e in report["boards_unpaged"]:
+            print(f"  {e['path']}: {unpaged_fix(e['path'], e['page'])}")
     if report["boards_unmapped"]:
         print("\nBoard pages no docmap entry names: no handoff will ask whether they still"
               "\nmatch the code. Map each to the code that targets its board:")
@@ -2087,6 +2157,11 @@ def cmd_survey(root: Path, args) -> int:
               "\nthe source URL the page records, and check its hash:")
         for page, target in report["datasheets_missing"]:
             print(f"  {page:<40} -> {target}")
+    if report["datasheets_misplaced"]:
+        print(f"\nPages linking a datasheet in another page's {DATASHEETS}/: a datasheet two pages "
+              "use lives in\nthe nearest folder both share. Move it there, and relink both pages:")
+        for page, target, home in report["datasheets_misplaced"]:
+            print(f"  {page} -> {target}: move it to {home}")
     co = report["coordination"]
     print("\nHow parallel work is coordinated today (and what each maps to in jig):")
     for f in co["found"]:
@@ -4647,11 +4722,11 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
         if any(f"/{DATASHEETS}/" in r["to"] for r in old):
             lines.append(f"each link into a moved part or a {DATASHEETS}/ folder: repoint it; a PDF "
                          f"the repo wrote (a schematic) goes back beside the page, not in {DATASHEETS}/")
-        lost = [r["path"] for r in old_board_rows(after, read) if not r["to"]]
+        lost = [r for r in old_board_rows(after, read) if not r["to"]]
         out.append((OLD_BOARDS, f"board files in the old layout ({DIR}/RULES.md, Documentation): "
                     "each board is a system now, and /jig:redocument carries the moves. In one commit:"
                     + "".join(f"\n      {l}" for l in lines)
-                    + "".join(f"\n      {f}: names no board, move it by hand" for f in lost)))
+                    + "".join(f"\n      {r['path']}: {r['why']}" for r in lost)))
     for h in (h for h in homes if h["kind"] == "deep"):
         lines = commit_lines(os.path.dirname(h["path"]) + "/", [h])
         out.append((h["path"], f"below a subsystem ({DIR}/RULES.md, Documentation): {deep_fix(h, deep)}. "

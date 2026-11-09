@@ -1788,9 +1788,15 @@ printf '| Clasp | QX-9 | latch | [ds](../datasheets/qx-9.pdf) |\n' >> docs/watch
 git add -A && git commit -qm "subsystem and shared datasheets"
 msg="datasheets: accepted in a subsystem's folder and at docs/datasheets/, their linked files no strays"
 expect_pass hrsurvey "assert r['homeless'] == [], r['homeless']
-assert r['datasheets_orphan'] == [], r['datasheets_orphan']
+assert r['datasheets_orphan'] == [] and r['datasheets_misplaced'] == [], r
 assert r['datasheets_missing'] == [['docs/watch/watch.md', 'docs/watch/datasheets/qx-7.pdf']], r['datasheets_missing']
 assert r['datasheets_unlinked'] == ['docs/datasheets/unused.pdf', 'docs/watch/datasheets/qx-100-notes.md'], r['datasheets_unlinked']"
+
+printf 'And its clock: [ds](../watch/datasheets/rtc.pdf)\n' >> docs/band/band.md && git add -A && git commit -qm "band borrows"
+msg="datasheets: a page linking another page's datasheets/ is told the shared folder it belongs in"
+expect_pass hrsurvey "assert r['datasheets_misplaced'] == [['docs/band/band.md', 'docs/watch/datasheets/rtc.pdf', 'docs/datasheets/']], r['datasheets_misplaced']"
+expect_pass sh -c "$J survey | grep -qF 'docs/band/band.md -> docs/watch/datasheets/rtc.pdf: move it to docs/datasheets/'"
+printf '# Band\n\nThe strap. [ds](../datasheets/qx-9.pdf)\n' > docs/band/band.md && git add -A && git commit -qm "band its own"
 
 msg="survey: a page-shaped file in another page's folder is a subsystem candidate"
 printf '# Power\n\nThe rails.\n\n## Invariants\n- 3.3V — the parts are 3.3V; held by review.\n' > docs/watch/power.md
@@ -1799,6 +1805,10 @@ git add -A && git commit -qm "candidate"
 expect_pass hrsurvey "h = {e['path']: e for e in r['homeless']}
 assert list(h) == ['docs/watch/power.md'], h
 assert h['docs/watch/power.md']['kind'] == 'page' and h['docs/watch/power.md']['to'] == 'docs/watch/power/power.md', h"
+mkdir -p docs/watch/img && printf 'png' > docs/watch/img/scope.png && printf '![scope](img/scope.png)\n' >> docs/watch/bringup.md
+git add -A && git commit -qm "a note links an image"
+msg="datasheets: a file a note in the page's folder links is not unlinked"
+expect_pass hrsurvey "assert 'docs/watch/img/scope.png' not in r['datasheets_unlinked'], r['datasheets_unlinked']"
 msg="survey: the subsystem candidate is named as one"
 expect_pass sh -c "$J survey | grep -q 'docs/watch/power.md → docs/watch/power/power.md (a subsystem candidate'"
 
@@ -1826,6 +1836,11 @@ git add -A && git commit -qm "board covers fw"
 out=$($J gate H3 2>&1)
 msg="board rule: the gate refuses 'no page needed' for a file a registered board page covers"
 expect_pass sh -c "echo \"\$0\" | grep -q 'UNOWNED fw/drv.c .*docs/watch/watch.md is a board page covering it'" "$out"
+$J open H4 --spec t --owns 'docs/watch/watch.md' >/dev/null 2>&1 && git add -A && git commit -qm "open H4"
+(cd .git/jig/worktrees/H4 && git rm -q docs/watch/watch.md && git commit -qm "drop the page") && hwnote H4
+msg="board gate: a branch deleting a registered board page is refused"
+gate_ok H4; rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^docs/watch/watch.md is a board page .*boards lists, and this branch deletes or moves it'" "$out"
 board "b['boards'] = []"
 git add -A && git commit -qm "unregister"
 msg="board rule: the same page, not in boards, has no such refusal; a repo with no board-build files is untouched"
@@ -1846,24 +1861,34 @@ expect_pass sh -c "$J update 2>&1 | grep -q 'reference_files: added' && ! $J upd
 # Every board has a page: the gate refuses a board-build file no board page covers.
 HG="$T/hwgate"; pcnew "$HG" && mkdir -p src && printf 'int x;\n' > src/x.c && printf 'CONFIG_A=y\n' > sdkconfig
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
-$J open G1 --spec t --owns platformio.ini 'docs/**' >/dev/null 2>&1 && $J open G2 --spec t --owns 'sdkconfig' >/dev/null 2>&1 && git add -A && git commit -qm "open G1 G2"
-(cd .git/jig/worktrees/G1 && printf '[env:dev]\n' > platformio.ini && git add -A && git commit -qm pio) && hwnote G1
+msg="board survey: a board-build file no board page covers is listed, with /jig:hardware"
+expect_pass hrsurvey "assert r['boards_unpaged'] == [{'path': 'sdkconfig', 'page': ''}], r['boards_unpaged']"
+expect_pass sh -c "$J survey | grep -q '^  sdkconfig: write the board.s page with /jig:hardware'"
+$J open G1 --spec t --owns platformio.ini 'docs/**' >/dev/null 2>&1 && $J open G2 --spec t --owns 'sdkconfig' >/dev/null 2>&1 \
+  && $J open GA --spec t --owns 'src/**' >/dev/null 2>&1 && git add -A && git commit -qm "open G1 G2 GA"
+(cd .git/jig/worktrees/G1 && mkdir -p docs/prod/devkit && printf '[env:dev]\n' > platformio.ini && printf '# Prod\n\nThe product.\n' > docs/prod/prod.md \
+  && printf '# Devkit\n\nThe dev board.\n' > docs/prod/devkit/devkit.md && git add -A && git commit -qm "pio and its page") && hwnote G1
 (cd .git/jig/worktrees/G2 && printf 'CONFIG_A=n\n' > sdkconfig && git add -A && git commit -qm cfg) && hwnote G2
+(cd .git/jig/worktrees/GA && printf 'int y;\n' > src/x.c && git add -A && git commit -qm src) && hwnote GA
 msg="board gate: a branch adding platformio.ini that no board page covers is refused, naming the file and the way out"
 gate_ok G1; rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^platformio.ini builds for a board no page covers: write the board.s page with /jig:hardware, list it in .*boards, and map platformio.ini to it in docmap'" "$out"
 msg="board gate: a branch changing sdkconfig that no board page covers is refused"
 gate_ok G2; rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^sdkconfig builds for a board no page covers'" "$out"
-board "b['boards'] = ['docs/prod/devkit/devkit.md']; b['docmap'] = {'docs/prod/devkit/devkit.md': ['platformio.ini']}"
-git add -A && git commit -qm "register the devkit"
-msg="board gate: a boards entry whose page is missing at the branch head is refused"
+msg="board gate: a branch touching no board-build file passes"
+expect_pass gate_ok GA
+board "b['docmap'] = {'docs/prod/devkit/devkit.md': ['platformio.ini']}"
+git add -A && git commit -qm "map the devkit"
+msg="board gate: a page docmap maps but boards doesn't list is named, to add to boards"
 gate_ok G1; rc=$?
-expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'boards names docs/prod/devkit/devkit.md, which is missing at ' && ! echo \"\$0\" | grep -q '^platformio.ini builds'" "$out"
-(cd .git/jig/worktrees/G1 && mkdir -p docs/prod/devkit && printf '# Prod\n\nThe product.\n' > docs/prod/prod.md \
-  && printf '# Devkit\n\nThe dev board.\n' > docs/prod/devkit/devkit.md && git add -A && git commit -qm page) && hwnote G1
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^platformio.ini builds for a board no page covers: docmap maps platformio.ini to docs/prod/devkit/devkit.md, which .*boards doesn.t list: add it to boards'" "$out"
+board "b['boards'] = ['docs/prod/devkit/devkit.md']"
+git add -A && git commit -qm "register the devkit"
 msg="board gate: passes once a registered board page at subsystem depth covers platformio.ini"
 expect_pass gate_ok G1
+msg="board gate: a job forked before the board page exists still passes once trunk registers it"
+expect_pass gate_ok GA
 msg="board gate: sdkconfig is still refused while no board page's docmap covers it"
 gate_ok G2; rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^sdkconfig builds for a board no page covers'" "$out"
@@ -1874,9 +1899,11 @@ printf '# Watch\n\n- MCU / board: QX\n\n[pmic](components/pmic/qx.pdf) [imu](com
 printf '# Band\n\n[rtc](components/rtc/r.pdf)\n' > docs/hardware/band.md
 printf '# Def\n' > docs/hardware/watch/def.md && printf 'x' > docs/hardware/watch/spec.pdf
 printf 'x' > docs/hardware/components/pmic/qx.pdf && printf 'x' > docs/hardware/components/imu/qx.pdf && printf 'x' > docs/hardware/components/rtc/r.pdf
-printf 'int x;\n' > main/app.c && printf 'See docs/hardware/watch.md\n' > README.md
-git add -A && git commit -qm init && $J init >/dev/null && board "b['docmap'] = {'docs/hardware/watch.md': ['main/**']}" && git add -A && git commit -qm board
-msg="old layout: survey maps each file: pages to systems, vendor PDFs and parts into datasheets/, shared ones to docs/datasheets/"
+printf 'x' > docs/hardware/components/pmic/spec.pdf && printf 'x' > docs/hardware/watch/spec.pdf
+mkdir -p docs/hardware/loose && printf '# Loose\n' > docs/hardware/loose/notes.md && printf '# Hardware\n\nThe boards.\n' > docs/hardware/hardware.md
+printf 'int x;\n' > main/app.c && printf 'See docs/hardware/watch.md\n' > README.md && printf 'CONFIG_A=y\n' > sdkconfig
+git add -A && git commit -qm init && $J init >/dev/null && board "b['docmap'] = {'docs/hardware/watch.md': ['main/**', 'sdkconfig']}" && git add -A && git commit -qm board
+msg="old layout: survey maps each file: pages to systems, vendor PDFs and parts into datasheets/, shared ones to docs/datasheets/, collisions renamed, the rest to place by hand"
 expect_pass hrsurvey "h = {e['path']: e for e in r['homeless']}
 assert h['docs/hardware/watch.md']['kind'] == 'board' and h['docs/hardware/watch.md']['to'] == 'docs/watch/watch.md', h
 assert not [e for e in r['homeless'] if e['kind'] == 'stray'], h
@@ -1885,7 +1912,13 @@ assert rows == {'docs/hardware/band.md': 'docs/band/band.md',
                 'docs/hardware/components/imu/qx.pdf': 'docs/watch/datasheets/imu-qx.pdf',
                 'docs/hardware/components/pmic/qx.pdf': 'docs/watch/datasheets/pmic-qx.pdf',
                 'docs/hardware/components/rtc/r.pdf': 'docs/datasheets/r.pdf', 'docs/hardware/watch.md': 'docs/watch/watch.md',
-                'docs/hardware/watch/def.md': 'docs/watch/def.md', 'docs/hardware/watch/spec.pdf': 'docs/watch/datasheets/spec.pdf'}, rows"
+                'docs/hardware/components/pmic/spec.pdf': 'docs/watch/datasheets/pmic-spec.pdf',
+                'docs/hardware/watch/def.md': 'docs/watch/def.md', 'docs/hardware/watch/spec.pdf': 'docs/watch/datasheets/watch-spec.pdf',
+                'docs/hardware/hardware.md': None, 'docs/hardware/loose/notes.md': None}, rows
+why = {e['path']: e['why'] for e in r['old_boards'] if not e['to']}
+assert 'index' in why['docs/hardware/hardware.md'] and 'no board page beside it' in why['docs/hardware/loose/notes.md'], why"
+msg="old layout: a board-build file docmap maps to a page boards doesn't list is named, to add to boards"
+expect_pass hrsurvey "assert r['boards_unpaged'] == [{'path': 'sdkconfig', 'page': 'docs/hardware/watch.md'}], r['boards_unpaged']"
 out=$($J survey 2>&1)
 msg="old layout: survey prints the move with its boards entry, and sends the repo to /jig:redocument"
 expect_pass sh -c "echo \"\$0\" | grep -qF 'docs/hardware/watch.md → docs/watch/watch.md   + boards: docs/watch/watch.md' && echo \"\$0\" | grep -q 'old docs/hardware/ layout: run /jig:redocument' && ! echo \"\$0\" | grep -q 'never read since'" "$out"

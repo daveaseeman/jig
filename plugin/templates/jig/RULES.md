@@ -179,7 +179,7 @@ those files.
 
 A page's folder holds the files the page links — a schematic, a snapshot of a definition, an
 image — beside the page and its subsystems' folders. `jig survey` lists a file there that no
-page links, and a file shaped like a page (with Invariants or Undefined, or the old Now, Rules
+page links (a link from a note in the folder counts), and a file shaped like a page (with Invariants or Undefined, or the old Now, Rules
 and Checks) as a subsystem candidate: it gets a folder and a page of its own.
 
 A board, a screen, a battery are parts of the product, so each is a system or subsystem like
@@ -194,10 +194,12 @@ that changes that code asks whether the page still matches. `jig gate` refuses:
 - a branch that adds or changes a board-build file (`sdkconfig*`, `platformio.ini`,
   `idf_component.yml`, `west.yml`, `*.ino`, `*.overlay`) that no registered board page's
   `docmap` globs cover: write the board's page, list it in `boards`, map the file to it;
-- a `boards` entry naming a page missing at the branch head;
+- a branch that deletes or moves a page `boards` lists;
 - "no page needed" in the fold-in for a file a registered board page's `docmap` globs cover.
 
-A repo with no board-build files has none of these. Survey reads board pages against the page
+A repo with no board-build files has none of these. `jig survey` lists each board-build file
+no registered board page covers, and a `boards` entry naming no page: the page may still be on
+a job's branch, so the gate leaves that one to survey. Survey reads board pages against the page
 contract like any page, and the gate doesn't refuse one off it.
 
 A part whose behavior the code touches is a subsystem with its own page. A vendor's documents —
@@ -208,7 +210,8 @@ A file the repo wrote, its own schematic or a definition the user wrote, sits in
 folder itself. A datasheet two pages use lives in the `datasheets/` of the nearest folder both
 pages sit under: two subsystems of one system share the system's `datasheets/`, two systems
 share `docs/datasheets/`. Both pages link it; it moves there when the second page starts using
-it, and is never copied. `datasheets/` is a reserved name at any depth: it holds reference
+it, and is never copied: `jig survey` names a page linking into the `datasheets/` of a page that
+is neither its own nor above it, and the shared folder the file belongs in. `datasheets/` is a reserved name at any depth: it holds reference
 files, is never a subsystem and never a page's home, and a note inside it is a reference file,
 not a page. `jig survey` names a page called `datasheets` (rename its folder), and a
 `datasheets/` folder that is neither in a page's folder nor at `docs/datasheets/`.
