@@ -1,7 +1,7 @@
 {
   "bug-workflow-unknown-key": {
     "spec": ".jig/specs/bug-workflow-unknown-key.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
