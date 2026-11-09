@@ -1,16 +1,4 @@
 {
-  "bug-workflow-unknown-key": {
-    "spec": ".jig/specs/bug-workflow-unknown-key.md",
-    "state": "gated",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh"
-    ],
-    "reserved": {}
-  },
   "docs-subsystems": {
     "spec": ".jig/specs/docs-subsystems.md",
     "state": "claimed",

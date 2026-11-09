@@ -24,8 +24,9 @@ identical; only the coordination disappears.
 ## The board
 
 Two files on trunk, written only by the hubnode. `.jig/config.json` holds what rarely
-changes: `trunk`, `common`, `append_files`, `reserve`, `docmap`, `not_docs`, `release`,
-`reference_files` and the layout's `version`. `.jig/jobs.json` holds the open jobs, nothing else. Per job:
+changes: `name`, `trunk`, `common`, `append_files`, `reserve`, `docmap`, `not_docs`,
+`release`, `reference_files`, `workflow` (optional; see Workflow) and the layout's `version`.
+`.jig/jobs.json` holds the open jobs, nothing else. Per job:
 
 | Key | Meaning |
 |---|---|
