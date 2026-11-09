@@ -322,6 +322,12 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     for f in (CONFIG, JOBS):
         if f in guarded and branch != trunk:
             out.append(f"R5 the board is the hubnode's: {f} is edited on {trunk} only")
+    # A phase or a scope is the owner's decision, and a branch regenerating the view would
+    # only make merge conflicts: both roadmap files change on trunk alone.
+    for f in (ROADMAP, ROADMAP_VIEW):
+        if f in guarded and branch != trunk:
+            out.append(f"R5 the roadmap is the owner's: {f} is edited on {trunk} only")
+    out += roadmap_rules(board, branch, staged, paths, guarded)
     if CONFIG in paths and (raw := in_index(CONFIG, staged)):
         try:
             out += workflow_steps(json.loads(raw))[1]
@@ -920,9 +926,15 @@ def cmd_merge(root: Path, args) -> int:
     del board.jobs[name]
     board.save()
     git("add", "--", JOBS, check=True)
+    # States change when work lands, so the view is rewritten in the merge commit itself.
+    phases = None if p.returncode else roadmap_state(Snapshot(where="index"))
+    if phases is not None:
+        (main_root() / ROADMAP_VIEW).write_text(render_roadmap(phases))
+        git("add", "--", ROADMAP_VIEW, check=True)
     if p.returncode:
+        then = f", `jig roadmap --write` and `git add {ROADMAP_VIEW}`" if git("show", f":{ROADMAP}") else ""
         print(f"conflicts merging {branch}; {name}'s entry is already deleted in the index. "
-              f"Resolve these, `git add` each, `git commit`, then run {DIR}/scripts/setup.sh:",
+              f"Resolve these, `git add` each{then}, `git commit`, then run {DIR}/scripts/setup.sh:",
               file=sys.stderr)
         for f in conflicted:
             print(f"  {f}", file=sys.stderr)
@@ -1117,7 +1129,7 @@ NOTE = """# Handoff: {job}
 Commit: {head}
 Date: {today}
 Spec: {spec}
-{ran}
+{partial}{ran}
 ## Built
 <!-- what this delivers, in a few lines -->
 
@@ -1281,6 +1293,7 @@ def cmd_handoff(root: Path, args) -> int:
         ran_lines += f"Ran: {ran['ran']}\n"
     path.write_text(NOTE.format(job=name, head=head, today=date.today().isoformat(),
                                 spec=args.spec or "(none)", ran=ran_lines,
+                                partial="Partial: yes\n" if args.partial else "",
                                 foldin=foldin_lines(root, board, branch)))
     print(f"wrote {path.relative_to(root)}")
     if job is not None:
@@ -1500,6 +1513,7 @@ DOC_HOMES = {
     "AGENTS.md": "rules, always loaded",
     "CLAUDE.md": "pointer to AGENTS.md",
     "README.md": "for people outside",
+    "ROADMAP.md": f"the roadmap's view, generated from {DIR}/roadmap.md by `jig roadmap --write`",
     "docs/": f"what the code is now: docs/<system>/<system>.md each system, a board as much as any, docs/<system>/<subsystem>/<subsystem>.md its subsystems one level down (deeper only where {CONFIG} deep_subsystems approves it); a page's folder also holds the files it links; any other file there has no home",
     f"docs/…/{DATASHEETS}/": "the vendor documents a page leans on, in that page's folder; one two pages use, in the nearest folder both share",
     f"docs/{DATASHEETS}/": "a vendor document two systems use: reference files only, never a page",
@@ -1547,7 +1561,7 @@ def inbound(root: Path, path: str, files: list[str]) -> int:
 
 
 # CHANGELOG.md is the release log in any repo, and a metarepo's release requires it.
-ROOT_DOCS = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md", "CHANGELOG.md")
+ROOT_DOCS = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md", "CHANGELOG.md", "ROADMAP.md")
 # Agent instruction files under their standard names. Off root, each is a second rulebook
 # that an agent opening that folder may load in place of the real one.
 RULES_NAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
@@ -3731,7 +3745,7 @@ def buffer_proposal(root: Path, para: dict, loc: Path, slug: str) -> tuple[Path,
 # Where a chat drops a file meant for this repo, or another. Untracked: nothing in it is
 # authoritative, and it can reach a contract only through `jig staging resolve`.
 STAGING = f"{DIR}/staging"
-KINDS = ("spec", "doc", "decisions", "user-story", "feedback")
+KINDS = ("spec", "doc", "decisions", "user-story", "feedback", "roadmap")
 HEADER_KEYS = ("staged", "target", "kind", "change", "destination", "source", "status")
 
 
@@ -3767,6 +3781,8 @@ def read_staged(path: Path) -> tuple[dict, str, list[str]]:
         bad.append(f"change {head['change']!r} is not new or update")
     if head.get("staged") and head["staged"] != "true":
         bad.append("staged is not true")
+    if head.get("kind") == "roadmap" and head.get("destination") and head["destination"] != ROADMAP:
+        bad.append(f"destination {head['destination']!r}: a roadmap change lands in {ROADMAP} only")
     return head, m.group(2), bad
 
 
@@ -3900,6 +3916,15 @@ def cmd_staging(root: Path, args) -> int:
         f = inside(rel)
         return f.exists() and mark in f.read_text(errors="replace")
 
+    if kind == "roadmap":
+        # The roadmap carries no provenance lines, so the owner reads it as the plan; the
+        # commit that applied the change on trunk carries the mark in its message instead.
+        trunk = Board.load(root, working_tree=True).trunk
+        if not git("log", trunk, "-F", f"--grep={mark}", "--format=%h", "--", ROADMAP):
+            die(f"a roadmap change lands on {trunk}: show the owner the diff to {ROADMAP}, apply "
+                f"it on a yes, `jig roadmap --write`, and commit with `{mark}` in the message, "
+                "then resolve again", 1)
+        return done(f"applied to {ROADMAP} on {trunk}")
     if kind in ("user-story", "feedback"):
         specs = [s for s in (root / DIR / "specs").glob("*.md") if mark in s.read_text()]
         if not specs:
@@ -4020,6 +4045,221 @@ def forward(root: Path, path: Path, head: dict) -> int:
     if para and target == para.get("meta"):
         print(f"If a spec here depends on it: jig propose <spec> <slug>.")
     return 0
+
+
+# -------------------------------------------------------------------- roadmap
+
+# The roadmap is optional: a repo without ROADMAP has no roadmap, and nothing below runs for it.
+# Phases and scopes are the owner's decisions; their states are derived from specs and the
+# handoffs that landed them, so the file never takes a progress edit.
+ROADMAP = f"{DIR}/roadmap.md"
+ROADMAP_VIEW = "ROADMAP.md"
+SPECS = f"{DIR}/specs/"
+HANDOFFS = f"{DIR}/handoffs/"
+
+
+class Snapshot:
+    """Where the roadmap's inputs are read from: a commit (trunk), the index (a merge being
+    committed, which the view must describe), or the trunk checkout's files (`--write`, which
+    a roadmap edit regenerates before it is committed)."""
+    def __init__(self, rev: str = "", where: str = "rev"):
+        self.rev, self.where = rev, where
+
+    def ls(self, folder: str) -> list[str]:
+        if self.where == "files":
+            d = main_root() / folder
+            return sorted(str(p.relative_to(main_root())) for p in d.rglob("*") if p.is_file()) \
+                if d.is_dir() else []
+        args = (["ls-files", "--", folder] if self.where == "index"
+                else ["ls-tree", "-r", "--name-only", self.rev, "--", folder])
+        return [p for p in git("-c", "core.quotePath=false", *args).splitlines() if p]
+
+    def show(self, path: str) -> str:
+        if self.where == "files":
+            p = main_root() / path
+            return p.read_text(errors="replace") if p.is_file() else ""
+        return git("show", f"{':' if self.where == 'index' else self.rev + ':'}{path}")
+
+    def landed(self, commit: str) -> bool:
+        """The note's commit is in this tree's history. Mid-merge that history is both parents."""
+        if self.where == "rev":
+            return is_ancestor(commit, self.rev)
+        tips = ["HEAD"] + ([m] if self.where == "index" and (m := git("rev-parse", "-q", "--verify", "MERGE_HEAD")) else [])
+        return any(is_ancestor(commit, t) for t in tips)
+
+
+def parse_roadmap(text: str) -> list[dict]:
+    """Phases in file order, each {name, exit: [(ticked, text)], scopes: [(id, what)]}.
+    Fenced code is skipped, so a roadmap that quotes an example doesn't grow phases."""
+    phases: list[dict] = []
+    part, fence = "", False
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            fence = not fence
+            continue
+        if fence:
+            continue
+        if m := re.match(r"##\s+(.+?)\s*$", line):
+            phases.append({"name": m.group(1), "exit": [], "scopes": []})
+            part = ""
+        elif not phases:
+            continue
+        elif re.match(r"(?i)exit when:\s*$", line.strip()):
+            part = "exit"
+        elif re.match(r"(?i)scopes:\s*$", line.strip()):
+            part = "scopes"
+        elif part == "exit" and (m := re.match(r"\s*- \[([ xX])\]\s*(.*)", line)):
+            phases[-1]["exit"].append((m.group(1) != " ", m.group(2).strip()))
+        elif part == "scopes" and (m := re.match(r"\s*- `?([^`:\s]+)`?\s*(?::\s*(.*))?$", line)):
+            phases[-1]["scopes"].append((f"{phases[-1]['name']}/{m.group(1)}", (m.group(2) or "").strip()))
+    return phases
+
+
+def roadmap_scopes(text: str) -> set[str]:
+    return {sid for p in parse_roadmap(text) for sid, _ in p["scopes"]}
+
+
+def spec_scopes(text: str) -> list[str]:
+    """The scopes a spec's `Scope:` line takes, in its order."""
+    m = re.search(r"^Scope:[ \t]*(.*)$", text, re.M)
+    return [s.strip().strip("`") for s in m.group(1).split(",") if s.strip()] if m else []
+
+
+def is_spec(path: str) -> bool:
+    # _template.md is the shape a spec starts from, not a task: its placeholder takes nothing.
+    return path.startswith(SPECS) and path.endswith(".md") and not Path(path).name.startswith("_")
+
+
+def complete_specs(snap: Snapshot) -> set[str]:
+    """Specs with a landed handoff that isn't partial: its work is in this tree's history."""
+    done: set[str] = set()
+    for n in snap.ls(HANDOFFS):
+        body = snap.show(n)
+        spec = re.search(r"^Spec: (\S+)", body, re.M)
+        commit = re.search(r"^Commit: (\w+)", body, re.M)
+        if not spec or not commit or re.search(r"^Partial: yes", body, re.M):
+            continue
+        s = os.path.normpath(spec.group(1))
+        if s not in done and snap.landed(commit.group(1)):
+            done.add(s)
+    return done
+
+
+def roadmap_state(snap: Snapshot) -> list[dict] | None:
+    """The roadmap with every scope's specs and state and every phase's state, or None
+    when this tree has no roadmap."""
+    text = snap.show(ROADMAP)
+    if not text:
+        return None
+    phases = parse_roadmap(text)
+    takes: dict[str, list[str]] = {}
+    for f in snap.ls(SPECS):
+        if is_spec(f):
+            for s in spec_scopes(snap.show(f)):
+                takes.setdefault(s, []).append(f)
+    done = complete_specs(snap)
+    # A note may name its spec by file name alone; the spec's path or its name both count.
+    finished = lambda f: f in done or Path(f).name in done
+    current = None
+    for p in phases:
+        p["scopes"] = [{"id": sid, "what": what, "specs": [(f, finished(f)) for f in takes.get(sid, [])]}
+                       for sid, what in p["scopes"]]
+        for s in p["scopes"]:
+            s["state"] = ("open" if not s["specs"] else
+                          "done" if all(ok for _, ok in s["specs"]) else "taken")
+        if all(s["state"] == "done" for s in p["scopes"]) and all(t for t, _ in p["exit"]):
+            p["state"] = "done"
+        elif current is None:
+            p["state"] = current = "current"
+        else:
+            p["state"] = "next"
+    return phases
+
+
+def render_roadmap(phases: list[dict]) -> str:
+    """ROADMAP.md: plain Markdown tables, which every forge and previewer renders."""
+    line = " → ".join(f"{p['name']} ✓" if p["state"] == "done" else
+                      f"**{p['name']}** (current)" if p["state"] == "current" else p["name"]
+                      for p in phases)
+    out = ["# Roadmap", "",
+           f"_Generated by `jig roadmap --write` from [{ROADMAP}]({ROADMAP}): edit that file, "
+           "not this one._", "", line]
+    for p in phases:
+        out += ["", f"## {p['name']} ({p['state']})", ""]
+        if p["exit"]:
+            out += ["Exit when:"] + [f"- [{'x' if t else ' '}] {what}" for t, what in p["exit"]] + [""]
+        if not p["scopes"]:
+            out.append("_No scopes._")
+            continue
+        cols = [[s for s in p["scopes"] if s["state"] == st] for st in ("open", "taken", "done")]
+        out += ["| Open | Taken | Done |", "|---|---|---|"]
+        for i in range(max(len(c) for c in cols)):
+            out.append("| " + " | ".join(scope_cell(c[i]) if i < len(c) else "" for c in cols) + " |")
+    return "\n".join(out) + "\n"
+
+
+def scope_cell(s: dict) -> str:
+    name = s["id"].split("/", 1)[1]
+    cell = f"**{name}**" + (f": {s['what']}" if s["what"] else "")
+    cell += "".join(f"<br>[{Path(f).stem}]({f}){' ✓' if ok else ''}" for f, ok in s["specs"])
+    return cell.replace("|", "\\|")
+
+
+def cmd_roadmap(root: Path, args) -> int:
+    board = Board.load(root, working_tree=True)
+    trunk = board.trunk
+    if args.write:
+        if git("branch", "--show-current") != trunk or not is_main_worktree(root):
+            die(f"write {ROADMAP_VIEW} in the {trunk} checkout: R5 keeps it on {trunk}")
+        phases = roadmap_state(Snapshot(where="files"))
+        if phases is None:
+            die(f"no {ROADMAP}: this repo keeps no roadmap")
+        (main_root() / ROADMAP_VIEW).write_text(render_roadmap(phases))
+        print(f"wrote {ROADMAP_VIEW}; commit it on {trunk}")
+        return 0
+    phases = roadmap_state(Snapshot(trunk))
+    if phases is None:
+        print(f"no roadmap: {trunk} has no {ROADMAP}")
+        return 0
+    for p in phases:
+        print(f"{p['name']}  {p['state']}")
+        for t, what in p["exit"]:
+            print(f"  [{'x' if t else ' '}] {what}")
+        for s in p["scopes"]:
+            specs = ", ".join(f"{f} ({'complete' if ok else 'in progress'})" for f, ok in s["specs"])
+            print(f"  {s['id']:<24} {s['state']:<6} {specs}")
+    view = git("show", f"{trunk}:{ROADMAP_VIEW}")
+    if view != render_roadmap(phases).strip():
+        print(f"\n{ROADMAP_VIEW} on {trunk} is {'stale' if view else 'missing'}: "
+              f"`jig roadmap --write` in the {trunk} checkout, then commit it")
+    return 0
+
+
+def roadmap_rules(board: "Board", branch: str, staged: bool, paths: list[str],
+                  guarded: list[str]) -> list[str]:
+    """Scopes a spec cites must be the roadmap's. On trunk the commit's own roadmap counts, so
+    one commit can add a scope and the spec taking it, or drop one and re-point its specs."""
+    trunk = board.trunk
+    on_trunk = branch == trunk
+    old = at_rev(trunk, ROADMAP)
+    text = in_index(ROADMAP, staged) if on_trunk else old
+    if not text and not old:
+        return []
+    known = roadmap_scopes(text)
+    out, named = [], set()
+    if on_trunk and ROADMAP in guarded:
+        dropped = roadmap_scopes(old) - known
+        for f in git("-c", "core.quotePath=false", "ls-files", "--", SPECS).splitlines():
+            if is_spec(f) and (gone := [s for s in spec_scopes(in_index(f, staged)) if s in dropped]):
+                named.add(f)
+                out.append(f"{ROADMAP} drops {', '.join(gone)}, which {f} still takes: re-point "
+                           "its Scope: line in this commit")
+    for f in paths:
+        if is_spec(f) and f not in named and (bad := [s for s in spec_scopes(in_index(f, staged))
+                                                      if s not in known]):
+            out.append(f"{f} takes {', '.join(bad)}, which {ROADMAP} on {trunk} doesn't have: "
+                       "a scope is <phase>/<scope> from it")
+    return out
 
 
 # --------------------------------------------------------------------- update
@@ -5171,6 +5411,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("workflow", help="the steps in effect: each one's model tier and effort")
     h = sub.add_parser("handoff", help="write the handoff note for HEAD")
     h.add_argument("--spec", help="path to the spec this delivers")
+    h.add_argument("--partial", action="store_true",
+                   help="this chunk doesn't finish its spec: the roadmap keeps it taken")
+    rm = sub.add_parser("roadmap", help="the roadmap's phases and scopes, and their states on trunk")
+    rm.add_argument("--write", action="store_true", help=f"regenerate {ROADMAP_VIEW} in the trunk checkout")
     rl = sub.add_parser("reading-list", help="what to read before touching these files")
     rl.add_argument("paths", nargs="+")
     g = sub.add_parser("gate", help="verify a job (or this branch) is mergeable")
@@ -5215,7 +5459,7 @@ def main(argv: list[str] | None = None) -> int:
         "handoff": cmd_handoff, "gate": cmd_gate, "hook": cmd_hook,
         "workflow": cmd_workflow,
         "survey": cmd_survey, "reading-list": cmd_reading_list, "update": cmd_update, "repos": cmd_repos, "staging": cmd_staging,
-        "release": cmd_release, "propose": cmd_propose,
+        "release": cmd_release, "propose": cmd_propose, "roadmap": cmd_roadmap,
     }[args.cmd]
     return fn(root, args)
 

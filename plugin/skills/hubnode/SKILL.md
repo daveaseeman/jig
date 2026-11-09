@@ -127,6 +127,18 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
    subject becomes `<ids>: merge <name>`. `: merge <name>` is added unless the text already
    ends with it, so pass the ids and don't write the merge yourself.
 
+## A roadmap change
+
+A staged `kind: roadmap` file proposes changes to `.jig/roadmap.md`: a phase, a scope or an
+exit box to add, rename, reorder or drop, and why. Nothing in it is decided. Show the owner
+the exact diff to `.jig/roadmap.md`; on a yes, apply it on trunk, run `jig roadmap --write`,
+and commit both with the staged file's `Source: … (staged as <file>)` line in the message.
+A scope a spec still takes is re-pointed in that commit: the hook names the specs. Then
+`jig staging resolve <file>`, which looks for that line in a trunk commit to the roadmap.
+
+`jig merge` rewrites `ROADMAP.md` in the merge commit. After solo work on trunk, `jig roadmap`
+says when it is stale: `jig roadmap --write` and commit it.
+
 ## After a merge
 
 Run `jig sync` in every open job's worktree that is clean. Say which jobs must sync

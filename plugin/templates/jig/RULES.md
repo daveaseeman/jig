@@ -61,6 +61,7 @@ a rename changes both of its paths: R3–R5, P1, P2 and P4 count each.
 - **R3** A job changes only its `owns`, its `shares`, `common`, or files new to the repo.
 - **R4** Another open job's `owns` is refused even if this job also lists it.
 - **R5** The board is the hubnode's: `config.json` and `jobs.json` are edited on trunk only.
+  So is the roadmap, the owner's: `.jig/roadmap.md` and `ROADMAP.md` (Roadmap, below).
 - **R6** A scarce number belongs to the one job that reserved it. A change that makes a
   number matching a counter's `pattern` exist where trunk had none, and the branch doesn't
   hold it, is refused; merging a job takes the numbers it holds, and so does the gate's
@@ -230,7 +231,8 @@ URL and hash to fetch it again. Notes stay committed, and so does every file the
 `jig survey` checks each Markdown file the repo tracks against this list, outside tool folders
 (`.jig/`, `.claude/`, `.github/`, …) and `not_docs`:
 
-- `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md` and `CHANGELOG.md` at the root;
+- `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `CHANGELOG.md` and `ROADMAP.md` at the
+  root (`ROADMAP.md` is generated: Roadmap, below);
 - under `docs/`, a page named for its folder: `docs/<system>/<system>.md`,
   `docs/<system>/<subsystem>/<subsystem>.md`, and a deeper one only where `deep_subsystems`
   approves its folder and each level above it past the subsystem;
@@ -254,7 +256,7 @@ that name.
 
 Each kind of document has one home: rules in `AGENTS.md`, and the rules about documentation
 here; what the code is now, its invariants and its parked work in `docs/`; a task in flight in
-`.jig/specs/`; patches in the code in `.jig/ledgers/WORKAROUNDS.md`; review findings not taken
+`.jig/specs/`; the phases and scopes ahead in `.jig/roadmap.md`; patches in the code in `.jig/ledgers/WORKAROUNDS.md`; review findings not taken
 in `.jig/ledgers/DEFERRED.md`; know-how in the agent's skills; what outsiders need in
 `README.md`; history in git.
 
@@ -360,11 +362,41 @@ config changed after the spec was written; it can't see a review that actually r
 than it was set to. A fix goes back to the session that executed. A third round that doesn't converge is a
 bug in the spec or the approach: investigate it, don't start a fourth.
 
+## Roadmap
+
+Optional: a repo with no `.jig/roadmap.md` has no roadmap, and nothing here applies to it.
+The product is the repo, so there is one roadmap and no product level in it.
+
+- **The source**, `.jig/roadmap.md`: phases as `## <phase>` headings, in order (no dates: order
+  is file order). Each has an `Exit when:` checklist of what the owner checks, and a `Scopes:`
+  list of `` - `<scope>`: <what it is> ``. A scope's id is `<phase>/<scope>`. "Every scope is
+  done" is implied, never written as a box.
+- **Specs take scopes** with a `Scope:` line under `Source:`, e.g. `Scope: alpha/screen,
+  alpha/battery`. Many-to-many: a spec may take several scopes, a scope may be taken by several
+  specs, and a spec with no `Scope:` line takes none.
+- **A spec is complete** when a handoff note naming it (`Spec:`) is on trunk and the commit it
+  names is in trunk's history, merged or handed off solo on trunk. `jig handoff --partial` is a
+  chunk that doesn't finish its spec: its note records `Partial: yes` and completes nothing.
+- **States are derived**, never edited. A scope is *open* (no spec takes it), *taken* (a spec
+  that takes it isn't complete) or *done* (taken, and every spec that takes it is complete). A
+  phase is *done* when every scope in it is done and every `Exit when:` box is ticked; the first
+  phase not done is *current*, the rest *next*.
+- **The view**, `ROADMAP.md` at the root, generated and never edited by hand: a line of the
+  phases with their states, then per phase its exit boxes and a board, a table with Open, Taken
+  and Done columns holding its scopes, each with its specs linked. Plain Markdown, so it renders
+  anywhere. `jig merge` rewrites it in the merge commit, when states change; after solo work on
+  trunk, `jig roadmap --write` rewrites it, and `jig roadmap` says when it is stale.
+- **R5** covers both files: they change on trunk only. A phase or a scope is a decision, not
+  work, and a branch regenerating the view would only make merge conflicts.
+- **The hook refuses** a spec whose `Scope:` names a scope trunk's roadmap doesn't have (on
+  trunk, the commit's own roadmap), and on trunk a roadmap change that drops or renames a scope
+  a spec still takes, naming the spec: re-point it in the same commit.
+
 ## Staging
 
 `.jig/staging/` is where a chat drops a file meant for a repo: a spec, a doc, decision rows, a
-user story. It is never committed, and nothing in it is decided — read it for context, never
-cite it. Each file's header names its `target` (a repo name, or `this`), `kind`, `change`
+user story, a roadmap change. It is never committed, and nothing in it is decided — read it
+for context, never cite it. Each file's header names its `target` (a repo name, or `this`), `kind`, `change`
 (`new` or `update`), `destination` inside the target, and `source`. A destination is a bare
 path, with no space and no `:`, `,` or `;`: a spec, doc or decisions file whose destination
 carries anything else (`docs/DECISIONS.md, on branch x`, `see docs/x.md`) is refused, never
@@ -374,6 +406,13 @@ guessed at. In a metarepo, decisions land only in a register `entry_files` names
 update, a story's spec, or decisions with other content wait until the work is done and the
 source is in it; a file for another repo moves into that repo's staging, found through
 `jig repos`. `jig staging drop <file>` deletes it and records nothing: it was never committed.
+
+A roadmap change is `kind: roadmap`, `destination: .jig/roadmap.md` (any other is refused),
+whose body says what to add, rename, reorder or drop, and why. Like a story, nothing in it is
+decided: the hubnode shows the owner the diff, applies it on trunk on a yes, regenerates
+`ROADMAP.md`, and commits with the staged file's `Source: … (staged as <file>)` line in the
+message. `resolve` waits until a trunk commit that changed `.jig/roadmap.md` carries that line;
+the roadmap itself carries no provenance.
 
 A report on jig itself is `kind: feedback`, staged in the jig repo, whose header also names
 `from` (the reporting repo, required) and `jig_version`. When the jig repo isn't in `jig repos`,
@@ -542,7 +581,8 @@ jig job                    this branch's manifest
 jig sync                    merge trunk in, append rule applied; on a pararepo's trunk, the metarepo
 jig reviewed [--tier N --effort N] [--ran text]   record that HEAD has been reviewed, and at what
 jig workflow                each step's model tier and effort in effect
-jig handoff [--spec path]   write the note for HEAD
+jig handoff [--spec path] [--partial]   write the note for HEAD; --partial: it doesn't finish the spec
+jig roadmap [--write]       the roadmap's states on trunk; --write regenerates ROADMAP.md
 jig gate <name>             hubnode: verify, set up the scratch checkout, print its check
 jig propose <spec> <slug>   pararepo: open a proposal branch on the metarepo
 jig propose <spec> <slug> --pointers  the same, recorded as pointer rewrites worked ahead of
