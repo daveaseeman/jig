@@ -11,7 +11,9 @@
       "plugin/templates/specs/_template.md",
       "plugin/skills/spec/SKILL.md",
       "plugin/skills/hubnode/SKILL.md",
-      "plugin/skills/stage/SKILL.md"
+      "plugin/skills/stage/SKILL.md",
+      "plugin/skills/subnode/SKILL.md",
+      "plugin/templates/AGENTS.md"
     ],
     "reserved": {}
   },
