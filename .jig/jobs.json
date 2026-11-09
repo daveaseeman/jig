@@ -1,7 +1,7 @@
 {
   "feature-request": {
     "spec": ".jig/specs/feature-request.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [
       "roadmap"
     ],
