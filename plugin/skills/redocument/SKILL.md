@@ -70,9 +70,9 @@ Otherwise:
 
    Verbs are `rewrite`, `merge`, `split`, `move`, `new`, `drop`. A new path is
    `docs/<system>/<system>.md` or `docs/<system>/<subsystem>/<subsystem>.md`, no deeper. A
-   subsystem inside a subsystem is asked of the owner with its rationale (what it is
-   independent of, the files it has of its own) and lands as a `deep_subsystems` entry in
-   `.jig/config.json` on trunk on a yes. Name the cleanup route in
+   subsystem inside a subsystem is asked of the owner with its rationale, as `.jig/RULES.md`
+   (Documentation) says, and lands as a `deep_subsystems` entry in `.jig/config.json` on trunk
+   on a yes. Name the cleanup route in
    the pointers branch (step 6).
 3. **Write the approved remap to `.jig/redocument.md`** on trunk and commit it. It is the
    hubnode's working file, frozen once approved; a change goes back through the owner. It

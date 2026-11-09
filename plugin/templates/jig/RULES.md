@@ -201,16 +201,21 @@ to one that doesn't exist.
 (`.jig/`, `.claude/`, `.github/`, …) and `not_docs`:
 
 - `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md` and `CHANGELOG.md` at the root;
-- under `docs/`, a page named for its folder, `docs/…/<x>/<x>.md`;
+- under `docs/`, a page named for its folder: `docs/<system>/<system>.md`,
+  `docs/<system>/<subsystem>/<subsystem>.md`, and a deeper one only where `deep_subsystems`
+  approves its folder and each level above it past the subsystem;
 - `docs/hardware/<board>.md`, and anything under `docs/hardware/*/`;
 - in a metarepo, what `entry_files` names.
 
 Any other file has no home, and survey says which kind: an `AGENTS.md`, `CLAUDE.md` or
 `GEMINI.md` off root is a second rulebook; three or more sentences of this file word for word
-is a copy, which freezes while this file moves on; a page outside its folder — one with an
+is a copy, which freezes while this file moves on; a page named for its folder below a
+subsystem, with no `deep_subsystems` entry, is deep: fold it into its subsystem's page, or
+propose its folder to the owner with its rationale; a page outside its folder — one with an
 Invariants or Undefined section, or the old Now, Rules and Checks headings — goes under the
-nearest folder that has its own page, or to `docs/<name>/<name>.md`, even when it quotes this
-file; anything else is a stray. A package's own rules file stays only on the owner's word. A
+nearest folder that has its own page, as a subsystem at most (into that page, where a folder
+of its own would be deeper), or to `docs/<name>/<name>.md`, even when it quotes this file;
+anything else is a stray. A package's own rules file stays only on the owner's word. A
 file names a document by its path, or by its bare name only when no other tracked file has
 that name.
 
