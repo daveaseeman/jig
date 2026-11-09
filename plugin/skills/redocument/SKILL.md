@@ -29,9 +29,10 @@ Otherwise:
    pointers branch replaces). Starting from a current layout means the two never propose
    different moves for the same files.
 2. **Refuse unless old-format pages exist.** Run `jig survey`. Go on only if it names at
-   least one page "old contract — convert" under *Pages off the page contract*, or a page
-   under *Pages outside the docs tree* whose file has the Now, Rules and Checks headings.
-   Otherwise say `no old-format pages: nothing to redocument` and stop.
+   least one page "old contract — convert" under *Pages off the page contract*, a page
+   under *Pages outside the docs tree* whose file has the Now, Rules and Checks headings, or
+   any file under *Board files in the old docs/hardware/ layout*. Otherwise say
+   `no old-format pages: nothing to redocument` and stop.
 3. **Refuse unless the board is quiet.** Run `jig status`. Go on only if it says
    `no jobs open`. Otherwise say `jobs open: <names>; redocument runs on a quiet board` and
    stop: fold-in would ask a page that is about to die about live code changes. Those jobs

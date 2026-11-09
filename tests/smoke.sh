@@ -1841,10 +1841,50 @@ PY
 git add -A && git commit -qm "older config"
 expect_pass sh -c "$J update 2>&1 | grep -q 'reference_files: added' && ! $J update 2>&1 | grep -q 'boards'"
 
+# The layout before boards were systems: survey and update say where each file goes.
+HO="$T/hwold"; pcnew "$HO" && mkdir -p docs/hardware/watch docs/hardware/components/pmic docs/hardware/components/rtc main
+printf '# Watch\n\n- MCU / board: QX\n\n[pmic](components/pmic/qx.pdf) [rtc](components/rtc/r.pdf) [def](watch/def.md)\n' > docs/hardware/watch.md
+printf '# Band\n\n[rtc](components/rtc/r.pdf)\n' > docs/hardware/band.md
+printf '# Def\n' > docs/hardware/watch/def.md && printf 'x' > docs/hardware/components/pmic/qx.pdf && printf 'x' > docs/hardware/components/rtc/r.pdf
+printf 'int x;\n' > main/app.c && printf 'See docs/hardware/watch.md\n' > README.md
+git add -A && git commit -qm init && $J init >/dev/null && board "b['docmap'] = {'docs/hardware/watch.md': ['main/**']}" && git add -A && git commit -qm board
+msg="old layout: survey gives a mapped docs/hardware/<board>.md its new page and boards entry, not a stray"
+expect_pass hrsurvey "h = {e['path']: e for e in r['homeless']}
+assert h['docs/hardware/watch.md']['kind'] == 'board' and h['docs/hardware/watch.md']['to'] == 'docs/watch/watch.md', h
+assert not [e for e in r['homeless'] if e['kind'] == 'stray'], h
+rows = {e['path']: e['to'] for e in r['old_boards']}
+assert rows == {'docs/hardware/band.md': 'docs/band/band.md', 'docs/hardware/components/pmic/qx.pdf': 'docs/watch/components/pmic/qx.pdf',
+                'docs/hardware/components/rtc/r.pdf': 'docs/components/rtc/r.pdf', 'docs/hardware/watch.md': 'docs/watch/watch.md',
+                'docs/hardware/watch/def.md': 'docs/watch/def.md'}, rows"
+out=$($J survey 2>&1)
+msg="old layout: survey prints the move with its boards entry, and sends the repo to /jig:redocument"
+expect_pass sh -c "echo \"\$0\" | grep -qF 'docs/hardware/watch.md → docs/watch/watch.md   + boards: docs/watch/watch.md' && echo \"\$0\" | grep -q 'old docs/hardware/ layout: run /jig:redocument' && ! echo \"\$0\" | grep -q 'never read since'" "$out"
+board "b['version'] = 8" && git add -A && git commit -qm older
+out=$($J update 2>&1)
+msg="old layout: update lists the moves for review with the docmap key, the stale reference and the boards lines"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/hardware/: board files in the old layout' && echo \"\$0\" | grep -qF 'git mv docs/hardware/watch.md docs/watch/watch.md' && echo \"\$0\" | grep -qF '.jig/config.json docmap: docs/hardware/watch.md' && echo \"\$0\" | grep -qF 'README.md:1: See docs/hardware/watch.md' && echo \"\$0\" | grep -qF '.jig/config.json boards: + docs/watch/watch.md' && echo \"\$0\" | grep -q 'relink it'" "$out"
+
+# The reserved name, an orphan components/ folder, and not_docs.
+HN="$T/hwname"; pcnew "$HN" && mkdir -p docs/x/components docs/components docs/stuff/components/p docs/site
+printf '# X\n\nX.\n' > docs/x/x.md && printf '# C\n\nC.\n' > docs/x/components/components.md && printf '# C\n\nC.\n' > docs/components/components.md
+printf 'x' > docs/stuff/components/p/a.pdf && printf '# Site\n\nSite.\n' > docs/site/site.md && printf 'png' > docs/site/logo.png
+git add -A && git commit -qm init && $J init >/dev/null && board "b['not_docs'] = ['docs/site/**']" && git add -A && git commit -qm board
+msg="reserved name: a page named components is reported to rename, not taken for reference files"
+expect_pass hrsurvey "k = {e['path']: e['kind'] for e in r['homeless']}
+assert k == {'docs/x/components/components.md': 'reserved', 'docs/components/components.md': 'reserved'}, k"
+msg="reserved name: a components/ folder in no page's folder is reported as an orphan"
+expect_pass hrsurvey "assert r['components_orphan'] == ['docs/stuff/components/p/a.pdf'], r['components_orphan']"
+msg="reference files: a not_docs folder's files are not asked to be linked"
+expect_pass hrsurvey "assert not [f for f in r['components_unlinked'] if f.startswith('docs/site/')], r['components_unlinked']"
+
 # reference_files: ignore, with the line /jig:hardware used to write.
 HI="$T/hwignore"; pcnew "$HI" && printf '*.log\ndocs/hardware/*/**/*.[pP][dD][fF]\n' > .gitignore
 git add -A && git commit -qm init && $J init >/dev/null && board "b['reference_files'] = 'ignore'" && git add -A && git commit -qm board
+mkdir -p docs/hardware/watch && printf 'x' > docs/hardware/watch/spec-sheet.pdf
 out=$($J update 2>&1)
+msg="update: the dry run lists each file the old line ignored that the new one won't"
+expect_pass sh -c "echo \"\$0\" | grep -q 'docs/hardware/watch/spec-sheet.pdf: ignored now, untracked after'" "$out"
+rm -r docs/hardware
 msg="update: in ignore mode, the dry run proposes the components/ glob for the old docs/hardware/ one"
 expect_pass sh -c "echo \"\$0\" | grep -qF '.gitignore: \`docs/hardware/*/**/*.[pP][dD][fF]\` → '" "$out"
 $J update --apply >/dev/null 2>&1

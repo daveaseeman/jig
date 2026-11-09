@@ -197,14 +197,18 @@ reference files gets `components/<part>/`, its datasheets and notes, inside the 
 page that uses it: `docs/<board>/components/<part>/`. When a second page uses the part, the
 folder moves to `docs/components/<part>/` and both pages link it there; no copy per page.
 `components/` is a reserved name at any depth: it holds reference files, is never a subsystem
-and never a page's home, and a note inside it is a reference file, not a page. The page's
+and never a page's home, and a note inside it is a reference file, not a page. `jig survey`
+names a page called `components` (rename its folder), and a `components/` folder outside any
+page's folder and outside `docs/components/`. The page's
 Components table links each datasheet with its source URL, the date it was retrieved and the
 first 12 hex digits of its sha256, so a check names the exact document it was made against,
 and says whether the part is verified on the board yet. Whether the binaries are committed is
 the repo's call, `reference_files` in the config: `commit`, or `ignore`: `.gitignore` ignores
 the PDFs under any `components/` folder (`docs/**/components/**/*.[pP][dD][fF]`), and the
-page keeps each one's URL and hash to fetch it again. Notes stay committed, and so do the
-repo's own files in a page's folder, such as a schematic: they are not vendor copies. `jig survey` reports a link from a page into a `components/` folder that doesn't
+page keeps each one's URL and hash to fetch it again. Notes stay committed. In that mode a
+vendor's file a page leans on, a board definition from a spec sheet as much as a datasheet,
+goes under `components/` with its URL and hash; a file the repo wrote, such as its own
+schematic or definition, stays in the page's folder and is committed. `jig survey` reports a link from a page into a `components/` folder that doesn't
 exist.
 
 ### Homes
@@ -217,6 +221,8 @@ exist.
   `docs/<system>/<subsystem>/<subsystem>.md`, and a deeper one only where `deep_subsystems`
   approves its folder and each level above it past the subsystem;
 - any other file in a page's folder or below it, outside the folders of its subsystems;
+- nothing under `docs/hardware/`, the layout before boards were systems: survey and update
+  say where each of its files goes, and `/jig:redocument` moves them;
 - anything under a `components/` folder, inside a page's folder or at `docs/components/`;
 - in a metarepo, what `entry_files` names.
 

@@ -23,7 +23,10 @@ the code always matches it, and the check at the gate would catch nothing.
    Verified column, never an Undefined entry: Undefined is written only on the owner's word.
    The files the page leans on go in its folder:
    - **The definition**, when it is a file, is saved to `docs/<board>/` and the lead's
-     `Defined from:` links that file and gives the first 12 hex of its sha256 (`sha256sum`,
+     `Defined from:` links that file and gives the first 12 hex of its sha256. When
+     `reference_files` is `ignore` and the file is a vendor's (a spec sheet, not something the
+     user wrote), it is a reference file: save it to `docs/<board>/components/<board>/`, with
+     its source URL beside the link, like a datasheet (`sha256sum`,
      or `shasum -a 256`). Pasted: `pasted <date>`. A URL: the URL and a commit or hash, since
      the page behind it changes.
    - **Each datasheet** the user gives, or the checks lean on, is saved to
