@@ -31,7 +31,8 @@ Write it into the target's `.jig/staging/`, found with `jig repos` (needs only
 A user story names who wants what and why. A feature request just describes what the thing
 should do, in the owner's words ("I want it to do xyz"): free prose, no template, no Done-when.
 Pick whichever fits what was said. For a request, `change: update` means it changes a feature a
-spec already describes; name that spec in `destination` if known.
+spec already describes; name that spec in `destination` if known, and `resolve` waits until
+that spec carries the mark.
 
 ## Resolving
 
@@ -56,7 +57,8 @@ spec already describes; name that spec in `destination` if known.
 - **feature-request**: run `/jig:spec` with the request as input. The spec quotes the request
   in the owner's words after its mark, `Source: <source> (staged as <file name>): "<request>"`
   (as `/jig:fix` does a report's symptom); restates it as the Intent (if that won't fit in a
-  sentence, ask the owner one question first); and lists under Decisions each thing it filled in that the request didn't say, starting `Interpreted:`.
+  sentence, ask the owner one question first; for an update, add to the amended spec's Intent,
+  don't replace it); and lists under that spec's Decisions each thing it filled in that the request didn't say, starting `Interpreted:`.
   Show the spec; `resolve` once the owner accepts it. It refuses until a spec carries the mark.
 - **feedback**: work through it with `/jig:fix` in the jig repo. Elsewhere, `resolve` forwards it
   there.

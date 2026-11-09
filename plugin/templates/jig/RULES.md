@@ -419,8 +419,8 @@ A feature request is `kind: feature-request`: the owner's own words for what the
 should do ("I want it to do xyz"), with no required shape. A story names who wants what and
 why; a request only describes. Both resolve into a spec carrying their source. Because a
 request leaves things undefined, its spec quotes it after the mark
-(`Source: … (staged as <file>): "<request>"`), restates it as the Intent, and lists under
-Decisions each thing it filled in that the request didn't say, starting `Interpreted:`, so the owner can correct the reading before the work starts.
+(`Source: … (staged as <file>): "<request>"`), restates it as the Intent (for an update, adds to the amended spec's Intent rather than
+replacing it), and lists under that spec's Decisions each thing it filled in that the request didn't say, starting `Interpreted:`, so the owner can correct the reading before the work starts.
 
 A roadmap change is `kind: roadmap`, `change: update`, `destination: .jig/roadmap.md` (any
 other change or destination is refused),

@@ -3939,6 +3939,13 @@ def cmd_staging(root: Path, args) -> int:
                 f"it on a yes, `jig roadmap --write`, and commit with `{mark}` in the message, "
                 "then resolve again", 1)
         return done(f"applied to {ROADMAP} on {trunk}")
+    if kind == "feature-request" and change == "update" and bare_path(dest):
+        # The header names the spec the request changes; another spec carrying the mark would
+        # resolve it while the named one is never amended.
+        if not landed(dest):
+            die(f"a request resolves into a spec: amend {dest}, the spec it names, from it, "
+                f"carrying `{mark}`, then resolve again", 1)
+        return done(f"carried by {dest}")
     if kind in ("user-story", "feature-request", "feedback"):
         specs = [s for s in (root / DIR / "specs").glob("*.md") if mark in s.read_text()]
         if not specs:
