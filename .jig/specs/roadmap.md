@@ -112,6 +112,8 @@ readable anywhere Markdown renders. A chat proposes roadmap changes through stag
 - `plugin/templates/specs/_template.md` (the `Scope:` line)
 - `plugin/skills/spec/SKILL.md`, `plugin/skills/hubnode/SKILL.md` (resolving a roadmap
   change), `plugin/skills/stage/SKILL.md` (staging one)
+- `plugin/skills/subnode/SKILL.md`, `plugin/templates/AGENTS.md`: when to hand off with
+  `--partial`, and `--spec` on a solo handoff (hubnode, Nov 9, after review)
 - `tests/smoke.sh`
 - `marketing/FEATURES.md` (main checkout only: a row for the roadmap)
 
