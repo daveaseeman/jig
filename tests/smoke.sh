@@ -970,6 +970,28 @@ printf '# Login\n\nSource: chat s.md (staged as s.md)\n' > .jig/specs/login.md
 msg="staging: with that spec, the story resolves"
 expect_pass $J staging resolve s.md
 
+msg="staging: a feature request is listed, and its header passes"
+stage fr.md this feature-request new 'export to csv' 'I want it to export the log as a csv.\n'
+expect_pass sh -c "$J staging >/dev/null && $J staging | grep -q fr.md && ! $J staging | grep -qi 'not one of'"
+msg="staging: a request waits for a spec that carries it, saying it resolves into a spec"
+out=$($J staging resolve fr.md 2>&1)
+expect_pass sh -c "! $J staging resolve fr.md 2>/dev/null && echo \"\$0\" | grep -q 'a request resolves into a spec'" "$out"
+printf '# Export\n\nSource: chat fr.md (staged as fr.md): "I want it to export the log as a csv."\n' > .jig/specs/export.md
+msg="staging: with that spec, the request resolves"
+expect_pass sh -c "$J staging resolve fr.md && test ! -e .jig/staging/fr.md"
+msg="staging: an update request naming spec A waits while only spec B carries its mark"
+printf '# A\n' > .jig/specs/fra.md
+stage fu.md this feature-request update .jig/specs/fra.md 'I want the export to include dates.\n'
+printf '# B\n\nSource: chat fu.md (staged as fu.md)\n' > .jig/specs/frb.md
+expect_refuse $J staging resolve fu.md
+printf '\nSource: chat fu.md (staged as fu.md): "I want the export to include dates."\n' >> .jig/specs/fra.md
+msg="staging: once spec A carries it, the update request resolves"
+expect_pass sh -c "$J staging resolve fu.md && test ! -e .jig/staging/fu.md"
+msg="staging: a misspelt kind is refused, naming the kinds"
+stage fk.md this feature new 'x'
+out=$($J staging resolve fk.md 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'feature-request' && echo \"\$0\" | grep -q 'is not one of'" "$out"; rm .jig/staging/fk.md
+
 msg="staging: decision rows append; other body lines refuse until handled"
 stage r.md this decisions new docs/decisions.md '| D-001 | one | accepted | 2026-10-29 |\nand edit the glossary\n'
 expect_refuse $J staging resolve r.md

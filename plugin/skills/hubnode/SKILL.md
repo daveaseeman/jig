@@ -19,7 +19,8 @@ handoff or when blocked.
 3. `python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" update`, the dry run. Up to date:
    say nothing. A plan: one line, "the repo is behind the plugin's layout: run /jig:update".
    Refused or blocked: one line with its first reason.
-4. `jig staging`: if anything is staged, one line with the count and kinds (`/jig:stage` resolves them).
+4. `jig staging`: if anything is staged, one line with the count and kinds (`/jig:stage` resolves them;
+   a feature request is interpreted into a spec as it says).
 5. In a pararepo (`.jig/para.json`), `jig sync` on trunk; report a newer release, and a
    header it says is out of date, in one line each; a pin it moved and the buffer rows it
    closed, and each file it says is cited but not a contract path, in one line each.
