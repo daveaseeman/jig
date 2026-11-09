@@ -5,9 +5,11 @@
 ## <Part>
 
 <What this part is and does on trunk today, in present tense. Name each section for a part
-the code has (Schema, Renderer, Sync), never Overview, Notes or Changes. A part that
-outgrows a screen, or gets files of its own, becomes a subsystem folder with its own page;
-this section then shrinks to a paragraph and a link.>
+the code has (Schema, Renderer, Sync), never Overview, Notes or Changes. A part with files of
+its own, which the rest of the system reaches only through its interfaces, is a subsystem: it
+moves to a folder of its own with its own page, and this section shrinks to a paragraph and a
+link. A subsystem's page holds sections, not subsystems, unless the owner approved a deeper
+level.>
 
 ## Invariants
 

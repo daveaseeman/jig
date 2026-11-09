@@ -2782,6 +2782,53 @@ msg="homes: a page whose destination exists is proposed as a fold, not a move"
 out=$($UP 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q '^      fold docs/systems/c.md into docs/c/c.md' && ! echo \"\$0\" | grep -q 'git mv docs/systems/c.md'" "$out"
 
+# The docs tree is two levels deep; a third only on the owner's deep_subsystems entry.
+HD="$T/homes-deep"; pcnew "$HD" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+page docs/a/a.md && page docs/a/b/b.md && page docs/a/b/c/c.md && page docs/c/d/d.md && page docs/a/b/x.md
+git add -A && git commit -qm deep
+msg="homes: a page below a subsystem is deep, folding into its subsystem's page; docs/c/d/d.md passes; a page beside a subsystem's folds into it"
+expect_pass homes "assert (h['docs/a/b/c/c.md']['kind'], h['docs/a/b/c/c.md']['to']) == ('deep', 'docs/a/b/b.md'), h
+assert 'docs/c/d/d.md' not in h and 'docs/a/b/b.md' not in h, h
+assert (h['docs/a/b/x.md']['kind'], h['docs/a/b/x.md']['to'], h['docs/a/b/x.md']['fold']) == ('page', 'docs/a/b/b.md', True), h"
+msg="homes: survey prints the deep page under its own heading"
+out=$($J survey 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -A2 '^Pages below a subsystem' | tail -1 | grep -q '^  docs/a/b/c/c.md: fold it into docs/a/b/b.md, or ask the owner to approve docs/a/b/c in '" "$out"
+behind
+msg="homes: the dry run lists the deep page to review; --apply writes no deep_subsystems key"
+out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Repo files to review/,/^\$/p' | grep -q '^  docs/a/b/c/c.md: below a subsystem' && ! grep -q deep_subsystems .jig/config.json" "$out"
+git add -A && git commit -qm update
+board "b['deep_subsystems'] = {'docs/a/b/c': 'own module; independent of b'}" && git add -A && git commit -qm approve
+msg="homes: with docs/a/b/c approved, survey doesn't list docs/a/b/c/c.md"
+expect_pass homes "assert 'docs/a/b/c/c.md' not in h, h"
+behind
+msg="homes: update keeps the deep_subsystems entry and calls no key unknown"
+out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+expect_pass sh -c "! echo \"\$0\" | grep -q 'not one jig knows' && python3 -c \"import json; assert json.load(open('.jig/config.json'))['deep_subsystems'] == {'docs/a/b/c': 'own module; independent of b'}\"" "$out"
+git add -A && git commit -qm update
+board "b['deep_subsystems'] = {'docs/a/b/c': ''}" && git add -A && git commit -qm unreason
+msg="homes: an empty rationale approves nothing"
+expect_pass homes "assert h['docs/a/b/c/c.md']['kind'] == 'deep', h"
+
+# A deep page in the old shape, mapped in docmap, under a misspelled approval.
+HE="$T/homes-deep-old"; pcnew "$HE" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p docs/e && printf '# E\n\nThe e system.\n' > docs/e/e.md && page docs/e/f/g/g.md && page docs/e/f/g/h/h.md
+board "b['docmap'] = {'docs/e/f/g/g.md': ['src/**']}; b['deep_subsystems'] = {'docs/e/f/g/h': 'own rig', 'docs/e/f/g/': 'typo'}"
+git add -A && git commit -qm deep-old
+msg="homes: a deep page in the old shape gets the contract check, and survey says /jig:redocument"
+out=$($J survey 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'run /jig:redocument' && python3 -c \"
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+assert any(e['path'] == 'docs/e/f/g/g.md' and any(p.startswith('old contract') for p in e['problems']) for e in r['page_contract']), r['page_contract']
+assert r['deep_unmatched'] == ['docs/e/f/g/'], r['deep_unmatched']\"" "$out"
+msg="homes: survey names the unapproved level, not the approved one, and says move when the subsystem page is missing"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/e/f/g/h/h.md: move it to docs/e/f/f.md, or ask the owner to approve docs/e/f/g in ' && echo \"\$0\" | grep -A1 'deep_subsystems keys that name no tracked folder' | grep -q '^  docs/e/f/g/\$'" "$out"
+behind
+msg="homes: update's deep row names the docmap key a fold touches"
+out=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | sed -n '/^  docs\/e\/f\/g\/g.md: below a subsystem/,/^  [^ ]/p' | grep -q '^      .jig/config.json docmap: docs/e/f/g/g.md'" "$out"
+
 # What a citation is not: bytes in a binary, a longer name, the same path under another repo.
 HB="$T/homes-bytes"; pcnew "$HB" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 printf 'x\0README.md docs/ui.md\0' > blob.bin && printf 'caf\351: see README.md\n' > notes.txt

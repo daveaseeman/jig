@@ -42,7 +42,10 @@ Some of them are survey's home findings. A **rules** file off root: fold what st
 file in a monorepo may stay on the owner's word, so ask before proposing the delete. A **copy** of `.jig/RULES.md`:
 delete it and point what names it at `.jig/RULES.md`. A folder of **pages**: before the moves,
 ask whether each page is a subsystem to nest under its system's folder rather than a system of
-its own; then make every line the proposal names in one commit — the `git mv`s, the docmap keys,
+its own. Nest only system/subsystem: a page **below a subsystem** (survey's `deep`) folds into
+its subsystem's page, unless the owner approves its folder for `deep_subsystems` with a rationale
+as `.jig/RULES.md` (Documentation) says; that entry lands on trunk on a yes.
+Then make every line the proposal names in one commit — the `git mv`s, the docmap keys,
 `contract_paths`, the stale lines and, in a pararepo, a `BUFFER.md` row per cached pointer. Carry
 out each finding on a yes. Never propose adding a line that restates `.jig/RULES.md`: point at it.
 
