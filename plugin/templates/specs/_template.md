@@ -1,7 +1,8 @@
 # <task name>
 
 Source: <who asked or reported, when; for a bug, the symptom in their words>
-Scope: <phase>/<scope>, … from .jig/roadmap.md; delete this line if the repo has no roadmap or the task takes no scope
+<!-- With a .jig/roadmap.md: a line of its own here, `Scope: <phase>/<scope>, …`, naming the
+     scopes this task takes. No roadmap, or no scope taken: no line. -->
 
 ## Intent
 One or two sentences. What should be true when this is done that isn't true now.

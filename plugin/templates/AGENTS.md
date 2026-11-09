@@ -19,7 +19,7 @@ Risk: R0 — personal prototype, single user, nothing shipped. Optimize for spee
 - Task bigger than a one-sentence diff → write `.jig/specs/<task>.md` first (see /jig:spec). Plan before editing.
 - Run `check` yourself and show the output. Don't claim done on a green build alone.
 - Commit often; the git hook runs the rules. Never `--no-verify`.
-- A mergeable chunk is a handoff: checks pass → adversarial review (/jig:review) → `jig reviewed` → `jig handoff`. Review happens once per handoff, not per commit.
+- A mergeable chunk is a handoff: checks pass → adversarial review (/jig:review) → `jig reviewed` → `jig handoff --spec .jig/specs/<task>.md`. Review happens once per handoff, not per commit. A chunk that doesn't finish its spec hands off with `--partial`.
 - Same fix twice → write a skill (see /jig:retro).
 - Rulebook `.jig/RULES.md`, enforced by `python3 .jig/jig.py`. Roles: /jig:hubnode, /jig:subnode.
 
