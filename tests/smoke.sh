@@ -1603,6 +1603,24 @@ git add -A; expect_pass git commit -qm wf
 msg="workflow: the accepted override is the step in effect"
 expect_pass sh -c "$J workflow | grep -qx 'review: tier 1, effort 0'"
 
+# update knows `workflow`: an optional key, read but never written by default.
+python3 -c "import json; c = json.load(open('.jig/config.json')); c['version'] = 8; c['bogus'] = 1; json.dump(c, open('.jig/config.json', 'w'), indent=2)"
+git add -A && git commit -qm "older config, an unknown key"
+out=$($J update 2>&1)
+msg="update: a board's workflow override is not called unknown"
+expect_pass sh -c "! echo \"\$0\" | grep -q 'board key .workflow. is not one jig knows'" "$out"
+msg="update: a truly unknown board key is still named"
+expect_pass sh -c "echo \"\$0\" | grep -q 'board key .bogus. is not one jig knows'" "$out"
+$J update --apply >/dev/null 2>&1
+msg="update --apply leaves the workflow override unchanged"
+expect_pass python3 -c "import json; assert json.load(open('.jig/config.json'))['workflow'] == {'review': {'tier': 1, 'effort': 0}}"
+python3 -c "import json; c = json.load(open('.jig/config.json')); del c['workflow'], c['bogus']; c['version'] = 8; json.dump(c, open('.jig/config.json', 'w'), indent=2)"
+git add -A && git commit -qm "older config, no override"
+$J update --apply >/dev/null 2>&1
+msg="update --apply adds no workflow key to a board without one"
+expect_pass python3 -c "import json; assert 'workflow' not in json.load(open('.jig/config.json'))"
+setwf '{"review": {"tier": 1, "effort": 0}}' && git add -A && git commit -qm "override back"
+
 # Written before the bug step: four Workflow lines. It must still gate, and warn.
 mkdir -p .jig/specs && printf '# t\n\n## Workflow\nspec: tier 2, effort 2\nexecute: tier 2, effort 3\nreview: tier 2, effort 1\ncheck: tier 3, effort 4\n' > .jig/specs/t.md
 git add -A && git commit -qm spec && git switch -q -c g

@@ -49,6 +49,11 @@ BOARD_DEFAULTS = {
     # not be allowed to redistribute vendor PDFs, so it's the repo's call.
     "reference_files": "",
 }
+# Board keys jig reads but never writes: absent means jig's defaults, so update adds none of
+# them. Each new optional key goes here, or update calls it unknown.
+BOARD_OPTIONAL = (
+    "workflow",            # overrides WORKFLOW_DEFAULTS
+)
 # Who runs each step, as numbers the tool maps to its own models and efforts. Tier 1 is the
 # tool's best model, a higher number a lesser one; effort 0 is its highest, each number up one
 # level lower. Effort 0 is left unused so a repo can raise any step. Overridden per repo by
@@ -4171,7 +4176,8 @@ def rewrite_board(data: dict, files: list[str], plan: dict) -> tuple[dict, list[
         edits.append(f"version: {data.get('version', 'none')} → {STAMP}")
         new["version"] = STAMP
     for key in data:
-        if key not in BOARD_DEFAULTS and key not in ("lanes", "log", "payload"):
+        if key not in BOARD_DEFAULTS and key not in BOARD_OPTIONAL \
+                and key not in ("lanes", "log", "payload"):
             warn.append(f"board key `{key}` is not one jig knows: kept, and the checker ignores it")
     return new, edits, warn, gone
 
