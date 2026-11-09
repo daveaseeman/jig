@@ -3268,7 +3268,191 @@ printf 'x = 2\n' > src/s.py && printf '# S\n\nS is, and syncs.\n' > docs/s/s.md 
 expect_pass grep -qF 'Undefined in docs/s/s.md: "Sync' .jig/handoffs/main-*.md
 }
 
-UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes agents_lines page_contract"
+# ---------------------------------------------------------------- roadmap
+sec_roadmap() {
+rspec() { mkdir -p .jig/specs && printf '# %s\n\nSource: smoke\nScope: %s\n\n## Intent\nx\n' "$1" "$2" > ".jig/specs/$1.md"; }
+rsolo() {  # rsolo <spec> [--partial] [--spec path]: a solo handoff of that spec on trunk, landed
+  printf '%s\n' "$1" >> work.txt && git add -A && git commit -qm "work $1" && $J reviewed >/dev/null \
+    && $J handoff --spec "${3:-.jig/specs/$1.md}" ${2:-} >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $1"; }
+rstate() { $J roadmap | grep -E "^  $1 " | awk '{print $2}'; }
+rphase() { $J roadmap | grep -E "^$1 " | awk '{print $2}'; }
+RM="$T/rm"; pcnew "$RM" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+printf '# Roadmap\n\n## alpha\nExit when:\n- [ ] boots on the dev board\nScopes:\n- `screen`: the panel driver\n- `battery`: charge state\n- `sound`: a beep\n\n## beta\nExit when:\n- [ ] ships to a tester\nScopes:\n- `radio`: the link\n- `ota`: updates\n' > .jig/roadmap.md
+rspec s1 'alpha/screen, alpha/battery' && rspec s2 alpha/battery && rspec s3 beta/radio && rspec s4 alpha/sound
+git add -A && git commit -qm roadmap
+
+msg="roadmap: a scope no spec takes is open; one taken by a spec with no landed handoff is taken"
+$J roadmap > /dev/null
+expect_pass test "$(rstate beta/ota)|$(rstate alpha/screen)" = "open|taken"
+rsolo s1
+msg="roadmap: a scope whose specs all have landed handoffs is done; one spec taking two scopes counts for both"
+expect_pass sh -c "test '$(rstate alpha/screen)' = done && $J roadmap | grep -E '^  alpha/battery ' | grep -q 's1.md (complete)'"
+msg="roadmap: a scope taken by two specs stays taken until both are complete"
+expect_pass test "$(rstate alpha/battery)" = taken
+rsolo s2 --partial
+msg="roadmap: a landed --partial handoff records Partial: yes and leaves its spec incomplete"
+expect_pass sh -c "grep -q '^Partial: yes' .jig/handoffs/main-*.md && test '$(rstate alpha/battery)' = taken"
+rsolo s2
+msg="roadmap: a later full handoff completes it, and the scope is done"
+expect_pass test "$(rstate alpha/battery)" = done
+rsolo s4 "" "$PWD/.jig/specs/s4.md"
+msg="roadmap: an absolute --spec is written from the repo root, and still completes its spec"
+expect_pass sh -c "grep -qx 'Spec: .jig/specs/s4.md' .jig/handoffs/main-*.md && ! grep -q '^Spec: /' .jig/handoffs/main-*.md && test '$(rstate alpha/sound)' = done"
+msg="roadmap: a --spec outside the repo is refused"
+expect_refuse sh -c "printf 'y\n' >> work.txt && git commit -qam y && $J reviewed >/dev/null && $J handoff --spec /tmp/elsewhere.md"
+git reset -q --hard HEAD~1
+msg="roadmap: every scope done but an exit box unticked: the phase isn't done"
+expect_pass test "$(rphase alpha)|$(rphase beta)" = "current|next"
+sed -i.bak 's/- \[ \] boots/- [x] boots/' .jig/roadmap.md && rm .jig/roadmap.md.bak && git commit -qam "alpha: boots"
+msg="roadmap: ticking it makes the phase done, and the current phase moves to the next"
+expect_pass test "$(rphase alpha)|$(rphase beta)" = "done|current"
+
+msg="roadmap: jig roadmap reports a missing ROADMAP.md"
+expect_pass sh -c "$J roadmap | grep -q 'ROADMAP.md on main is missing'"
+$J roadmap --write >/dev/null
+msg="roadmap: --write writes the phase line and a board per phase, scopes in their columns with their specs linked"
+expect_pass python3 - <<'PY'
+t = open('ROADMAP.md').read()
+assert 'alpha ✓ → **beta** (current)' in t, t
+assert 'jig roadmap --write' in t.splitlines()[2], t
+beta = t.split('## beta')[1]
+rows = [l for l in beta.splitlines() if l.startswith('| ') and 'Open' not in l]
+cells = [[c.strip() for c in r.strip('|').split(' | ')] for r in rows]
+assert cells[0][0].startswith('**ota**') and cells[0][1].startswith('**radio**') and '[s3](.jig/specs/s3.md)' in cells[0][1], cells
+alpha = t.split('## alpha')[1].split('## beta')[0]
+done = [[c.strip() for c in r.strip('|').split(' | ')][2] for r in alpha.splitlines() if r.startswith('| **') or r.startswith('|  |')]
+assert any('**battery**' in d and '[s1](.jig/specs/s1.md) ✓' in d and '[s2](.jig/specs/s2.md) ✓' in d for d in done), alpha
+assert '- [x] boots on the dev board' in alpha, alpha
+PY
+git add -A && git commit -qm "roadmap view"
+msg="roadmap: once committed it isn't stale"
+expect_pass sh -c "! $J roadmap | grep -q stale"
+msg="roadmap: survey counts ROADMAP.md as a home, not a stray"
+expect_pass hrsurvey "assert 'ROADMAP.md' not in [e['path'] for e in r['homeless']], r['homeless']"
+
+$J open J --spec .jig/specs/s3.md >/dev/null && git add -A && git commit -qm "open J"
+( cd .git/jig/worktrees/J && printf 'radio\n' > radio.txt && git add -A && git commit -qm radio \
+  && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note J" )
+msg="roadmap: a bare jig handoff in a job writes the board's spec as its Spec:"
+expect_pass grep -qx 'Spec: .jig/specs/s3.md' .git/jig/worktrees/J/.jig/handoffs/J-*.md
+msg="roadmap: the hook refuses .jig/roadmap.md and ROADMAP.md edits on a branch (R5)"
+out=$(cd .git/jig/worktrees/J && printf 'x\n' >> .jig/roadmap.md && printf 'x\n' >> ROADMAP.md && git add -A && $J check --staged; git reset -q --hard)
+expect_pass sh -c "echo \"\$0\" | grep -q 'R5 the roadmap is the owner.s: .jig/roadmap.md' && echo \"\$0\" | grep -q 'R5 the roadmap is the owner.s: ROADMAP.md'" "$out"
+msg="roadmap: the hook refuses a spec on a branch citing a scope the roadmap doesn't have"
+out=$(cd .git/jig/worktrees/J && rspec bad alpha/nope && git add -A && git commit -qm bad 2>&1; git reset -q --hard; git clean -fdq)
+expect_pass sh -c "echo \"\$0\" | grep -q 'bad.md takes alpha/nope'" "$out"
+$J merge J >/dev/null
+msg="roadmap: jig merge rewrites ROADMAP.md in the merge commit, moving the job's scope to Done"
+expect_pass sh -c "git show --name-only --format= HEAD | grep -qx ROADMAP.md && git show HEAD:ROADMAP.md | python3 -c \"
+import sys; beta = sys.stdin.read().split('## beta')[1]
+row = [l for l in beta.splitlines() if 'radio' in l][0]
+assert [c.strip() for c in row.strip('|').split(' | ')][2].startswith('**radio**'), row\""
+rspec s5 beta/ota && git add -A && git commit -qm s5
+msg="roadmap: jig roadmap reports a stale ROADMAP.md after solo work on trunk"
+expect_pass sh -c "$J roadmap | grep -q 'ROADMAP.md on main is stale'"
+
+msg="roadmap: the hook refuses a spec on trunk citing an unknown scope"
+rspec bad beta/nope && git add -A; expect_refuse git commit -qm bad; undo
+sed -i.bak '/`ota`/d' .jig/roadmap.md && rm .jig/roadmap.md.bak && git add -A
+msg="roadmap: the hook refuses a trunk roadmap edit dropping a scope a spec takes, naming the spec"
+out=$(git commit -qm "drop ota" 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'drops beta/ota, which .jig/specs/s5.md still takes'" "$out"
+msg="roadmap: re-pointing the spec in that commit is accepted"
+rspec s5 beta/radio && git add -A; expect_pass git commit -qm "drop ota, s5 on radio"
+
+msg="roadmap: a staged kind: roadmap file is listed"
+stage r.md this roadmap update .jig/roadmap.md 'add a phase v1 with scope `case`, because x\n'
+expect_pass sh -c "$J staging | grep -q 'r.md: update roadmap for this → .jig/roadmap.md'"
+msg="roadmap: resolve refuses until a trunk commit to .jig/roadmap.md carries its mark"
+expect_refuse $J staging resolve r.md
+printf '\n## v1\nScopes:\n- `case`: the enclosure\n' >> .jig/roadmap.md && $J roadmap --write >/dev/null && git add -A
+git commit -qm "roadmap: v1" -m "Source: chat r.md (staged as r.md)"
+msg="roadmap: after that commit it resolves"
+expect_pass sh -c "$J staging resolve r.md && test ! -e .jig/staging/r.md"
+msg="roadmap: a mark in a commit that didn't touch .jig/roadmap.md doesn't count"
+stage q.md this roadmap update .jig/roadmap.md 'x\n' && git commit -q --allow-empty -m "x" -m "Source: chat q.md (staged as q.md)"
+expect_refuse $J staging resolve q.md; rm .jig/staging/q.md
+msg="roadmap: a roadmap change staged as change: new is refused"
+stage n.md this roadmap new .jig/roadmap.md 'x\n'
+expect_pass sh -c "! $J staging resolve n.md && $J staging | grep -q 'a roadmap change is .change: update.'"
+rm .jig/staging/n.md
+msg="roadmap: a roadmap change with any other destination is refused"
+stage d.md this roadmap update docs/plan.md 'x\n'
+expect_pass sh -c "! $J staging resolve d.md && $J staging | grep -q 'lands in .jig/roadmap.md only'"
+rm .jig/staging/d.md
+
+rbad() { printf "$1" > .jig/roadmap.md && git add -A; out=$(git commit -qm bad 2>&1); rc=$?; git reset -q --hard; }
+msg="roadmap: the hook refuses a duplicate scope id, naming its line"
+rbad '## a\nScopes:\n- `x`: y\n- `x`: z\n'
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'line 4: scope a/x appears twice'" "$out"
+msg="roadmap: the hook refuses a duplicate phase, naming its line"
+rbad '## a\nScopes:\n- `x`: y\n## a\nExit when:\n- [ ] z\n'
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'line 4: phase a appears twice'" "$out"
+msg="roadmap: the hook refuses a phase with neither Exit when: nor Scopes:"
+rbad '## a\nScopes:\n- `x`: y\n\n## Notes\nprose\n'
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'line 5: phase Notes has neither'" "$out"
+msg="roadmap: the hook refuses a line under Scopes: that isn't a scope; a nested item is never one"
+rbad '## a\nScopes:\n- `x`: y\n  - SPI\n- two words: z\n'
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'line 4: not a scope.*- SPI' && echo \"\$0\" | grep -q 'line 5: not a scope'" "$out"
+msg="roadmap: jig roadmap reports the same problems and exits 1"
+printf '## a\nScopes:\n- `x`: y\n  - SPI\n' > .jig/roadmap.md && git add -A && git -c core.hooksPath=/dev/null commit -qm planted
+out=$($J roadmap 2>&1); rc=$?; git reset -q --hard HEAD~1
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q 'roadmap.md line 4: not a scope'" "$out"
+msg="roadmap: --write reads tracked files only: an untracked spec draft takes nothing"
+rspec draft beta/radio && sed -i.bak 's|^Scope: .*|Scope: v1/case|' .jig/specs/draft.md && rm .jig/specs/draft.md.bak
+$J roadmap --write >/dev/null
+expect_pass sh -c "! grep -q draft ROADMAP.md"
+rm .jig/specs/draft.md; git checkout -q -- ROADMAP.md
+msg="roadmap: the spec template carries no live Scope: line"
+expect_refuse grep -q '^Scope:' "$P/specs/_template.md"
+
+RE="$T/rm-empty"; pcnew "$RE" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+printf '## a\nExit when:\n\n## b\nScopes:\n- `x`: y\n' > .jig/roadmap.md && git add -A && git commit -qm roadmap
+msg="roadmap: a phase with no scopes and no exit boxes is empty, never done"
+expect_pass sh -c "$J roadmap | grep -q '^a  current  (empty' && $J roadmap --write >/dev/null && grep -q '^## a (current, empty)' ROADMAP.md"
+git checkout -q -- . 2>/dev/null; rm -f ROADMAP.md
+
+RC="$T/rm-conflict"; pcnew "$RC" && mkdir -p src && printf 'x=1\n' > src/x.py && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+printf '## a\nScopes:\n- `x`: y\n' > .jig/roadmap.md && rspec s1 a/x && git add -A && git commit -qm roadmap
+$J roadmap --write >/dev/null && git add -A && git commit -qm view
+$J open C --spec .jig/specs/s1.md --owns 'src/**' >/dev/null && git add -A && git commit -qm "open C"
+( cd .git/jig/worktrees/C && printf 'x=2\n' > src/x.py && git commit -qam two && $J reviewed >/dev/null \
+  && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note C" )
+printf 'x=3\n' > src/x.py && git commit -qam three
+out=$($J merge C 2>&1)
+printf 'x=2\n' > src/x.py && git add src/x.py && $J roadmap --write >/dev/null && git add ROADMAP.md && git commit -q --no-edit
+msg="roadmap: on a conflicted merge, following jig's steps (resolve, --write, add, commit) moves the job's scope to Done"
+expect_pass sh -c "echo \"\$0\" | grep -q 'jig roadmap --write' && git show HEAD:ROADMAP.md | grep -q '^|  |  | \*\*x\*\*'" "$out"
+
+RT="$T/rm-meta"; mkdir -p "$RT" && cd "$RT" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init && $J init --meta >/dev/null 2>&1 && git add -A && git commit -qm "GLOSSARY: board"
+printf '## a\nScopes:\n- `x`: y\n' > .jig/roadmap.md && git add -A && git commit -qm "GLOSSARY: roadmap"
+msg="roadmap: in a metarepo, M4 lets ROADMAP.md be committed on trunk where a roadmap exists"
+$J roadmap --write >/dev/null && git add -A; expect_pass git commit -qm "GLOSSARY: roadmap view"
+
+NR="$T/no-roadmap"; pcnew "$NR" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+msg="roadmap: with no .jig/roadmap.md, jig roadmap says there is none"
+expect_pass sh -c "$J roadmap | grep -q 'no roadmap'"
+msg="roadmap: with no roadmap, no hook check fires on a spec's Scope: line"
+rspec s1 alpha/whatever && git add -A && expect_pass git commit -qm s1
+$J open N --spec .jig/specs/s1.md >/dev/null && git add -A && git commit -qm "open N"
+( cd .git/jig/worktrees/N && printf 'n\n' > n.txt && git add -A && git commit -qm n \
+  && $J reviewed >/dev/null && $J handoff --spec .jig/specs/s1.md >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note N" )
+msg="roadmap: with no roadmap, jig merge writes no ROADMAP.md"
+expect_pass sh -c "$J merge N >/dev/null && test ! -e ROADMAP.md && ! git show --name-only --format= HEAD | grep -q ROADMAP"
+printf '# Our roadmap\nhand written\n' > ROADMAP.md && git add -A && git commit -qm "hand roadmap"
+msg="roadmap: with no roadmap, a hand-written ROADMAP.md is edited on a branch freely (no R5)"
+git switch -q -c feat && printf 'more\n' >> ROADMAP.md && git add -A && expect_pass git commit -qm "edit hand roadmap"
+git switch -q main
+msg="roadmap: with no roadmap, a job sharing ROADMAP.md edits it with no R5"
+$J open H --shares ROADMAP.md >/dev/null && git add -A && git commit -qm "open H"
+out=$(cd .git/jig/worktrees/H && printf 'job\n' >> ROADMAP.md && git add -A && git commit -qm job 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && ! echo \"\$0\" | grep -q R5" "$out"
+msg="roadmap: with no roadmap, survey lists a hand-written ROADMAP.md as a stray"
+expect_pass hrsurvey "assert 'ROADMAP.md' in [e['path'] for e in r['homeless']], r['homeless']"
+}
+
+UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes agents_lines page_contract roadmap"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file

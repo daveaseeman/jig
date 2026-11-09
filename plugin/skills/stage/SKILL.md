@@ -1,6 +1,6 @@
 ---
 name: stage
-description: Stage a chat-born file (spec, doc, decisions, user story) for a jig repo, or resolve what sits in .jig/staging/ - land each in its target or drop it with a reason. Use when a chat produced something meant for a repo, at session start when files are staged, or on "resolve staging".
+description: Stage a chat-born file (spec, doc, decisions, user story, roadmap change) for a jig repo, or resolve what sits in .jig/staging/ - land each in its target or drop it with a reason. Use when a chat produced something meant for a repo, at session start when files are staged, or on "resolve staging".
 ---
 
 A staged file is a Markdown file in `.jig/staging/` with this header. Nothing in it is
@@ -10,7 +10,7 @@ decided until it is resolved: read it for context, never cite it as decided.
 ---
 staged: true
 target: <repo name from `jig repos`, or "this">
-kind: spec | doc | decisions | user-story | feedback
+kind: spec | doc | decisions | user-story | feedback | roadmap
 change: new | update
 destination: <inside the target: a path if known, else a filename, else a description>
 source: <session / date / author>
@@ -41,6 +41,11 @@ Write it into the target's `.jig/staging/`, found with `jig repos` (needs only
   resolve again. An `update` changes existing rows; edit them, then `resolve`.
   In a metarepo, add the `CHANGELOG.md` line `resolve` prints before committing: M3 refuses
   the commit on a branch with no line yet.
+- **roadmap**: `destination: .jig/roadmap.md`, `change: update`; the body says what to add,
+  rename, reorder or drop (a phase, a scope, an exit box) and why. It is the owner's decision,
+  made on trunk: the hubnode applies it and commits with the file's `Source:` line in the
+  message (its skill, "A roadmap change"), then `resolve` finds that commit. Any other
+  destination is refused.
 - **user-story**: run `/jig:spec` with the story as input — a new spec, or an amendment to
   the spec it extends — carrying `Source: <source> (staged as <file name>)`. Then `resolve`.
 - **feedback**: work through it with `/jig:fix` in the jig repo. Elsewhere, `resolve` forwards it
