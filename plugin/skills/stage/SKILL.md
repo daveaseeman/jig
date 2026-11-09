@@ -1,6 +1,6 @@
 ---
 name: stage
-description: Stage a chat-born file (spec, doc, decisions, user story, roadmap change) for a jig repo, or resolve what sits in .jig/staging/ - land each in its target or drop it with a reason. Use when a chat produced something meant for a repo, at session start when files are staged, or on "resolve staging".
+description: Stage a chat-born file (spec, doc, decisions, user story, feature request, roadmap change) for a jig repo, or resolve what sits in .jig/staging/ - land each in its target or drop it with a reason. Use when a chat produced something meant for a repo, at session start when files are staged, or on "resolve staging".
 ---
 
 A staged file is a Markdown file in `.jig/staging/` with this header. Nothing in it is
@@ -10,7 +10,7 @@ decided until it is resolved: read it for context, never cite it as decided.
 ---
 staged: true
 target: <repo name from `jig repos`, or "this">
-kind: spec | doc | decisions | user-story | feedback | roadmap
+kind: spec | doc | decisions | user-story | feature-request | feedback | roadmap
 change: new | update
 destination: <inside the target: a path if known, else a filename, else a description>
 source: <session / date / author>
@@ -27,6 +27,11 @@ repos list (`jig repos` prints where), which `jig staging` lists too.
 Write it into the target's `.jig/staging/`, found with `jig repos` (needs only
 `~/.config/jig/` — then ask for access to exactly `<repo>/.jig/staging/`). Say `new` or
 `update`, and make `destination` as precise as you can, never an absolute path.
+
+A user story names who wants what and why. A feature request just describes what the thing
+should do, in the owner's words ("I want it to do xyz"): free prose, no template, no Done-when.
+Pick whichever fits what was said. For a request, `change: update` means it changes a feature a
+spec already describes; name that spec in `destination` if known.
 
 ## Resolving
 
@@ -48,6 +53,11 @@ Write it into the target's `.jig/staging/`, found with `jig repos` (needs only
   destination is refused.
 - **user-story**: run `/jig:spec` with the story as input — a new spec, or an amendment to
   the spec it extends — carrying `Source: <source> (staged as <file name>)`. Then `resolve`.
+- **feature-request**: run `/jig:spec` with the request as input. The spec quotes the request
+  in the owner's words after its mark, `Source: <source> (staged as <file name>): "<request>"`
+  (as `/jig:fix` does a report's symptom); restates it as the Intent (if that won't fit in a
+  sentence, ask the owner one question first); and lists under Decisions each thing it filled in that the request didn't say, starting `Interpreted:`.
+  Show the spec; `resolve` once the owner accepts it. It refuses until a spec carries the mark.
 - **feedback**: work through it with `/jig:fix` in the jig repo. Elsewhere, `resolve` forwards it
   there.
 - **another repo's**: `resolve` forwards it into that repo's `.jig/staging/`; it is resolved

@@ -3757,7 +3757,7 @@ def buffer_proposal(root: Path, para: dict, loc: Path, slug: str) -> tuple[Path,
 # Where a chat drops a file meant for this repo, or another. Untracked: nothing in it is
 # authoritative, and it can reach a contract only through `jig staging resolve`.
 STAGING = f"{DIR}/staging"
-KINDS = ("spec", "doc", "decisions", "user-story", "feedback", "roadmap")
+KINDS = ("spec", "doc", "decisions", "user-story", "feature-request", "feedback", "roadmap")
 HEADER_KEYS = ("staged", "target", "kind", "change", "destination", "source", "status")
 
 
@@ -3939,11 +3939,11 @@ def cmd_staging(root: Path, args) -> int:
                 f"it on a yes, `jig roadmap --write`, and commit with `{mark}` in the message, "
                 "then resolve again", 1)
         return done(f"applied to {ROADMAP} on {trunk}")
-    if kind in ("user-story", "feedback"):
+    if kind in ("user-story", "feature-request", "feedback"):
         specs = [s for s in (root / DIR / "specs").glob("*.md") if mark in s.read_text()]
         if not specs:
             how = "write a new spec" if change == "new" else "amend the spec it extends"
-            what = "a story" if kind == "user-story" else "a report"
+            what = {"user-story": "a story", "feature-request": "a request"}.get(kind, "a report")
             die(f"{what} resolves into a spec: {how} under {DIR}/specs/ from it, carrying "
                 f"`{mark}`, then resolve again", 1)
         return done(f"carried by {specs[0].relative_to(root)}")

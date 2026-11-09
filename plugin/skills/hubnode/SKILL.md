@@ -139,6 +139,15 @@ A scope a spec still takes is re-pointed in that commit: the hook names the spec
 `jig merge` rewrites `ROADMAP.md` in the merge commit. After solo work on trunk, `jig roadmap`
 says when it is stale: `jig roadmap --write` and commit it.
 
+## A feature request
+
+A staged `kind: feature-request` file is the owner describing what they want, not a spec.
+Interpret it with `/jig:spec`: quote it after the mark, as
+`Source: <source> (staged as <file>): "<the request>"`, restate it as the Intent (one question
+to the owner first if it won't fit in a sentence), and list each thing you filled in under
+Decisions as `Interpreted: …`. Show the owner the spec; once they accept
+it, `jig staging resolve <file>`, which refuses until a spec carries the mark.
+
 ## After a merge
 
 Run `jig sync` in every open job's worktree that is clean. Say which jobs must sync

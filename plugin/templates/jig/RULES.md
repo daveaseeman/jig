@@ -403,7 +403,7 @@ The product is the repo, so there is one roadmap and no product level in it.
 ## Staging
 
 `.jig/staging/` is where a chat drops a file meant for a repo: a spec, a doc, decision rows, a
-user story, a roadmap change. It is never committed, and nothing in it is decided — read it
+user story, a feature request, a roadmap change. It is never committed, and nothing in it is decided — read it
 for context, never cite it. Each file's header names its `target` (a repo name, or `this`), `kind`, `change`
 (`new` or `update`), `destination` inside the target, and `source`. A destination is a bare
 path, with no space and no `:`, `,` or `;`: a spec, doc or decisions file whose destination
@@ -411,9 +411,16 @@ carries anything else (`docs/DECISIONS.md, on branch x`, `see docs/x.md`) is ref
 guessed at. In a metarepo, decisions land only in a register `entry_files` names.
 
 `jig staging resolve <file>` lands it: a new spec or doc is written with its source; an
-update, a story's spec, or decisions with other content wait until the work is done and the
+update, a story's or request's spec, or decisions with other content wait until the work is done and the
 source is in it; a file for another repo moves into that repo's staging, found through
 `jig repos`. `jig staging drop <file>` deletes it and records nothing: it was never committed.
+
+A feature request is `kind: feature-request`: the owner's own words for what the product
+should do ("I want it to do xyz"), with no required shape. A story names who wants what and
+why; a request only describes. Both resolve into a spec carrying their source. Because a
+request leaves things undefined, its spec quotes it after the mark
+(`Source: … (staged as <file>): "<request>"`), restates it as the Intent, and lists under
+Decisions each thing it filled in that the request didn't say, starting `Interpreted:`, so the owner can correct the reading before the work starts.
 
 A roadmap change is `kind: roadmap`, `change: update`, `destination: .jig/roadmap.md` (any
 other change or destination is refused),
