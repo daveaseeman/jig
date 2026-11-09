@@ -16,7 +16,8 @@
       "plugin/skills/retro/SKILL.md",
       "plugin/skills/adopt/SKILL.md",
       "plugin/skills/verify/SKILL.md",
-      "plugin/skills/redocument/SKILL.md"
+      "plugin/skills/redocument/SKILL.md",
+      "plugin/templates/AGENTS.md"
     ],
     "reserved": {}
   }
