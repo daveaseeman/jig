@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -262,9 +263,13 @@ def base(trunk: str) -> str:
     return "HEAD"
 
 
-def changed_paths(trunk: str, staged: bool) -> list[str]:
-    args = ["diff", "--name-only", "--diff-filter=ACMRT", base(trunk)]
-    args += ["--cached"] if staged else []
+def changed_paths(trunk: str, staged: bool, removed: bool = False) -> list[str]:
+    """What the change writes: a rename shows under its new path only, and a delete not at all,
+    which is what a rule on content judges. With REMOVED, every path it adds, edits or removes,
+    both sides of a rename included: a rule guarding a path counts taking it away as changing it."""
+    args = (["-c", "core.quotePath=false", "diff", "--name-only", "--no-renames"] if removed
+            else ["diff", "--name-only", "--diff-filter=ACMRT"])
+    args += [base(trunk), *(["--cached"] if staged else [])]
     return [p for p in git(*args).splitlines() if p]
 
 
@@ -289,6 +294,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     trunk = board.trunk
     name, job = board.job_for_branch(branch)
     paths = changed_paths(trunk, staged)
+    guarded = changed_paths(trunk, staged, removed=True)
     meta = load_meta(trunk)
     if meta is not None:
         out += meta_rules(root, board, meta, staged)
@@ -306,7 +312,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
 
     # R5 the board is the hubnode's
     for f in (CONFIG, JOBS):
-        if f in paths and branch != trunk:
+        if f in guarded and branch != trunk:
             out.append(f"R5 the board is the hubnode's: {f} is edited on {trunk} only")
     if CONFIG in paths and (raw := in_index(CONFIG, staged)):
         try:
@@ -377,7 +383,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     owns, shares = job.get("owns", []), job.get("shares", [])
     others = {n: l for n, l in board.open_jobs().items() if n != name}
 
-    for p in paths:
+    for p in guarded:
         if p.startswith(f"{DIR}/handoffs/"):
             continue
         # R4 another open job's owns wins, even over this job's lists
@@ -386,7 +392,8 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
                 out.append(f"R4 {p} is owned by job {on}: ask the hubnode before touching it")
                 break
         else:
-            # R3 only this job's files, or a file new to the repository
+            # R3 only this job's files, or a file new to the repository. Removing a file is
+            # changing it: one trunk has must be declared; one only this job added never was trunk's.
             if matches(p, owns) or matches(p, shares) or matches(p, common):
                 continue
             if not existed_on_trunk(trunk, p):
@@ -440,10 +447,10 @@ def next_number(board: "Board", counter: str, spec: dict) -> int:
 
 def reserved_refusals(root: Path, board: "Board", holds: dict[str, set[int]],
                       who: str, staged: bool, takes: bool = True) -> list[str]:
-    """R6. A scarce number (migration step, section number) belongs to one job.
+    """R6. A scarce number (migration step, schema version) belongs to one job.
     A number is taken when the base has no match for it in the counter's files and the
-    index adds one. A second rule under a section the base already has takes nothing, and
-    editing or moving a heading nets to zero. A counter with "unique" also refuses a number
+    index adds one. A dotted number under a whole number the base already has takes nothing,
+    and editing or moving a match nets to zero. A counter with "unique" also refuses a number
     whose count rises past one: a second migration 17 is a collision of its own. Numbers
     compare as ints, so D-002 is the 2 a job holds; a refusal shows the text it matched.
     With TAKES false (no job open, so nobody to collide with) only "unique" is checked."""
@@ -716,15 +723,23 @@ def cmd_status(root: Path, args) -> int:
     return 0
 
 
+def file_safe(name: str) -> str:
+    """A job or branch name as one file or folder name. git allows `/` in a branch; the notes
+    and the gate's scratch stay flat, so `a/b` and `a-b` share a stem, and a note's header,
+    not its file name, says whose it is."""
+    return name.replace("/", "-")
+
+
 def handoff_notes(branch: str, name: str) -> list[str]:
     """The notes a job has filed, read from its branch, oldest first: the record of a handoff
     is the note."""
     # The names `jig handoff` writes: <job>-<date>.md, then -2, -3 the same day. By name alone
     # "-" sorts before ".", putting the day's first note last; and job X-y's notes start "X-".
-    note = re.compile(rf"{re.escape(name)}-(\d{{4}}-\d{{2}}-\d{{2}})(?:-(\d+))?\.md")
-    listing = git("ls-tree", "-r", "--name-only", branch, "--", f"{DIR}/handoffs/")
+    note = re.compile(rf"{re.escape(file_safe(name))}-(\d{{4}}-\d{{2}}-\d{{2}})(?:-(\d+))?\.md")
+    listing = git("ls-tree", "--name-only", branch, "--", f"{DIR}/handoffs/")
     found = [(m.group(1), int(m.group(2) or 1), n) for n in listing.splitlines()
-             if (m := note.fullmatch(Path(n).name))]
+             if (m := note.fullmatch(Path(n).name))
+             and git("show", f"{branch}:{n}").split("\n", 1)[0] == f"# Handoff: {name}"]
     return [n for *_, n in sorted(found)]
 
 
@@ -741,13 +756,21 @@ def cmd_open(root: Path, args) -> int:
         die(f"open a job from {board.trunk} (the hubnode's checkout)")
     if args.name in board.jobs:
         die(f"job {args.name} already exists")
+    # Notes and gate scratch are named file_safe(job): two open jobs sharing that stem would
+    # each commit the same note path the same day, an add/add conflict at the second merge.
+    twin = [n for n in board.jobs if file_safe(n) == file_safe(args.name)]
+    if twin:
+        die(f"job {args.name} and open job {twin[0]} share the file name {file_safe(args.name)} "
+            "for their handoff notes and gate checkout: pick another name")
     branch = args.branch or args.name
     owns = args.owns or []
     # R4 pre-check: a file another open job already changed is shared, never owned
     conflicts = []
     for p in owns:
         for on in board.open_jobs():
-            changed = git("diff", "--name-only", f"{board.trunk}...{board.branch(on)}").splitlines()
+            # A file the job moved away is as much its change as one it edited.
+            changed = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
+                          f"{board.trunk}...{board.branch(on)}").splitlines()
             if any(matches(c, [p]) for c in changed):
                 conflicts.append(f"{p} (changed by open job {on})")
     if conflicts:
@@ -1041,14 +1064,15 @@ def changed_since(commit: str, branch: str, board: "Board") -> list[str]:
                 # No replay to compare with: everything the merge changed counts as the job's.
                 tree, conflicted = parents[0], []
             files = []
-            for f in git("diff", "--name-only", tree, c).splitlines():
+            for f in git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", tree, c).splitlines():
                 if f in conflicted and matches(f, appends):
                     text, ok = resolved_appends(blob(tree, f))
                     if ok and text == blob(c, f):
                         continue
                 files.append(f)
         else:
-            files = git("diff", "--name-only", parents[0], c).splitlines()
+            files = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
+                        parents[0], c).splitlines()
         out += [f for f in files if f and not f.startswith(f"{DIR}/handoffs/") and f not in out]
     return out
 
@@ -1096,10 +1120,13 @@ Spec: {spec}
 <!-- findings from the adversarial review, and what you did about each -->
 
 ## Fold-in
-<!-- Every documentation page that covers code this changed. Replace each ___ and tick the
-     box: the page is updated, or it needed no change and this says why. The gate refuses
-     an unanswered line. An UNOWNED file has no page covering it: add it to docmap in the
-     board, or say why it needs none. -->
+<!-- Every documentation page that covers code this changed: does it still describe the
+     code? Replace each ___ and tick the box: the stale sentences are edited (deleting
+     counts), or none went stale and this says why. Each Undefined entry on those pages has
+     its own line: keep one answer, built, untouched or departed: <why>. Built means the
+     entry is deleted from the page in this change. The gate refuses an unanswered line. An
+     UNOWNED file has no page covering it: add it to docmap in the board, or say why it
+     needs none. -->
 {foldin}
 
 ## Shared files changed
@@ -1113,12 +1140,84 @@ Spec: {spec}
 """
 
 
+def page_sections(text: str) -> list[tuple[str, list[str]]]:
+    """A page's `## ` sections in order, each with its lines; what precedes the first is ''.
+    Fenced code is skipped, so a page quoting a heading inside ``` doesn't gain a section."""
+    out, fence = [("", [])], False
+    for line in text.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            fence = not fence
+        m = None if fence else re.match(r"^ {0,3}##[ \t]+(.*?)[ \t#]*$", line)
+        if m:
+            out.append((m.group(1).strip(), []))
+        else:
+            out[-1][1].append(line)
+    return out
+
+
+def section_items(lines: list[str]) -> list[str]:
+    """The top-level list items of a section, each as its first line without the marker."""
+    return [re.sub(r"^[-*+][ \t]+", "", l).strip() for l in lines if re.match(r"^[-*+][ \t]+\S", l)]
+
+
+def undefined_entries(text: str) -> list[str]:
+    return [i for name, lines in page_sections(text) if name == "Undefined"
+            for i in section_items(lines)]
+
+
+# The fold-in line for one Undefined entry. The gate parses it back, so a change here
+# changes UNDEF_LINE too.
+UNDEF_KEY = 60
+# How alike a new Undefined entry's name must be to a built one's to be that entry reworded.
+UNDEF_CLOSE = 0.6
+
+
+def undef_name(entry: str) -> str:
+    """What was parked, without the where-it-stops and the date every entry shares: compared
+    whole, any two entries in the template's shape look alike."""
+    head = entry.split(" — ", 1)[0] if " — " in entry else entry
+    return re.sub(r"[;,.]?\s*parked \d{4}-\d\d-\d\d\.?\s*$", "", head).strip().lower()
+
+
+def undef_reworded(a: str, b: str) -> bool:
+    """B is A reworded: one name holds the other, or they are close in wording."""
+    x, y = undef_name(a), undef_name(b)
+    return bool(x and y) and (x in y or y in x
+                              or difflib.SequenceMatcher(None, x, y).ratio() >= UNDEF_CLOSE)
+UNDEF_LINE = re.compile(r'Undefined in (\S+): "(.*?)" — (.*?)\s*$')
+
+
+def undef_answer(answer: str) -> str:
+    """Why an Undefined line's answer doesn't count yet, or "" when it does: built,
+    untouched or departed (with its why), in any case, and anything after it."""
+    a = answer.strip()
+    if not a or "___" in a:
+        return "blank: keep one of built, untouched, departed: <why>"
+    if re.match(r"\w+\s*/", a):
+        return "more than one answer kept: keep one"
+    word = re.match(r"[A-Za-z]+", a)
+    kind = word.group(0).lower() if word else ""
+    if kind not in ("built", "untouched", "departed"):
+        return "not built, untouched or departed"
+    if kind == "departed" and not re.search(r"\w", a[len(kind):]):
+        return "departed needs its why"
+    return ""
+
+
+def undef_key(entry: str) -> str:
+    return entry if len(entry) <= UNDEF_KEY else entry[:UNDEF_KEY].rstrip() + "…"
+
+
 def foldin_lines(root: Path, board: Board, branch: str) -> str:
     """One line per documentation page covering the code this branch changed."""
     trunk = board.trunk
-    rng = f"{trunk}...HEAD" if branch and branch != trunk else "HEAD~1..HEAD"
-    changed = [f for f in git("diff", "--name-only", rng).splitlines()
+    base = trunk if branch and branch != trunk else "HEAD~1"
+    rng = f"{trunk}...HEAD" if base == trunk else "HEAD~1..HEAD"
+    # Both sides of a rename: the page that covered the old path describes it there.
+    changed = [f for f in git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
+                              rng).splitlines()
                if f and not f.startswith((".", f"{DIR}/"))]
+    at_head = set(git("-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", "HEAD").splitlines())
     # A file docmap names is asked about whatever its type (sdkconfig, a devicetree
     # overlay); only source files are flagged when no page covers them.
     pages, unowned = {}, []
@@ -1126,13 +1225,21 @@ def foldin_lines(root: Path, board: Board, branch: str) -> str:
         owners = doc_owners(board, f)
         for page in owners:
             pages.setdefault(page, []).append(f)
-        if not owners and f.endswith(SRC_EXT):
+        if not owners and f.endswith(SRC_EXT) and f in at_head:
             unowned.append(f)
     if not pages and not unowned:
         return "- [ ] no code changed — nothing to fold in"
-    out = [f"- [ ] {page} — updated / no change because ___   ({len(fs)} file"
-           f"{'s' if len(fs) > 1 else ''})" for page, fs in sorted(pages.items())]
-    out += [f"- [ ] UNOWNED {f} — add to docmap, or no page needed because ___"
+    out = []
+    for page, fs in sorted(pages.items()):
+        out.append(f"- [ ] {page} — updated / no change because ___   ({len(fs)} file"
+                   f"{'s' if len(fs) > 1 else ''})")
+        # The page before this change: an entry the change already deleted was built here,
+        # and still needs its answer.
+        text = git("show", f"{base}:{page}") or git("show", f"HEAD:{page}")
+        out += [f'- [ ] Undefined in {page}: "{undef_key(e)}" — built / untouched / departed: ___'
+                for e in undefined_entries(text)]
+    out += [f"- [ ] UNOWNED {f} — add to docmap (a new page starts from {DIR}/docs-page.md), "
+            "or no page needed because ___"
             for f in sorted(unowned)]
     return "\n".join(out)
 
@@ -1153,10 +1260,10 @@ def cmd_handoff(root: Path, args) -> int:
             f"  Review {head[:12]}, then: python3 {DIR}/jig.py reviewed")
     (root / DIR / "handoffs").mkdir(parents=True, exist_ok=True)
     # handoff_notes reads these names back in order; a change here changes its pattern.
-    path = root / DIR / "handoffs" / f"{name}-{date.today().isoformat()}.md"
+    path = root / DIR / "handoffs" / f"{file_safe(name)}-{date.today().isoformat()}.md"
     i = 2
     while path.exists():
-        path = root / DIR / "handoffs" / f"{name}-{date.today().isoformat()}-{i}.md"
+        path = root / DIR / "handoffs" / f"{file_safe(name)}-{date.today().isoformat()}-{i}.md"
         i += 1
     ran = json.loads(lines[1]) if len(lines) > 1 and lines[1].strip() else {}
     # jig gate reads the Review line back against the spec's Workflow section.
@@ -1256,9 +1363,48 @@ def cmd_gate(root: Path, args) -> int:
         open_lines = [l for l in sec.group(1).splitlines()
                       if l.strip().startswith("- [")
                       and (l.strip().startswith("- [ ]") or "___" in l)]
+        m = re.search(r"^Commit: (\w+)", body, re.M)
+        at = m.group(1) if m else branch
+        # Each Undefined line needs one answer; anything after it is the answerer's to say.
+        built: dict[str, list[tuple[str, str]]] = {}
+        for l in sec.group(1).splitlines():
+            u = UNDEF_LINE.search(l) if l.strip().startswith("- [") else None
+            if not u or l in open_lines:
+                continue
+            page, key, answer = u.groups()
+            why = undef_answer(answer)
+            if why:
+                open_lines.append(f"{l.strip()}   <- {why}")
+            elif answer.lower().startswith("built"):
+                built.setdefault(page, []).append((l, key))
+        # Built means moved: the entry is gone from the page, not reworded in place. A new
+        # entry close to the built one is that rewording; one unlike it is new work, which
+        # the owner may park on the same branch.
+        base = git("merge-base", trunk, at) or trunk
+        if base == git("rev-parse", at):
+            base = f"{at}~1"
+        still = []
+        for page, answers in sorted(built.items()):
+            before = undefined_entries(git("show", f"{base}:{page}") or "")
+            now = undefined_entries(git("show", f"{at}:{page}") or "")
+            added = [e for e in now if e not in before]
+            for l, key in answers:
+                entry = next((e for e in before if undef_key(e) == key), key)
+                close = [e for e in added if undef_reworded(entry, e)]
+                if entry in now:
+                    still.append(f"{page}: still under Undefined: {undef_key(entry)}")
+                elif close:
+                    still.append(f"{page}: reworded, still under Undefined: {undef_key(close[0])}")
         if open_lines:
             print(f"the fold-in in {note} is unanswered:", file=sys.stderr)
             for l in open_lines[:10]:
+                print(f"  {l.strip()}", file=sys.stderr)
+            return 1
+        if still:
+            print(f"built means moved, not copied: at {at[:12]} these entries answered built are "
+                  "still on their page. Delete each in the change that built it; a reworded "
+                  "entry is still the entry:", file=sys.stderr)
+            for l in still[:10]:
                 print(f"  {l.strip()}", file=sys.stderr)
             return 1
     m = re.search(r"^Commit: (\w+)", body, re.M)
@@ -1279,7 +1425,7 @@ def cmd_gate(root: Path, args) -> int:
         print(f"warning: {weak}", file=sys.stderr)
     # The commit the note names, never the job's live worktree, which may have moved on; and
     # trunk merged in the way `jig sync` merges it, so the gate checks the merge a sync makes.
-    scratch = f"{worktrees_dir()}/gate-{name}"
+    scratch = f"{worktrees_dir()}/gate-{file_safe(name)}"
     where = main_root() / scratch
     if where.exists():
         die(f"{scratch} is left from an earlier gate: `git worktree remove --force {scratch}`, "
@@ -1319,7 +1465,7 @@ DOC_HOMES = {
     "AGENTS.md": "rules, always loaded",
     "CLAUDE.md": "pointer to AGENTS.md",
     "README.md": "for people outside",
-    "docs/": f"what the code is now; docs/<system>/<system>.md each system, {BOARD_PAGES}<board>.md each board",
+    "docs/": f"what the code is now: docs/<system>/<system>.md each system, its subsystems nested the same way, {BOARD_PAGES}<board>.md each board; any other file there has no home",
     COMPONENTS: "<part>/ one folder per part: its datasheets and notes, linked from board pages",
     f"{BOARD_PAGES}<board>/": "one board's files that aren't its page (schematic, a snapshot of its definition)",
     f"{DIR}/specs/": "a task in flight",
@@ -1337,11 +1483,146 @@ def tracked(root: Path) -> list[str]:
     return [p for p in git("ls-files").splitlines() if p]
 
 
-def inbound(root: Path, path: str, files: list[str]) -> int:
-    """How many other tracked files mention this one by name."""
+def naming(root: Path, path: str, files: list[str]) -> dict[str, list[int]]:
+    """The tracked files that name PATH, each with its line numbers: by path, or by bare name
+    when no other tracked file has that name, since a bare `AGENTS.md` could mean any of them.
+    A match needs a path boundary on both sides, so `ui.md` is not `touch_ui.md` and
+    `docs/ui.md` is not `app/docs/ui.md`; a leading `./` or `../` still counts.
+    A handoff records what was true then, and jig's own files define the names, so neither cites."""
     base = Path(path).name
-    hits = git("grep", "-l", "-F", "--", base)
-    return len([h for h in hits.splitlines() if h and h != path])
+    pats = [path] + ([base] if base != path and [Path(f).name for f in files].count(base) == 1 else [])
+    bound = re.compile(r"(?:(?<![\w./-])|(?<=\./))(?:" + "|".join(map(re.escape, pats)) + r")(?![\w/-])")
+    # -I: a datasheet or firmware image that happens to hold the bytes is no citation. Any
+    # tracked text may be in any encoding, so the lines are decoded leniently.
+    hits = subprocess.run(["git", "grep", "-I", "-n", "-F", "--null",
+                           *[a for p in pats for a in ("-e", p)], "--", "."],
+                          capture_output=True, cwd=root).stdout.decode(errors="replace")
+    out: dict[str, list[int]] = {}
+    for hit in hits.splitlines():
+        f, line, text = (hit.split("\0", 2) + ["", ""])[:3]
+        if (not line.isdigit() or f == path or "/handoffs/" in f"/{f}"
+                or f in (*TOOL_FILES, CONFIG, JOBS) or not bound.search(text)):
+            continue
+        out.setdefault(f, []).append(int(line))
+    return out
+
+
+def inbound(root: Path, path: str, files: list[str]) -> int:
+    return len(naming(root, path, files))
+
+
+# CHANGELOG.md is the release log in any repo, and a metarepo's release requires it.
+ROOT_DOCS = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md", "CHANGELOG.md")
+# Agent instruction files under their standard names. Off root, each is a second rulebook
+# that an agent opening that folder may load in place of the real one.
+RULES_NAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
+# The page shape jig used before the descriptive contract: a page with all three is in it.
+PAGE_HEADS = re.compile(r"^ {0,3}#{1,6}[ \t]+(Now|Rules|Checks)\b", re.M)
+# Sections only the page contract has, so a file carrying one is a page wherever it sits.
+CONTRACT_HEADS = re.compile(r"^ {0,3}##[ \t]+(Invariants|Undefined)[ \t#]*$", re.M)
+
+
+def old_contract(text: str) -> bool:
+    return set(PAGE_HEADS.findall(text)) == {"Now", "Rules", "Checks"}
+
+
+def page_problems(text: str) -> list[str]:
+    """What a page at home does against the page contract (RULES.md, Documentation)."""
+    if old_contract(text):
+        return ["old contract — convert: Now / Rules / Checks; fold what it says into "
+                "description, delete what no longer holds, keep as Invariants only what has a "
+                "why and a holder"]
+    out, secs = [], page_sections(text)
+    lead = [l.strip() for l in secs[0][1] if l.strip() and not l.lstrip().startswith("<!--")]
+    # The title is the page's one `# ` line; whatever follows it first is the lead, or isn't.
+    if lead and lead[0].startswith("# "):
+        lead = lead[1:]
+    if not lead or lead[0].startswith("#"):
+        out.append("no lead paragraph: open with what the system is and why it exists")
+    for name, lines in secs:
+        if name == "Invariants":
+            for item in section_items(lines):
+                if " — " not in item or "held by" not in item.lower():
+                    out.append(f'invariant without a why (" — ") or a holder ("held by"): {undef_key(item)}')
+    names = [n for n, _ in secs[1:]]
+    if "Undefined" in names and names.index("Undefined") != len(names) - 1:
+        out.append("sections after ## Undefined: "
+                   + ", ".join(names[names.index("Undefined") + 1:]) + " — Undefined is last")
+    return out
+
+
+def sentences(text: str) -> set[str]:
+    """Prose sentences long enough that a match is a copy, not a common phrase."""
+    flat = re.sub(r"\s+", " ", text)
+    return {s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-Z`*-])", flat) if len(s.strip()) > 25}
+
+
+def at_home(path: str, entry: list[str]) -> bool:
+    """RULES.md (Documentation) lists these homes; a change there changes this."""
+    parts = path.split("/")
+    return (path in ROOT_DOCS or path.startswith(BOARD_PAGES) or matches(path, entry)
+            or (parts[0] == "docs" and len(parts) >= 3 and parts[-2] == Path(path).stem))
+
+
+def page_home(path: str, have: set[str]) -> str:
+    """Under the nearest folder that has its own page, as a subsystem's page sits in its
+    system's folder; else a system of its own under docs/."""
+    stem, folders = Path(path).stem, path.split("/")[:-1]
+    for i in range(len(folders), 1, -1):
+        d = "/".join(folders[:i])
+        if f"{d}/{folders[i - 1]}.md" in have:
+            return f"{d}/{stem}/{stem}.md"
+    return f"docs/{stem}/{stem}.md"
+
+
+def doc_homes(root: Path, files: list[str], not_docs: list[str],
+              read=None) -> list[dict]:
+    """Every tracked Markdown file with no home, as {path, kind, to, fold, naming, named_at}.
+    Kinds: `rules` an agent instruction file off root, `page` a page, old shape or new, in the
+    wrong place, `copy` three or more sentences of RULES.md word for word, `stray` anything else.
+    READ maps a path to its text, for update, which judges the files where they will be."""
+    read = read or (lambda f: (root / f).read_text(errors="replace") if (root / f).is_file() else "")
+    rules_md = Path(__file__).resolve().parent / "RULES.md"
+    rules = re.sub(r"\s+", " ", rules_md.read_text()) if rules_md.exists() else ""
+    entry = []
+    if (root / META).exists():
+        try:
+            entry = {**META_DEFAULTS, **json.loads((root / META).read_text() or "{}")}["entry_files"]
+        except ValueError:
+            pass
+    have = set(files)
+    out = []
+    for f in files:
+        if (not f.endswith(".md") or f.startswith(TOOL_DIRS) or matches(f, not_docs)
+                or at_home(f, entry)):
+            continue
+        text, to = read(f), None
+        # A page first: one that quotes the rulebook is still the repo's page, not a copy.
+        if "/" in f and Path(f).name in RULES_NAMES:
+            kind = "rules"
+        elif f.startswith("docs/") and (old_contract(text) or CONTRACT_HEADS.search(text)):
+            kind, to = "page", page_home(f, have)
+        elif rules and len([s for s in sentences(text) if s in rules]) >= 3:
+            kind = "copy"
+        else:
+            kind = "stray"
+        named = naming(root, f, files)
+        out.append({"path": f, "kind": kind, "to": to,
+                    "fold": bool(to and (to in have or (root / to).exists())),
+                    "naming": sorted(named),
+                    "named_at": [f"{n}:{i}" for n in sorted(named) for i in named[n]]})
+    return out
+
+
+def home_fix(h: dict) -> str:
+    """What to do with a rules file or a copy, shared by survey and update."""
+    at = ", ".join(h["named_at"]) or "nothing"
+    if h["kind"] == "rules":
+        return ("a second rulebook: fold what still binds into AGENTS.md or a page's Invariants, "
+                f"repoint what names it ({at}), then delete it. A package's own rules file may "
+                "stay on the owner's word: ask, don't presume the delete")
+    return (f"a copy of {DIR}/RULES.md, which update keeps current: delete it, and point what "
+            f"names it ({at}) at {DIR}/RULES.md")
 
 
 # What a repo may already have for coordinating parallel work, under its standard
@@ -1467,17 +1748,18 @@ def cmd_survey(root: Path, args) -> int:
                     "not_docs_unmatched": [g for g in not_docs
                                           if not any(matches(f, [g]) for f in files)]}
 
+    homes = {h["path"]: h for h in doc_homes(root, files, not_docs)}
     for f in md:
         raw = (root / f).read_text(errors="replace").splitlines() if (root / f).exists() else []
         n = len([l for l in raw
                  if l.strip() and not l.lstrip().startswith(("#", "<!--", "-->", "|"))])
         last = git("log", "-1", "--format=%ad", "--date=short", "--", f)
-        entry = {"path": f, "lines": n, "last_commit": last, "inbound": inbound(root, f, files)}
+        home = homes.get(f)
+        entry = {"path": f, "lines": n, "last_commit": last,
+                 "inbound": len(home["naming"]) if home else inbound(root, f, files)}
         report["markdown"].append(entry)
-        at_home = (f in DOC_HOMES or any(f.startswith(d) for d in DOC_HOMES if d.endswith("/"))
-                   or f.startswith(TOOL_DIRS) or matches(f, not_docs))
-        if not at_home:
-            report["homeless"].append(entry)
+        if home:
+            report["homeless"].append({**entry, **{k: home[k] for k in ("kind", "to", "fold", "naming", "named_at")}})
         if f in ("AGENTS.md", "CLAUDE.md") and n > 40:  # rule lines, not raw lines
             report["oversized"].append(entry)
 
@@ -1496,6 +1778,12 @@ def cmd_survey(root: Path, args) -> int:
     pages = board_pages(md)
     report["boards_unmapped"] = [f for f in pages if f not in (board.get("docmap") or {})]
     report["components_unlinked"], report["components_missing"] = component_links(root, files, pages)
+    # Board pages have a template of their own; the page contract is for system pages.
+    report["page_contract"] = [
+        {"path": f, "problems": probs} for f in md
+        if f.startswith("docs/") and not f.startswith(BOARD_PAGES) and f not in homes
+        and not matches(f, not_docs)
+        and (probs := page_problems((root / f).read_text(errors="replace") if (root / f).exists() else ""))]
     if args.json:
         print(json.dumps(report, indent=2))
         return 0
@@ -1510,10 +1798,24 @@ def cmd_survey(root: Path, args) -> int:
         print("\nToo long to be always-loaded (cut to 40 lines, move the rest):")
         for e in report["oversized"]:
             print(f"  {e['path']:<40} {e['lines']} lines")
-    if report["homeless"]:
-        linked = sorted((e for e in report["homeless"] if e["inbound"] > 0),
+    for kind, title in (("rules", "Agent instruction files off root"),
+                        ("copy", f"Copies of {DIR}/RULES.md")):
+        found = [e for e in report["homeless"] if e["kind"] == kind]
+        if found:
+            print(f"\n{title}:")
+            for e in found:
+                print(f"  {e['path']}: {home_fix(e)}")
+    misplaced = [e for e in report["homeless"] if e["kind"] == "page"]
+    if misplaced:
+        print(f"\nPages outside the docs tree ({DIR}/RULES.md, Documentation); move each, "
+              "or nest it\nunder its system's folder if it is a subsystem:")
+        for e in misplaced:
+            print(f"  {e['path']} → {e['to']}{' (fold it in: that page exists)' if e['fold'] else ''}")
+    strays = [e for e in report["homeless"] if e["kind"] == "stray"]
+    if strays:
+        linked = sorted((e for e in strays if e["inbound"] > 0),
                         key=lambda e: -e["inbound"])
-        cold = sorted((e for e in report["homeless"] if e["inbound"] == 0),
+        cold = sorted((e for e in strays if e["inbound"] == 0),
                       key=lambda e: -e["lines"])
         if linked:
             print("\nNo home in the taxonomy, but other files point at them — these are"
@@ -1540,6 +1842,11 @@ def cmd_survey(root: Path, args) -> int:
               "\nmatch the code. Map each to the code that targets its board:")
         for f in report["boards_unmapped"]:
             print(f"  {f}")
+    if report["page_contract"]:
+        print(f"\nPages off the page contract ({DIR}/RULES.md, Documentation):")
+        for e in report["page_contract"]:
+            for p in e["problems"]:
+                print(f"  {e['path']}: {p}")
     if report["components_unlinked"]:
         print(f"\nFiles under {COMPONENTS} that no board page links: link each from the"
               "\nComponents table of the page whose checks lean on it, or drop it:")
@@ -1570,8 +1877,13 @@ def cmd_survey(root: Path, args) -> int:
         print("  none found — a single-session repo; jobs need no setup until a second session starts")
     print("\nDoc homes: " + "; ".join(f"{k} = {v}" for k, v in DOC_HOMES.items()))
     old = old_board(root)
+    # A repo already on jig with old pages has a migration of its own; adopt would replan the repo.
+    old_pages = any(p.startswith("old contract") for e in report["page_contract"] for p in e["problems"]) \
+        or any(h["kind"] == "page" and old_contract((root / h["path"]).read_text(errors="replace"))
+               for h in report["homeless"] if (root / h["path"]).is_file())
     print(f"An older jig's board is at {old}: run /jig:update first, not /jig:adopt or /jig:init."
-          if old else "Run /jig:adopt to turn this into a migration plan.")
+          if old else "Pages in the old Now / Rules / Checks shape: run /jig:redocument to convert them."
+          if old_pages else "Run /jig:adopt to turn this into a migration plan.")
     return 0
 
 # ------------------------------------------------------------------- metarepo
@@ -1643,7 +1955,10 @@ def merging_commits() -> list[str]:
     MERGE_HEAD, but git names what it merges in GIT_REFLOG_ACTION ("merge <ref>...")."""
     head = git("rev-parse", "-q", "--verify", "MERGE_HEAD")
     if head:
-        return [head]
+        # An octopus writes one line per head; rev-parse reads only the first.
+        f = Path(git("rev-parse", "--git-path", "MERGE_HEAD"))
+        heads = [l.split()[0] for l in f.read_text().splitlines() if l.strip()] if f.is_file() else []
+        return heads or [head]
     action = os.environ.get("GIT_REFLOG_ACTION", "")
     if AUTO_MERGE and action.startswith("merge "):
         return [c for c in (git("rev-parse", "-q", "--verify", f"{r}^{{commit}}")
@@ -1806,6 +2121,8 @@ def cmd_meta_init(root: Path, args) -> int:
 
 RELEASE = f"{DIR}/scripts/release.sh"
 RELEASE_TODO = "# TODO: release protocol."
+PUBLISH = f"{DIR}/scripts/publish.sh"
+PUBLISH_TODO = "# TODO: publish steps."
 VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 
 
@@ -1826,6 +2143,18 @@ def release_script(root: Path, meta: bool = False) -> bool:
         return False
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(text)
+    dest.chmod(0o755)
+    return True
+
+
+def publish_script(root: Path) -> bool:
+    """Add publish.sh from the template, TODO line included, if it's missing."""
+    dest = root / PUBLISH
+    src = Path(__file__).resolve().parent / "scripts" / "publish.sh"
+    if dest.exists() or not src.exists():
+        return False
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(src.read_text())
     dest.chmod(0o755)
     return True
 
@@ -1922,11 +2251,16 @@ def cmd_release(root: Path, args) -> int:
     globs = (board.data.get("release") or {}).get("artifacts", [])
     # What the globs match before the build, by mtime: a file counts only if this run wrote it.
     before = {f: f.stat().st_mtime_ns for g in globs for f in root.glob(g) if f.is_file()}
+    def run(script: Path, argv: list) -> int:
+        # Piped, Python's stdout is block-buffered: flush so jig's lines come before the script's.
+        sys.stdout.flush()
+        cmd = ([str(script)] if os.access(script, os.X_OK) else ["bash", str(script)]) + argv
+        return subprocess.run(cmd, cwd=root, env=env).returncode
+
     for script, argv in ((root / DIR / "scripts" / "check.sh", []), (root / RELEASE, [version])):
         if not script.exists():
             continue
-        cmd = ([str(script)] if os.access(script, os.X_OK) else ["bash", str(script)]) + argv
-        rc = subprocess.run(cmd, cwd=root, env=env).returncode
+        rc = run(script, argv)
         if rc:
             return undo(f"{script.relative_to(root)} exited {rc}")
     # Only files this run wrote count: last release's build left in dist/ proves nothing.
@@ -1969,10 +2303,24 @@ def cmd_release(root: Path, args) -> int:
         print(f"proposed {', '.join(listed_rows(proposed[0].read_text()))} to {para['meta']} as "
               f"{proposed[1]} ({proposed[0].relative_to(root)}): write the change there; "
               f"`jig sync` closes the rows once {para['meta']} releases it.")
-    for fs in made.values():
-        for f in sorted(fs):
-            print(f"  {f.relative_to(root)}")
-    print("Push it: git push --follow-tags")
+    # Overlapping globs match one file twice; publish.sh gets each file once, in glob order.
+    built = list(dict.fromkeys(str(f.relative_to(root)) for fs in made.values() for f in sorted(fs)))
+    for f in built:
+        print(f"  {f}")
+    publish = root / PUBLISH
+    # The TODO line means the repo hasn't said what a release publishes yet: it never blocks.
+    if not publish.exists() or any(l.startswith(PUBLISH_TODO)
+                                   for l in publish.read_text().splitlines()):
+        print("Push it: git push --follow-tags")
+        return 0
+    rc = run(publish, [version, *built])
+    if rc:
+        # The tag may already be pushed, so it stays: the release happened, the publish didn't.
+        again = ([] if os.access(publish, os.X_OK) else ["bash"]) + [PUBLISH, version, *built]
+        # The release may have run from a subfolder; the command works from anywhere.
+        print(f"released {tag} at {commit[:12]}, but {PUBLISH} exited {rc}. Run it again:\n"
+              f"  cd {shlex.quote(str(root))} && {shlex.join(again)}", file=sys.stderr)
+        return 1
     return 0
 
 # ------------------------------------------------------------------- pararepo
@@ -1983,10 +2331,12 @@ PARA = f"{DIR}/para.json"
 CACHE = f"{DIR}/meta-cache"
 HEADER_BEGIN = f"<!-- jig:meta — generated from {PARA} by `jig init --para`; edit that, not this -->"
 HEADER_END = "<!-- jig:meta end -->"
-# How a spec says what its contract change means for the metarepo: a proposal branch, a row of
+# How a spec says what its contract change means for the metarepo: a proposal branch it waits
+# for, a pointers branch it works ahead of (pointer rewrites only, no claim changes), a row of
 # the buffer, or why none.
 PROPOSAL = re.compile(r"^\s*-?\s*meta: (?:none — \S.*|buffered (?P<row>\S+)|"
-                      r"(?P<meta>\S+) proposal (?P<branch>\S+))\s*$", re.M)
+                      r"(?P<meta>\S+) proposal (?P<branch>\S+)|"
+                      r"(?P<pmeta>\S+) pointers (?P<pbranch>\S+))\s*$", re.M)
 # The sync buffer: each metarepo claim this repo has moved away from, held until a release
 # proposes them all at once. Rows are Open until the release that settles them is pinned.
 BUFFER = f"{DIR}/ledgers/BUFFER.md"
@@ -2251,13 +2601,46 @@ def ignore_line(root: Path, line: str) -> None:
         ignore.write_text(text + ("" if not text or text.endswith("\n") else "\n") + line + "\n")
 
 
+def job_of_change(board: "Board", branch: str) -> dict | None:
+    """The open job a change belongs to. On its branch, that job. A merge that commits on trunk
+    (`jig merge`) brings the job in as MERGE_HEAD; the gate's scratch checkout is the job's
+    commit, detached, with trunk merged into it. Either way the job is the one whose branch
+    holds the side of the merge trunk doesn't already have; trunk's board still lists it. It
+    must be one job: the branch tip itself, else the one branch whose own line (first parents)
+    holds it. A job stacked on another holds its commits too, but off its own line; anything
+    still ambiguous, or an octopus merge, belongs to no job, so no spec but the change's answers."""
+    if branch and branch != board.trunk:
+        return board.job_for_branch(branch)[1]
+    merging = merging_commits()
+    if len(merging) > 1:
+        return None
+    ours = [] if branch else [git("rev-parse", "-q", "--verify", "HEAD")]
+    tips = {name: git("rev-parse", "-q", "--verify", f"refs/heads/{board.branch(name)}")
+            for name in board.jobs}
+    for c in filter(None, [*merging, *ours]):
+        if is_ancestor(c, board.trunk):
+            continue
+        exact = [n for n, t in tips.items() if t == c]
+        own = exact or [n for n, t in tips.items() if t and c in
+                        git("rev-list", "--first-parent", t, f"^{board.trunk}").split()]
+        return board.jobs[own[0]] if len(own) == 1 else None
+    return None
+
+
+def is_ancestor(a: str, b: str) -> bool:
+    return subprocess.run(["git", "merge-base", "--is-ancestor", a, b],
+                          capture_output=True).returncode == 0
+
+
 def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str]:
     """P1–P3: what a pararepo may commit."""
     out: list[str] = []
     trunk = board.trunk
     paths = changed_paths(trunk, staged)
+    # Deletes and both sides of a rename: P1, P2's contract test and P4 guard paths.
+    diffed = changed_paths(trunk, staged, removed=True)
     # P1 the AGENTS.md header says what para.json says
-    if "AGENTS.md" in paths or PARA in paths:
+    if "AGENTS.md" in diffed or PARA in diffed:
         try:
             now = json.loads(in_index(PARA, staged) or "null") or para
         except ValueError:
@@ -2267,7 +2650,7 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
             out.append(f"P1 the AGENTS.md header is generated from {PARA}: edit that, then "
                        "`jig init --para` regenerates it")
     # P2 a contract change carries its metarepo proposal, its buffer row, or says why it needs none
-    touched = [p for p in paths if matches(p, para.get("contract_paths", []))]
+    touched = [p for p in diffed if matches(p, para.get("contract_paths", []))]
     rows = buffer_rows(in_index(BUFFER, staged))
     if BUFFER in paths:
         for r in rows:
@@ -2294,14 +2677,13 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
             out.append(f"P2 {BUFFER} row {r[0]} closed by hand: `jig sync` closes a row once "
                        "the metarepo releases the proposal that carried it as it stands")
     # A pointer this change leaves dangling: the metarepo now points at nothing, so it is owed
-    # what a contract change is. Deletes and renames count here, so the diff keeps them.
-    diffed = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", base(trunk),
-                 *(["--cached"] if staged else [])).splitlines()
+    # what a contract change is.
     # The cache lives in the primary checkout: it is ignored, so a job's worktree has none.
+    # Worse than at the base counts: a file lost is still news when its heading was already missing.
     broken = [f"{f} points to {gap}" for f, path, section, code in pointers(root, main_root())
               if any(d == path or d.startswith(f"{path}/") for d in diffed)
-              and not pointer_gap(path, section, code, body_at(base(trunk), path))
-              and (gap := pointer_gap(path, section, code, body_now(path, staged)))]
+              for level, gap in [pointer_gap(path, section, code, body_now(path, staged))]
+              if level > pointer_gap(path, section, code, body_at(base(trunk), path))[0]]
     if touched or broken:
         specs = {p for p in paths if p.startswith(f"{DIR}/specs/") and p.endswith(".md")}
         branch = git("branch", "--show-current")
@@ -2309,17 +2691,24 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
             specs |= {p for p in git("diff", "--name-only", f"{trunk}...HEAD", "--",
                                      f"{DIR}/specs/").splitlines() if p.endswith(".md")}
         ids = {r[0] for r in rows if r[-1] == "Open"}
+        texts = [in_index(s, staged) for s in specs]
+        # The job's own spec, from trunk's board and trunk's copy: whoever controls trunk put
+        # the answer there, so a branch can't forge it. A spec that is one line is its own text.
+        job = job_of_change(board, branch)
+        if job and job.get("spec"):
+            texts.append(at_rev(trunk, job["spec"]) or job["spec"])
         answered = any((not m.group("row") or m.group("row") in ids)
-                       for s in specs for m in PROPOSAL.finditer(in_index(s, staged)))
+                       for t in texts for m in PROPOSAL.finditer(t))
         # A row added or changed in this commit answers it, the way R7's ledger row does.
         diff = git("diff", "-U0", base(trunk), *(["--cached"] if staged else []), "--", BUFFER) \
             if BUFFER in paths else ""
         rowed = any(r[-1] == "Open" for l in diff.splitlines() if l.startswith("+|")
                     for r in buffer_rows(l[1:]))
         answer = (f"add or edit its row in {BUFFER} in this commit (the first row creates the "
-                  "file from jig's ledger template), or a spec in this change needs `meta: "
-                  "buffered <row id>`, `meta: <name> proposal <branch>` (`jig propose`) or "
-                  "`meta: none — <reason>`")
+                  "file from jig's ledger template), or a spec in this change, or the job's own "
+                  "spec on trunk, needs `meta: buffered <row id>`, `meta: <name> proposal "
+                  "<branch>` (`jig propose`), `meta: <name> pointers <branch>` (`jig propose "
+                  "--pointers`) or `meta: none — <reason>`")
         if not answered and not rowed and touched:
             out.append(f"P2 {', '.join(touched)} is a contract path: {answer}")
         if not answered and not rowed and broken:
@@ -2443,20 +2832,35 @@ def proposal_in(loc: Path, branch: str, tag: str) -> bool:
 
 def unreleased_proposals(root: Path, para: dict, trunk: str, commit: str, named: list[str]) -> list[str]:
     """Why the job at COMMIT can't merge yet: a spec it builds on cites a metarepo proposal that
-    isn't in trunk's pinned release. Its specs are the ones it changed and the ones the board
-    and its note name, which may sit on trunk already (`jig propose` there, then `jig open`).
-    Read at the commit, because the hubnode gates from trunk."""
+    isn't in trunk's pinned release, or a pointers branch the metarepo doesn't have. Its specs
+    are the ones it changed and the ones the board and its note name, which may sit on trunk
+    already (`jig propose` there, then `jig open`); a one-line board spec is its own text. Read
+    at the commit, because the hubnode gates from trunk."""
     changed = [p for p in git("diff", "--name-only", f"{trunk}...{commit}", "--",
                               f"{DIR}/specs/").splitlines() if p.endswith(".md")]
     specs = list(dict.fromkeys([*filter(None, named), *changed]))
-    cited = [(s, m) for s in specs
-             for m in PROPOSAL.finditer(git("show", f"{commit}:{s}") or git("show", f"{trunk}:{s}"))
-             if m.group("branch")]
-    if not cited:
+    found = [(s, m) for s in specs
+             for m in PROPOSAL.finditer(git("show", f"{commit}:{s}") or git("show", f"{trunk}:{s}") or s)]
+    cited = [(s, m) for s, m in found if m.group("branch")]
+    ahead = [(s, m) for s, m in found if m.group("pbranch")]
+    if not cited and not ahead:
         return []
     name, pin = para.get("meta", ""), para.get("pin", "")
     loc = meta_checkout(root, para)
     out = []
+    # A pointers branch is work ahead, not a dependency: it needn't be released, only real, or
+    # the answer is a free-text pass whose only failure signal is a dangling-pointer report.
+    for spec, m in ahead:
+        what = f"{spec} answers with pointers branch {m.group('pbranch')}"
+        if m.group("pmeta") != name:
+            out.append(f"{what} on {m.group('pmeta')}, but this repo's metarepo is {name}")
+        elif loc is None:
+            out.append(f"{what}, and {name} can't be reached to check it (see `jig repos`)")
+        # Merged and deleted is real too, released or not: the metarepo's trunk then holds it.
+        elif not git("rev-parse", "-q", "--verify", f"refs/heads/{m.group('pbranch')}", cwd=str(loc)) \
+                and not proposal_in(loc, m.group("pbranch"), Board.trunk_name(loc)):
+            out.append(f"{what}, which {name} has no branch for and hasn't merged: open it "
+                       "with `jig propose --pointers`")
     for spec, m in cited:
         what = f"{spec} cites proposal {m.group('branch')}"
         if m.group("meta") != name:
@@ -2509,6 +2913,15 @@ def sync_meta(root: Path) -> int:
                 rows = [i for i, r in proposed_copy(text).items() if tuple(r) in still]
                 if rows:
                     buffered.append((spec, m.group("branch"), rows))
+            elif m.group("pbranch") and m.group("pmeta") == name:
+                b = m.group("pbranch")
+                first = next((t for t in sorted(set(tags) | {pin}, key=version_key)
+                              if proposal_in(loc, b, t)), None)
+                state = (f"released by {first}" if first else "merged, not released"
+                         if proposal_in(loc, b, Board.trunk_name(loc)) else "open"
+                         if git("rev-parse", "-q", "--verify", f"refs/heads/{b}", cwd=str(loc))
+                         else "missing")
+                print(f"pointers {b} ({spec.relative_to(root)}): {state}")
     uncovered_paths(root, loc, para)
     # The buffer settles when the metarepo releases its proposal: the pin moves to the first
     # release that holds one, and its rows close in that same commit. A pin already holding it
@@ -2656,24 +3069,267 @@ def body_now(path: str, staged: bool) -> str | None:
     return Path(path).read_text(errors="replace") if Path(path).is_file() else "" if Path(path).is_dir() else None
 
 
-def pointer_gap(path: str, section: str | None, code: bool, body: str | None) -> str:
-    """What a pointer names that BODY, the file as it stands (None: no file), lacks; '' if nothing.
-    A prose section resolves when some heading begins it, a whole word or more."""
+# A section's leading number, `2` or `2.1`: the Documentation rule makes it the rule's heading
+# and its citation. Whole, so `2` is neither `2.1` nor `20`.
+SECTION_NUMBER = re.compile(r"\d+(?:\.\d+)*")
+# How badly a pointer misses, in order: P2 asks only when a change makes it worse.
+RESOLVES, NO_HEADING, NO_FILE = 0, 1, 2
+
+
+def section_number(text: str) -> str | None:
+    """TEXT's leading number when it is one: it ends the text, or at a blank, or at a `.`, `,`,
+    `;`, `:` or `)` that no word follows. `2-factor` and `2.a` are words."""
+    m = SECTION_NUMBER.match(text)
+    if not m:
+        return None
+    rest = text[m.end():]
+    if not rest or rest[0].isspace() or rest[0] in ".,;:)" and not re.match(r"\w", rest[1:2]):
+        return m.group(0)
+    return None
+
+
+def shown_section(want: str, code: bool) -> str:
+    """A section as a report prints it: a number whole; prose words up to where the sentence or
+    clause ends, a `.` inside a token never cutting."""
+    if (number := section_number(want)) is not None:
+        return number
+    return want if code else re.split(r"[(,;:)|]|\.(?!\S)", want)[0].strip()
+
+
+def pointer_gap(path: str, section: str | None, code: bool, body: str | None) -> tuple[int, str]:
+    """How a pointer misses BODY, the file as it stands (None: no file), and what it lacks;
+    (RESOLVES, '') if nothing. A numbered section names the heading with that number; any other
+    prose section resolves when some heading begins it, a whole word or more."""
     if body is None:
-        return f"{path}, which this repo doesn't have"
+        return NO_FILE, f"{path}, which this repo doesn't have"
     if not section:
-        return ""
+        return RESOLVES, ""
     want, heads = plain(section), [plain(h) for h in HEADING.findall(body)]
-    if want in heads or not code and any(h and re.match(rf"{re.escape(h)}(?!\w)", want) for h in heads):
-        return ""
-    shown = want if code else re.split(r"[.,;:)|]", want)[0].strip()
-    return f"{path} § {shown}, which {path} has no heading for"
+    number = section_number(want)
+    if number is not None:
+        if number in {section_number(h) for h in heads}:
+            return RESOLVES, ""
+    elif want in heads or not code and any(h and re.match(rf"{re.escape(h)}(?!\w)", want) for h in heads):
+        return RESOLVES, ""
+    return NO_HEADING, f"{path} § {shown_section(want, code)}, which {path} has no heading for"
+
+
+def dangling(root: Path) -> list[tuple[str, str, str | None, bool, int, str]]:
+    """Each cached pointer that misses this repo's HEAD, as (cache file, path, section, code,
+    level, gap), one per line a report prints: pointers into a missing file read the same."""
+    seen, out = set(), []
+    for f, path, section, code in pointers(root):
+        level, gap = pointer_gap(path, section, code, body_at("HEAD", path))
+        if level and (f, gap) not in seen:
+            seen.add((f, gap))
+            out.append((f, path, section, code, level, gap))
+    return out
 
 
 def stale_pointers(root: Path) -> list[str]:
     """Reported, never refused: the fix is the metarepo's, through the buffer."""
-    return [f"{f} points to {gap}" for f, path, section, code in pointers(root)
-            if (gap := pointer_gap(path, section, code, body_at("HEAD", path)))]
+    return [f"{f} points to {gap}" for f, _, _, _, _, gap in dangling(root)]
+
+
+def removed_by(commit: str) -> list[tuple[str, str | None]]:
+    """What COMMIT took away: each deleted path with None, each renamed one with where it went."""
+    out = []
+    for line in git("-c", "core.quotePath=false", "show", "-M", "--name-status", "--format=",
+                    commit).splitlines():
+        cells = line.split("\t")
+        if cells[0] == "D":
+            out.append((cells[1], None))
+        elif cells[0].startswith("R") and len(cells) == 3:
+            out.append((cells[1], cells[2]))
+    return out
+
+
+def removal(path: str, section: str | None, code: bool, level: int) -> tuple[str, str] | None:
+    """The newest commit in this repo's history before which the pointer missed less than it
+    does now and after which it missed as much, and what the repo has instead ('deleted', or
+    the new path); None when it never had it. The resolver decides both sides, so what counts
+    as removed is what P2 would have asked about."""
+    def misses(rev: str) -> int:
+        return pointer_gap(path, section, code, body_at(rev, path))[0]
+    for commit in git("log", "--format=%h", "--", path).splitlines():
+        if misses(commit) >= level > misses(f"{commit}^"):
+            if level == NO_HEADING:
+                return commit, path
+            new = next((n for o, n in removed_by(commit) if o == path or o.startswith(f"{path}/")), None)
+            return commit, new or "deleted"
+    return None
+
+
+def naming_row(rows: list[list[str]], path: str, section: str | None = None,
+               states: tuple[str, ...] = ("Open",)) -> list[str] | None:
+    """The first row in one of STATES whose cells name PATH (and SECTION, for a heading)."""
+    where = re.escape(path) + (rf"[ \t]*§[ \t]*{re.escape(section)}(?!\.?\w)" if section else r"(?![\w/-])")
+    named = re.compile(rf"(?<![\w./-]){where}")
+    return next((r for r in rows if r[-1] in states and any(named.search(c) for c in r[1:-1])), None)
+
+
+def row_offer(claim: str, now: str) -> str:
+    return f"offer a row for {BUFFER}: claim \"{claim}\", this repo now \"{now}\""
+
+
+def buffer_offer(root: Path, claim: str, path: str, now: str, section: str | None = None) -> str:
+    """What to do about a claim this repo moved away from: the Open row that already names PATH
+    (and SECTION, for a heading), or the row to add to BUFFER.md, the owner's to accept. Never
+    written here."""
+    ledger = root / BUFFER
+    row = naming_row(buffer_rows(ledger.read_text()) if ledger.exists() else [], path, section)
+    if row:
+        return f"Open row {row[0]} in {BUFFER} already names it"
+    return row_offer(claim, now)
+
+
+_BROUGHT: dict[str, dict[str, str]] = {}
+
+
+def brought_by(trunk: str) -> dict[str, str]:
+    """Which first-parent merge on TRUNK brought each commit in."""
+    if trunk not in _BROUGHT:
+        out: dict[str, str] = {}
+        for m in reversed(git("rev-list", "--first-parent", "--merges", trunk).splitlines()):
+            for c in git("rev-list", f"{m}^1..{m}^2").splitlines():
+                out.setdefault(c, m)
+        _BROUGHT[trunk] = out
+    return _BROUGHT[trunk]
+
+
+def trunk_answers(commit: str, trunk: str, spec_dirs: list[str]) -> list["re.Match"]:
+    """The P2 answers that covered COMMIT on trunk, read the way P2 read them: the specs it
+    touched; and, for a commit a merge brought in, the specs its branch changed and the spec of
+    the job whose entry that merge deleted (`jig merge` deletes it there), as trunk held it then
+    (a one-line spec is its own text). Update reads these so it never offers a BUFFER row for
+    what an answer already covered."""
+    def specs_of(*rng: str) -> list[str]:
+        return [p for p in git("-c", "core.quotePath=false", *rng, "--name-only", "--diff-filter=ACMRT",
+                               "--", *spec_dirs).splitlines() if p.endswith(".md")]
+    full = git("rev-parse", "-q", "--verify", f"{commit}^{{commit}}") or commit
+    texts = [at_rev(full, s) for s in specs_of("show", "--format=", full)]
+    m = brought_by(trunk).get(full)
+    if m:
+        texts += [at_rev(f"{m}^2", s) for s in specs_of("diff", f"{m}^1...{m}^2")]
+        try:
+            before = json.loads(at_rev(f"{m}^1", JOBS) or "{}")
+            after = json.loads(at_rev(m, JOBS) or "{}")
+        except ValueError:
+            before, after = {}, {}
+        for name in [n for n in before if n not in after]:
+            spec = (before[name] or {}).get("spec") or ""
+            if spec:
+                texts.append(at_rev(f"{m}^1", spec) or spec)
+    return [x for t in texts for x in PROPOSAL.finditer(t)]
+
+
+def pointer_cleanup(root: Path) -> list[str]:
+    """Update's Metarepo pointers block: each cached pointer that dangles, and its fix. An older
+    P2 let some of these through; the update that brings the fix is where the repo hears of them."""
+    if not (root / CACHE).is_dir():
+        return [f"no metarepo cache ({CACHE}): run `jig sync`, then update again"]
+    out = []
+    try:
+        para = json.loads((root / PARA).read_text()) if (root / PARA).exists() else {}
+    except ValueError:
+        para = {}
+    meta, pin = para.get("meta", ""), para.get("pin", "")
+    loc = meta_checkout(root, para) if para else None
+    olds = dict(LAYOUT)
+    for f, path, section, code, level, gap in dangling(root):
+        line = f"{f} points to {gap}: "
+        found = removal(path, section, code, level)
+        if found is None:
+            out.append(line + "this repo never had it, so the metarepo's pointer is what's wrong; "
+                       "fix it there with `jig propose`")
+            continue
+        commit, now = found
+        what = (f"renamed to {now} in {commit}" if level == NO_FILE and now != "deleted"
+                else f"removed in {commit}")
+        # A branch answer from this repo's metarepo: its rewrite is pending until the pin holds
+        # the branch. Once the pin holds it and the pointer still dangles, the rewrite missed it,
+        # and nothing else will fix it. A metarepo out of reach can't say, so it stays pending.
+        branches = [x.group("pbranch") or x.group("branch") for x in
+                    trunk_answers(commit, Board.trunk_name(root), [f"{DIR}/specs/", *olds[f"{DIR}/specs/"]])
+                    if (x.group("pbranch") or x.group("branch")) and (x.group("pmeta") or x.group("meta")) == meta]
+        pinned = [b for b in branches if loc is not None and pin and proposal_in(loc, b, pin)]
+        pending = [b for b in branches if b not in pinned]
+        if pending:
+            out.append(line + f"this repo {what}, and the metarepo's rewrite is pending on "
+                       f"{pending[0]}: it resolves when the pin holds that branch")
+            continue
+        shown = shown_section(plain(section), code) if level == NO_HEADING else None
+        where = f"{path} § {shown}" if shown else path
+        missed = f"the metarepo's rewrite in {pinned[0]} missed it; " if pinned else ""
+        out.append(line + f"this repo {what}; " + missed
+                   + buffer_offer(root, f"{f}: the pointer to {where}", path, f"{now}, {commit}", shown))
+    return out
+
+
+def contract_removals(root: Path, trunk: str) -> list[str]:
+    """Update's Contract removals block: each trunk commit that took a contract path away while
+    nothing answered it, which an older P2 let through, and the one BUFFER.md row to offer for
+    it. Each commit is judged by the contract_paths its parent's para.json held, which is what P2
+    read then. Writes nothing."""
+    olds = dict(LAYOUT)
+    para_at = [PARA, *olds[PARA]]
+    spec_dirs = [f"{DIR}/specs/", *olds[f"{DIR}/specs/"]]
+    ledgers = [f"{d}BUFFER.md" for d in (f"{DIR}/ledgers/", *olds[f"{DIR}/ledgers/"])]
+    rows = buffer_rows(at_rev(trunk, BUFFER))
+    # The Metarepo pointers block already speaks for a path a cached pointer names.
+    pointed = {p for _, p, _, _, _, _ in dangling(root)}
+    # A path trunk has again, restored or re-added, was put back: nothing is owed.
+    back = set(git("-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", trunk).splitlines())
+    try:
+        today = json.loads(at_rev(trunk, PARA) or "{}").get("contract_paths") or []
+    except ValueError:
+        today = []
+    out = []
+    for line in git("log", "--no-merges", "-M", "--diff-filter=DR", "--format=%H %h %s", trunk).splitlines():
+        commit, short, subject = (line.split(" ", 2) + [""])[:3]
+        raw = next((b for p in para_at if (b := at_rev(f"{commit}^", p))), "")
+        try:
+            globs = (json.loads(raw) if raw else {}).get("contract_paths") or []
+        except ValueError:
+            continue
+        gone = [(o, n) for o, n in removed_by(commit) if matches(o, globs) and o not in back
+                and not any(o == p or o.startswith(f"{p}/") for p in pointed) and not naming_row(rows, o, states=BUFFER_STATES)]
+        if not gone:
+            continue
+        writes = git("-c", "core.quotePath=false", "show", "-M", "--name-only", "--diff-filter=ACMRT",
+                     "--format=", commit).splitlines()
+        if any(matches(w, globs) for w in writes):
+            continue                    # P2 asked then, and its answer covers the commit
+        if trunk_answers(commit, trunk, spec_dirs):
+            continue
+        added = git("show", "--format=", "-U0", commit, "--", *ledgers)
+        if any(r[-1] == "Open" for l in added.splitlines() if l.startswith("+|") for r in buffer_rows(l[1:])):
+            continue
+        what = "; ".join(f"{o} → {n}" if n else f"{o} deleted" for o, n in gone)
+        pin = json.loads(raw).get("pin") or "the pin"
+        now = "; ".join(f"moved to {n}" if n else "deleted" for _, n in gone)
+        text = (f"{short} {subject}: {what}: "
+                + row_offer(f"the contract at {pin}: {', '.join(o for o, _ in gone)}", f"{now}, {short}"))
+        for n in [n for _, n in gone if n and not matches(n, today)]:
+            text += f"; {n} isn't a contract path: add it to contract_paths if it still holds the contract"
+        out.append(text)
+    return out
+
+
+def removal_blocks(root: Path, trunk: str, always: bool) -> list[str]:
+    """A pararepo update's Metarepo pointers and Contract removals blocks. ALWAYS, as a planned
+    update's report shows them; otherwise only a block with something in it, so a repo that is
+    up to date still hears of what an older P2 let through until it answers it."""
+    out = []
+    pointed = pointer_cleanup(root) if always or (root / CACHE).is_dir() else []
+    if pointed:
+        out += ["\nMetarepo pointers (from the cache as the last `jig sync` left it; update "
+                "changes none of them):", *(f"  {l}" for l in pointed)]
+    removed = contract_removals(root, trunk)
+    if removed or always:
+        out += ["\nContract removals (trunk commits an older P2 let take a contract path away "
+                "unanswered; update changes none of them):", *(f"  {l}" for l in removed or ["none"])]
+    return out
 
 
 def cmd_propose(root: Path, args) -> int:
@@ -2701,12 +3357,12 @@ def cmd_propose(root: Path, args) -> int:
               f"the rows close when `jig sync` takes the release that holds it.")
         return 0
     if not (args.spec and args.slug):
-        die("usage: jig propose <spec> <slug>, or jig propose --buffer [slug]", 2)
+        die("usage: jig propose <spec> <slug> [--pointers], or jig propose --buffer [slug]", 2)
     spec = root / args.spec
     if not spec.exists():
         die(f"no spec at {args.spec}", 2)
     branch = open_proposal(para, loc, args.slug)
-    line = f"- meta: {para['meta']} proposal {branch}"
+    line = f"- meta: {para['meta']} {'pointers' if args.pointers else 'proposal'} {branch}"
     text = spec.read_text()
     if re.search(r"^## Decisions\s*$", text, re.M):
         text = re.sub(r"^(## Decisions\s*\n)", rf"\1{line}\n", text, count=1, flags=re.M)
@@ -3088,7 +3744,7 @@ LAYOUT = [
     ("docs/", ["jig/docs/"]),
 ]
 # Written from the running copy, never renamed: their content is jig's, not the repo's.
-TOOL_FILES = (f"{DIR}/jig.py", f"{DIR}/RULES.md")
+TOOL_FILES = (f"{DIR}/jig.py", f"{DIR}/RULES.md", f"{DIR}/docs-page.md")
 # jig's folder under its old names. Nothing moves by this alone — a file there that no row
 # names stays and is flagged — but a board glob over the whole folder meant jig's folder.
 OLD_DIRS = ("jig/", ".aidev/", CLAUDE_LANE)
@@ -3132,6 +3788,11 @@ def ensure_staging(root: Path) -> None:
 def add_release(root: Path, here: Path) -> None:
     if release_script(root, meta=(root / META).exists()):
         git("add", "--", RELEASE, check=True)
+
+
+def add_publish(root: Path, here: Path) -> None:
+    if publish_script(root):
+        git("add", "--", PUBLISH, check=True)
 
 
 def meta_pattern_old(root: Path) -> bool:
@@ -3245,6 +3906,39 @@ def hardware_rows(root: Path, files: list[str]) -> list[tuple[str, list[str]]]:
     return [(f"{BOARD_PAGES}{slug}.md", ["HARDWARE.md"])] if slug else []
 
 
+def handoff_rows(root: Path, files: list[str]) -> tuple[list[tuple[str, list[str]]], set[str]]:
+    """A note a jig wrote at a `/` name's path, `.jig/handoffs/<prefix>/<name>-<date>.md`,
+    moves flat under its file-safe name; with the subfolders it empties, for the cleanup.
+    Only a note whose header names that same path: update itself moves older tools' handoff
+    folders here whole, subfolders included, and those stay as they are."""
+    top = f"{DIR}/handoffs/"
+    taken, rows, folders = set(files), [], set()
+    for f in sorted(files):
+        rel = f[len(top):] if f.startswith(top) else ""
+        m = re.fullmatch(r"(.+/.+)-\d{4}-\d{2}-\d{2}(?:-\d+)?\.md", rel)
+        if not m:
+            continue
+        try:
+            first = (root / f).read_text(errors="replace").split("\n", 1)[0]
+        except OSError:
+            continue
+        if first != f"# Handoff: {m.group(1)}":
+            continue
+        new = top + file_safe(rel)
+        # A clash takes the day's next free -N, as `jig handoff` would; the note's Commit: line,
+        # not its file name, says what was gated.
+        if new in taken:
+            base, n = re.fullmatch(r"(.*-\d{4}-\d{2}-\d{2})(?:-(\d+))?\.md", new).groups()
+            i = int(n or 1) + 1
+            while f"{base}-{i}.md" in taken:
+                i += 1
+            new = f"{base}-{i}.md"
+        taken.add(new)
+        rows.append((new, [f]))
+        folders.add(top + rel.split("/")[0] + "/")
+    return rows, folders
+
+
 STEPS: list = [
     (f"add {STAGING}/ (its .gitignore), where chats drop files for this repo",
      lambda root, after: f"{STAGING}/.gitignore" not in after
@@ -3257,6 +3951,10 @@ STEPS: list = [
      "on the first `jig release`", lambda root, after: RELEASE not in after
      and not (root / RELEASE).exists()
      and (Path(__file__).resolve().parent / "scripts" / "release.sh").exists(), add_release),
+    (f"add {PUBLISH} from the template: what a release publishes after the tag, which "
+     "/jig:release fills in", lambda root, after: PUBLISH not in after
+     and not (root / PUBLISH).exists()
+     and (Path(__file__).resolve().parent / "scripts" / "publish.sh").exists(), add_publish),
     (f"widen {META}'s tag_pattern to accept vX.Y.Z: every repo now releases with three parts",
      lambda root, after: meta_pattern_old(root), widen_meta_pattern),
     (ledger_step, lambda root, after: REVIEW_LEDGER in after, fold_ledger),
@@ -3561,7 +4259,8 @@ def left_behind(root: Path, files: list[str], plan: dict, handled: list[str]) ->
     return out
 
 
-def files_to_review(root: Path, plan: dict) -> list[tuple[str, str]]:
+def files_to_review(root: Path, plan: dict, template: Path | None = None,
+                    arriving: set[str] = frozenset()) -> list[tuple[str, str]]:
     """The repo's own files an old convention left behind, each with the edit proposed for
     it. update shows these and never applies them: they are the repo's."""
     back = {n: o for o, n in plan["moves"].items()}
@@ -3587,6 +4286,104 @@ def files_to_review(root: Path, plan: dict) -> list[tuple[str, str]]:
         else:
             out.append((".claude/skills/_skill-template/", "differs from the old template, "
                         "so it is the repo's now: left as it is"))
+    return out + agents_lines(root, template, arriving)
+
+
+# AGENTS.md blocks jig cut from its template, by heading. A cut adds its heading here in the
+# same commit: the repo reworded the block's lines, so only the heading still identifies it.
+RETIRED_BLOCKS = ("## Lanes (parallel sessions)", "## Jobs (parallel sessions)")
+
+
+def agents_lines(root: Path, template: Path | None, arriving: set[str]) -> list[tuple[str, str]]:
+    """The lines of AGENTS.md that jig's template still needs there, each proposed by itself.
+    The rest of the file is the repo's to word: jig keeps no copy of its own to diff it with.
+    `arriving` is what this run puts in place, so the run that adds a script proposes its line."""
+    mine = root / "AGENTS.md"
+    # In the repo that ships the template, it is the product, not a default for that repo.
+    if (not (template and template.exists() and mine.exists())
+            or root.resolve() in template.resolve().parents):
+        return []
+    tpl = template.read_text().splitlines()
+    text = mine.read_text(errors="replace")
+    lines = text.splitlines()
+    rulebook = next((l for l in tpl if l.startswith("- Rulebook ")), "")
+    blocks = []
+    for i, line in enumerate(lines):
+        if line.strip() in RETIRED_BLOCKS:
+            end = next((j for j in range(i + 1, len(lines)) if lines[j].startswith("## ")), len(lines))
+            while end > i + 1 and not lines[end - 1].strip():
+                end -= 1
+            blocks.append((i, end))
+    outside = "\n".join(l for k, l in enumerate(lines) if not any(i <= k < e for i, e in blocks))
+    # A citation of one section, `.jig/RULES.md` (Documentation) or § Roles, doesn't load the
+    # rulebook; a plain mention or an aside, `.jig/RULES.md` (the rulebook), does.
+    has_rulebook = re.search(r"\.jig/RULES\.md(?!`?[ \t]*(?:\([A-Z]|§))", outside)
+    out = []
+    for i, end in blocks:
+        fix = ("delete it, heading to the next heading: the Rulebook line is already outside it"
+               if has_rulebook else f"replace it, heading to the next heading, with `{rulebook}`")
+        out.append(("AGENTS.md", f"lines {i + 1}–{end}, `{lines[i].strip()}`, are a block jig "
+                    f"retired: {fix}"))
+    if not blocks and rulebook and not has_rulebook:
+        out.append(("AGENTS.md", f"names no `{DIR}/RULES.md`: add under ## Workflow `{rulebook}`"))
+    in_commands = False
+    for line in tpl:
+        if line.startswith("## "):
+            in_commands = line.strip() == "## Commands"
+            continue
+        for script in re.findall(r"\.jig/scripts/[\w.-]+", line) if in_commands else []:
+            if (script in arriving or (root / script).exists()) and script not in text:
+                out.append(("AGENTS.md", f"names no `{script}`: add under ## Commands `{line.strip()}`"))
+    return out
+
+
+def home_findings(root: Path, plan: dict, board: dict, board_at: str,
+                  reviewed: list[str]) -> list[tuple[str, str]]:
+    """Survey's home findings for the repo as it will be after the moves, each with the edit
+    proposed: a check of the shape finds any old convention, with no row to remember. Pages
+    are proposed by folder, with everything a move would touch named. REVIEWED are files
+    another row already proposes for."""
+    back = {n: o for o, n in plan["moves"].items()}
+    after = plan["after"]
+
+    def read(f: str) -> str:
+        p = root / back.get(f, f)
+        return p.read_text(errors="replace") if p.is_file() else ""
+    homes = [h for h in doc_homes(root, after, board.get("not_docs") or [], read)
+             if h["path"] not in reviewed]
+    out = [(h["path"], home_fix(h)) for h in homes if h["kind"] in ("rules", "copy")]
+    pages = [h for h in homes if h["kind"] == "page"]
+    try:
+        para = json.loads((root / PARA).read_text()) if (root / PARA).exists() else {}
+    except ValueError:
+        para = {}   # check names a broken para.json; a proposal can go without its rows
+    cached = pointers(root) if para else []
+    for folder in dict.fromkeys(os.path.dirname(h["path"]) + "/" for h in pages):
+        group = [h for h in pages if h["path"].startswith(folder) and "/" not in h["path"][len(folder):]]
+        moves = {h["path"]: h["to"] for h in group}
+        folded = {h["path"] for h in group if h["fold"]}
+        left = [moves.get(f, f) for f in after if f not in folded]
+        emptied = [] if any(f.startswith(folder) for f in left) else [folder]
+        lines = [f"{'fold' if h['fold'] else 'git mv'} {h['path']} {'into ' if h['fold'] else ''}{h['to']}"
+                 for h in group]
+        lines += [f"{CONFIG} docmap: {o}" for o in moves if o in (board.get("docmap") or {})]
+        lines += [f"{PARA} contract_paths: {g}" for g in para.get("contract_paths", [])
+                  if any(matches(o, [g]) and not matches(n, [g]) for o, n in moves.items())]
+        stale = stale_references(root, {"rows": [*moves.items(), *[(d, "") for d in emptied]],
+                                        "moves": moves, "after": left}, board_at)
+        lines += [f"{f}:{i}: {line}" for f, hits in stale.items() if f not in (PARA, BUFFER)
+                  for i, line in hits]
+        ptrs = [(c, p, s) for c, p, s, _ in cached if p in moves]
+        lines += [f"{c} points at {p}{f' § {s}' if s else ''}" for c, p, s in ptrs]
+        if ptrs:
+            lines.append(f"the move's commit carries a {BUFFER} row for each pointer, "
+                         "and the next `jig release` proposes them")
+        out.append((folder, f"{len(group)} page{'s' if len(group) > 1 else ''} outside the docs "
+                    f"tree ({DIR}/RULES.md, Documentation). Ask whether each is a subsystem to "
+                    "nest; then, in one commit:" + "".join(f"\n      {l}" for l in lines)))
+    strays = len([h for h in homes if h["kind"] == "stray"])
+    if strays:
+        out.append((f"{strays} document{'s have' if strays > 1 else ' has'} no home", "`/jig:survey`"))
     return out
 
 
@@ -3708,7 +4505,8 @@ def cmd_update(root: Path, args) -> int:
     # A tracked change mid-move would leave jig half-moved; a re-run must still see the old layout.
     dirty = git("status", "--porcelain", "--untracked-files=no")
 
-    plan = plan_moves(files, board_at, version, hardware_rows(root, files))
+    flat_rows, flat = handoff_rows(root, files)
+    plan = plan_moves(files, board_at, version, hardware_rows(root, files) + flat_rows)
     new_board, edits, board_warn, gone = rewrite_board(data, files, plan)
     board_gone += gone
     warnings = plan["warn"] + board_warn
@@ -3739,7 +4537,8 @@ def cmd_update(root: Path, args) -> int:
                        f"both to each in {board_at} (\"reserve\": {{\"{blind[0]}\": {{\"pattern\": "
                        f"..., \"files\": [...]}}}}), then update again: the pattern is how jig "
                        "knows which numbers are taken")
-    sources = {f"{DIR}/jig.py": Path(__file__).resolve(), f"{DIR}/RULES.md": here / "RULES.md"}
+    sources = {f"{DIR}/jig.py": Path(__file__).resolve(), f"{DIR}/RULES.md": here / "RULES.md",
+               f"{DIR}/docs-page.md": here / "docs-page.md"}
     replace = []
     for dest, src in sources.items():
         if not src.exists():
@@ -3788,7 +4587,9 @@ def cmd_update(root: Path, args) -> int:
         if live and not f.endswith(".md"):
             warnings.append(f"{f} names a path jig moved ({len(live)} line{'s' if len(live) > 1 else ''} "
                             "outside comments): code or config the repo's checks may run")
-    review = files_to_review(root, plan)
+    arriving = set(plan["after"]) | set(replace) | {SETUP for s in steps if s[2] is add_setup}
+    review = files_to_review(root, plan, here.parent / "AGENTS.md", arriving)
+    review += home_findings(root, plan, new_board, board_at, [f for f, _ in review])
 
     moved_board = board_at != CONFIG or not (root / JOBS).exists()
     actions = bool(plan["moves"] or replace or edits or moved_board or steps or ignore_lines
@@ -3797,6 +4598,9 @@ def cmd_update(root: Path, args) -> int:
         print("up to date")
         for w in warnings:
             print(f"warning: {w}")
+        if board_at == CONFIG and (root / PARA).exists():
+            for line in removal_blocks(root, trunk, always=False):
+                print(line)
         return 0
     if refused:
         print(f"refused: the repo is behind this jig's layout ({board_at}, version "
@@ -3863,14 +4667,8 @@ def cmd_update(root: Path, args) -> int:
             print("\nRepo files to review (update never applies these):")
             for f, what in review:
                 print(f"  {f}: {what}")
-        template = here.parent / "AGENTS.md"
-        if template.exists() and (root / "AGENTS.md").exists() and root.resolve() not in here.parents:
-            diff = list(difflib.unified_diff(template.read_text().splitlines(),
-                                             (root / "AGENTS.md").read_text().splitlines(),
-                                             "template AGENTS.md", "AGENTS.md", lineterm=""))
-            print("\nAGENTS.md against the template:" + ("" if diff else " the same"))
-            for line in diff:
-                print(f"  {line}")
+        if board_at == CONFIG and (root / PARA).exists():
+            print("\n".join(removal_blocks(root, trunk, always=True)))
 
     if not args.apply:
         report()
@@ -3908,7 +4706,8 @@ def cmd_update(root: Path, args) -> int:
         ignore.write_bytes(re.sub(r"(?m)^[ \t]*jig/meta-cache/[ \t]*$", f"{CACHE}/", raw).encode())
     git("add", "--", CONFIG, JOBS, *replace, *([".gitignore"] if ignore_lines or cache_line else []),
         check=True)
-    for folder in ({o for o, _ in plan["rows"] if o.endswith("/")}
+    # git mv leaves a flattened note's subfolder behind, empty.
+    for folder in ({o for o, _ in plan["rows"] if o.endswith("/")} | flat
                    | {o for o, _ in untracked} | {d for d in OLD_DIRS if board_at.startswith(d)}):
         for d, _, _ in sorted(os.walk(root / folder), key=lambda w: -len(w[0])):
             try:
@@ -4015,6 +4814,8 @@ def main(argv: list[str] | None = None) -> int:
     pp.add_argument("spec", nargs="?")
     pp.add_argument("slug", nargs="?")
     pp.add_argument("--buffer", action="store_true", help="every Open row of the sync buffer, in one proposal")
+    pp.add_argument("--pointers", action="store_true",
+                    help="record it as pointer rewrites worked ahead of, not a proposal to wait for")
     st = sub.add_parser("staging", help="list staged files, or resolve or drop one")
     st.add_argument("action", nargs="?", choices=["resolve", "drop"])
     st.add_argument("file", nargs="?")

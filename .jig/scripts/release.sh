@@ -9,6 +9,11 @@ set -eu
 cd "$(dirname "$0")/../.."
 version="$1"
 
+# --- publish.sh posts these notes as the GitHub release, after the tag; refuse now, before
+# anything is built or tagged, so a missing notes file can't leave a release half published
+[ -s "dist/notes-$version.md" ] || { echo "write the release notes to dist/notes-$version.md first" >&2; exit 1; }
+gh auth status >/dev/null 2>&1 || { echo "gh is not signed in: publish.sh needs it" >&2; exit 1; }
+
 # --- the version lives in the plugin manifest and the marketplace entry
 for f in plugin/.claude-plugin/plugin.json .claude-plugin/marketplace.json; do
   sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"$version\"/" "$f" && rm "$f.bak"

@@ -34,7 +34,7 @@ changes: `trunk`, `common`, `append_files`, `reserve`, `docmap`, `not_docs`, `re
 | `after` | jobs this one is gated behind |
 | `owns` | existing files only this job may change while it is open |
 | `shares` | existing files it may change alongside others |
-| `reserved` | scarce numbers handed out centrally (migration steps, section numbers) |
+| `reserved` | scarce numbers handed out centrally (migration steps, schema versions) |
 
 A job's branch is its name, and its worktree is `.git/jig/worktrees/<branch>`. A job
 adopted on another branch, or checked out somewhere else, stores `branch` or `worktree` —
@@ -51,7 +51,8 @@ go in `shares` from the start, or both jobs get blocked on every commit afterwar
 
 ## The rules
 
-Checked before every commit by a git hook, and by `jig check`.
+Checked before every commit by a git hook, and by `jig check`. A delete changes its path, and
+a rename changes both of its paths: R3–R5, P1, P2 and P4 count each.
 
 - **R1** The trunk checkout stays on trunk. Work in `.git/jig/worktrees/<branch>`.
 - **R2** A job is built in its own worktree.
@@ -92,27 +93,25 @@ Conventions so two jobs rarely meet in one hunk:
 
 ## Reserved numbers
 
-Some things are scarce across the whole repo: migration step numbers, section numbers in a
-shared document, anything a runner stores and compares. Each counter in `config.json` says how
+Some things are scarce across the whole repo: migration step numbers, schema versions,
+anything a runner stores and compares. Each counter in `config.json` says how
 to find its numbers:
 
 ```json
 "reserve": {
-  "section": {"pattern": "^### (\\d+)\\.\\d+", "files": ["docs/**/*.md"]},
+  "step": {"pattern": "^-- step (\\d+)", "files": ["db/migrations/*.sql"]},
   "schema": {"pattern": "SCHEMA_VERSION\\s*=\\s*(\\d+)", "files": ["**/storage.py"], "unique": true}
 }
 ```
 
 A number is taken where trunk had no match for it, in any of the counter's files, and the
-change adds one. So `### 31.2` under a section 31 that trunk has takes nothing, and `### 32.1`
-takes section 32. `"unique": true` is for numbers that must also appear once: a second
-`SCHEMA_VERSION = 17` where trunk has one is refused as "17 already exists". It is off unless
-set, because a section number appears once per rule under it. It applies working alone too,
-with no job open: there is nobody to take a number from, but a second 17 still breaks.
-
-A section's rule numbers (`### 31.2`) belong to whoever holds the section. R6 counts whole
-numbers, so within a section trunk already has, nothing stops two jobs adding the same rule
-number: give each job its own section, or settle it at the merge.
+change adds one. So editing the file that opens `-- step 17`, where trunk has it, takes
+nothing, and a new file opening `-- step 18` takes 18. `"unique": true` is for numbers that
+must also appear once: a second `SCHEMA_VERSION = 17` where trunk has one is refused as "17
+already exists". It is off unless set, because some numbers rightly appear more than once. It
+applies working alone too, with no job open: there is nobody to take a number from, but a
+second 17 still breaks. A pattern that captures only the whole part of a dotted number counts
+`17.2` as 17, so a dotted number under a whole number trunk already has takes nothing.
 
 `--reserve <counter>` hands the job max(the highest on trunk, the highest an open job
 holds) + 1, so two jobs open at once never get the same number. `jig reserve <job> <counter>`
@@ -128,16 +127,32 @@ One page per system, `docs/<system>/<system>.md`. A subsystem's page sits in a f
 own inside its system's, `docs/<system>/<subsystem>/<subsystem>.md`, and its parts nest the
 same way. Every page is named for its folder, so the path alone says what it covers. The tree
 names the product's own parts, not its files, so a rule that touches several files lives
-once. Every page has three headings:
+once.
 
-- **Now** — what is true on trunk today.
-- **Rules** — what binds, as if the text stood in `AGENTS.md`; that is how the always-loaded
-  file stays under 40 lines. Number every rule; the number is the heading (`### 31.1 …`), so
-  a citation resolves by search wherever the text moves.
-- **Checks** — one line per rule naming what holds it: a named test, "review", or "on screen".
+A page describes what is built: what is true of its system on trunk today, in present-tense
+prose. It is not a rulebook; this file holds the rules about documentation, and no page
+restates them. Every page, in this order (`.jig/docs-page.md`, which `jig update` keeps
+current, is the skeleton):
 
-When Now and Rules disagree, Rules wins and Now gets fixed. A moved rule leaves no forwarding
-address behind — that is history, and git keeps it.
+1. **A lead paragraph**, with no heading of its own: what the system is and why it exists.
+2. **Body sections**, named for the system's own parts — the nouns its code has (Schema,
+   Renderer, Sync) — never for a lifecycle or a genre (Overview, Notes, Misc, Changes). A
+   section that outgrows a screen, or gets files of its own, becomes a subsystem folder with
+   its own page, and the parent's section shrinks to a paragraph and a link.
+3. **`## Invariants`**, optional: only the facts that are load-bearing. Each entry states,
+   inline, why it must hold and what holds it — a named test, review, or on screen:
+   `- Rows are at least 44px — the touch-target minimum; held by test_touch_targets.` An
+   entry without a why and a holder is description, and goes in the body or nowhere.
+4. **`## Undefined`**, optional and always last: work parked mid-build, written only on the
+   owner's word. Each entry says what was parked, where it stops, and the date. Nothing in it
+   binds, and nothing in it is a promise. It is parked work, placed where the work lives;
+   review findings not taken go in `.jig/ledgers/DEFERRED.md` instead, never in both.
+
+Trunk's code is reality. A page that disagrees with the code is a stale page, and gets fixed.
+An invariant the code breaks is a finding the handoff surfaces for a person to rule on, never
+an instruction to bend the code. Cite a page by its heading (`docs/ui/ui.md § Invariants`),
+not by a number. A moved rule leaves no forwarding address behind — that is history, and
+git keeps it.
 
 In `docmap`, a subsystem's page names its own files and its system's page names the rest:
 fold-in asks every page that covers a changed file, so a system page whose globs reach into
@@ -165,13 +180,54 @@ the binaries are committed is the repo's call, `reference_files` in the config: 
 the URL and hash on the page to fetch it again. `jig survey` reports a component file no board page links, and a link
 to one that doesn't exist.
 
+### Homes
+
+`jig survey` checks each Markdown file the repo tracks against this list, outside tool folders
+(`.jig/`, `.claude/`, `.github/`, …) and `not_docs`:
+
+- `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md` and `CHANGELOG.md` at the root;
+- under `docs/`, a page named for its folder, `docs/…/<x>/<x>.md`;
+- `docs/hardware/<board>.md`, and anything under `docs/hardware/*/`;
+- in a metarepo, what `entry_files` names.
+
+Any other file has no home, and survey says which kind: an `AGENTS.md`, `CLAUDE.md` or
+`GEMINI.md` off root is a second rulebook; three or more sentences of this file word for word
+is a copy, which freezes while this file moves on; a page outside its folder — one with an
+Invariants or Undefined section, or the old Now, Rules and Checks headings — goes under the
+nearest folder that has its own page, or to `docs/<name>/<name>.md`, even when it quotes this
+file; anything else is a stray. A package's own rules file stays only on the owner's word. A
+file names a document by its path, or by its bare name only when no other tracked file has
+that name.
+
+Each kind of document has one home: rules in `AGENTS.md`, and the rules about documentation
+here; what the code is now, its invariants and its parked work in `docs/`; a task in flight in
+`.jig/specs/`; patches in the code in `.jig/ledgers/WORKAROUNDS.md`; review findings not taken
+in `.jig/ledgers/DEFERRED.md`; know-how in the agent's skills; what outsiders need in
+`README.md`; history in git.
+
+`jig survey` also reads each page at home under `docs/`, board pages aside, against the
+contract above, and names a page in the old Now, Rules and Checks shape (convert it: fold
+what it says into description, delete what no longer holds, keep as Invariants only what
+passes the test), an Invariants entry with no why (` — `) or no holder (`held by`), any
+section after `## Undefined`, and a page whose first line of text after its title is a
+heading rather than a lead paragraph. `jig update` brings this file, not the pages: converting
+a repo's pages is a job of its own there.
+
 ## Fold-in
 
 Code and the page that documents it move together, or the page starts lying. `jig handoff`
 works out every documentation page that covers a file the branch changed — a file can have
 several, such as its system page and the page of the board it runs on — and writes a
-checklist into the note. `jig gate` refuses while a line is unanswered — each is either
-ticked as updated, or says why no change was needed.
+checklist into the note. A moved file asks the page that covered its old path too. Each line
+asks whether the page still describes the code: it is either ticked as updated — the stale
+sentences edited, deleting text included — or says why none went stale. Each entry under
+`## Undefined` on a covering page gets a line of its own, answered **built**, **untouched**,
+or **departed: <why>**, with anything after the answer the answerer's to add. Built means
+moved, not copied: the work's description enters the body and the entry is deleted in the same
+change. The gate refuses a built entry still on the page, word for word or reworded: a new
+entry whose name (the text before its first ` — `) holds the built one's, or is close to it, is
+that entry. A new entry unlike it is new parked work, and passes. `jig gate` refuses while a line is
+unanswered; untouched and departed are answers.
 
 Ownership comes from `docmap` in `config.json`:
 
@@ -181,7 +237,8 @@ Ownership comes from `docmap` in `config.json`:
 
 `docmap` can name any file, config such as `sdkconfig` included; a page is asked about
 whenever a file it names changes. A changed source file nothing covers is listed as
-`UNOWNED` — add it to `docmap`, or answer why it needs no page.
+`UNOWNED` — add it to `docmap`, starting a new page from `.jig/docs-page.md`, or answer why
+it needs no page.
 
 ## Sync
 
@@ -192,7 +249,8 @@ else stops with the files named, and a person resolves it.
 ## Handoff, gate, merge
 
 1. **The subnode hands off.** Runs the checks, has the diff adversarially reviewed, records it
-   (`jig reviewed`), then `jig handoff` writes a note naming that exact commit. Fill every
+   (`jig reviewed`), then `jig handoff` writes a note naming that exact commit, in
+   `.jig/handoffs/<name>-<date>.md` with a `/` in the job's or branch's name as `-`. Fill every
    heading, commit the note with the work, tell the hubnode the job and the commit.
    A job may hand off several times.
 2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it sets
@@ -294,7 +352,9 @@ the pararepo's side, in what it caches: `jig sync` and its release report each o
 heading (`§`) the pararepo doesn't have, and P2 asks a commit that leaves one dangling for what a
 contract change needs. A pointer is `<repo>/<path>` or `<repo>:<path>`, best written in backticks
 (`` `app/docs/ui.md § Build (release)` ``): there the section is the span's text, matched whole;
-in prose it is any heading the text after `§` begins with. Headings are compared as read, code
+in prose it is any heading the text after `§` begins with. A section that starts with a number,
+`2` or `2.1`, names the heading whose leading number is exactly that: `§ 2` is `## 2. Motes`, not `### 2.1`
+or `## 20`, and words after the number aren't compared. Headings are compared as read, code
 and emphasis marks dropped. The name folds case (`App/…` is `app/…`); the path and heading
 don't. A superseded or rejected decision row isn't checked.
 
@@ -321,7 +381,7 @@ under `.jig/` counts, whatever the globs say.
 | M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`) |
 | P1 | an `AGENTS.md` header that differs from what `.jig/para.json` generates |
-| P2 | a contract-path change with none of: a row added or changed in `.jig/ledgers/BUFFER.md` in the same commit, or a spec saying `meta: buffered <row id>`, `meta: <name> proposal <branch>` or `meta: none — <reason>`; the same for a change that deletes or renames a file a cached metarepo pointer names, or the heading its `§` names. Also, in `BUFFER.md`: a state other than `Open` or `Closed`, a repeated id, an `Open` row deleted, or one closed by any commit but `jig sync`'s |
+| P2 | a contract-path change (an edit, a delete, or a rename from one) with none of: a row added or changed in `.jig/ledgers/BUFFER.md` in the same commit, or a spec saying `meta: buffered <row id>`, `meta: <name> proposal <branch>`, `meta: <name> pointers <branch>` or `meta: none — <reason>` (a spec the change touches, or the job's own: the board's `spec`, read as trunk has it, a one-line spec being its own text; in a merge, the one job whose branch tip is what is merged in, or whose own first-parent line holds it, and none for an octopus); the same for a change that deletes or renames a file a cached metarepo pointer names, or the heading its `§` names; a lost file counts even when its heading was already missing. Also, in `BUFFER.md`: a state other than `Open` or `Closed`, a repeated id, an `Open` row deleted, or one closed by any commit but `jig sync`'s |
 | P4 | a contract-path change while a file targeting the metarepo is staged |
 | P3 | the metarepo's cache (`.jig/meta-cache/`) or its checkout committed into the pararepo |
 
@@ -335,7 +395,17 @@ for a rename or a reversed decision. A pararepo pins a release, never `main`, an
 a commit of its own, `meta: <name> v0.3.0 → v0.4.0`, with the report `jig sync` prints on its
 trunk as the body. A two-part pin (`v0.3`), from before releases had three parts, keeps
 working: it sorts below `v0.3.0`. `jig gate` refuses a job whose spec cites a proposal that isn't in
-the pinned release.
+the pinned release, and one whose `pointers` branch isn't on the metarepo it names (one merged
+into its trunk counts, released or not), or names another metarepo; a metarepo it can't reach
+refuses too.
+
+**Pointers ahead of the metarepo.** `meta: <name> pointers <branch>` (`jig propose --pointers`)
+means the metarepo's pointers into this change are being rewritten on that metarepo branch, and
+no metarepo claim changes. A job answered that way merges without waiting for the release:
+cached pointers dangle against the pending branch until the pin moves, and `jig sync` and the
+release report them meanwhile. A claim change is a `BUFFER.md` row; a dependency on a metarepo
+change is `proposal <branch>`, which the gate waits for. P2 can't tell a pointer move from a claim
+change, so review holds a `pointers` spec to this sentence.
 
 **The sync buffer.** A pararepo may work ahead of its metarepo: change what a metarepo claim
 describes, as often as testing needs, and commit and push each change. Every such difference
@@ -389,12 +459,19 @@ Open nor Closed or shares its id (P2); a newer metarepo release, a cited path ou
 `contract_paths`, or a metarepo pointer to a file or heading this repo doesn't have, is reported as `jig sync` reports it and refuses nothing. Then the release
 settles the sync buffer (above).
 
+After the tag, the release runs `.jig/scripts/publish.sh <version> <artifact>…`: what the repo
+sends out (a push, a hosted release, a store upload), with the files this run built as paths
+from the repo root. While the script still holds its `# TODO: publish steps.` line, the
+publish isn't decided yet: jig skips it and prints the push command. A repo that publishes
+nothing deletes the line. A publish that fails leaves the tag, which may already be pushed:
+jig prints the command to run it again and exits 1.
+
 ## Commands
 
 ```
 jig init [--trunk main]     config.json, jobs.json, git hooks
 jig init --meta | --para <metarepo> --contract <globs>   ... as a metarepo / pararepo
-jig release [--major|--minor|--patch|--version X.Y.Z] [--force]   the repo's release protocol, then tag
+jig release [--major|--minor|--patch|--version X.Y.Z] [--force]   the repo's release protocol, then tag, then publish
 jig survey [--json]         inventory the repo against the jig shape
 jig update [--apply]        bring the repo to the current jig layout (dry run without --apply)
 jig staging [resolve|drop <file>]   list staged files, or land / drop one
@@ -415,6 +492,7 @@ jig workflow                each step's model tier and effort in effect
 jig handoff [--spec path]   write the note for HEAD
 jig gate <name>             hubnode: verify, set up the scratch checkout, print its check
 jig propose <spec> <slug>   pararepo: open a proposal branch on the metarepo
+jig propose <spec> <slug> --pointers  the same, recorded as pointer rewrites worked ahead of
 jig propose --buffer [slug]  pararepo: every Open row of the sync buffer, in one proposal
 ```
 
