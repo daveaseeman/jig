@@ -1,6 +1,6 @@
 # <Board name>
 
-TODO: one paragraph, what this board is and why the product uses it. Defined from: TODO (a link to the definition's file in this page's folder and the first 12 hex of its sha256, or "pasted YYYY-MM-DD"; a URL needs a commit or a hash too, since the page behind it changes).
+TODO: one paragraph, what this board is and why the product uses it. Defined from: TODO (a link to the definition and the first 12 hex of its sha256: in this page's folder when the repo wrote it, in datasheets/ when it is a vendor's spec sheet; or "pasted YYYY-MM-DD"; a URL needs a commit or a hash too, since the page behind it changes).
 
 <!-- jig's board template, on the page contract (.jig/RULES.md, Documentation). Filled from a
      hardware definition, then checked against the code; the code alone can't say what the
@@ -8,10 +8,11 @@ TODO: one paragraph, what this board is and why the product uses it. Defined fro
      info is worse than none. -->
 
 ## Components
-<!-- Datasheet: a relative link to the file under components/<part>/ in this page's folder
-     (docs/components/<part>/ once a second page uses the part) · its source URL · the date
+<!-- Datasheet: a relative link to the file in datasheets/ in this page's folder (in the
+     nearest folder two pages share, once a second page uses it) · its source URL · the date
      retrieved · the first 12 hex of its sha256. E.g. for a made-up part QX-100: a link to
-     components/qx-100/qx-100.pdf · https://example.com/qx-100.pdf · 2026-01-15 · 3f2a9c01b7de.
+     datasheets/qx-100.pdf · https://example.com/qx-100.pdf · 2026-01-15 · 3f2a9c01b7de.
+     A part whose behavior the code touches gets its own page too, a subsystem of this one.
      Verified: yes once code has driven the part on this board, no until then. -->
 | Component | Part | Role | Datasheet | Verified | Notes |
 |---|---|---|---|---|---|

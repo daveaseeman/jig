@@ -1725,14 +1725,15 @@ assert j.table_cells(r'| a | b \| c | \`x|y\` |') == ['a', 'b | c', '\`x', 'y\`'
 
 # ---------------------------------------------------------------- hardware reference files
 sec_hardware() {
+hwnote() { (cd ".git/jig/worktrees/$1" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $1" >/dev/null 2>&1); }
 HR="$T/hwref"
 mkdir -p "$HR" && cd "$HR" && git init -q -b main && git config user.email t@t && git config user.name t
-cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs/watch/components/pmic main
-printf '# Watch\n\nA watch board. Defined from: [definition](vendor-definition.md).\n\n| PMIC | QX-100 | power | [ds](components/pmic/qx-100.pdf) |\n' > docs/watch/watch.md
-printf '%%PDF-fake\n' > docs/watch/components/pmic/qx-100.pdf
-# Named for its folder and shaped like a page, but components/ is reserved: a reference file.
-printf '# PMIC\n\nNotes.\n\n## Invariants\n- x\n' > docs/watch/components/pmic/pmic.md
-printf '# Vendor definition\n' > docs/watch/vendor-definition.md
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs/watch/datasheets main
+printf '# Watch\n\nA watch board. Defined from: [definition](definition.md).\n\n| PMIC | QX-100 | power | [ds](datasheets/qx-100.pdf) |\n' > docs/watch/watch.md
+printf '%%PDF-fake\n' > docs/watch/datasheets/qx-100.pdf
+# Shaped like a page, but datasheets/ is reserved: a note in it is a reference file.
+printf '# PMIC notes\n\nNotes.\n\n## Invariants\n- x\n' > docs/watch/datasheets/qx-100-notes.md
+printf '# Definition\n' > docs/watch/definition.md
 printf 'png' > docs/watch/schematic.png
 printf 'int led = 2;\n' > main/app.c
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
@@ -1751,44 +1752,45 @@ expect_pass hrsurvey "assert r['boards_unmapped'] == [] and r['boards_missing'] 
 msg="boards: update keeps a boards key without calling it unknown"
 expect_pass sh -c "! $J update 2>&1 | grep -q 'board key .boards.'"
 
-msg="reference files: a page's own files and components/ notes have a home; components/<x>/<x>.md is no page"
+msg="datasheets: a page's own files and datasheets/ at system depth have a home; a note in datasheets/ is no page"
 expect_pass hrsurvey "assert r['homeless'] == [], r['homeless']
-assert not [e for e in r['page_contract'] if 'components/' in e['path']], r['page_contract']"
-msg="reference files: a file in a page's folder no page links is reported, a linked one is not"
-expect_pass hrsurvey "assert r['components_unlinked'] == ['docs/watch/components/pmic/pmic.md', 'docs/watch/schematic.png'], r['components_unlinked']"
+assert not [e for e in r['page_contract'] if 'datasheets/' in e['path']], r['page_contract']"
+msg="datasheets: a file in a page's folder no page links is reported, a linked one is not"
+expect_pass hrsurvey "assert r['datasheets_unlinked'] == ['docs/watch/datasheets/qx-100-notes.md', 'docs/watch/schematic.png'], r['datasheets_unlinked']"
 
-mkdir -p docs/watch/components/rtc docs/watch/components/imu docs/watch/components/buck docs/watch/components/led
-for f in rtc/rtc.pdf "imu/imu rev b.pdf" buck/buck.pdf "led/led sheet.pdf"; do printf '%%PDF-fake\n' > "docs/watch/components/$f"; done
+for f in rtc.pdf "imu rev b.pdf" buck.pdf "led sheet.pdf"; do printf '%%PDF-fake\n' > "docs/watch/datasheets/$f"; done
 cat >> docs/watch/watch.md <<'MD'
 | RTC | QX-20 | clock | [ds][rtc] |
-| IMU | QX-30 | motion | [ds](<components/imu/imu rev b.pdf> "rev B") |
-| Buck | QX-40 | rail | [ds](/docs/watch/components/buck/buck.pdf) |
-| LED | QX-50 | status | [ds](components/led/led sheet.pdf) |
+| IMU | QX-30 | motion | [ds](<datasheets/imu rev b.pdf> "rev B") |
+| Buck | QX-40 | rail | [ds](/docs/watch/datasheets/buck.pdf) |
+| LED | QX-50 | status | [ds](datasheets/led sheet.pdf) |
 | Schematic | | | [sch](schematic.png) |
 
-[rtc]: components/rtc/rtc.pdf
+[rtc]: datasheets/rtc.pdf
 MD
 git add -A && git commit -qm "more link forms"
-msg="reference files: reference-style, <angle>, root-absolute and spaced links all count as links"
-expect_pass hrsurvey "assert r['components_unlinked'] == ['docs/watch/components/pmic/pmic.md'], r['components_unlinked']
-assert r['components_missing'] == [], r['components_missing']"
+msg="datasheets: reference-style, <angle>, root-absolute and spaced links all count as links"
+expect_pass hrsurvey "assert r['datasheets_unlinked'] == ['docs/watch/datasheets/qx-100-notes.md'], r['datasheets_unlinked']
+assert r['datasheets_missing'] == [], r['datasheets_missing']"
 
-printf '| LDO | QX-7 | rail | [ds](components/ldo/qx-7.pdf) |\n' >> docs/watch/watch.md
+printf '| LDO | QX-7 | rail | [ds](datasheets/qx-7.pdf) |\n' >> docs/watch/watch.md
 git add -A && git commit -qm "link a missing datasheet"
-msg="reference files: a page linking a component file that doesn't exist is reported"
-expect_pass hrsurvey "assert r['components_missing'] == [['docs/watch/watch.md', 'docs/watch/components/ldo/qx-7.pdf']], r['components_missing']"
+msg="datasheets: a page linking a datasheet that doesn't exist is reported"
+expect_pass hrsurvey "assert r['datasheets_missing'] == [['docs/watch/watch.md', 'docs/watch/datasheets/qx-7.pdf']], r['datasheets_missing']"
 
-# A part a second page uses lives in docs/components/<part>/, linked from both.
-mkdir -p docs/screen docs/components/st7789
-printf '%%PDF-fake\n' > docs/components/st7789/st7789.pdf && printf '# ST7789 notes\n' > docs/components/st7789/notes.md
-printf '# Screen\n\nThe display. [ds](../components/st7789/st7789.pdf), [notes](../components/st7789/notes.md).\n' > docs/screen/screen.md
-printf '| Display | ST7789 | screen | [ds](../components/st7789/st7789.pdf) |\n' >> docs/watch/watch.md
-printf '%%PDF-fake\n' > docs/components/st7789/unused.pdf
-git add -A && git commit -qm "shared part"
-msg="reference files: docs/components/<part>/ is accepted, its linked files are no strays"
+# A subsystem's own datasheets/, and one two systems share in docs/datasheets/.
+mkdir -p docs/watch/screen/datasheets docs/band docs/datasheets
+printf '%%PDF-fake\n' > docs/watch/screen/datasheets/st7789.pdf
+printf '# Screen\n\nThe display. [ds](datasheets/st7789.pdf)\n' > docs/watch/screen/screen.md
+printf '%%PDF-fake\n' > docs/datasheets/qx-9.pdf && printf '%%PDF-fake\n' > docs/datasheets/unused.pdf
+printf '# Band\n\nThe strap. [ds](../datasheets/qx-9.pdf)\n' > docs/band/band.md
+printf '| Clasp | QX-9 | latch | [ds](../datasheets/qx-9.pdf) |\n' >> docs/watch/watch.md
+git add -A && git commit -qm "subsystem and shared datasheets"
+msg="datasheets: accepted in a subsystem's folder and at docs/datasheets/, their linked files no strays"
 expect_pass hrsurvey "assert r['homeless'] == [], r['homeless']
-assert r['components_missing'] == [['docs/watch/watch.md', 'docs/watch/components/ldo/qx-7.pdf']], r['components_missing']
-assert r['components_unlinked'] == ['docs/components/st7789/unused.pdf', 'docs/watch/components/pmic/pmic.md'], r['components_unlinked']"
+assert r['datasheets_orphan'] == [], r['datasheets_orphan']
+assert r['datasheets_missing'] == [['docs/watch/watch.md', 'docs/watch/datasheets/qx-7.pdf']], r['datasheets_missing']
+assert r['datasheets_unlinked'] == ['docs/datasheets/unused.pdf', 'docs/watch/datasheets/qx-100-notes.md'], r['datasheets_unlinked']"
 
 msg="survey: a page-shaped file in another page's folder is a subsystem candidate"
 printf '# Power\n\nThe rails.\n\n## Invariants\n- 3.3V — the parts are 3.3V; held by review.\n' > docs/watch/power.md
@@ -1803,14 +1805,14 @@ expect_pass sh -c "$J survey | grep -q 'docs/watch/power.md → docs/watch/power
 msg="page contract: a board page is read against it like any page"
 printf '\n## Invariants\n- Pins are 3.3V\n' >> docs/watch/watch.md
 git add -A && git commit -qm "bare invariant"
-expect_pass hrsurvey "assert [e['path'] for e in r['page_contract']] == ['docs/watch/watch.md'], r['page_contract']"
+expect_pass hrsurvey "assert 'docs/watch/watch.md' in [e['path'] for e in r['page_contract']], r['page_contract']"
 msg="page contract: the board template, filled in nowhere, is on the contract"
 mkdir -p docs/tmpl && cp "$P/hardware.md" docs/tmpl/tmpl.md && git add -A && git commit -qm tmpl
 expect_pass hrsurvey "assert 'docs/tmpl/tmpl.md' not in [e['path'] for e in r['page_contract']], r['page_contract']"
 git rm -rq docs/tmpl && git commit -qm "no tmpl"
 
-msg="reference files: survey's Homes line names both component homes"
-expect_pass sh -c "$J survey | grep '^Doc homes: ' | grep -qF 'docs/…/components/ = ' && $J survey | grep '^Doc homes: ' | grep -qF '; docs/components/ = '"
+msg="datasheets: survey's Homes line names both datasheets homes"
+expect_pass sh -c "$J survey | grep '^Doc homes: ' | grep -qF 'docs/…/datasheets/ = ' && $J survey | grep '^Doc homes: ' | grep -qF '; docs/datasheets/ = '"
 
 # The board rule: a fold-in may not answer "no page needed" for code a board page covers.
 # The note's UNOWNED line was written before trunk's docmap reached the file.
@@ -1826,7 +1828,7 @@ msg="board rule: the gate refuses 'no page needed' for a file a registered board
 expect_pass sh -c "echo \"\$0\" | grep -q 'UNOWNED fw/drv.c .*docs/watch/watch.md is a board page covering it'" "$out"
 board "b['boards'] = []"
 git add -A && git commit -qm "unregister"
-msg="board rule: the same page, not in boards, has no such refusal"
+msg="board rule: the same page, not in boards, has no such refusal; a repo with no board-build files is untouched"
 expect_pass gate_ok H3
 
 msg="reference files: init leaves reference_files unset, so /jig:hardware asks"
@@ -1841,41 +1843,71 @@ PY
 git add -A && git commit -qm "older config"
 expect_pass sh -c "$J update 2>&1 | grep -q 'reference_files: added' && ! $J update 2>&1 | grep -q 'boards'"
 
+# Every board has a page: the gate refuses a board-build file no board page covers.
+HG="$T/hwgate"; pcnew "$HG" && mkdir -p src && printf 'int x;\n' > src/x.c && printf 'CONFIG_A=y\n' > sdkconfig
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J open G1 --spec t --owns platformio.ini 'docs/**' >/dev/null 2>&1 && $J open G2 --spec t --owns 'sdkconfig' >/dev/null 2>&1 && git add -A && git commit -qm "open G1 G2"
+(cd .git/jig/worktrees/G1 && printf '[env:dev]\n' > platformio.ini && git add -A && git commit -qm pio) && hwnote G1
+(cd .git/jig/worktrees/G2 && printf 'CONFIG_A=n\n' > sdkconfig && git add -A && git commit -qm cfg) && hwnote G2
+msg="board gate: a branch adding platformio.ini that no board page covers is refused, naming the file and the way out"
+gate_ok G1; rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^platformio.ini builds for a board no page covers: write the board.s page with /jig:hardware, list it in .*boards, and map platformio.ini to it in docmap'" "$out"
+msg="board gate: a branch changing sdkconfig that no board page covers is refused"
+gate_ok G2; rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^sdkconfig builds for a board no page covers'" "$out"
+board "b['boards'] = ['docs/prod/devkit/devkit.md']; b['docmap'] = {'docs/prod/devkit/devkit.md': ['platformio.ini']}"
+git add -A && git commit -qm "register the devkit"
+msg="board gate: a boards entry whose page is missing at the branch head is refused"
+gate_ok G1; rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'boards names docs/prod/devkit/devkit.md, which is missing at ' && ! echo \"\$0\" | grep -q '^platformio.ini builds'" "$out"
+(cd .git/jig/worktrees/G1 && mkdir -p docs/prod/devkit && printf '# Prod\n\nThe product.\n' > docs/prod/prod.md \
+  && printf '# Devkit\n\nThe dev board.\n' > docs/prod/devkit/devkit.md && git add -A && git commit -qm page) && hwnote G1
+msg="board gate: passes once a registered board page at subsystem depth covers platformio.ini"
+expect_pass gate_ok G1
+msg="board gate: sdkconfig is still refused while no board page's docmap covers it"
+gate_ok G2; rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^sdkconfig builds for a board no page covers'" "$out"
+
 # The layout before boards were systems: survey and update say where each file goes.
-HO="$T/hwold"; pcnew "$HO" && mkdir -p docs/hardware/watch docs/hardware/components/pmic docs/hardware/components/rtc main
-printf '# Watch\n\n- MCU / board: QX\n\n[pmic](components/pmic/qx.pdf) [rtc](components/rtc/r.pdf) [def](watch/def.md)\n' > docs/hardware/watch.md
+HO="$T/hwold"; pcnew "$HO" && mkdir -p docs/hardware/watch docs/hardware/components/pmic docs/hardware/components/rtc docs/hardware/components/imu main
+printf '# Watch\n\n- MCU / board: QX\n\n[pmic](components/pmic/qx.pdf) [imu](components/imu/qx.pdf) [rtc](components/rtc/r.pdf) [def](watch/def.md)\n' > docs/hardware/watch.md
 printf '# Band\n\n[rtc](components/rtc/r.pdf)\n' > docs/hardware/band.md
-printf '# Def\n' > docs/hardware/watch/def.md && printf 'x' > docs/hardware/components/pmic/qx.pdf && printf 'x' > docs/hardware/components/rtc/r.pdf
+printf '# Def\n' > docs/hardware/watch/def.md && printf 'x' > docs/hardware/watch/spec.pdf
+printf 'x' > docs/hardware/components/pmic/qx.pdf && printf 'x' > docs/hardware/components/imu/qx.pdf && printf 'x' > docs/hardware/components/rtc/r.pdf
 printf 'int x;\n' > main/app.c && printf 'See docs/hardware/watch.md\n' > README.md
 git add -A && git commit -qm init && $J init >/dev/null && board "b['docmap'] = {'docs/hardware/watch.md': ['main/**']}" && git add -A && git commit -qm board
-msg="old layout: survey gives a mapped docs/hardware/<board>.md its new page and boards entry, not a stray"
+msg="old layout: survey maps each file: pages to systems, vendor PDFs and parts into datasheets/, shared ones to docs/datasheets/"
 expect_pass hrsurvey "h = {e['path']: e for e in r['homeless']}
 assert h['docs/hardware/watch.md']['kind'] == 'board' and h['docs/hardware/watch.md']['to'] == 'docs/watch/watch.md', h
 assert not [e for e in r['homeless'] if e['kind'] == 'stray'], h
 rows = {e['path']: e['to'] for e in r['old_boards']}
-assert rows == {'docs/hardware/band.md': 'docs/band/band.md', 'docs/hardware/components/pmic/qx.pdf': 'docs/watch/components/pmic/qx.pdf',
-                'docs/hardware/components/rtc/r.pdf': 'docs/components/rtc/r.pdf', 'docs/hardware/watch.md': 'docs/watch/watch.md',
-                'docs/hardware/watch/def.md': 'docs/watch/def.md'}, rows"
+assert rows == {'docs/hardware/band.md': 'docs/band/band.md',
+                'docs/hardware/components/imu/qx.pdf': 'docs/watch/datasheets/imu-qx.pdf',
+                'docs/hardware/components/pmic/qx.pdf': 'docs/watch/datasheets/pmic-qx.pdf',
+                'docs/hardware/components/rtc/r.pdf': 'docs/datasheets/r.pdf', 'docs/hardware/watch.md': 'docs/watch/watch.md',
+                'docs/hardware/watch/def.md': 'docs/watch/def.md', 'docs/hardware/watch/spec.pdf': 'docs/watch/datasheets/spec.pdf'}, rows"
 out=$($J survey 2>&1)
 msg="old layout: survey prints the move with its boards entry, and sends the repo to /jig:redocument"
 expect_pass sh -c "echo \"\$0\" | grep -qF 'docs/hardware/watch.md → docs/watch/watch.md   + boards: docs/watch/watch.md' && echo \"\$0\" | grep -q 'old docs/hardware/ layout: run /jig:redocument' && ! echo \"\$0\" | grep -q 'never read since'" "$out"
 board "b['version'] = 8" && git add -A && git commit -qm older
 out=$($J update 2>&1)
 msg="old layout: update lists the moves for review with the docmap key, the stale reference and the boards lines"
-expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/hardware/: board files in the old layout' && echo \"\$0\" | grep -qF 'git mv docs/hardware/watch.md docs/watch/watch.md' && echo \"\$0\" | grep -qF '.jig/config.json docmap: docs/hardware/watch.md' && echo \"\$0\" | grep -qF 'README.md:1: See docs/hardware/watch.md' && echo \"\$0\" | grep -qF '.jig/config.json boards: + docs/watch/watch.md' && echo \"\$0\" | grep -q 'relink it'" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/hardware/: board files in the old layout' && echo \"\$0\" | grep -qF 'git mv docs/hardware/watch.md docs/watch/watch.md' && echo \"\$0\" | grep -qF 'git mv docs/hardware/components/rtc/r.pdf docs/datasheets/r.pdf' && echo \"\$0\" | grep -qF '.jig/config.json docmap: docs/hardware/watch.md' && echo \"\$0\" | grep -qF 'README.md:1: See docs/hardware/watch.md' && echo \"\$0\" | grep -qF '.jig/config.json boards: + docs/watch/watch.md' && echo \"\$0\" | grep -q 'repoint it'" "$out"
 
-# The reserved name, an orphan components/ folder, and not_docs.
-HN="$T/hwname"; pcnew "$HN" && mkdir -p docs/x/components docs/components docs/stuff/components/p docs/site
-printf '# X\n\nX.\n' > docs/x/x.md && printf '# C\n\nC.\n' > docs/x/components/components.md && printf '# C\n\nC.\n' > docs/components/components.md
-printf 'x' > docs/stuff/components/p/a.pdf && printf '# Site\n\nSite.\n' > docs/site/site.md && printf 'png' > docs/site/logo.png
+# The reserved name, an orphan datasheets/ folder, and not_docs.
+HN="$T/hwname"; pcnew "$HN" && mkdir -p docs/x/datasheets docs/datasheets docs/stuff/datasheets docs/site
+printf '# X\n\nX.\n' > docs/x/x.md && printf '# D\n\nD.\n' > docs/x/datasheets/datasheets.md && printf '# D\n\nD.\n' > docs/datasheets/datasheets.md
+printf 'x' > docs/stuff/datasheets/a.pdf && printf '# Site\n\nSite.\n' > docs/site/site.md && printf 'png' > docs/site/logo.png
 git add -A && git commit -qm init && $J init >/dev/null && board "b['not_docs'] = ['docs/site/**']" && git add -A && git commit -qm board
-msg="reserved name: a page named components is reported to rename, not taken for reference files"
+msg="reserved name: a page named datasheets is reported to rename, not taken for reference files"
 expect_pass hrsurvey "k = {e['path']: e['kind'] for e in r['homeless']}
-assert k == {'docs/x/components/components.md': 'reserved', 'docs/components/components.md': 'reserved'}, k"
-msg="reserved name: a components/ folder in no page's folder is reported as an orphan"
-expect_pass hrsurvey "assert r['components_orphan'] == ['docs/stuff/components/p/a.pdf'], r['components_orphan']"
-msg="reference files: a not_docs folder's files are not asked to be linked"
-expect_pass hrsurvey "assert not [f for f in r['components_unlinked'] if f.startswith('docs/site/')], r['components_unlinked']"
+assert k == {'docs/x/datasheets/datasheets.md': 'reserved', 'docs/datasheets/datasheets.md': 'reserved'}, k"
+msg="reserved name: survey's text says to rename the folder"
+expect_pass sh -c "$J survey | grep -q 'docs/x/datasheets/datasheets.md: a page under the reserved name datasheets/'"
+msg="reserved name: a datasheets/ folder in no page's folder is reported as an orphan"
+expect_pass hrsurvey "assert r['datasheets_orphan'] == ['docs/stuff/datasheets/a.pdf'], r['datasheets_orphan']"
+msg="datasheets: a not_docs folder's files are not asked to be linked"
+expect_pass hrsurvey "assert not [f for f in r['datasheets_unlinked'] if f.startswith('docs/site/')], r['datasheets_unlinked']"
 
 # reference_files: ignore, with the line /jig:hardware used to write.
 HI="$T/hwignore"; pcnew "$HI" && printf '*.log\ndocs/hardware/*/**/*.[pP][dD][fF]\n' > .gitignore
@@ -1885,19 +1917,22 @@ out=$($J update 2>&1)
 msg="update: the dry run lists each file the old line ignored that the new one won't"
 expect_pass sh -c "echo \"\$0\" | grep -q 'docs/hardware/watch/spec-sheet.pdf: ignored now, untracked after'" "$out"
 rm -r docs/hardware
-msg="update: in ignore mode, the dry run proposes the components/ glob for the old docs/hardware/ one"
-expect_pass sh -c "echo \"\$0\" | grep -qF '.gitignore: \`docs/hardware/*/**/*.[pP][dD][fF]\` → '" "$out"
+msg="update: in ignore mode, the dry run proposes the datasheets/ glob for the old docs/hardware/ one"
+expect_pass sh -c "echo \"\$0\" | grep -qF '.gitignore: \`docs/hardware/*/**/*.[pP][dD][fF]\` → \`docs/**/datasheets/**/*.[pP][dD][fF]\`'" "$out"
 $J update --apply >/dev/null 2>&1
-msg="update: --apply rewrites that line, and a PDF in a components/ folder is ignored"
-mkdir -p docs/watch/components/pmic docs/components/rtc && printf 'x' > docs/watch/components/pmic/a.pdf && printf 'x' > docs/components/rtc/b.PDF
+msg="update: --apply rewrites that line; a PDF in any datasheets/ folder is ignored, a note and a schematic are not"
+mkdir -p docs/watch/datasheets docs/prod/devkit/datasheets docs/datasheets
+printf 'x' > docs/watch/datasheets/a.pdf && printf 'x' > docs/prod/devkit/datasheets/b.PDF && printf 'x' > docs/datasheets/c.pdf
+printf 'x' > docs/watch/datasheets/notes.md && printf 'x' > docs/watch/schematic.pdf
 expect_pass python3 -c "
-import importlib.util; s = importlib.util.spec_from_file_location('j', '.jig/jig.py'); j = importlib.util.module_from_spec(s); s.loader.exec_module(j)
 lines = open('.gitignore').read().splitlines()
-assert lines == ['*.log', *j.REFERENCE_IGNORES], lines
+assert lines == ['*.log', 'docs/**/datasheets/**/*.[pP][dD][fF]'], lines
 import subprocess
-assert subprocess.run(['git', 'check-ignore', '-q', 'docs/watch/components/pmic/a.pdf']).returncode == 0
-assert subprocess.run(['git', 'check-ignore', '-q', 'docs/components/rtc/b.PDF']).returncode == 0"
-git add -A && git commit -qm update
+for f in ('docs/watch/datasheets/a.pdf', 'docs/prod/devkit/datasheets/b.PDF', 'docs/datasheets/c.pdf'):
+    assert subprocess.run(['git', 'check-ignore', '-q', f]).returncode == 0, f
+for f in ('docs/watch/datasheets/notes.md', 'docs/watch/schematic.pdf'):
+    assert subprocess.run(['git', 'check-ignore', '-q', f]).returncode == 1, f"
+rm -r docs && git add -A && git commit -qm update
 msg="update: in commit mode the line is the repo's, and update leaves it"
 board "b['reference_files'] = 'commit'" && printf 'docs/hardware/*/**/*.[pP][dD][fF]\n' >> .gitignore && git add -A && git commit -qm commit-mode
 expect_pass test "$($J update 2>&1)" = "up to date"
@@ -2472,11 +2507,11 @@ msg="sync: a glossary heading still counts an inflected use (grain in 'grains')"
 expect_pass sh -c "echo \"\$0\" | grep -q 'grain: used in api/g.md'" "$out"
 
 # Hardware: a datasheet whose name holds parentheses.
-FK="$T/fu-hw"; pcnew "$FK" && mkdir -p docs/watch/components/rtc && printf '%%PDF-fake\n' > 'docs/watch/components/rtc/qx-20(rev1).pdf'
-printf '# Watch\n\n| RTC | QX-20 | time | [ds](components/rtc/qx-20(rev1).pdf) |\n' > docs/watch/watch.md
+FK="$T/fu-hw"; pcnew "$FK" && mkdir -p docs/watch/datasheets && printf '%%PDF-fake\n' > 'docs/watch/datasheets/qx-20(rev1).pdf'
+printf '# Watch\n\n| RTC | QX-20 | time | [ds](datasheets/qx-20(rev1).pdf) |\n' > docs/watch/watch.md
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
-msg="survey: components/rtc/qx-20(rev1).pdf, linked bare, is neither missing nor unlinked"
-expect_pass hrsurvey "assert r['components_missing'] == [] and r['components_unlinked'] == [], r"
+msg="survey: datasheets/qx-20(rev1).pdf, linked bare, is neither missing nor unlinked"
+expect_pass hrsurvey "assert r['datasheets_missing'] == [] and r['datasheets_unlinked'] == [], r"
 }
 
 # ---------------------------------------------------------------- sync buffer

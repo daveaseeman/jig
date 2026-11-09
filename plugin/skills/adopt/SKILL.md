@@ -37,9 +37,9 @@ Each one gets exactly one job and one home:
 | `.jig/specs/` | a task in flight |
 | `.jig/ledgers/WORKAROUNDS.md` | patches that are in the code |
 | `.jig/ledgers/DEFERRED.md` | review findings that are not |
-| `docs/<board>/<board>.md` | one per board, a system like any other, listed in `boards` in `.jig/config.json`: components, wiring, toolchain, flash |
-| `docs/<page>/components/<part>/` | one folder per part: its datasheets and notes, in the folder of the page that uses it |
-| `docs/components/<part>/` | a part a second page uses: reference files only, never a page |
+| `docs/<board>/<board>.md` | one per board, a system or a subsystem like any other, listed in `boards` in `.jig/config.json`: components, wiring, toolchain, flash |
+| `docs/…/datasheets/` | the vendor documents a page leans on, in that page's folder; one two pages use, in the nearest folder both share |
+| `docs/datasheets/` | a vendor document two systems use: reference files only, never a page |
 | `.claude/skills/` | reusable know-how, loaded on demand |
 | git history | everything else |
 

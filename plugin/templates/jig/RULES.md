@@ -182,34 +182,45 @@ image — beside the page and its subsystems' folders. `jig survey` lists a file
 page links, and a file shaped like a page (with Invariants or Undefined, or the old Now, Rules
 and Checks) as a subsystem candidate: it gets a folder and a page of its own.
 
-A board, a screen, a battery are parts of the product, so each is a system like any other:
-`docs/<board>/<board>.md`, beside the code's systems, never under a genre folder. A repo that
-builds for boards has one page per board, made from jig's board template (`/jig:hardware`) out
-of a hardware definition and checked against the code. It is a board page because
-`config.json`'s `boards` lists it, never because of where it sits. A `docmap` entry ties each
-page to the code that targets its board, so every handoff that changes that code asks whether
-the page still matches. Code that runs on a board does not pass the gate without a page that
-matches it: `jig gate` refuses "no page needed" for a file a registered board page's `docmap`
-globs cover. A page `boards` doesn't list has no such refusal.
+A board, a screen, a battery are parts of the product, so each is a system or subsystem like
+any other: `docs/<board>/<board>.md`, or `docs/<system>/<board>/<board>.md` where the board is
+part of a larger system, beside the code's pages, never under a genre folder. Every board has a
+page the repo builds, made from jig's board template (`/jig:hardware`) out of a hardware
+definition and checked against the code; a dev board gets one too, written from its vendor's
+spec sheet. It is a board page because `config.json`'s `boards` lists it, never because of where
+it sits. A `docmap` entry ties each page to the code that targets its board, so every handoff
+that changes that code asks whether the page still matches. `jig gate` refuses:
 
-A part with behavior the code touches is a system with a page. A part documented only by its
-reference files gets `components/<part>/`, its datasheets and notes, inside the folder of the
-page that uses it: `docs/<board>/components/<part>/`. When a second page uses the part, the
-folder moves to `docs/components/<part>/` and both pages link it there; no copy per page.
-`components/` is a reserved name at any depth: it holds reference files, is never a subsystem
-and never a page's home, and a note inside it is a reference file, not a page. `jig survey`
-names a page called `components` (rename its folder), and a `components/` folder outside any
-page's folder and outside `docs/components/`. The page's
-Components table links each datasheet with its source URL, the date it was retrieved and the
-first 12 hex digits of its sha256, so a check names the exact document it was made against,
-and says whether the part is verified on the board yet. Whether the binaries are committed is
-the repo's call, `reference_files` in the config: `commit`, or `ignore`: `.gitignore` ignores
-the PDFs under any `components/` folder (`docs/**/components/**/*.[pP][dD][fF]`), and the
-page keeps each one's URL and hash to fetch it again. Notes stay committed. In that mode a
-vendor's file a page leans on, a board definition from a spec sheet as much as a datasheet,
-goes under `components/` with its URL and hash; a file the repo wrote, such as its own
-schematic or definition, stays in the page's folder and is committed. `jig survey` reports a link from a page into a `components/` folder that doesn't
-exist.
+- a branch that adds or changes a board-build file (`sdkconfig*`, `platformio.ini`,
+  `idf_component.yml`, `west.yml`, `*.ino`, `*.overlay`) that no registered board page's
+  `docmap` globs cover: write the board's page, list it in `boards`, map the file to it;
+- a `boards` entry naming a page missing at the branch head;
+- "no page needed" in the fold-in for a file a registered board page's `docmap` globs cover.
+
+A repo with no board-build files has none of these. Survey reads board pages against the page
+contract like any page, and the gate doesn't refuse one off it.
+
+A part whose behavior the code touches is a subsystem with its own page. A vendor's documents —
+datasheets, a dev board's spec sheet, app notes, reference manuals — sit in a `datasheets/`
+folder in the folder of the page that leans on them: a part documented only by its datasheet is
+a file in its page's `datasheets/`, and a board's own spec sheet is in `docs/<board>/datasheets/`.
+A file the repo wrote, its own schematic or a definition the user wrote, sits in the page's
+folder itself. A datasheet two pages use lives in the `datasheets/` of the nearest folder both
+pages sit under: two subsystems of one system share the system's `datasheets/`, two systems
+share `docs/datasheets/`. Both pages link it; it moves there when the second page starts using
+it, and is never copied. `datasheets/` is a reserved name at any depth: it holds reference
+files, is never a subsystem and never a page's home, and a note inside it is a reference file,
+not a page. `jig survey` names a page called `datasheets` (rename its folder), and a
+`datasheets/` folder that is neither in a page's folder nor at `docs/datasheets/`.
+
+Each link to a datasheet carries its source URL, the date it was retrieved and the first 12 hex
+digits of its sha256 (a board page's Components table, or the page's text), so a check names
+the exact document it was made against; a board page's table also says whether each part is
+verified on the board yet. Whether the binaries are committed is the repo's call,
+`reference_files` in the config: `commit`, or `ignore`: `.gitignore` ignores the PDFs under any
+`datasheets/` folder (`docs/**/datasheets/**/*.[pP][dD][fF]`), and the page keeps each one's
+URL and hash to fetch it again. Notes stay committed, and so does every file the repo wrote.
+`jig survey` reports a link from a page into a `datasheets/` folder that doesn't exist.
 
 ### Homes
 
@@ -223,7 +234,7 @@ exist.
 - any other file in a page's folder or below it, outside the folders of its subsystems;
 - nothing under `docs/hardware/`, the layout before boards were systems: survey and update
   say where each of its files goes, and `/jig:redocument` moves them;
-- anything under a `components/` folder, inside a page's folder or at `docs/components/`;
+- anything under a `datasheets/` folder, inside a page's folder or at `docs/datasheets/`;
 - in a metarepo, what `entry_files` names.
 
 Any other file has no home, and survey says which kind: an `AGENTS.md`, `CLAUDE.md` or
