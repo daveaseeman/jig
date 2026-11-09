@@ -25,8 +25,8 @@ identical; only the coordination disappears.
 
 Two files on trunk, written only by the hubnode. `.jig/config.json` holds what rarely
 changes: `name`, `trunk`, `common`, `append_files`, `reserve`, `docmap`, `not_docs`,
-`release`, `reference_files`, `workflow` (optional; see Workflow), `deep_subsystems`
-(optional; see Documentation) and the layout's `version`.
+`release`, `reference_files`, `workflow` (optional; see Workflow), `deep_subsystems` and
+`boards` (both optional; see Documentation) and the layout's `version`.
 `.jig/jobs.json` holds the open jobs, nothing else. Per job:
 
 | Key | Meaning |
@@ -142,7 +142,7 @@ has of its own. On a yes, it is recorded on trunk in `config.json`'s `deep_subsy
 from its folder to that rationale: `{"docs/power/battery/cells": "own firmware module and test
 rig; independent of pack thermal"}`. An entry with an empty rationale doesn't count, and each
 deeper level needs an entry of its own. `jig survey` lists any other deeper page to fold into
-its subsystem's page or to propose. Board pages under `docs/hardware/` keep their own homes.
+its subsystem's page or to propose.
 
 A page describes what is built: what is true of its system on trunk today, in present-tense
 prose. It is not a rulebook; this file holds the rules about documentation, and no page
@@ -177,23 +177,35 @@ A **seam** page covers what crosses between two systems: in `docmap`, a page who
 files from both sides. `jig reading-list <files>` prints which pages to read before touching
 those files.
 
-A repo that builds for boards has one page per board, `docs/hardware/<board>.md`, made from
-jig's board template (`/jig:hardware`) out of a hardware definition and checked against the
-code. A `docmap` entry ties each page to the code that targets its board, so every handoff
-that changes that code asks whether the page still matches. Code that runs on a board does
-not pass the gate without a page that matches it; for that code, "no page needed" is not an
-answer.
+A page's folder holds the files the page links — a schematic, a snapshot of a definition, an
+image — beside the page and its subsystems' folders. `jig survey` lists a file there that no
+page links, and a file shaped like a page (with Invariants or Undefined, or the old Now, Rules
+and Checks) as a subsystem candidate: it gets a folder and a page of its own.
 
-Only `docs/hardware/<board>.md` is a board page. The files a page leans on have two homes
-beside it: `docs/hardware/components/<part>/`, one folder per part with its datasheets and
-notes, shared by every board that uses the part; and `docs/hardware/<board>/`, one board's
-files that aren't its page (a schematic, a snapshot of its definition). The page's Components
-table links each datasheet with its source URL, the date it was retrieved and the first 12
-hex digits of its sha256, so a check names the exact document it was made against. Whether
-the binaries are committed is the repo's call, `reference_files` in the config: `commit`, or
-`ignore` with `docs/hardware/*/**/*.[pP][dD][fF]` in `.gitignore`, covering both homes, and
-the URL and hash on the page to fetch it again. `jig survey` reports a component file no board page links, and a link
-to one that doesn't exist.
+A board, a screen, a battery are parts of the product, so each is a system like any other:
+`docs/<board>/<board>.md`, beside the code's systems, never under a genre folder. A repo that
+builds for boards has one page per board, made from jig's board template (`/jig:hardware`) out
+of a hardware definition and checked against the code. It is a board page because
+`config.json`'s `boards` lists it, never because of where it sits. A `docmap` entry ties each
+page to the code that targets its board, so every handoff that changes that code asks whether
+the page still matches. Code that runs on a board does not pass the gate without a page that
+matches it: `jig gate` refuses "no page needed" for a file a registered board page's `docmap`
+globs cover. A page `boards` doesn't list has no such refusal.
+
+A part with behavior the code touches is a system with a page. A part documented only by its
+reference files gets `components/<part>/`, its datasheets and notes, inside the folder of the
+page that uses it: `docs/<board>/components/<part>/`. When a second page uses the part, the
+folder moves to `docs/components/<part>/` and both pages link it there; no copy per page.
+`components/` is a reserved name at any depth: it holds reference files, is never a subsystem
+and never a page's home, and a note inside it is a reference file, not a page. The page's
+Components table links each datasheet with its source URL, the date it was retrieved and the
+first 12 hex digits of its sha256, so a check names the exact document it was made against,
+and says whether the part is verified on the board yet. Whether the binaries are committed is
+the repo's call, `reference_files` in the config: `commit`, or `ignore`: `.gitignore` ignores
+the PDFs under any `components/` folder (`docs/**/components/**/*.[pP][dD][fF]`), and the
+page keeps each one's URL and hash to fetch it again. Notes stay committed, and so do the
+repo's own files in a page's folder, such as a schematic: they are not vendor copies. `jig survey` reports a link from a page into a `components/` folder that doesn't
+exist.
 
 ### Homes
 
@@ -204,7 +216,8 @@ to one that doesn't exist.
 - under `docs/`, a page named for its folder: `docs/<system>/<system>.md`,
   `docs/<system>/<subsystem>/<subsystem>.md`, and a deeper one only where `deep_subsystems`
   approves its folder and each level above it past the subsystem;
-- `docs/hardware/<board>.md`, and anything under `docs/hardware/*/`;
+- any other file in a page's folder or below it, outside the folders of its subsystems;
+- anything under a `components/` folder, inside a page's folder or at `docs/components/`;
 - in a metarepo, what `entry_files` names.
 
 Any other file has no home, and survey says which kind: an `AGENTS.md`, `CLAUDE.md` or
@@ -225,7 +238,7 @@ here; what the code is now, its invariants and its parked work in `docs/`; a tas
 in `.jig/ledgers/DEFERRED.md`; know-how in the agent's skills; what outsiders need in
 `README.md`; history in git.
 
-`jig survey` also reads each page at home under `docs/`, board pages aside, against the
+`jig survey` also reads each page at home under `docs/`, board pages included, against the
 contract above, and names a page in the old Now, Rules and Checks shape (convert it: fold
 what it says into description, delete what no longer holds, keep as Invariants only what
 passes the test), an Invariants entry with no why (` — `) or no holder (`held by`), any

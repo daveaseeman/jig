@@ -54,6 +54,7 @@ BOARD_DEFAULTS = {
 BOARD_OPTIONAL = (
     "workflow",            # overrides WORKFLOW_DEFAULTS
     "deep_subsystems",     # {"docs/<system>/<subsystem>/<folder>": rationale}: owner-approved deeper pages
+    "boards",              # ["docs/<board>/<board>.md"]: the pages that are boards, never inferred from a path
 )
 # Who runs each step, as numbers the tool maps to its own models and efforts. Tier 1 is the
 # tool's best model, a higher number a lesser one; effort 0 is its highest, each number up one
@@ -1401,6 +1402,18 @@ def cmd_gate(root: Path, args) -> int:
                     still.append(f"{page}: still under Undefined: {undef_key(entry)}")
                 elif close:
                     still.append(f"{page}: reworded, still under Undefined: {undef_key(close[0])}")
+        # Code a registered board page covers runs on that board: "no page needed" is not an
+        # answer for it. The note's UNOWNED line predates the board's docmap entry (trunk's,
+        # read here), or was written by hand. An unregistered page has no such teeth.
+        docmap = board.data.get("docmap") or {}
+        for l in sec.group(1).splitlines():
+            u = re.search(r"UNOWNED (\S+) — .*no page needed", l, re.I)
+            if not u or l in open_lines:
+                continue
+            for page in board_pages(board.data):
+                if matches(u.group(1), docmap.get(page) or []):
+                    open_lines.append(f"{l.strip()}   <- {page} is a board page covering it: "
+                                      "code that runs on a board needs its page")
         if open_lines:
             print(f"the fold-in in {note} is unanswered:", file=sys.stderr)
             for l in open_lines[:10]:
@@ -1462,18 +1475,18 @@ def cmd_gate(root: Path, args) -> int:
 
 # --------------------------------------------------------------------- survey
 
-BOARD_PAGES = "docs/hardware/"
-# One folder per part, shared by every board page that uses it: one part sits on several
-# boards, and a per-board copy of its datasheet would drift.
-COMPONENTS = f"{BOARD_PAGES}components/"
+# A part's reference files (datasheets, notes) sit in a folder of this name inside the folder
+# of the page that uses it, and in docs/components/ once a second page does: a per-page copy
+# would drift. Reserved at any depth: never a subsystem, never a page's home.
+COMPONENTS = "components"
 # Where each kind of document lives: a file by name, a folder by its trailing "/".
 DOC_HOMES = {
     "AGENTS.md": "rules, always loaded",
     "CLAUDE.md": "pointer to AGENTS.md",
     "README.md": "for people outside",
-    "docs/": f"what the code is now: docs/<system>/<system>.md each system, docs/<system>/<subsystem>/<subsystem>.md its subsystems one level down (deeper only where {CONFIG} deep_subsystems approves it), {BOARD_PAGES}<board>.md each board; any other file there has no home",
-    COMPONENTS: "<part>/ one folder per part: its datasheets and notes, linked from board pages",
-    f"{BOARD_PAGES}<board>/": "one board's files that aren't its page (schematic, a snapshot of its definition)",
+    "docs/": f"what the code is now: docs/<system>/<system>.md each system, a board as much as any, docs/<system>/<subsystem>/<subsystem>.md its subsystems one level down (deeper only where {CONFIG} deep_subsystems approves it); a page's folder also holds the files it links; any other file there has no home",
+    f"docs/…/{COMPONENTS}/": "<part>/ one folder per part: its datasheets and notes, inside the folder of the page that uses it",
+    f"docs/{COMPONENTS}/": "<part>/ a part a second page uses: reference files only, never a page",
     f"{DIR}/specs/": "a task in flight",
     f"{DIR}/ledgers/": "WORKAROUNDS.md patches that are in the code; DEFERRED.md review findings that are not",
     f"{DIR}/staging/": "chat-born files waiting to be resolved (untracked)",
@@ -1563,10 +1576,28 @@ def sentences(text: str) -> set[str]:
     return {s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-Z`*-])", flat) if len(s.strip()) > 25}
 
 
+def reference_file(path: str) -> bool:
+    """Under a components/ folder anywhere in docs/: a datasheet or a part's notes, never a page."""
+    parts = path.split("/")
+    return parts[0] == "docs" and COMPONENTS in parts[1:-1]
+
+
 def folder_page(path: str) -> bool:
     """docs/<...>/<name>/<name>.md: a page named for its folder, the shape of every docs page."""
     parts = path.split("/")
-    return parts[0] == "docs" and len(parts) >= 3 and parts[-2] == Path(path).stem
+    return (parts[0] == "docs" and len(parts) >= 3 and parts[-2] == Path(path).stem
+            and not reference_file(path))
+
+
+def owner_page(path: str, have: set[str], deep: dict) -> str:
+    """The page whose folder PATH sits in, nearest first: its own folder's page holds the
+    files it links. Empty when no folder above PATH has a page."""
+    parts = path.split("/")
+    for i in range(len(parts) - 1, 1, -1):
+        d = "/".join(parts[:i])
+        if f"{d}/{parts[i - 1]}.md" in have and parts[i - 1] != COMPONENTS and depth_ok(d, deep):
+            return f"{d}/{parts[i - 1]}.md"
+    return ""
 
 
 def depth_ok(folder: str, deep: dict) -> bool:
@@ -1580,8 +1611,8 @@ def depth_ok(folder: str, deep: dict) -> bool:
 def unapproved(folder: str, deep: dict) -> list[str]:
     """Each level of FOLDER below a subsystem that deep_subsystems doesn't approve."""
     parts = folder.split("/")
-    if parts[0] != "docs" or (folder + "/").startswith(BOARD_PAGES):
-        return []   # board pages keep their own homes
+    if parts[0] != "docs":
+        return []
     return [d for i in range(4, len(parts) + 1) if not (
         isinstance(r := deep.get(d := "/".join(parts[:i])), str) and r.strip())]
 
@@ -1593,10 +1624,12 @@ def deep_fix(h: dict, deep: dict) -> str:
             f"approve {ask} in {CONFIG} deep_subsystems, with its rationale")
 
 
-def at_home(path: str, entry: list[str], deep: dict) -> bool:
-    """RULES.md (Documentation) lists these homes; a change there changes this."""
-    return (path in ROOT_DOCS or path.startswith(BOARD_PAGES) or matches(path, entry)
-            or (folder_page(path) and depth_ok(os.path.dirname(path), deep)))
+def at_home(path: str, entry: list[str], deep: dict, have: set[str] = frozenset()) -> bool:
+    """RULES.md (Documentation) lists these homes; a change there changes this. A file in a
+    page's folder that isn't a page is one of that page's files, wherever it sits below it."""
+    return (path in ROOT_DOCS or reference_file(path) or matches(path, entry)
+            or (folder_page(path) and depth_ok(os.path.dirname(path), deep))
+            or (not folder_page(path) and bool(owner_page(path, have, deep))))
 
 
 def page_home(path: str, have: set[str], deep: dict) -> str:
@@ -1606,7 +1639,7 @@ def page_home(path: str, have: set[str], deep: dict) -> str:
     stem, folders = Path(path).stem, path.split("/")[:-1]
     for i in range(len(folders), 1, -1):
         d = "/".join(folders[:i])
-        if f"{d}/{folders[i - 1]}.md" in have and depth_ok(d, deep):
+        if f"{d}/{folders[i - 1]}.md" in have and folders[i - 1] != COMPONENTS and depth_ok(d, deep):
             return f"{d}/{stem}/{stem}.md" if depth_ok(f"{d}/{stem}", deep) else f"{d}/{folders[i - 1]}.md"
     return f"docs/{stem}/{stem}.md"
 
@@ -1624,7 +1657,8 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
     """Every tracked Markdown file with no home, as {path, kind, to, fold, naming, named_at}.
     Kinds: `rules` an agent instruction file off root, `deep` a page named for its folder below
     a subsystem that deep_subsystems doesn't approve, `page` a page, old shape or new, in the
-    wrong place, `copy` three or more sentences of RULES.md word for word, `stray` anything else.
+    wrong place (in another page's folder, a subsystem candidate), `copy` three or more
+    sentences of RULES.md word for word, `stray` anything else.
     DEEP is the board's deep_subsystems.
     READ maps a path to its text, for update, which judges the files where they will be."""
     read = read or (lambda f: (root / f).read_text(errors="replace") if (root / f).is_file() else "")
@@ -1640,8 +1674,14 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
     have = set(files)
     out = []
     for f in files:
-        if (not f.endswith(".md") or f.startswith(TOOL_DIRS) or matches(f, not_docs)
-                or at_home(f, entry, deep)):
+        if not f.endswith(".md") or f.startswith(TOOL_DIRS) or matches(f, not_docs):
+            continue
+        # A page's own files are at home, but one shaped like a page is a subsystem asking
+        # for a folder of its own.
+        shaped = (not folder_page(f) and not reference_file(f) and f.startswith("docs/")
+                  and owner_page(f, have, deep)
+                  and (old_contract(text := read(f)) or CONTRACT_HEADS.search(text)))
+        if at_home(f, entry, deep, have) and not shaped:
             continue
         text, to = read(f), None
         # A page first: one that quotes the rulebook is still the repo's page, not a copy.
@@ -1731,10 +1771,10 @@ def board_like_json(root: Path, files: list[str]) -> list[str]:
     return out
 
 
-def board_pages(md: list[str]) -> list[str]:
-    """docs/hardware/<board>.md only. A note beside a datasheet, or a board's own folder of
-    files, is not a page."""
-    return [f for f in md if f.startswith(BOARD_PAGES) and "/" not in f[len(BOARD_PAGES):]]
+def board_pages(board: dict) -> list[str]:
+    """The pages config.json's boards names: a board is what a page is, never where it sits."""
+    boards = board.get("boards")
+    return [b for b in boards if isinstance(b, str)] if isinstance(boards, list) else []
 
 
 # Markdown link targets: inline `[t](target "title")` and reference definitions `[d]: target`.
@@ -1758,20 +1798,22 @@ def link_targets(page: str, text: str) -> list[str]:
     return out
 
 
-def component_links(root: Path, files: list[str], pages: list[str]) -> tuple[list[str], list[tuple[str, str]]]:
-    """Files under COMPONENTS that no board page links, and links from board pages into
-    COMPONENTS that point at nothing on disk. Disk, not git: an ignored datasheet that was
-    fetched is present."""
+def component_links(root: Path, files: list[str], pages: list[str],
+                    deep: dict) -> tuple[list[str], list[tuple[str, str]]]:
+    """Files in a page's folder, or in docs/components/, that no page links; and links from
+    pages into a components/ folder that point at nothing on disk. Disk, not git: an ignored
+    datasheet that was fetched is present."""
     linked, missing = set(), []
     for page in pages:
         text = (root / page).read_text(errors="replace") if (root / page).exists() else ""
         for path in link_targets(page, text):
-            if not path.startswith(COMPONENTS):
-                continue
             linked.add(path)
-            if not (root / path).exists() and (page, path) not in missing:
+            if reference_file(path) and not (root / path).exists() and (page, path) not in missing:
                 missing.append((page, path))
-    unlinked = [f for f in files if f.startswith(COMPONENTS) and f not in linked]
+    have, pool = set(files), f"docs/{COMPONENTS}/"
+    unlinked = [f for f in files if f not in linked and f not in pages
+                and (f.startswith(pool) or (f.startswith("docs/") and not folder_page(f)
+                                            and owner_page(f, have, deep)))]
     return unlinked, missing
 
 
@@ -1827,14 +1869,14 @@ def cmd_survey(root: Path, args) -> int:
     report["docmap_present"] = bool(board.get("docmap"))
     # The fold-in asks about a page only when docmap names it, so a board page left out
     # of docmap is never checked against the code that targets that board.
-    pages = board_pages(md)
-    report["boards_unmapped"] = [f for f in pages if f not in (board.get("docmap") or {})]
-    report["components_unlinked"], report["components_missing"] = component_links(root, files, pages)
-    # Board pages have a template of their own; the page contract is for system pages.
+    boards = board_pages(board)
+    report["boards_unmapped"] = [f for f in boards if f not in (board.get("docmap") or {})]
+    report["boards_missing"] = [f for f in boards if f not in files]
+    pages = [f for f in md if folder_page(f) and f not in homes]
+    report["components_unlinked"], report["components_missing"] = component_links(root, files, pages, deep)
     report["page_contract"] = [
         {"path": f, "problems": probs} for f in md
-        if f.startswith("docs/") and not f.startswith(BOARD_PAGES)
-        and (f not in homes or homes[f]["kind"] == "deep")
+        if folder_page(f) and (f not in homes or homes[f]["kind"] == "deep")
         and not matches(f, not_docs)
         and (probs := page_problems((root / f).read_text(errors="replace") if (root / f).exists() else ""))]
     if args.json:
@@ -1860,10 +1902,13 @@ def cmd_survey(root: Path, args) -> int:
                 print(f"  {e['path']}: {home_fix(e)}")
     misplaced = [e for e in report["homeless"] if e["kind"] == "page"]
     if misplaced:
+        have = set(files)
         print(f"\nPages outside the docs tree ({DIR}/RULES.md, Documentation); move each, "
               "or nest it\nunder its system's folder if it is a subsystem:")
         for e in misplaced:
-            print(f"  {e['path']} → {e['to']}{' (fold it in: that page exists)' if e['fold'] else ''}")
+            inside = owner_page(e["path"], have, deep)
+            print(f"  {e['path']} → {e['to']}{' (fold it in: that page exists)' if e['fold'] else ''}"
+                  + (f" (a subsystem candidate: it sits in {inside}'s folder)" if inside else ""))
     below = [e for e in report["homeless"] if e["kind"] == "deep"]
     if below:
         print(f"\nPages below a subsystem ({DIR}/RULES.md, Documentation); fold each into its "
@@ -1901,6 +1946,10 @@ def cmd_survey(root: Path, args) -> int:
     if src and not report["docmap_present"]:
         print("\nNo docmap on the board: handoff cannot tell which docs page a change touches."
               f"\nMap pages to globs in {CONFIG} (see Fold-in in {DIR}/RULES.md).")
+    if report["boards_missing"]:
+        print(f"\n{CONFIG} boards entries that name no tracked page:")
+        for f in report["boards_missing"]:
+            print(f"  {f}")
     if report["boards_unmapped"]:
         print("\nBoard pages no docmap entry names: no handoff will ask whether they still"
               "\nmatch the code. Map each to the code that targets its board:")
@@ -1912,12 +1961,12 @@ def cmd_survey(root: Path, args) -> int:
             for p in e["problems"]:
                 print(f"  {e['path']}: {p}")
     if report["components_unlinked"]:
-        print(f"\nFiles under {COMPONENTS} that no board page links: link each from the"
-              "\nComponents table of the page whose checks lean on it, or drop it:")
+        print(f"\nFiles in a page's folder, or in docs/{COMPONENTS}/, that no page links: link each"
+              "\nfrom the page that leans on it (a datasheet from its Components table), or drop it:")
         for f in report["components_unlinked"]:
             print(f"  {f}")
     if report["components_missing"]:
-        print("\nBoard pages linking a component file that doesn't exist: fetch it again from"
+        print(f"\nPages linking a file under {COMPONENTS}/ that doesn't exist: fetch it again from"
               "\nthe source URL the page records, and check its hash:")
         for page, target in report["components_missing"]:
             print(f"  {page:<40} -> {target}")
@@ -3816,6 +3865,11 @@ OLD_DIRS = ("jig/", ".aidev/", CLAUDE_LANE)
 # its hook installer. They are removed, and the dry run says so first.
 GONE = (f"{CLAUDE_LANE}LANES.md", f"{CLAUDE_LANE}install-hooks.sh")
 OLD_IGNORES = (".jig/worktrees/", ".aidev/worktrees/")
+# reference_files: ignore. The old line covered docs/hardware/'s two homes; parts now sit in a
+# components/ folder in any page's folder, or in docs/components/. Left as it was, a datasheet
+# moved to the new homes would surface as untracked.
+OLD_REFERENCE_IGNORE = "docs/hardware/*/**/*.[pP][dD][fF]"
+REFERENCE_IGNORES = ("docs/**/components/**/*.[pP][dD][fF]",)
 # Untracked folders a jig/ repo kept: files waiting in staging, a pararepo's cache. No git mv
 # moves them, and staged work left behind would be lost to every refusal that counts it.
 OLD_UNTRACKED = (("jig/staging/", f"{DIR}/staging/"), ("jig/meta-cache/", f"{DIR}/meta-cache/"))
@@ -3962,12 +4016,13 @@ def board_slug(text: str) -> str:
 
 
 def hardware_rows(root: Path, files: list[str]) -> list[tuple[str, list[str]]]:
-    """A root HARDWARE.md, an older init's single page, moves to its board's page. Only one
-    that names a board: a page of TODOs is listed for review instead."""
+    """A root HARDWARE.md, an older init's single page, moves to its board's page, a system
+    like any other; rewrite_board registers it in boards. Only one that names a board: a page
+    of TODOs is listed for review instead."""
     if "HARDWARE.md" not in files:
         return []
     slug = board_slug((root / "HARDWARE.md").read_text(errors="replace"))
-    return [(f"{BOARD_PAGES}{slug}.md", ["HARDWARE.md"])] if slug else []
+    return [(f"docs/{slug}/{slug}.md", ["HARDWARE.md"])] if slug else []
 
 
 def handoff_rows(root: Path, files: list[str]) -> tuple[list[tuple[str, list[str]]], set[str]]:
@@ -4219,6 +4274,12 @@ def rewrite_board(data: dict, files: list[str], plan: dict) -> tuple[dict, list[
                 edits.append(f"docmap: `{page}` → `{one(page)}`")
             docmap[one(page)] = many(f"docmap[{one(page)}]", globs)
         new["docmap"] = docmap
+    # A board page is registered, not inferred: the page update moves in becomes one.
+    for o, n in rows:
+        boards = new.get("boards") if isinstance(new.get("boards"), list) else []
+        if o == "HARDWARE.md" and n not in boards:
+            new["boards"] = boards + [n]
+            edits.append(f"boards: + `{n}` (from HARDWARE.md)")
     gone = [f"board: lanes.{name} (merged)" for name in new.pop("lanes", None) or {}]
     log = new.pop("log", None)
     if log is not None:
@@ -4339,12 +4400,13 @@ def files_to_review(root: Path, plan: dict, template: Path | None = None,
             out.append(("docs/HARDWARE.md", "still the template's TODOs: remove it"))
         else:
             out.append(("docs/HARDWARE.md", f"holds a board: rename it to "
-                        f"{BOARD_PAGES}{slug}.md, one page per board as {DIR}/RULES.md "
+                        f"docs/{slug}/{slug}.md, list it under boards in {CONFIG}, one page per "
+                        f"board as {DIR}/RULES.md "
                         "(Documentation) says, then check it against the code"))
     if "HARDWARE.md" in plan["after"] and (root / "HARDWARE.md").exists():
         slug = board_slug((root / "HARDWARE.md").read_text(errors="replace"))
         out.append(("HARDWARE.md", "still the template's TODOs: remove it" if not slug else
-                    f"names a board, but {BOARD_PAGES}{slug}.md exists: fold one into the other"))
+                    f"names a board, but docs/{slug}/{slug}.md exists: fold one into the other"))
     tpl = root / ".claude/skills/_skill-template/SKILL.md"
     if tpl.exists():
         if hashlib.sha256(tpl.read_bytes()).hexdigest() == OLD_SKILL_TEMPLATE:
@@ -4651,6 +4713,8 @@ def cmd_update(root: Path, args) -> int:
                        "each, move or delete it, then update again")
     cache_line = [l for l in ignore.read_text().splitlines() if l.strip() == "jig/meta-cache/"] \
         if ignore.exists() and board_at.startswith("jig/") else []
+    ref_line = [l for l in ignore.read_text().splitlines() if l.strip() == OLD_REFERENCE_IGNORE] \
+        if ignore.exists() and new_board.get("reference_files") == "ignore" else []
     hooks_dir = git_common() / "hooks"
     trunk = new_board.get("trunk", "main")
     stale_hooks = [n for n in HOOKS if not (hooks_dir / n).exists()
@@ -4669,10 +4733,17 @@ def cmd_update(root: Path, args) -> int:
     arriving = set(plan["after"]) | set(replace) | {SETUP for s in steps if s[2] is add_setup}
     review = files_to_review(root, plan, here.parent / "AGENTS.md", arriving)
     review += home_findings(root, plan, new_board, board_at, [f for f, _ in review])
+    have_ignores = {l.strip() for l in ignore.read_text().splitlines()} if ignore.exists() else set()
+    if (new_board.get("reference_files") == "ignore" and not ref_line
+            and not set(REFERENCE_IGNORES) <= have_ignores):
+        # A line the repo wrote itself is its own: update rewrites only the one jig wrote.
+        review.append((".gitignore", "reference_files is ignore, and no line is jig's for the "
+                       "PDFs under components/ folders: add " + ", ".join(f"`{g}`" for g in REFERENCE_IGNORES)
+                       + ", or keep the repo's own line if it covers them"))
 
     moved_board = board_at != CONFIG or not (root / JOBS).exists()
     actions = bool(plan["moves"] or replace or edits or moved_board or steps or ignore_lines
-                   or stale_hooks or aidev_state or untracked or cache_line or removed)
+                   or stale_hooks or aidev_state or untracked or cache_line or ref_line or removed)
     if not actions:
         print("up to date")
         for w in warnings:
@@ -4717,12 +4788,15 @@ def cmd_update(root: Path, args) -> int:
         print("\nSteps:")
         for s in steps:
             print(f"  {s[0]}")
-    if ignore_lines or stale_hooks or aidev_state or untracked or cache_line:
+    if ignore_lines or stale_hooks or aidev_state or untracked or cache_line or ref_line:
         print("\nGit state:")
         for l in ignore_lines:
             print(f"  .gitignore: remove `{l.strip()}` (worktrees live in .git/jig/worktrees/ now)")
         for l in cache_line:
             print(f"  .gitignore: `{l.strip()}` → `{CACHE}/`")
+        for l in ref_line:
+            print(f"  .gitignore: `{l.strip()}` → " + ", ".join(f"`{g}`" for g in REFERENCE_IGNORES)
+                  + " (reference_files: ignore; parts sit in components/ folders now)")
         for o, n in untracked:
             print(f"  move the untracked files in {o} to {n}")
         if stale_hooks:
@@ -4778,13 +4852,15 @@ def cmd_update(root: Path, args) -> int:
             if not dest.exists():
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(f), dest)
-    if ignore_lines or cache_line:
+    if ignore_lines or cache_line or ref_line:
         raw = ignore.read_bytes().decode()
         gone = "|".join(re.escape(l) for l in old_ignores)
         raw = re.sub(rf"(?m)^[ \t]*(?:{gone})[ \t]*(?:\r?\n|\Z)", "", raw)
+        raw = re.sub(rf"(?m)^[ \t]*{re.escape(OLD_REFERENCE_IGNORE)}[ \t]*$",
+                     lambda _: "\n".join(REFERENCE_IGNORES), raw)
         ignore.write_bytes(re.sub(r"(?m)^[ \t]*jig/meta-cache/[ \t]*$", f"{CACHE}/", raw).encode())
-    git("add", "--", CONFIG, JOBS, *replace, *([".gitignore"] if ignore_lines or cache_line else []),
-        check=True)
+    git("add", "--", CONFIG, JOBS, *replace,
+        *([".gitignore"] if ignore_lines or cache_line or ref_line else []), check=True)
     # git mv leaves a flattened note's subfolder behind, empty.
     for folder in ({o for o, _ in plan["rows"] if o.endswith("/")} | flat
                    | {o for o, _ in untracked} | {d for d in OLD_DIRS if board_at.startswith(d)}):

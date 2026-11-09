@@ -41,8 +41,11 @@ Otherwise:
 
 1. **Seed it from survey.** Its old-contract pages, its pages outside the docs tree (with
    where survey says each goes), and its strays under `docs/` are the first rows. Every
-   tracked doc under `docs/` gets a row or an explicit `drop`; board pages
-   (`docs/hardware/`) are left out unless the owner adds them.
+   tracked doc under `docs/` gets a row or an explicit `drop`, board pages included. A board
+   page in an older layout, `docs/hardware/<board>.md`, gets a row to `docs/<board>/<board>.md`
+   with its `boards` entry; `docs/hardware/<board>/` moves into that folder, and each
+   `docs/hardware/components/<part>/` moves to `docs/<board>/components/<part>/`, or to
+   `docs/components/<part>/` when two board pages link it.
 
    **In a pararepo** (`.jig/para.json` on trunk), also find every cached metarepo pointer into
    this repo's docs, `<repo>/<path> § <heading>`:

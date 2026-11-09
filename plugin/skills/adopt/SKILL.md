@@ -33,13 +33,13 @@ Each one gets exactly one job and one home:
 | `AGENTS.md` | rules an agent needs on every task — and nothing else |
 | `CLAUDE.md` | one line importing AGENTS.md |
 | `README.md` | for people outside the repo |
-| `docs/<system>/<system>.md` | what the code is now, one page per system; its subsystems at `docs/<system>/<subsystem>/<subsystem>.md`, no deeper without the owner's `deep_subsystems` entry |
+| `docs/<system>/<system>.md` | what the code is now, one page per system; its subsystems at `docs/<system>/<subsystem>/<subsystem>.md`, no deeper without the owner's `deep_subsystems` entry; the files a page links sit in its folder |
 | `.jig/specs/` | a task in flight |
 | `.jig/ledgers/WORKAROUNDS.md` | patches that are in the code |
 | `.jig/ledgers/DEFERRED.md` | review findings that are not |
-| `docs/hardware/<board>.md` | one per board: components, wiring, toolchain, flash |
-| `docs/hardware/components/<part>/` | one folder per part: its datasheets and notes, linked from board pages |
-| `docs/hardware/<board>/` | one board's files that aren't its page: schematic, a snapshot of its definition |
+| `docs/<board>/<board>.md` | one per board, a system like any other, listed in `boards` in `.jig/config.json`: components, wiring, toolchain, flash |
+| `docs/<page>/components/<part>/` | one folder per part: its datasheets and notes, in the folder of the page that uses it |
+| `docs/components/<part>/` | a part a second page uses: reference files only, never a page |
 | `.claude/skills/` | reusable know-how, loaded on demand |
 | git history | everything else |
 
