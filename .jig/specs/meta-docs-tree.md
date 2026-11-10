@@ -10,6 +10,10 @@ it makes sense it could categorize it's parts … there's a product ecosystem de
 shape in the meta repo, which is where products, features, principles, and more is coming from
 … perhaps we ought to invert the requirement on a meta-repo: genre folders only."
 
+Then: "we dont need a system-name file per system folder in meta-repos. Those terms will be well
+enough defined in the readme. Jig init a meta repo should ask what your genre folders and have
+templates with one being 'product ecosystem' which is this setup."
+
 ## Intent
 A metarepo keeps its pages under `docs/`, each in a genre folder: `docs/<genre>/<name>.md`
 (products, features, principles, concepts, as the metarepo chooses), flat until it holds more
@@ -44,6 +48,16 @@ than itself (spec `flat-pages`). Survey finds a metarepo's pages wherever they s
   `CHANGELOG.md`) are not pages and stay where `meta.json` names them. RULES.md, Homes drops
   "what `entry_files` names" as a home; `entry_files` keeps saying what pararepos cite. A code
   repo keeps its rule: never a genre folder.
+- **Genres are declared at init.** `meta.json` gains an optional `genres` list. `/jig:init`, for a
+  metarepo, asks which genre folders it uses and offers templates. The first is **product
+  ecosystem**: `products`, `features`, `principles`, `concepts`. The other is custom, where the
+  owner names them. It runs `jig init --meta --genres <a,b,…>` or `--genres product-ecosystem`.
+  Each genre's term is defined once, as a `### <genre>` heading in `README.md § Glossary`,
+  which init seeds. A genre gets no page of its own.
+  - With `genres` set, survey reports a page in an undeclared folder under `docs/`.
+  - Without `genres`, any folder directly under `docs/` is a genre, so an older metarepo works
+    unchanged.
+  - Update proposes `genres` from the folders a metarepo already has.
 - **What a page traces against there.** RULES.md, one paragraph: a claim's source is a decision
   row, or the pararepo file a pointer names; an Invariant's holder is an accepted decision id;
   Undefined holds the page's open questions. A dated state section is checked against the
@@ -69,6 +83,11 @@ than itself (spec `flat-pages`). Survey finds a metarepo's pages wherever they s
   is reported as needing a genre; `docs/products/products.md` is not required.
 - [ ] Smoke: in a plain repo, `docs/products/x.md` is still read as system `products`, part `x`
   (the code repo's rule is unchanged).
+- [ ] Smoke: `jig init --meta --genres product-ecosystem` writes `genres: [products, features,
+  principles, concepts]` and a `### product` … `### concept` heading under `README.md § Glossary`.
+  `--genres a,b` writes those two. With `genres` set, `docs/misc/x.md` is reported as in an
+  undeclared genre.
+- [ ] `plugin/skills/init/SKILL.md` asks for a metarepo's genres and offers the templates.
 - [ ] RULES.md, Homes and Metarepo: the metarepo homes and the tracing paragraph;
   `grep -n "what \`entry_files\` names" plugin/templates/jig/RULES.md` no longer finds it under Homes.
 - [ ] `plugin/skills/redocument/SKILL.md`: the Cited-by column and the `entry_files` rewrite at
@@ -77,7 +96,9 @@ than itself (spec `flat-pages`). Survey finds a metarepo's pages wherever they s
   `grep -rnE 'Maige|maige|Daisy|daisy|"E-' plugin` finds nothing.
 
 ## Out of scope
-- A fixed list of genres: the metarepo names its own.
+- A fixed list of genres: the metarepo names its own, or takes a template. Templates beyond
+  product ecosystem wait until a metarepo needs one.
+- A page per genre folder: the README's glossary defines each genre (owner, Nov 10).
 - `page_roots` in `meta.json` (the report's proposal): one `docs/` tree, genres inside it, needs
   no key.
 - A metarepo-specific page skeleton: the contract is the same; only what a claim traces to
@@ -85,7 +106,9 @@ than itself (spec `flat-pages`). Survey finds a metarepo's pages wherever they s
 - Moving any repo's files: redocument does that, per repo, on the owner's yes.
 
 ## Touches
-- `plugin/templates/jig/jig.py` (`doc_homes`, `page_home`, survey's metarepo branch)
+- `plugin/templates/jig/jig.py` (`doc_homes`, `page_home`, survey's metarepo branch,
+  `cmd_meta_init` `--genres`, `META_DEFAULTS`, update's genre proposal)
+- `plugin/skills/init/SKILL.md`
 - `plugin/templates/jig/RULES.md` (Homes, Metarepo and pararepos)
 - `plugin/skills/redocument/SKILL.md`
 - `tests/smoke.sh`
@@ -103,7 +126,10 @@ than itself (spec `flat-pages`). Survey finds a metarepo's pages wherever they s
 - A metarepo's tree is `docs/<genre>/<name>`; a code repo's is `docs/<system>/<part>`. Genre
   folders are required in one and forbidden in the other, because a metarepo categorizes an
   ecosystem and a code repo names one product's parts.
-- Runs after `flat-pages`, `bug-redocument-any-format` and `bug-sync-moved-pages`.
+- Interpreted: the product ecosystem template is products, features, principles and concepts.
+  The owner named the first three; concepts is maige-ecosystem's fourth content folder.
+- Runs after `flat-pages`, `bug-redocument-any-format`, `bug-sync-moved-pages` and
+  `glossary-term-headings`, which provides the README glossary that init seeds.
 
 ## Workflow
 spec: tier 2, effort 2
