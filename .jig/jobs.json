@@ -13,7 +13,7 @@
   },
   "bug-meta-changelog-r3": {
     "spec": ".jig/specs/bug-meta-changelog-r3.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [],
     "shares": [
