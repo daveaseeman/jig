@@ -43,8 +43,9 @@ Otherwise:
 1. **Seed it from survey.** Its old-contract pages, its pages outside the docs tree (with
    where survey says each goes), and its strays under `docs/` are the first rows. Every
    tracked doc under `docs/` gets a row or an explicit `drop`, board pages included. A board
-   page in an older layout, `docs/hardware/<board>.md`, gets a row to `docs/<board>/<board>.md`
-   with its `boards` entry; `docs/hardware/<board>/` moves into that folder, its vendor PDFs
+   page in an older layout, `docs/hardware/<board>.md`, gets a row to `docs/<board>.md` with its
+   `boards` entry, or to `docs/<board>/<board>.md` when files go with it; `docs/hardware/<board>/`
+   moves into that folder, its vendor PDFs
    into the folder's `datasheets/` (a PDF the repo wrote, a schematic, stays beside the page);
    and each file of `docs/hardware/components/<part>/` moves into the `datasheets/` of the
    page that links the part, or `docs/datasheets/` when two board pages link it. Survey's rows
@@ -75,7 +76,9 @@ Otherwise:
    Cited is only for a pararepo.
 
    Verbs are `rewrite`, `merge`, `split`, `move`, `new`, `drop`. A new path is
-   `docs/<system>/<system>.md` or `docs/<system>/<subsystem>/<subsystem>.md`, no deeper. A
+   `docs/<system>.md` or `docs/<system>/<subsystem>.md`, no deeper, flat until the page holds
+   other files; one that does (part pages, files it links, `datasheets/`) is
+   `docs/<system>/<system>.md` or `docs/<system>/<subsystem>/<subsystem>.md`. A
    subsystem inside a subsystem is asked of the owner with its rationale, as `.jig/RULES.md`
    (Documentation) says, and lands as a `deep_subsystems` entry in `.jig/config.json` on trunk
    on a yes. Name the cleanup route in

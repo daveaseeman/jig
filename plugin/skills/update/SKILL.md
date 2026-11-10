@@ -44,7 +44,10 @@ delete it and point what names it at `.jig/RULES.md`. A folder of **pages**: bef
 ask whether each page is a subsystem to nest under its system's folder rather than a system of
 its own. Nest only system/subsystem: a page **below a subsystem** (survey's `deep`) folds into
 its subsystem's page, unless the owner approves its folder for `deep_subsystems` with a rationale
-as `.jig/RULES.md` (Documentation) says; that entry lands on trunk on a yes.
+as `.jig/RULES.md` (Documentation) says; that entry lands on trunk on a yes. A page in the
+**wrong shape**: a folder page with nothing else in its folder goes flat beside its parent's
+page, and a flat page with a folder of its own name moves into it, each with its docmap key
+and `boards` entry; ask before each.
 Then make every line the proposal names in one commit — the `git mv`s, the docmap keys,
 `contract_paths`, the stale lines and, in a pararepo, a `BUFFER.md` row per cached pointer. Carry
 out each finding on a yes. Never propose adding a line that restates `.jig/RULES.md`: point at it.

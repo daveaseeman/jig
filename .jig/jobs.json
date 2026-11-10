@@ -1,23 +1,4 @@
 {
-  "flat-pages": {
-    "spec": ".jig/specs/flat-pages.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/skills/hardware/SKILL.md",
-      "plugin/skills/adopt/SKILL.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh",
-      "plugin/skills/redocument/SKILL.md",
-      "plugin/skills/update/SKILL.md",
-      "plugin/templates/AGENTS.md",
-      "plugin/skills/retro/SKILL.md"
-    ],
-    "reserved": {}
-  },
   "bug-redocument-any-format": {
     "spec": ".jig/specs/bug-redocument-any-format.md",
     "state": "claimed",
