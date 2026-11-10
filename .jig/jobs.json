@@ -39,7 +39,7 @@
   },
   "page-talks-to": {
     "spec": ".jig/specs/page-talks-to.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [
       "plugin/templates/jig/docs-page.md",
