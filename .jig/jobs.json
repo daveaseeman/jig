@@ -13,7 +13,8 @@
       "tests/smoke.sh",
       "plugin/skills/redocument/SKILL.md",
       "plugin/skills/update/SKILL.md",
-      "plugin/templates/AGENTS.md"
+      "plugin/templates/AGENTS.md",
+      "plugin/skills/retro/SKILL.md"
     ],
     "reserved": {}
   },
