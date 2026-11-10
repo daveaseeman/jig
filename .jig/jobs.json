@@ -48,7 +48,8 @@
     ],
     "shares": [
       "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh"
+      "tests/smoke.sh",
+      "plugin/skills/adopt/SKILL.md"
     ],
     "reserved": {}
   }
