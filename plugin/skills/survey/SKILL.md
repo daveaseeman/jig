@@ -30,7 +30,8 @@ Report the output, then say what it means in a few lines:
   printed with where it goes. Each line carries its fix; `/jig:update` proposes the same ones
   with everything they touch.
 - **Pages off the page contract.** A page describes what is built: a lead paragraph, sections
-  named for the system's parts, optional Invariants, optional Undefined last. Survey names an
+  named for the system's parts, optional Talks to (what crosses the boundary), optional
+  Invariants, optional Undefined last. Survey names an
   old Now/Rules/Checks page ("old contract — convert", a job of its own in this repo,
   `/jig:redocument`: fold what it says into description, delete what no longer holds, keep as
   Invariants only entries with a why and a holder), an invariant missing its why or holder, a

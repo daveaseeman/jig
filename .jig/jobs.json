@@ -24,21 +24,5 @@
       "plugin/templates/jig/RULES.md"
     ],
     "reserved": {}
-  },
-  "page-talks-to": {
-    "spec": ".jig/specs/page-talks-to.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/templates/jig/docs-page.md",
-      "plugin/skills/survey/SKILL.md",
-      "plugin/skills/redocument/SKILL.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh",
-      "plugin/skills/adopt/SKILL.md"
-    ],
-    "reserved": {}
   }
 }
