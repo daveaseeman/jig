@@ -1261,12 +1261,17 @@ def foldin_lines(root: Path, board: Board, branch: str) -> str:
             pages.setdefault(page, []).append(f)
         if not owners and f.endswith(SRC_EXT) and f in at_head:
             unowned.append(f)
-    if not pages and not unowned:
+    cited = decision_citers(root, trunk, rng)
+    if not pages and not unowned and not cited:
         return "- [ ] no code changed — nothing to fold in"
     out = []
-    for page, fs in sorted(pages.items()):
-        out.append(f"- [ ] {page} — updated / no change because ___   ({len(fs)} file"
-                   f"{'s' if len(fs) > 1 else ''})")
+    for page in sorted(set(pages) | set(cited)):
+        fs, ids = pages.get(page, []), cited.get(page, [])
+        why = ([f"{len(fs)} file{'s' if len(fs) > 1 else ''}"] if fs else []) + ids
+        out.append(f"- [ ] {page} — updated / no change because ___   ({', '.join(why)})")
+        # A page asked only for a decision it cites changed no code, so built nothing.
+        if not fs:
+            continue
         # The page before this change: an entry the change already deleted was built here,
         # and still needs its answer.
         text = git("show", f"{base}:{page}") or git("show", f"HEAD:{page}")
@@ -3226,6 +3231,53 @@ def decision_ids(loc: Path, rev: str) -> str:
     except ValueError:
         meta = META_DEFAULTS
     return re.escape(meta["decision_prefix"]) + r"\d+"
+
+
+def changed_decisions(root: Path, meta: dict, rng: str) -> dict[str, set[str]]:
+    """Each decision id whose row RNG adds, removes or edits, with the files holding that row.
+    The one place a branch's register is read: where rows live may move, the question doesn't.
+    Rows are read from every changed page, as M2 reads them, so a register outside entry_files
+    still counts."""
+    md = [f for f in git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", rng,
+                         cwd=str(root)).splitlines()
+          if f.endswith(".md") and f != CHANGELOG and not f.startswith(f"{DIR}/")]
+    if not md:
+        return {}
+    row = re.compile(rf"^[+-]\s*\|\s*({re.escape(meta['decision_prefix'])}\d+)\s*\|")
+    out: dict[str, set[str]] = {}
+    f = ""
+    for line in git("-c", "core.quotePath=false", "--literal-pathspecs", "diff", "--no-renames",
+                    rng, "--", *md, cwd=str(root)).splitlines():
+        if line.startswith(("--- a/", "+++ b/")):
+            f = line[6:]
+        elif line.startswith(("--- ", "+++ ")):
+            continue
+        elif m := row.match(line):
+            out.setdefault(m.group(1), set()).add(f)
+    return out
+
+
+def decision_citers(root: Path, trunk: str, rng: str) -> dict[str, list[str]]:
+    """In a metarepo, each entry page whose text cites a decision whose row RNG changed, with
+    those ids. A row and the pages citing it are one home, and a row is no file docmap can map.
+    A passing mention is asked too: "no change because" answers it. The prefix and entry set
+    are trunk's, so a branch can't narrow them to escape the question."""
+    meta = load_meta(trunk)
+    changed = changed_decisions(root, meta, rng) if meta else {}
+    if not changed:
+        return {}
+    rows = set().union(*changed.values())
+    head = git("-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", "HEAD", cwd=str(root))
+    out: dict[str, list[str]] = {}
+    for page in head.splitlines():
+        if page == CHANGELOG or page in rows or not is_entry(page, meta["entry_files"]):
+            continue
+        text = git("show", f"HEAD:{page}", cwd=str(root))
+        # Whole ids only: D-7 is not D-70, nor XD-7.
+        hit = [d for d in sorted(changed) if re.search(rf"(?<![\w-]){re.escape(d)}(?!\d)", text)]
+        if hit:
+            out[page] = hit
+    return out
 
 
 def terms_changed(loc: Path, old: str, new: str) -> list[str]:

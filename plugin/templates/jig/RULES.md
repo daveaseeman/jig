@@ -309,6 +309,11 @@ whenever a file it names changes. A changed source file nothing covers is listed
 `UNOWNED` — add it to `docmap`, starting a new page from `.jig/docs-page.md`, or answer why
 it needs no page.
 
+In a metarepo, a decision row and the pages citing it are one home, so a branch that adds,
+edits or removes a row (marking it superseded included) also asks each entry page whose text
+cites that id, even in passing, with the ids on its line. The id matches whole: `D-7` is not
+`D-70`. The page holding the row and `CHANGELOG.md` are not asked.
+
 ## Sync
 
 `jig sync` merges trunk in. A conflict in an `append_files` file where **both sides only

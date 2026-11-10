@@ -942,6 +942,47 @@ msg="meta R3: the same job deleting CHANGELOG.md is refused"
 git rm -q CHANGELOG.md && printf 'x\n' > notes.txt && git add -A
 out=$(git commit -qm "TOOL: notes" 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'R3 CHANGELOG.md'" "$out"
 cd "$M"
+
+# A decision row and the pages citing it are one home: changing the row asks those pages.
+MF="$T/meta-fold"; mkdir -p "$MF" && cd "$MF" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
+$J init --meta --name docs >/dev/null && setentry DECISIONS.md README.md 'pages/*.md'
+mkdir -p pages notes && printf '| D-007 | x | accepted | 2026-11-01 |\n' >> DECISIONS.md
+printf '# A\n\nWe keep it short, as D-007 says. Retries follow D-020.\n\n## Undefined\n- retries — parked 2026-11-01.\n' > pages/a.md
+mkdir -p decisions && printf '| D-020 | r | accepted | 2026-11-01 |\n' > decisions/DECISIONS.md
+printf '# B\n\nSee D-0070.\n' > pages/b.md
+printf '# C\n\nD-007\n' > notes/c.md
+git add -A && git -c core.hooksPath=/dev/null commit -qm "meta-init"
+$J open d7 --branch b-d7 --shares DECISIONS.md >/dev/null && git add -A && git commit -qm "TOOL: open d7"
+cd .git/jig/worktrees/b-d7
+sed -i.bak 's/^| D-007 | x |/| D-007 | y |/' DECISIONS.md && rm DECISIONS.md.bak && printf -- '- D-007 y\n' >> CHANGELOG.md
+git add -A && git commit -qm "D-007: y" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
+note=$(ls .jig/handoffs/*.md)
+msg="meta fold-in: a changed row asks the entry page citing it in passing, naming the id"
+expect_pass grep -qx -- '- \[ \] pages/a.md — updated / no change because ___   (D-007)' "$note"
+msg="meta fold-in: a page asked only for a decision it cites gets one line, none for its Undefined entries"
+expect_pass test "$(grep -c 'pages/a.md' "$note")" = 1
+msg="meta fold-in: no line for D-0070's page, a page outside entry_files, the register or CHANGELOG.md"
+expect_pass sh -c "! grep -qE 'pages/b.md|notes/c.md|DECISIONS.md|CHANGELOG.md|no code changed' '$note'"
+git add -A && git commit -qm "TOOL: note d7" && cd "$MF"
+msg="meta fold-in: the gate refuses the note while the line is unanswered"
+expect_refuse gate_ok d7
+cd .git/jig/worktrees/b-d7 && pcfold && git add -A && git commit -qm "TOOL: answer d7" && cd "$MF"
+msg="meta fold-in: and passes once it is answered"
+expect_pass gate_ok d7
+$J open s7 --branch b-s7 --shares DECISIONS.md >/dev/null && git add -A && git commit -qm "TOOL: open s7"
+cd .git/jig/worktrees/b-s7
+sed -i.bak 's/^| D-007 | x | accepted |/| D-007 | x | superseded by D-012 |/' DECISIONS.md && rm DECISIONS.md.bak
+printf '| D-012 | z | accepted | 2026-11-02 |\n' >> DECISIONS.md && printf -- '- D-007, D-012\n' >> CHANGELOG.md
+git add -A && git commit -qm "D-007, D-012: z" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
+msg="meta fold-in: a row marked superseded by asks the page citing it"
+expect_pass grep -qx -- '- \[ \] pages/a.md — updated / no change because ___   (D-007)' .jig/handoffs/*.md
+cd "$MF" && $J open r20 --branch b-r20 --shares decisions/DECISIONS.md >/dev/null && git add -A && git commit -qm "TOOL: open r20"
+cd .git/jig/worktrees/b-r20 && printf '| D-020 | s | accepted | 2026-11-03 |\n' > decisions/DECISIONS.md
+git add -A && git commit -qm "D-020: s" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
+msg="meta fold-in: a row in a register outside entry_files still asks the entry page citing it"
+expect_pass grep -qx -- '- \[ \] pages/a.md — updated / no change because ___   (D-020)' .jig/handoffs/*.md
+cd "$M"
 }
 
 # ---------------------------------------------------------------- staging
