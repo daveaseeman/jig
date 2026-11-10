@@ -2840,8 +2840,9 @@ def cmd_repos(root: Path, args) -> int:
         print(f"  {name:<24} {e['kind']:<5} {e['path']}{missing}{'   ← here' if name in mine else ''}")
     if not repos:
         print(f"no repos in {repos_file()}: jig repos add repo|meta|para")
-    if "jig" not in repos:
-        print(f"tool reports wait in {feedback_dir()} while no repo in this list is named jig")
+    # The same lookup staging and forwarding use, so an alias for the jig repo counts too.
+    if repo_path("jig") is None:
+        print(f"tool reports wait in {feedback_dir()} while the jig repo isn't registered")
     return 0
 
 

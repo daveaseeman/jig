@@ -1585,9 +1585,15 @@ msg="repos: the list marks this folder"
 expect_pass sh -c "$J repos | grep -q 'tools .*← here'"
 msg="repos: with no entry named jig, it says where tool reports wait"
 expect_pass sh -c "$J repos | grep -q 'tool reports wait'"
-msg="repos: with an entry named jig, it doesn't say reports wait in a folder"
+msg="repos: rename to jig lists this folder as jig"
 $J repos rename jig >/dev/null
 expect_pass sh -c "$J repos | grep -q 'jig .*← here'"
+msg="repos: with an entry named jig, it doesn't say reports wait in a folder"
+expect_refuse sh -c "$J repos | grep -q 'tool reports wait'"
+msg="repos: a repo whose own name is jig, under an alias, counts as the jig repo"
+$J repos rename tools >/dev/null
+JD="$T/jigdev"; mkdir -p "$JD/.jig" && echo '{"name": "jig"}' > "$JD/.jig/config.json"
+$J repos add jigdev "$JD" >/dev/null
 expect_refuse sh -c "$J repos | grep -q 'tool reports wait'"
 }
 
