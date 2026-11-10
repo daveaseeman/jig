@@ -1,7 +1,7 @@
 {
   "reading-list-pages-above": {
     "spec": ".jig/specs/reading-list-pages-above.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
