@@ -1863,6 +1863,19 @@ def glossary_unheaded(text: str) -> list[str]:
     return out
 
 
+def glossary_terms(text: str) -> list[str]:
+    """The ### term headings of README's Glossary section: in a metarepo, the only part of the
+    README that pararepos cite, so the only part a release reports or M3 asks a line for."""
+    return [m.group(1) for l in glossary_section(text) or []
+            if (m := re.match(r"###\s+(.+?)\s*$", l))]
+
+
+def glossary_text(text: str) -> list[str] | None:
+    """README's Glossary section without its blank lines, which git's output may have trimmed."""
+    section = glossary_section(text)
+    return None if section is None else [l for l in section if l.strip()]
+
+
 def home_fix(h: dict) -> str:
     """What to do with a rules file or a copy, shared by survey and update."""
     at = ", ".join(h["named_at"]) or "nothing"
@@ -2399,6 +2412,10 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
     branch_paths = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", since,
                        *(["--cached"] if staged else [])).splitlines()
     cited = [p for p in branch_paths if p and is_entry(p, entry)]
+    # A README's prose is the metarepo's own; pararepos cite only its Glossary section.
+    if "README.md" in cited and glossary_text(at_rev(since, "README.md")) == glossary_text(
+            in_index("README.md", staged)):
+        cited.remove("README.md")
     if cited and (CHANGELOG not in branch_paths or not in_index(CHANGELOG, staged)):
         out.append(f"M3 {', '.join(cited)} changed: add a line to {CHANGELOG} under ## Unreleased")
     # M4 nothing lands on main except merges; jig's own bookkeeping (the board, handoffs) is
@@ -3178,11 +3195,17 @@ def terms_changed(loc: Path, old: str, new: str) -> list[str]:
     # Only what a pararepo can read: the entry set release counts and the cache copies. Literal
     # paths, not entry_files globs, since git's `**` misses a file directly under the folder.
     paths = sorted((set(entry_paths(old, str(loc))) | set(entry_paths(new, str(loc)))) - {CHANGELOG})
-    if not paths:
-        return []
-    diff = git("--literal-pathspecs", "diff", old, new, "--", *paths, cwd=str(loc))
-    found = re.findall(rf"^[+-]\s*\|\s*({decision_ids(loc, new)})\s*\|", diff, re.M)
-    found += re.findall(r"^[+-]#{2,3} (.+?)\s*$", diff, re.M)
+    # The README's other headings (Install, Usage) are prose, not terms: only its Glossary counts.
+    readme = "README.md" in paths
+    paths = [f for f in paths if f != "README.md"]
+    found = []
+    if paths:
+        diff = git("--literal-pathspecs", "diff", old, new, "--", *paths, cwd=str(loc))
+        found = re.findall(rf"^[+-]\s*\|\s*({decision_ids(loc, new)})\s*\|", diff, re.M)
+        found += re.findall(r"^[+-]#{2,3} (.+?)\s*$", diff, re.M)
+    if readme:
+        was, now = (glossary_terms(git("show", f"{r}:README.md", cwd=str(loc))) for r in (old, new))
+        found += [t for t in now if t not in was] + [t for t in was if t not in now]
     return list(dict.fromkeys(found))
 
 

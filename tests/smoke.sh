@@ -136,7 +136,7 @@ emergejob() {  # emergejob <job> <subject>: open a job in $EM, hand it off, and 
 sbprops() { git -C "$SM" branch --list 'propose/*' | wc -l | tr -d ' '; }
 brow() { printf '| %s | DECISIONS.md § D-001: %s | api/a.py, %s (%s) | owner, 2026-11-02 | %s |\n' "$@"; }
 sbland() {  # sbland <proposal branch> <term>: the metarepo writes it, merges and releases
-  (cd "$SM" && git switch -q "$1" && printf '\n## %s\n' "$2" >> README.md && printf -- '- %s\n' "$2" >> CHANGELOG.md \
+  (cd "$SM" && git switch -q "$1" && printf '\n### %s\n' "$2" >> README.md && printf -- '- %s\n' "$2" >> CHANGELOG.md \
     && git add -A && git commit -qm "GLOSSARY: $2" && $J reviewed >/dev/null && git switch -q main \
     && git merge -q --no-ff --no-edit "$1" && $J release >/dev/null); }
 sbbump() { setjson .jig/para.json pin "$1" && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: sbm → $1"; }
@@ -885,9 +885,16 @@ expect_refuse git commit -qm "use json"
 msg="meta: an id-prefixed decision with status, date and changelog is accepted"
 expect_pass git commit -qm "D-001: config is JSON"
 git switch -q main
+git switch -q -c b4
+msg="meta M3: a README.md change outside ## Glossary needs no changelog line"
+perl -0pi -e 's/^## Glossary$/## Install\nrun it\n\n## Glossary/m' README.md
+expect_pass git commit -qam "README: install"
+msg="meta M3: a README.md change inside ## Glossary needs the changelog line"
+printf '\n### rune\nx\n' >> README.md && git add -A
+expect_refuse git commit -qm "GLOSSARY: rune"; git reset -q --hard && git switch -q main
 
 msg="meta M4: a direct commit on main is refused"
-printf '\n## mote\n' >> README.md && printf -- '- mote\n' >> CHANGELOG.md && git add -A
+printf '\n### mote\n' >> README.md && printf -- '- mote\n' >> CHANGELOG.md && git add -A
 expect_refuse git commit -qm "GLOSSARY: mote"; git reset -q --hard
 
 msg="meta M5: a --no-ff merge of an unreviewed branch is refused"
@@ -896,13 +903,13 @@ msg="meta: the same merge once the branch is reviewed is accepted"
 git switch -q b1 && $J reviewed >/dev/null && git switch -q main
 expect_pass git merge -q --no-ff --no-edit b1
 msg="meta: a git pull of a reviewed branch into main is accepted"
-git switch -q -c b3 && printf '\n## seam\n' >> README.md && printf -- '- seam\n' >> CHANGELOG.md && git add -A && git commit -qm "GLOSSARY: seam" && $J reviewed >/dev/null && git switch -q main
+git switch -q -c b3 && printf '\n### seam\n' >> README.md && printf -- '- seam\n' >> CHANGELOG.md && git add -A && git commit -qm "GLOSSARY: seam" && $J reviewed >/dev/null && git switch -q main
 expect_pass git pull -q --no-ff --no-edit . b3
 
 msg="meta: release tags v0.2.0 (minor is a metarepo's default)"
 expect_pass sh -c "$J release && git tag | grep -qx v0.2.0"
 
-git switch -q -c b2 && printf '\n## grain\n' >> README.md && printf -- '- grain\n' >> CHANGELOG.md && git add -A && git commit -qm "GLOSSARY: grain" && git switch -q main
+git switch -q -c b2 && printf '\n### grain\n' >> README.md && printf -- '- grain\n' >> CHANGELOG.md && git add -A && git commit -qm "GLOSSARY: grain" && git switch -q main
 git merge -q --ff-only b2
 git init -q --bare "$T/meta-remote.git" && git remote add origin "$T/meta-remote.git"
 msg="meta: a fast-forward of an unreviewed branch: release refuses, naming the commit"
@@ -2165,7 +2172,7 @@ out=$($J gate G1 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'propose/pa-g' && echo \"\$0\" | grep -q 'v0.1.0' && test ! -d .git/jig/worktrees/gate-G1" "$out"
 git worktree remove --force .git/jig/worktrees/gate-G1 2>/dev/null
 
-(cd "$PM" && git switch -q propose/pa-g && printf '\n## gee\n' >> README.md && printf -- '- gee\n' >> CHANGELOG.md \
+(cd "$PM" && git switch -q propose/pa-g && printf '\n### gee\n' >> README.md && printf -- '- gee\n' >> CHANGELOG.md \
   && git add -A && git commit -qm "GLOSSARY: gee" && $J reviewed >/dev/null && git switch -q main \
   && git merge -q --no-ff --no-edit propose/pa-g && $J release >/dev/null)
 msg="gate: released after the pin, it is refused, saying to bump the pin"
@@ -2218,7 +2225,7 @@ out=$($J gate G3 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/ga
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'propose/pa-t'" "$out"
 # The metarepo lands that proposal as a job, by `jig merge`, releases, and deletes the branch.
 (cd "$PM" && $J open tj --branch propose/pa-t --owns README.md CHANGELOG.md >/dev/null && git add -A && git commit -qm "TOOL: open tj" \
-  && cd .git/jig/worktrees/propose/pa-t && printf '\n## tee\n' >> README.md && printf -- '- tee\n' >> CHANGELOG.md \
+  && cd .git/jig/worktrees/propose/pa-t && printf '\n### tee\n' >> README.md && printf -- '- tee\n' >> CHANGELOG.md \
   && git add -A && git commit -qm "GLOSSARY: tee" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
   && git add -A && git commit -qm "TOOL: note tj" && cd "$PM" && $J merge tj >/dev/null && $J release >/dev/null \
   && git worktree remove --force .git/jig/worktrees/propose/pa-t && git branch -q -D propose/pa-t)
@@ -2417,7 +2424,7 @@ expect_pass sh -c "echo \"\$0\" | sed -n '/^Stale references/,/^\$/p' | grep -q 
 FM="$T/fu-m5"; pcnew "$FM" && git add -A && git commit -qm init && $J init --meta --name fm >/dev/null \
   && git add -A && git commit -qm meta-init && $J release >/dev/null
 git init -q --bare "$T/fu-m5.git" && git remote add origin "$T/fu-m5.git" && git push -q origin main 2>/dev/null
-git switch -q -c ub && printf '\n## grain\n' >> README.md && printf -- '- grain\n' >> CHANGELOG.md \
+git switch -q -c ub && printf '\n### grain\n' >> README.md && printf -- '- grain\n' >> CHANGELOG.md \
   && git add -A && git commit -qm "GLOSSARY: grain" && git checkout -q --detach main
 msg="M5: on a detached HEAD at main, a merge of an unreviewed branch is refused"
 out=$(git merge --no-ff --no-edit ub 2>&1); rc=$?; git merge --abort 2>/dev/null
@@ -2555,7 +2562,8 @@ FE="$T/fu-para"; pcnew "$FE" && mkdir -p api && printf 'x=1\n' > api/a.py && pri
   && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 $J init --para fd --location "$FD" >/dev/null 2>&1 && git add -A && git commit -qm "init --para"
 (cd "$FD" && git switch -q -c m4 && sed -i.bak 's/| dec-1 | x |/| dec-1 | y |/' DECISIONS.md && rm DECISIONS.md.bak && printf -- '- dec-1 y\n' >> CHANGELOG.md \
-  && printf '\n## grain\n\n### vault\nx\n' >> README.md \
+  && printf '\n### grain\n\n### vault\nx\n' >> README.md \
+  && perl -0pi -e 's/^## Glossary$/## Install\nrun it\n\n## Glossary/m' README.md \
   && git add -A && git commit -qm "DECISIONS: dec-1 y" && $J reviewed >/dev/null && git switch -q main && git merge -q --no-ff --no-edit m4 && $J release >/dev/null)
 out=$($J sync 2>&1)
 msg="sync: a lowercase decision_prefix's dec-1 is reported, used in api/one.md and not in api/twelve.md"
@@ -2564,6 +2572,8 @@ msg="sync: a glossary heading still counts an inflected use (grain in 'grains')"
 expect_pass sh -c "echo \"\$0\" | grep -q 'grain: used in api/g.md'" "$out"
 msg="sync: a ### term in README.md § Glossary is in the term report"
 expect_pass sh -c "echo \"\$0\" | grep -q '^  vault: '" "$out"
+msg="sync: a README.md heading outside ## Glossary is no term"
+expect_pass sh -c "! echo \"\$0\" | grep -q 'Install'" "$out"
 
 # Hardware: a datasheet whose name holds parentheses.
 FK="$T/fu-hw"; pcnew "$FK" && mkdir -p docs/watch/datasheets && printf '%%PDF-fake\n' > 'docs/watch/datasheets/qx-20(rev1).pdf'
@@ -2684,7 +2694,7 @@ out=$($J sync 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'sbm v0.6.0 is out' && echo \"\$0\" | grep -q 'D-004:' && ! echo \"\$0\" | grep -qE '(Built|Left|Done when|Touches):'" "$out"
 # Page pointers: a metarepo page points to files this repo owns, one of them already gone.
 mkdir -p docs/guide && printf '# B\n\n## Build (release)\n\n## The `run` step\n' > docs/b.md && printf '# Guide\n' > docs/guide/a.md && git add -A && git commit -qm "docs: b, guide"
-(cd "$SM" && git switch -q -c ptr && printf '\n## Screens\nThe list: `sb-para/docs/ui.md § UI`. See sb-para/docs/ui.md § UI for the list.\n\n## Help\nSee `sb-para/docs/z.md`, `sb-para/docs/gone.md` and sb-para:docs/x.md § Colors.\n\n## Build\n`sb-para/docs/b.md § Build (release)`, then sb-para/docs/b.md § The `run` step, in sb-para/docs/guide. Use this/that wording.\n' >> README.md \
+(cd "$SM" && git switch -q -c ptr && printf '\n### Screens\nThe list: `sb-para/docs/ui.md § UI`. See sb-para/docs/ui.md § UI for the list.\n\n### Help\nSee `sb-para/docs/z.md`, `sb-para/docs/gone.md` and sb-para:docs/x.md § Colors.\n\n### Build\n`sb-para/docs/b.md § Build (release)`, then sb-para/docs/b.md § The `run` step, in sb-para/docs/guide. Use this/that wording.\n' >> README.md \
   && printf '| D-005 | the old page (`sb-para/docs/old.md`) | superseded by D-004 | 2026-11-03 |\n' >> DECISIONS.md \
   && printf -- '- D-005, GLOSSARY: Screens, Help, Build\n' >> CHANGELOG.md && git add -A && git commit -qm "D-005, GLOSSARY: Screens, Help, Build" && $J reviewed >/dev/null \
   && git switch -q main && git merge -q --no-ff --no-edit ptr && $J release >/dev/null)
@@ -2721,7 +2731,7 @@ sec_pointers() {
 # Numbered pointers: `§2` names `## 2. Motes`, as the Documentation rule cites rules. pp is
 # today's pararepo; po is one on v0.6.0, whose P2 let removals through, for update to report.
 PM="$T/pm"; pcnew "$PM" && git add -A && git commit -qm init && $J init --meta --name pm >/dev/null
-printf '\n## Pointers\n`pp/docs/x.md §2.1`, `pp/docs/x.md §2`, `pp/docs/x.md § 10`, `pp/docs/x.md § 3` and `pp/docs/x.md §1`.\nThe rules: `pp/docs/r.md §1`. Gone: `pp/docs/g.md § Gone`.\nThe prose pp/docs/x.md §1.2 (cited by path, for now)\nTwice: `pp/docs/none.md § A` and `pp/docs/none.md § B`.\nWords, not numbers: `pp/docs/x.md § 2-factor` and `pp/docs/x.md § 2.a`.\nThe old app: `po/docs/x.md §2`, `po/docs/w.md §4`, `po/docs/r.md §1` and `po/docs/ui.md §4`.\nIts theme: po/docs/ui.md § Colors for the theme\n' >> README.md
+printf '\n### Pointers\n`pp/docs/x.md §2.1`, `pp/docs/x.md §2`, `pp/docs/x.md § 10`, `pp/docs/x.md § 3` and `pp/docs/x.md §1`.\nThe rules: `pp/docs/r.md §1`. Gone: `pp/docs/g.md § Gone`.\nThe prose pp/docs/x.md §1.2 (cited by path, for now)\nTwice: `pp/docs/none.md § A` and `pp/docs/none.md § B`.\nWords, not numbers: `pp/docs/x.md § 2-factor` and `pp/docs/x.md § 2.a`.\nThe old app: `po/docs/x.md §2`, `po/docs/w.md §4`, `po/docs/r.md §1` and `po/docs/ui.md §4`.\nIts theme: po/docs/ui.md § Colors for the theme\n' >> README.md
 printf -- '- GLOSSARY: Pointers\n' >> CHANGELOG.md && git add -A && git commit -qm "GLOSSARY: Pointers" && $J release >/dev/null
 # docs <dir>: the pages the metarepo points into
 docs() { mkdir -p api docs && printf 'x=1\n' > api/a.py && printf '# X\n\n## 2. Motes\n\n### 2.1 Identity\n\n## 10. Open questions\n' > docs/x.md \
@@ -2796,7 +2806,7 @@ sec_removals() {
 # Removals: a delete changes its path and a rename changes both, for every rule that guards a
 # path. rp is today's pararepo; po is one on v0.6.0, whose P2 let removals through.
 RM="$T/rm"; pcnew "$RM" && git add -A && git commit -qm init && $J init --meta --name rm >/dev/null
-printf '\n## Pointers\nThe old app: `po/api/e.py`.\n' >> README.md
+printf '\n### Pointers\nThe old app: `po/api/e.py`.\n' >> README.md
 printf -- '- GLOSSARY: Pointers\n' >> CHANGELOG.md && git add -A && git commit -qm "GLOSSARY: Pointers" && $J release >/dev/null
 RP="$T/rp"; pcnew "$RP" && mkf api/a.py api/b.py && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 $J init --para rm --location "$RM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"

@@ -52,8 +52,9 @@ out each finding on a yes. Never propose adding a line that restates `.jig/RULES
 A root **`GLOSSARY.md`**: the glossary's home is `README.md § Glossary` now. On a yes, move each
 term into that section as a `### <term>` heading, its text below it, delete the file, replace it
 with `README.md` in a metarepo's `entry_files`, and repoint the lines that name it. In a metarepo
-this is one changelog line (`GLOSSARY: …`); a pararepo's citations of `GLOSSARY.md` are named
-at its next pin bump.
+this is one changelog line (`GLOSSARY: …`). After migrating, find each pararepo's citations of
+`GLOSSARY.md` with `git grep GLOSSARY.md` in its checkout (`jig repos` lists them), and repoint
+each to `README.md § <term>`.
 
 The **AGENTS.md** lines are the few the template still needs there: the Rulebook line, a
 Commands line for a `.jig/scripts/` file the repo has or this run adds, and a block jig retired
