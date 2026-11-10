@@ -925,7 +925,14 @@ git tag -d v0.3 >/dev/null
 msg="meta R3: a job given only GLOSSARY.md commits a term with its CHANGELOG.md line"
 $J open gl --branch b-gl --owns GLOSSARY.md >/dev/null && git add -A && git commit -qm "TOOL: open gl"
 cd .git/jig/worktrees/b-gl && printf '\n## mote\n' >> GLOSSARY.md && printf -- '- mote\n' >> CHANGELOG.md && git add -A
-expect_pass git commit -qm "GLOSSARY: mote"; cd "$M"
+expect_pass git commit -qm "GLOSSARY: mote"
+msg="meta R3: the same job rewriting CHANGELOG.md is refused"
+printf '\n## seam\n' >> GLOSSARY.md && printf '# Changelog\n\n## Unreleased\n- seam\n' > CHANGELOG.md && git add -A
+out=$(git commit -qm "GLOSSARY: seam" 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'R3 CHANGELOG.md'" "$out"
+msg="meta R3: the same job deleting CHANGELOG.md is refused"
+git rm -q CHANGELOG.md && printf 'x\n' > notes.txt && git add -A
+out=$(git commit -qm "TOOL: notes" 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'R3 CHANGELOG.md'" "$out"
+cd "$M"
 }
 
 # ---------------------------------------------------------------- staging

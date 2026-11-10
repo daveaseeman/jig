@@ -291,6 +291,14 @@ def in_index(path: str, staged: bool) -> str:
     return git("show", f":{path}")
 
 
+def changelog_only_grows(trunk: str, staged: bool) -> bool:
+    """CHANGELOG.md is still there and this change deletes none of its lines."""
+    if not in_index(CHANGELOG, staged):
+        return False
+    stat = git("diff", "--numstat", base(trunk), *(["--cached"] if staged else []), "--", CHANGELOG)
+    return all(line.split("\t")[1] == "0" for line in stat.splitlines() if line)
+
+
 def existed_on_trunk(trunk: str, path: str) -> bool:
     return bool(git("ls-tree", "-r", "--name-only", trunk, "--", path))
 
@@ -412,8 +420,9 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
             if matches(p, owns) or matches(p, shares) or matches(p, common):
                 continue
             # M3 asks every metarepo job that changes an entry file for a changelog line, so
-            # every metarepo job may write one.
-            if meta is not None and p == CHANGELOG:
+            # every metarepo job may add lines to it. Only add: a rewrite or a delete would take
+            # the released history with it, and R3 is the file's only guard.
+            if meta is not None and p == CHANGELOG and changelog_only_grows(trunk, staged):
                 continue
             if not existed_on_trunk(trunk, p):
                 continue

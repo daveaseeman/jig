@@ -59,7 +59,7 @@ a rename changes both of its paths: R3–R5, P1, P2 and P4 count each.
 - **R1** The trunk checkout stays on trunk. Work in `.git/jig/worktrees/<branch>`.
 - **R2** A job is built in its own worktree.
 - **R3** A job changes only its `owns`, its `shares`, `common`, or files new to the repo; in a
-  metarepo, `CHANGELOG.md` too, where M3 asks every job for its line.
+  metarepo, lines added to `CHANGELOG.md` too, where M3 asks every job for its line.
 - **R4** Another open job's `owns` is refused even if this job also lists it.
 - **R5** The board is the hubnode's: `config.json` and `jobs.json` are edited on trunk only.
   So is the roadmap, the owner's: `.jig/roadmap.md`, and `ROADMAP.md` where trunk has a
