@@ -73,5 +73,19 @@
       "plugin/templates/AGENTS.md"
     ],
     "reserved": {}
+  },
+  "stage-ask-access": {
+    "spec": ".jig/specs/stage-ask-access.md",
+    "state": "claimed",
+    "after": [
+      "decision-log"
+    ],
+    "owns": [
+      "plugin/skills/feedback/SKILL.md"
+    ],
+    "shares": [
+      "plugin/skills/stage/SKILL.md"
+    ],
+    "reserved": {}
   }
 }
