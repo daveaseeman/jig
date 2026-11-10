@@ -32,8 +32,8 @@ system page to someone about to edit a subsystem file. Any repo with a subsystem
 
 ## Design
 In `cmd_reading_list`, after each covering page, add the page of each folder above it, once
-each, by walking `owner_page` up. Start from the page's own folder for a page named for its
-folder, and from the file itself for any other `docmap` key. A page listed only because it is
+each, by walking `owner_page` up. Only a page named for its folder climbs, from its own folder;
+any other `docmap` key (a seam's page) lists no parent. Flat part pages climb in `flat-pages`. A page listed only because it is
 above another is printed as `<page>   (parent of <covering page>)`, once. A page that also
 covers a named file is printed without the note. RULES.md's reading-list sentence (the seam
 paragraph) and its Commands line say it lists the pages above too.

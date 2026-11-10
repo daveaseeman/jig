@@ -1740,17 +1740,13 @@ def owner_page(path: str, have: set[str], deep: dict) -> str:
 
 def pages_above(page: str, have: set[str], deep: dict) -> list[tuple[str, str]]:
     """Each page above PAGE in the docs tree, nearest first, as (page above, page below it).
-    A page named for its folder asks from that folder, any other page from itself, so a part
-    page sitting flat beside its system's page finds it too."""
+    Only a page named for its folder climbs: any other covering page, a seam's, sits beside
+    its folder's page rather than under it, and listing that would hand over the other side."""
     out, below = [], page
-    while True:
-        up = owner_page(below, have, deep)
-        if up == below:
-            up = owner_page(os.path.dirname(below), have, deep)
-        if not up or up == below or up in (p for p, _ in out):
-            return out
+    while folder_page(below) and (up := owner_page(os.path.dirname(below), have, deep)):
         out.append((up, below))
         below = up
+    return out
 
 
 def depth_ok(folder: str, deep: dict) -> bool:

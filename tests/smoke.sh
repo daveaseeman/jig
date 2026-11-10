@@ -3152,6 +3152,10 @@ msg="homes: under an approved deep level, reading-list prints c, then b and a, e
 expect_pass test "$(rl src/a/c/c.rs)" = "$(printf '  docs/a/b/c/c.md\n  docs/a/b/b.md   (parent of docs/a/b/c/c.md)\n  docs/a/a.md   (parent of docs/a/b/b.md)')"
 msg="homes: a page that covers a named file prints once, without the parent mark"
 expect_pass test "$(rl src/a/lib.rs src/a/b.rs)" = "$(printf '  docs/a/a.md\n  docs/a/b/b.md')"
+page docs/net/net.md && page docs/net/seam-gpio.md && mkdir -p main && printf 'x\n' > main/app.c
+board "b['docmap']['docs/net/seam-gpio.md'] = ['main/app.c']" && git add -A && git commit -qm seam
+msg="homes: a seam-style page not named for its folder prints no parent"
+expect_pass test "$(rl main/app.c)" = "  docs/net/seam-gpio.md"
 $J open RL --spec t --owns 'src/**' >/dev/null && git add -A && git commit -qm "open RL"
 ( cd .git/jig/worktrees/RL && printf 'y\n' > src/a/b.rs && git add -A && git commit -qm b && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 )
 msg="homes: a handoff changing only a subsystem's file asks only its page"
