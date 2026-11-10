@@ -3140,6 +3140,22 @@ behind
 msg="homes: update lists GLOSSARY.md under Repo files to review, and --apply leaves it alone"
 out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
 expect_pass sh -c "echo \"\$0\" | sed -n '/^Repo files to review/,/^\$/p' | grep -q '^  GLOSSARY.md: the glossary.s home is README.md § Glossary' && test -z \"\$(git status --porcelain GLOSSARY.md README.md)\" && test -f GLOSSARY.md" "$out"
+# The reading list climbs the docs tree from each covering page; fold-in doesn't.
+HL="$T/homes-reading"; pcnew "$HL" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+page docs/a/a.md && page docs/a/b/b.md && page docs/a/b/c/c.md && mkdir -p src/a/c && printf 'x\n' > src/a/lib.rs && printf 'x\n' > src/a/b.rs && printf 'x\n' > src/a/c/c.rs
+board "b['docmap'] = {'docs/a/a.md': ['src/a/lib.rs'], 'docs/a/b/b.md': ['src/a/b.rs'], 'docs/a/b/c/c.md': ['src/a/c/**']}" && git add -A && git commit -qm docmap
+rl() { $J reading-list "$@" | sed -n '/^Read first:/,/^$/p' | grep '^  docs/'; }
+msg="homes: reading-list for a subsystem's file prints its page, then its system's page marked as the parent"
+expect_pass test "$(rl src/a/b.rs)" = "$(printf '  docs/a/b/b.md\n  docs/a/a.md   (parent of docs/a/b/b.md)')"
+board "b['deep_subsystems'] = {'docs/a/b/c': 'own module'}" && git add -A && git commit -qm approve
+msg="homes: under an approved deep level, reading-list prints c, then b and a, each once and marked"
+expect_pass test "$(rl src/a/c/c.rs)" = "$(printf '  docs/a/b/c/c.md\n  docs/a/b/b.md   (parent of docs/a/b/c/c.md)\n  docs/a/a.md   (parent of docs/a/b/b.md)')"
+msg="homes: a page that covers a named file prints once, without the parent mark"
+expect_pass test "$(rl src/a/lib.rs src/a/b.rs)" = "$(printf '  docs/a/a.md\n  docs/a/b/b.md')"
+$J open RL --spec t --owns 'src/**' >/dev/null && git add -A && git commit -qm "open RL"
+( cd .git/jig/worktrees/RL && printf 'y\n' > src/a/b.rs && git add -A && git commit -qm b && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 )
+msg="homes: a handoff changing only a subsystem's file asks only its page"
+expect_pass sh -c "test \"\$(grep -c -- '^- \[ \] docs/' .git/jig/worktrees/RL/.jig/handoffs/RL-*.md)\" = 1 && grep -q -- '^- \[ \] docs/a/b/b.md' .git/jig/worktrees/RL/.jig/handoffs/RL-*.md"
 }
 
 # ---------------------------------------------------------------- update's AGENTS.md lines

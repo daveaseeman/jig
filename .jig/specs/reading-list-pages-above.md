@@ -34,7 +34,7 @@ system page to someone about to edit a subsystem file. Any repo with a subsystem
 In `cmd_reading_list`, after each covering page, add the page of each folder above it, once
 each, by walking `owner_page` up. Start from the page's own folder for a page named for its
 folder, and from the file itself for any other `docmap` key. A page listed only because it is
-above another is printed as `<page>   (the page above <covering page>)`. A page that also
+above another is printed as `<page>   (parent of <covering page>)`, once. A page that also
 covers a named file is printed without the note. RULES.md's reading-list sentence (the seam
 paragraph) and its Commands line say it lists the pages above too.
 
@@ -49,7 +49,7 @@ paragraph) and its Commands line say it lists the pages above too.
 - [ ] Smoke `homes`: a handoff changing only `src/a/b.rs` has one fold-in line, `docs/a/b/b.md`.
 - [ ] `bash tests/smoke.sh` passes (the existing "system page and a board page lists both" case
   included), `claude plugin validate ./plugin` passes, and
-  `grep -rnE 'Maige|maige|Daisy|daisy' plugin` finds nothing.
+  `grep -rnE 'Maige|maige|Daisy|daisy|"E-' plugin` finds nothing.
 
 ## Out of scope
 - Fold-in, `doc_owners` and `docmap`: still only the covering pages are asked.
