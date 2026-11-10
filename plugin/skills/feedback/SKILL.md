@@ -34,9 +34,11 @@ Then:
    ---
    ```
 
-2. Find the jig repo with `python3 .jig/jig.py repos` (it needs only `~/.config/jig/`). If an
-   entry is named `jig`, write the file into `<its path>/.jig/staging/` — ask for access to
-   exactly that folder. If not, write it into the `feedback/` folder beside your repos list
+2. Find the jig repo with `python3 .jig/jig.py repos` (it needs only `~/.config/jig/`). It is
+   the entry named `jig`, or the one whose own name (`name` in its `.jig/config.json`) is
+   `jig`; `jig repos` shows it is registered by not printing where tool reports wait. If it is
+   registered, write the file into `<its path>/.jig/staging/` — ask for access to exactly that
+   folder. If not, write it into the `feedback/` folder beside your repos list
    (`jig repos` prints where; `~/.config/jig/feedback/` by default). Never a temp folder:
    reports there were lost when it was cleared.
 3. Print the path. The report waits there until `/jig:fix` runs in the jig repo.

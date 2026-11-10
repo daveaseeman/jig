@@ -1,30 +1,7 @@
 {
-  "bug-repos-jig-line": {
-    "spec": ".jig/specs/bug-repos-jig-line.md",
-    "state": "claimed",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "tests/smoke.sh"
-    ],
-    "reserved": {}
-  },
-  "bug-meta-changelog-r3": {
-    "spec": ".jig/specs/bug-meta-changelog-r3.md",
-    "state": "claimed",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "tests/smoke.sh",
-      "plugin/templates/jig/RULES.md"
-    ],
-    "reserved": {}
-  },
   "glossary-term-headings": {
     "spec": ".jig/specs/glossary-term-headings.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/update/SKILL.md"
@@ -33,21 +10,6 @@
       "plugin/templates/jig/jig.py",
       "tests/smoke.sh",
       "plugin/templates/jig/RULES.md"
-    ],
-    "reserved": {}
-  },
-  "page-talks-to": {
-    "spec": ".jig/specs/page-talks-to.md",
-    "state": "claimed",
-    "after": [],
-    "owns": [
-      "plugin/templates/jig/docs-page.md",
-      "plugin/skills/survey/SKILL.md",
-      "plugin/skills/redocument/SKILL.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh"
     ],
     "reserved": {}
   }

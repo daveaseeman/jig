@@ -36,13 +36,13 @@ CHANGELOG`. R4 is unchanged. RULES.md's R3 line gains "in a metarepo, `CHANGELOG
 M3 asks every job for its line"; the R3 row in `marketing/FEATURES.md` says the same.
 
 ## Done when
-- [ ] Smoke `metarepo`: a job opened with `--owns GLOSSARY.md` and no `--shares` commits a new
+- [x] Smoke `metarepo`: a job opened with `--owns GLOSSARY.md` and no `--shares` commits a new
       term with its `CHANGELOG.md` line (the reported refusal is gone).
-- [ ] Smoke: `emergejob` opens its jobs without `CHANGELOG.md` in `--owns`, and every section
+- [x] Smoke: `emergejob` opens its jobs without `CHANGELOG.md` in `--owns`, and every section
       using it passes.
-- [ ] Smoke `rules`: in a repo with no `meta.json`, a job changing `CHANGELOG.md` it doesn't
+- [x] Smoke `rules`: in a repo with no `meta.json`, a job changing `CHANGELOG.md` it doesn't
       own or share is still refused by R3.
-- [ ] `bash tests/smoke.sh` and `claude plugin validate ./plugin` pass.
+- [x] `bash tests/smoke.sh` and `claude plugin validate ./plugin` pass.
 
 ## Out of scope
 - A job that owns `CHANGELOG.md`: R4 still blocks the others; that is the hubnode's choice.

@@ -58,7 +58,8 @@ a rename changes both of its paths: R3–R5, P1, P2 and P4 count each.
 
 - **R1** The trunk checkout stays on trunk. Work in `.git/jig/worktrees/<branch>`.
 - **R2** A job is built in its own worktree.
-- **R3** A job changes only its `owns`, its `shares`, `common`, or files new to the repo.
+- **R3** A job changes only its `owns`, its `shares`, `common`, or files new to the repo; in a
+  metarepo, lines added to `CHANGELOG.md` too, where M3 asks every job for its line.
 - **R4** Another open job's `owns` is refused even if this job also lists it.
 - **R5** The board is the hubnode's: `config.json` and `jobs.json` are edited on trunk only.
   So is the roadmap, the owner's: `.jig/roadmap.md`, and `ROADMAP.md` where trunk has a
@@ -154,13 +155,17 @@ current, is the skeleton):
 1. **A lead paragraph**, with no heading of its own: what the system is and why it exists.
 2. **Body sections**, named for the system's own parts — the nouns its code has (Schema,
    Renderer, Sync) — never for a lifecycle or a genre (Overview, Notes, Misc, Changes). A
-   part that becomes a subsystem, with files of its own, moves to a subsystem folder with its
-   own page, and the parent's section shrinks to a paragraph and a link.
-3. **`## Invariants`**, optional: only the facts that are load-bearing. Each entry states,
+   subsystem gets a page of its own, in a subsystem folder, once it has something to say that
+   whoever works on it needs and its system's page doesn't; the parent's section then shrinks
+   to a paragraph and a link. Until then it is a section, its files in its system page's globs.
+3. **`## Talks to`**, optional: what crosses the system's boundary, meaning what it calls, what
+   calls it and what passes between them, each linked to its seam page or contract where one
+   exists. Calls inside the system stay in the body.
+4. **`## Invariants`**, optional: only the facts that are load-bearing. Each entry states,
    inline, why it must hold and what holds it — a named test, review, or on screen:
    `- Rows are at least 44px — the touch-target minimum; held by test_touch_targets.` An
    entry without a why and a holder is description, and goes in the body or nowhere.
-4. **`## Undefined`**, optional and always last: work parked mid-build, written only on the
+5. **`## Undefined`**, optional and always last: work parked mid-build, written only on the
    owner's word. Each entry says what was parked, where it stops, and the date. Nothing in it
    binds, and nothing in it is a promise. It is parked work, placed where the work lives;
    review findings not taken go in `.jig/ledgers/DEFERRED.md` instead, never in both.

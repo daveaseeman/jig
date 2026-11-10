@@ -166,8 +166,10 @@ Your spec carries the job's remap rows and the Sources. You write only your page
    source the `## Sources` names. **Tracing migrates and verifies; it never invents.** A
    claim with no source is flagged in the report, not written on the page.
 2. **Write** the page from `.jig/docs-page.md`, to the contract: a lead paragraph, sections
-   named for the system's parts, optional Invariants, optional Undefined last. Every old
-   Rules entry gets exactly one fate:
+   named for the system's parts, optional Talks to, optional Invariants, optional Undefined
+   last. An old page's list of what it uses or serves goes under `## Talks to`, keeping only
+   what crosses the system's boundary; calls inside the system are the body's or nowhere.
+   Every old Rules entry gets exactly one fate:
    - **still true of the code** → described in the body;
    - **passes the admission test** (a why it must hold, and what holds it) → `## Invariants`,
      as `- <fact> — <why>; held by <holder>.`;

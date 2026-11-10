@@ -291,6 +291,14 @@ def in_index(path: str, staged: bool) -> str:
     return git("show", f":{path}")
 
 
+def changelog_only_grows(trunk: str, staged: bool) -> bool:
+    """CHANGELOG.md is still there and this change deletes none of its lines."""
+    if not in_index(CHANGELOG, staged):
+        return False
+    stat = git("diff", "--numstat", base(trunk), *(["--cached"] if staged else []), "--", CHANGELOG)
+    return all(line.split("\t")[1] == "0" for line in stat.splitlines() if line)
+
+
 def existed_on_trunk(trunk: str, path: str) -> bool:
     return bool(git("ls-tree", "-r", "--name-only", trunk, "--", path))
 
@@ -410,6 +418,11 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
             # R3 only this job's files, or a file new to the repository. Removing a file is
             # changing it: one trunk has must be declared; one only this job added never was trunk's.
             if matches(p, owns) or matches(p, shares) or matches(p, common):
+                continue
+            # M3 asks every metarepo job that changes an entry file for a changelog line, so
+            # every metarepo job may add lines to it. Only add: a rewrite or a delete would take
+            # the released history with it, and R3 is the file's only guard.
+            if meta is not None and p == CHANGELOG and changelog_only_grows(trunk, staged):
                 continue
             if not existed_on_trunk(trunk, p):
                 continue
@@ -2911,7 +2924,9 @@ def cmd_repos(root: Path, args) -> int:
         print(f"  {name:<24} {e['kind']:<5} {e['path']}{missing}{'   ← here' if name in mine else ''}")
     if not repos:
         print(f"no repos in {repos_file()}: jig repos add repo|meta|para")
-    print(f"tool reports wait in {feedback_dir()} while no repo in this list is named jig")
+    # The same lookup staging and forwarding use, so an alias for the jig repo counts too.
+    if repo_path("jig") is None:
+        print(f"tool reports wait in {feedback_dir()} while the jig repo isn't registered")
     return 0
 
 
