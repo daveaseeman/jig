@@ -47,9 +47,11 @@ first draft rejected becomes reliable.
 - **One citation form.** A pararepo cites the metarepo as `<meta>/<path>` (or `<meta>:<path>`),
   with `§ <heading>` for a section: the form RULES.md already gives the metarepo's pointers, now
   required both ways. BUFFER's template column says so.
-- **On every sync.** `jig sync` checks each such citation in this repo's tracked files (specs and
+- **On every sync and at a pararepo's release.** `jig sync` and `jig release` check each such citation in this repo's tracked files (specs and
   ledgers included, handoffs and Closed BUFFER rows excepted: they cite the pin they were written
-  at) against the cache, mirroring `stale_pointers`: a path or `§` heading the pin lacks is named.
+  at) against the cache, mirroring `stale_pointers`: a path or `§` heading the pin lacks is named,
+  and a `§` that is a decision id names a row, not a heading. A `<meta>/<path>` that is a
+  tracked path here is this repo's own and is skipped. One `git grep` picks the candidate lines.
   A bare path that names a metarepo entry file at the pin and no file here is named too, as
   `write it as <meta>/<path>`. It reports and refuses nothing.
 

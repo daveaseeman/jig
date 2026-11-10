@@ -1,16 +1,1 @@
-{
-  "bug-sync-moved-pages": {
-    "spec": ".jig/specs/bug-sync-moved-pages.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/templates/ledgers/BUFFER.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh"
-    ],
-    "reserved": {}
-  }
-}
+{}

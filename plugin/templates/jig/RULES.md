@@ -523,7 +523,9 @@ In a metarepo the release also turns `## Unreleased` into the version's heading,
 `release.sh` steps, and defaults to `--minor`: minor for additions and clarifications, major
 for a rename or a reversed decision. A pararepo pins a release, never `main`, and bumps it in
 a commit of its own, `meta: <name> v0.3.0 → v0.4.0`, with the report `jig sync` prints on its
-trunk as the body. A two-part pin (`v0.3`), from before releases had three parts, keeps
+trunk as the body: each decision id and glossary term that changed, and each entry file the new
+release moved (`<old> (now <new>)`) or removed (`<old> (removed)`), with every file here that
+uses it, specs and ledgers included. A two-part pin (`v0.3`), from before releases had three parts, keeps
 working: it sorts below `v0.3.0`. `jig gate` refuses a job whose spec cites a proposal that isn't in
 the pinned release, and one whose `pointers` branch isn't on the metarepo it names (one merged
 into its trunk counts, released or not), or names another metarepo; a metarepo it can't reach
@@ -552,6 +554,13 @@ commit `meta: <name> v0.3.0 → v0.4.0` (or, when the pin already holds the rele
 `jig sync` also names each file here that a decision at the pin cites and `contract_paths`
 doesn't cover; adding it is the hubnode's call. A decision may cite this repo by name in any
 case (`App/docs/ui.md`); the path after it is exact.
+
+**Citing the metarepo.** A pararepo cites the metarepo the way the metarepo points to it:
+`<meta>/<path>` (or `<meta>:<path>`), with `§ <section>` for a heading, matched as above. On
+every run, `jig sync` and the release name each citation in this repo's tracked files, specs and
+ledgers included, whose file or heading the pin doesn't have, and each bare path that names an
+entry file at the pin and no file here, as `write it as <meta>/<path>`. Handoffs and `Closed`
+BUFFER rows are left out: they cite the pin they were written at. Reported; nothing refuses.
 
 Two rules for the metarepo's own pages:
 

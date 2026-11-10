@@ -3019,7 +3019,7 @@ def para_problems(root: Path, para: dict, trunk: str) -> tuple[list[str], Path |
     # As `jig sync`: until defer_until, what moved upstream is not reported.
     if date.today().isoformat() >= (para.get("defer_until") or ""):
         uncovered_paths(root, loc, para)
-        for line in stale_pointers(root):
+        for line in [*stale_pointers(root), *meta_citations(root, para, decision_ids(loc, pin))]:
             print(line)
         if version_key(tags[-1]) > version_key(pin):
             print("\n".join(newer_release(root, loc, name, pin, tags[-1])))
@@ -3459,7 +3459,7 @@ def sync_meta(root: Path) -> int:
                 die(f"the commit was refused: {PARA}, AGENTS.md and {BUFFER} are staged as jig wrote them", 1)
             print(f"{subject}: committed, closing {', '.join(ids)}.")
             pin = settles
-    for line in stale_pointers(root):
+    for line in [*stale_pointers(root), *meta_citations(root, para, decision_ids(loc, pin))]:
         print(line)
     if version_key(latest) <= version_key(pin):
         print(f"{name} {pin} is the latest release")
@@ -3476,16 +3476,132 @@ def newer_release(root: Path, loc: Path, name: str, pin: str, latest: str) -> li
             f"those alone as `meta: {name} {pin} → {latest}` with this report as the body."]
 
 
+def entries_moved(loc: Path, old: str, new: str) -> list[tuple[str, str | None]]:
+    """Each entry file at OLD that NEW lacks, with where it went (None: removed). git's rename
+    detection names the new path, so no changelog line has to be read for it."""
+    paths = sorted((set(entry_paths(old, str(loc))) | set(entry_paths(new, str(loc)))) - {CHANGELOG})
+    if not paths:
+        return []
+    out = []
+    for line in git("-c", "core.quotePath=false", "--literal-pathspecs", "diff", "-M", "--name-status",
+                    old, new, "--", *paths, cwd=str(loc)).splitlines():
+        f = line.split("\t")
+        if f[0].startswith("R"):
+            out.append((f[1], f[2]))
+        elif f[0] == "D":
+            out.append((f[1], None))
+    return out
+
+
+def closed_row(path: str, line: str) -> bool:
+    """A Closed BUFFER row cites the pin it was written at: history, not a use."""
+    return path == BUFFER and line.lstrip().startswith("|") and table_cells(line)[-1:] == ["Closed"]
+
+
+def used_in(text: str, whole: bool = False) -> list[str]:
+    """This repo's files that use TEXT. Of jig's own files only specs and ledgers count: the
+    rulebook's examples and the cache aren't the repo's use, but a spec or an Open BUFFER row is."""
+    keep = (f"{DIR}/specs/", f"{DIR}/ledgers/")
+    hits = git("grep", "-n", "--null", "-I", "-F", *(["-w"] if whole else []), "--", text).splitlines()
+    return list(dict.fromkeys(f for f, _, line in (h.split("\0", 2) for h in hits)
+                              if (not f.startswith(f"{DIR}/") or f.startswith(keep)) and not closed_row(f, line)))
+
+
 def changes_report(root: Path, loc: Path, old: str, new: str) -> list[str]:
     out = ["Changed, in this repo's terms:"]
+    for was, now in entries_moved(loc, old, new):
+        users = used_in(was)
+        out.append(f"  {was} ({'now ' + now if now else 'removed'}): "
+                   + (f"used in {', '.join(users)}" if users else "not used here"))
     for term in terms_changed(loc, old, new):
-        # jig's own files (the rulebook's examples, the cache) are not the repo's use of a term.
         # An id as a whole word: D-1 is not a use of D-12. A heading's term may be inflected.
-        whole = ["-w"] if re.fullmatch(decision_ids(loc, new), term) else []
-        users = [f for f in git("grep", "-l", "-F", *whole, "--", term).splitlines()
-                 if not f.startswith(f"{DIR}/")]
+        users = used_in(term, bool(re.fullmatch(decision_ids(loc, new), term)))
         out.append(f"  {term}: " + (f"used in {', '.join(users)}" if users else "not used here"))
     return out
+
+
+def head_texts(paths: list[str]) -> list[tuple[str, str]]:
+    """PATHS' text at HEAD, read in one git call; binary files (a NUL byte) left out."""
+    raw = subprocess.run(["git", "cat-file", "--batch"], capture_output=True,
+                         input="".join(f"HEAD:{p}\n" for p in paths).encode()).stdout
+    out, at = [], 0
+    for p in paths:
+        head_end = raw.index(b"\n", at)
+        head = raw[at:head_end].split()
+        if head[-1] == b"missing":
+            at = head_end + 1
+            continue
+        size = int(head[2])
+        body = raw[head_end + 1:head_end + 1 + size]
+        at = head_end + 1 + size + 1
+        if b"\0" not in body:
+            out.append((p, body.decode(errors="replace")))
+    return out
+
+
+def meta_citations(root: Path, para: dict, ids: str) -> list[str]:
+    """This repo's citations of the metarepo checked against the cache: the mirror of
+    stale_pointers. A citation is `<meta>/<path> § <section>`; a section that is a decision id
+    (IDS, the metarepo's prefix) names a row, any other a heading. A bare path that names an
+    entry file at the pin and nothing here is named too, since it can't be told from this repo's
+    own. Handoffs and Closed BUFFER rows cite the pin they were written at, so they are left out.
+    Reported, never refused. Read at HEAD, as stale_pointers reads it."""
+    cache, name, pin = root / CACHE, para["meta"], para["pin"]
+    if not cache.is_dir():
+        return []
+    entries = [f.relative_to(cache).as_posix() for f in sorted(cache.rglob("*"))
+               if f.is_file() and f.name != "PIN" and f != cache / CHANGELOG]
+    sized = [l.split("\t", 1) for l in git("-c", "core.quotePath=false", "ls-tree", "-r", "-l", "HEAD").splitlines()]
+    here = [p for _, p in sized]
+    tracked = set(here)
+    # A citation lives in prose: a blob over a megabyte (an image, a firmware build) isn't read.
+    small = [p for meta, p in sized if meta.split()[1] == "blob" and meta.split()[3] != "-"
+             and int(meta.split()[3]) <= 1 << 20]
+    folders = {"/".join(p.split("/")[:k]) + "/" for p in here for k in range(1, p.count("/") + 1)}
+    bare = sorted((e for e in entries if e not in tracked), key=len, reverse=True)
+    # One plain alternation finds the candidates and the boundaries are checked after: a regex
+    # per entry, or one with a lookbehind, over every line of a big repo is too slow for a sync.
+    one = re.compile("|".join(map(re.escape, bare))) if bare else None
+    rows = re.compile(rf"(?<!\w)({ids})(?!\w)")
+    named = (f"{name.casefold()}/", f"{name.casefold()}:")
+    out = []
+    for f, text in head_texts([p for p in small if not p.startswith(f"{DIR}/")
+                               or p.startswith((f"{DIR}/specs/", f"{DIR}/ledgers/"))]):
+        folded = text.casefold()
+        if not any(t in folded for t in named) and not (one and one.search(text)):
+            continue
+        for n, line in enumerate(text.splitlines(), 1):
+            if closed_row(f, line):
+                continue
+            for m in POINTER.finditer(line) if any(t in line.casefold() for t in named) else ():
+                if not name_in(m.group("name"), {name}):
+                    continue
+                path = m.group("path").rstrip(".")
+                # docs/ui.md is this repo's own page, whatever its metarepo is called.
+                written = f"{m.group('name')}/{path}"
+                if written in tracked or f"{written}/" in folders:
+                    continue
+                code = m.start() > 0 and line[m.start() - 1] == "`" and not m.group("shut")
+                rest = m.group("rest")
+                section = (rest.split("`")[0].strip() if code else rest) if rest else None
+                target = cache / path
+                body = target.read_text(errors="replace") if target.is_file() else "" if target.is_dir() else None
+                row = rows.match(plain(section)) if section and body else None
+                if row and (not code or row.group(1) == plain(section)):
+                    if not re.search(rf"^\s*\|\s*{re.escape(row.group(1))}\s*\|", body, re.M):
+                        out.append(f"{f}:{n} cites {name}/{path} § {row.group(1)}, which {name} {pin} has no row for")
+                    continue
+                level, _ = pointer_gap(path, section or None, code, body)
+                if level == NO_FILE:
+                    out.append(f"{f}:{n} cites {name}/{path}, which {name} {pin} doesn't have")
+                elif level == NO_HEADING:
+                    out.append(f"{f}:{n} cites {name}/{path} § {shown_section(plain(section), code)}, "
+                               f"which {name} {pin} has no heading for")
+            for m in one.finditer(line) if one else ():
+                before, after = line[m.start() - 1:m.start()], line[m.end():m.end() + 1]
+                if not re.match(r"[\w./:-]", before) and not re.match(r"[\w/-]", after):
+                    out.append(f"{f}:{n} cites {m.group(0)} bare: write it as `{name}/{m.group(0)}`")
+    return list(dict.fromkeys(out))
 
 
 def uncovered_paths(root: Path, loc: Path, para: dict) -> None:
