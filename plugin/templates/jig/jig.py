@@ -1815,6 +1815,12 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
         shaped = (not folder_page(f) and not reference_file(f) and f.startswith("docs/")
                   and owner_page(f, have, deep)
                   and (old_contract(text := read(f)) or CONTRACT_HEADS.search(text)))
+        if f == "GLOSSARY.md":
+            named = naming(root, f, files)
+            out.append({"path": f, "kind": "stray", "to": f"README.md § {GLOSSARY_HOME[3:]}",
+                        "fold": False, "naming": sorted(named),
+                        "named_at": [f"{n}:{i}" for n in sorted(named) for i in named[n]]})
+            continue
         if at_home(f, entry, deep, have) and not shaped:
             continue
         text, to = read(f), None
@@ -1835,6 +1841,52 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
                     "naming": sorted(named),
                     "named_at": [f"{n}:{i}" for n in sorted(named) for i in named[n]]})
     return out
+
+
+# RULES.md (Documentation): a repo's terms are a section of its README, one heading per term,
+# so `README.md § <term>` names one and sync's term report, which reads headings, sees it.
+GLOSSARY_HOME = "## Glossary"
+GLOSSARY_SEED = (f"{GLOSSARY_HOME}\n\n<!-- One term per ### heading: what it means, and what it "
+                 "is not. -->\n")
+# A term written as a bold word opening its paragraph, then a dash or colon on that line:
+# `**mote** — …`, `**operation** (registry op) — …`, `**seam:** …`.
+BOLD_TERM = re.compile(r"^\*\*([^*]+?)(:?)\*\*(.*)$")
+TERM_MARK = re.compile(r"\s[—–-]\s|[—–]|:")
+
+
+def glossary_section(text: str) -> list[str] | None:
+    """The lines of README's Glossary section, or None when it has none."""
+    lines = text.splitlines()
+    start = next((i for i, l in enumerate(lines) if l.strip() == GLOSSARY_HOME), None)
+    if start is None:
+        return None
+    end = next((j for j in range(start + 1, len(lines)) if re.match(r"#{1,2}\s", lines[j])), len(lines))
+    return lines[start + 1:end]
+
+
+def glossary_unheaded(text: str) -> list[str]:
+    """Terms in README's Glossary section that are bold words in a paragraph, not headings."""
+    lines = glossary_section(text) or []
+    out = []
+    for i, line in enumerate(lines):
+        starts = i == 0 or not lines[i - 1].strip()
+        m = BOLD_TERM.match(line.strip()) if starts else None
+        if m and (m.group(2) or TERM_MARK.search(m.group(3))):
+            out.append(m.group(1).strip())
+    return out
+
+
+def glossary_terms(text: str) -> list[str]:
+    """The ### term headings of README's Glossary section: in a metarepo, the only part of the
+    README that pararepos cite, so the only part a release reports or M3 asks a line for."""
+    return [m.group(1) for l in glossary_section(text) or []
+            if (m := re.match(r"###\s+(.+?)\s*$", l))]
+
+
+def glossary_text(text: str) -> list[str] | None:
+    """README's Glossary section without its blank lines, which git's output may have trimmed."""
+    section = glossary_section(text)
+    return None if section is None else [l for l in section if l.strip()]
 
 
 def home_fix(h: dict) -> str:
@@ -2080,6 +2132,9 @@ def cmd_survey(root: Path, args) -> int:
                                    and not reference_file(f, have)]
     report["old_boards"] = old_board_rows(files, lambda f: (root / f).read_text(errors="replace")
                                           if (root / f).is_file() else "")
+    readme = root / "README.md"
+    report["glossary_unheaded"] = glossary_unheaded(readme.read_text(errors="replace")) \
+        if "README.md" in files and readme.is_file() else []
     report["page_contract"] = [
         {"path": f, "problems": probs} for f in md
         if folder_page(f) and (f not in homes or homes[f]["kind"] == "deep")
@@ -2129,7 +2184,10 @@ def cmd_survey(root: Path, args) -> int:
               f"subsystem's page,\nor propose it to the owner with its rationale for {CONFIG} deep_subsystems:")
         for e in below:
             print(f"  {e['path']}: {deep_fix(e, deep)}")
-    strays = [e for e in report["homeless"] if e["kind"] == "stray"]
+    strays = [e for e in report["homeless"] if e["kind"] == "stray" and not e["to"]]
+    for e in (e for e in report["homeless"] if e["kind"] == "stray" and e["to"]):
+        print(f"\n{e['path']} → {e['to']}: a repo's terms are a section of its README, one "
+              f"### heading per term ({DIR}/RULES.md, Documentation)")
     if strays:
         linked = sorted((e for e in strays if e["inbound"] > 0),
                         key=lambda e: -e["inbound"])
@@ -2173,6 +2231,11 @@ def cmd_survey(root: Path, args) -> int:
               "\nmatch the code. Map each to the code that targets its board:")
         for f in report["boards_unmapped"]:
             print(f"  {f}")
+    if report["glossary_unheaded"]:
+        terms = report["glossary_unheaded"]
+        print(f"\nTerms in README.md § Glossary written as bold words, not headings: {len(terms)} "
+              f"({', '.join(terms[:5])}{' …' if len(terms) > 5 else ''}).\nMake each a `### <term>` "
+              f"heading, so `README.md § <term>` names it ({DIR}/RULES.md, Documentation).")
     if report["page_contract"]:
         print(f"\nPages off the page contract ({DIR}/RULES.md, Documentation):")
         for e in report["page_contract"]:
@@ -2236,7 +2299,7 @@ def cmd_survey(root: Path, args) -> int:
 META = f"{DIR}/meta.json"
 META_DEFAULTS = {
     "name": "",
-    "entry_files": ["DECISIONS.md", "GLOSSARY.md"],
+    "entry_files": ["DECISIONS.md", "README.md"],
     "tag_pattern": r"^v\d+\.\d+(\.\d+)?$",
     "decision_prefix": "D-",
     "pararepos": [],
@@ -2362,6 +2425,10 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
     branch_paths = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", since,
                        *(["--cached"] if staged else [])).splitlines()
     cited = [p for p in branch_paths if p and is_entry(p, entry)]
+    # A README's prose is the metarepo's own; pararepos cite only its Glossary section.
+    if "README.md" in cited and glossary_text(at_rev(since, "README.md")) == glossary_text(
+            in_index("README.md", staged)):
+        cited.remove("README.md")
     if cited and (CHANGELOG not in branch_paths or not in_index(CHANGELOG, staged)):
         out.append(f"M3 {', '.join(cited)} changed: add a line to {CHANGELOG} under ## Unreleased")
     # M4 nothing lands on main except merges; jig's own bookkeeping (the board, handoffs) is
@@ -2451,13 +2518,17 @@ def cmd_meta_init(root: Path, args) -> int:
         "DECISIONS.md": "# Decisions\n\n<!-- One row per decision. A row needs a status "
                         f"({', '.join(DECISION_STATUSES)}) and a date. -->\n\n"
                         "| Id | Decision | Status | Date |\n|---|---|---|---|\n",
-        "GLOSSARY.md": "# Glossary\n\n<!-- One term per heading: what it means, and what it is "
-                       "not. -->\n",
+        "README.md": f"# {meta['name'] or root.name}\n",
     }
     for f, body in seeds.items():
         if f in (CHANGELOG, *meta["entry_files"]) and not (root / f).exists():
             (root / f).write_text(body)
             print(f"wrote {f}")
+    readme = root / "README.md"
+    if "README.md" in meta["entry_files"] and readme.exists() and not glossary_section(readme.read_text()):
+        text = readme.read_text()
+        readme.write_text(text.rstrip("\n") + "\n\n" + GLOSSARY_SEED)
+        print(f"added {GLOSSARY_HOME} to README.md")
     release_script(root, meta=True)
     print(f"Commit these on {Board.trunk_name(root)}. From then on {Board.trunk_name(root)} "
           "takes only reviewed merges, and only `jig release` tags.")
@@ -3139,11 +3210,17 @@ def terms_changed(loc: Path, old: str, new: str) -> list[str]:
     # Only what a pararepo can read: the entry set release counts and the cache copies. Literal
     # paths, not entry_files globs, since git's `**` misses a file directly under the folder.
     paths = sorted((set(entry_paths(old, str(loc))) | set(entry_paths(new, str(loc)))) - {CHANGELOG})
-    if not paths:
-        return []
-    diff = git("--literal-pathspecs", "diff", old, new, "--", *paths, cwd=str(loc))
-    found = re.findall(rf"^[+-]\s*\|\s*({decision_ids(loc, new)})\s*\|", diff, re.M)
-    found += re.findall(r"^[+-]#{2,3} (.+?)\s*$", diff, re.M)
+    # The README's other headings (Install, Usage) are prose, not terms: only its Glossary counts.
+    readme = "README.md" in paths
+    paths = [f for f in paths if f != "README.md"]
+    found = []
+    if paths:
+        diff = git("--literal-pathspecs", "diff", old, new, "--", *paths, cwd=str(loc))
+        found = re.findall(rf"^[+-]\s*\|\s*({decision_ids(loc, new)})\s*\|", diff, re.M)
+        found += re.findall(r"^[+-]#{2,3} (.+?)\s*$", diff, re.M)
+    if readme:
+        was, now = (glossary_terms(git("show", f"{r}:README.md", cwd=str(loc))) for r in (old, new))
+        found += [t for t in now if t not in was] + [t for t in was if t not in now]
     return list(dict.fromkeys(found))
 
 
@@ -4926,6 +5003,11 @@ def files_to_review(root: Path, plan: dict, template: Path | None = None,
         else:
             out.append((".claude/skills/_skill-template/", "differs from the old template, "
                         "so it is the repo's now: left as it is"))
+    if "GLOSSARY.md" in plan["after"] and (root / back.get("GLOSSARY.md", "GLOSSARY.md")).exists():
+        meta = " and replace it in entry_files" if (root / META).exists() else ""
+        out.append(("GLOSSARY.md", f"the glossary's home is README.md § Glossary now ({DIR}/RULES.md, "
+                    f"Documentation): move each term there as a `### <term>` heading, delete the file"
+                    f"{meta}, and repoint what names it"))
     return out + agents_lines(root, template, arriving)
 
 

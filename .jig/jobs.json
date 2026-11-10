@@ -1,16 +1,1 @@
-{
-  "glossary-term-headings": {
-    "spec": ".jig/specs/glossary-term-headings.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/skills/update/SKILL.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "tests/smoke.sh",
-      "plugin/templates/jig/RULES.md"
-    ],
-    "reserved": {}
-  }
-}
+{}

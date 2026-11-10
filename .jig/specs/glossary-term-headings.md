@@ -51,15 +51,15 @@ term that isn't a heading.
 - Whether a commit gate also refuses an added bold term is the owner's open question (Nov 10).
 
 ## Done when
-- [ ] `grep -n "## Glossary" plugin/templates/jig/RULES.md` shows the rule.
-- [ ] Smoke `homes`: in a plain repo with `**mote** — x` under `README.md`'s `## Glossary`, survey
+- [x] `grep -n "## Glossary" plugin/templates/jig/RULES.md` shows the rule.
+- [x] Smoke `homes`: in a plain repo with `**mote** — x` under `README.md`'s `## Glossary`, survey
   names `mote`; with `### mote` instead, survey names nothing.
-- [ ] Smoke `homes`: a root `GLOSSARY.md` is listed with `to` `README.md § Glossary`.
-- [ ] Smoke `metarepo`: `jig init --meta` writes no `GLOSSARY.md` and a `## Glossary` section in
+- [x] Smoke `homes`: a root `GLOSSARY.md` is listed with `to` `README.md § Glossary`.
+- [x] Smoke `metarepo`: `jig init --meta` writes no `GLOSSARY.md` and a `## Glossary` section in
   `README.md`; a release adding `### vault` there reports `vault` in the pararepo's term report.
-- [ ] Smoke: `jig update` lists `GLOSSARY.md` under Repo files to review and changes nothing
+- [x] Smoke: `jig update` lists `GLOSSARY.md` under Repo files to review and changes nothing
   without a yes.
-- [ ] `bash tests/smoke.sh` and `claude plugin validate ./plugin` pass.
+- [x] `bash tests/smoke.sh` and `claude plugin validate ./plugin` pass.
 
 ## Out of scope
 - Checking `GLOSSARY.md#<term>` anchors: that form is the repo's own; jig's is `§`.

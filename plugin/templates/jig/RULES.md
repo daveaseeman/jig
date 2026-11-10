@@ -266,6 +266,12 @@ here; what the code is now, its invariants and its parked work in `docs/`; a tas
 in `.jig/ledgers/DEFERRED.md`; know-how in the agent's skills; what outsiders need in
 `README.md`; history in git.
 
+A repo's terms are a `## Glossary` section of its root `README.md`, the definitions a document
+opens with: each term a `### <term>` heading of its own, saying what it means and what it is
+not, so `README.md § <term>` names it. No other glossary file is a home: survey lists a root
+`GLOSSARY.md` with `README.md § Glossary` as where it goes, and names each term in the section
+written as a bold word opening a paragraph (`**term** — …`) rather than a heading.
+
 `jig survey` also reads each page at home under `docs/`, board pages included, against the
 contract above, and names a page in the old Now, Rules and Checks shape (convert it: fold
 what it says into description, delete what no longer holds, keep as Invariants only what
@@ -484,12 +490,16 @@ does what that kind of repo needs.
 changelog line for, and what a pararepo caches. Its entries are globs, matched the way `owns`
 is: a folder of pages goes in as `docs/**/*.md`, and a new page there needs no edit. Nothing
 under `.jig/` counts, whatever the globs say.
+`jig init --meta` names `DECISIONS.md` and `README.md`, whose `## Glossary` holds the terms
+(Documentation). Of `README.md`, pararepos cite only that section: a release's term report reads
+only the `###` headings inside it, and M3 counts a `README.md` change only when it adds, removes
+or changes a line there, so the README's other prose changes without a changelog line.
 
 | Gate | Refuses |
 |---|---|
 | M1 | a source file outside `.jig/` in the metarepo |
 | M2 | a decision row (`| D-001 | … |`) without a status cell (open, proposed, accepted, superseded or rejected, optionally with a note in parentheses or `by D-…`) and a `YYYY-MM-DD` date |
-| M3 | an entry file changed without a line in `CHANGELOG.md`, judged on the branch since it left trunk: a line an earlier commit on the branch added covers this one, and a commit that drops the branch's only line is refused |
+| M3 | an entry file changed without a line in `CHANGELOG.md` (of `README.md`, only its `## Glossary` section), judged on the branch since it left trunk: a line an earlier commit on the branch added covers this one, and a commit that drops the branch's only line is refused |
 | M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted); a detached HEAD at trunk, or behind it, is trunk |
 | M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`) |
