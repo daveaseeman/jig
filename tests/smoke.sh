@@ -129,7 +129,7 @@ emerge() {  # emerge <branch> <subject> <file>...: commit the staged change on a
     && git switch -q main && git merge -q --no-ff --no-edit "$b"; }
 underhead() { python3 -c "import sys; f='CHANGELOG.md'; s=open(f).read(); open(f,'w').write(s.replace('## Unreleased\n', '## Unreleased\n'+sys.argv[1]+'\n', 1))" "$1"; }
 emergejob() {  # emergejob <job> <subject>: open a job in $EM, hand it off, and merge it with --subject
-  (cd "$EM" && $J open "$1" --branch "b-$1" --owns "products/$1.md" CHANGELOG.md >/dev/null && git add -A && git commit -qm "TOOL: open $1" \
+  (cd "$EM" && $J open "$1" --branch "b-$1" --owns "products/$1.md" >/dev/null && git add -A && git commit -qm "TOOL: open $1" \
     && cd ".git/jig/worktrees/b-$1" && printf '# x\n' > "products/$1.md" && printf -- "- $1\n" >> CHANGELOG.md \
     && git add -A && git commit -qm "PRODUCTS: $1" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
     && git add -A && git commit -qm "TOOL: note $1" && cd "$EM" && $J merge "$1" --subject "$2" >/dev/null); }
@@ -234,6 +234,12 @@ $J reviewed >/dev/null; expect_pass test -f "$T/.git/jig/reviewed/L1"
 msg="gate does not refuse a job behind trunk"
 ( cd "$T" && printf 'r\n' > r.txt && git add -A && git commit -qm trunk5 )
 out=$(cd "$T" && $J gate L1 2>&1); if echo "$out" | grep -q behind; then bad "$msg"; else ok "$msg"; fi
+
+msg="R3: outside a metarepo, a CHANGELOG.md the job doesn't own or share is refused"
+( cd "$T" && printf '# C\n' > CHANGELOG.md && git add -A && git commit -qm trunk6 )
+$J sync >/dev/null 2>&1
+printf -- '- x\n' >> CHANGELOG.md; git add -A; out=$(git commit -qm cl 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'R3 CHANGELOG.md is not job L1'" "$out"
 
 msg="fold-in: a change to .jig/jig.py is the tool's, not unowned code"
 printf '# job edit\n' >> .jig/jig.py; printf 'x=7\n' > src/a.py; git add -A; git commit -qm tool
@@ -915,6 +921,11 @@ git tag v0.3
 out=$(mrel)
 expect_pass sh -c "echo \"\$0\" | grep -q 'tag v0.3 was not made by jig release' && ! git push -q origin main 2>/dev/null" "$out"
 git tag -d v0.3 >/dev/null
+
+msg="meta R3: a job given only GLOSSARY.md commits a term with its CHANGELOG.md line"
+$J open gl --branch b-gl --owns GLOSSARY.md >/dev/null && git add -A && git commit -qm "TOOL: open gl"
+cd .git/jig/worktrees/b-gl && printf '\n## mote\n' >> GLOSSARY.md && printf -- '- mote\n' >> CHANGELOG.md && git add -A
+expect_pass git commit -qm "GLOSSARY: mote"; cd "$M"
 }
 
 # ---------------------------------------------------------------- staging

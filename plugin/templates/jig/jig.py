@@ -411,6 +411,10 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
             # changing it: one trunk has must be declared; one only this job added never was trunk's.
             if matches(p, owns) or matches(p, shares) or matches(p, common):
                 continue
+            # M3 asks every metarepo job that changes an entry file for a changelog line, so
+            # every metarepo job may write one.
+            if meta is not None and p == CHANGELOG:
+                continue
             if not existed_on_trunk(trunk, p):
                 continue
             out.append(f"R3 {p} is not job {name}'s: ask the hubnode to add it to shares")
