@@ -25,7 +25,7 @@
   },
   "glossary-term-headings": {
     "spec": ".jig/specs/glossary-term-headings.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/update/SKILL.md"
