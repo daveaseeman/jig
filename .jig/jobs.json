@@ -25,7 +25,7 @@
   },
   "glossary-term-headings": {
     "spec": ".jig/specs/glossary-term-headings.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [
       "plugin/skills/update/SKILL.md"
