@@ -13,7 +13,8 @@
       "tests/smoke.sh",
       "plugin/skills/redocument/SKILL.md",
       "plugin/skills/update/SKILL.md",
-      "plugin/templates/AGENTS.md"
+      "plugin/templates/AGENTS.md",
+      "plugin/skills/retro/SKILL.md"
     ],
     "reserved": {}
   },
@@ -71,6 +72,20 @@
       "tests/smoke.sh",
       "plugin/skills/update/SKILL.md",
       "plugin/templates/AGENTS.md"
+    ],
+    "reserved": {}
+  },
+  "stage-ask-access": {
+    "spec": ".jig/specs/stage-ask-access.md",
+    "state": "claimed",
+    "after": [
+      "decision-log"
+    ],
+    "owns": [
+      "plugin/skills/feedback/SKILL.md"
+    ],
+    "shares": [
+      "plugin/skills/stage/SKILL.md"
     ],
     "reserved": {}
   }
