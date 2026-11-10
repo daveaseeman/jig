@@ -1345,8 +1345,21 @@ def cmd_reading_list(root: Path, args) -> int:
     for core in ("AGENTS.md", f"{DIR}/RULES.md"):
         if (root / core).exists():
             print(f"  {core}")
+    # A subsystem's page names only its own files in docmap, so its system page, where the
+    # shared facts live, is reached by the docs tree, not the globs.
+    have = set(tracked(root))
+    deep = board.data.get("deep_subsystems")
+    deep = deep if isinstance(deep, dict) else {}
+    shown: set[str] = set()
     for page in want:
-        print(f"  {page}")
+        if page not in shown:
+            print(f"  {page}")
+            shown.add(page)
+        for up, below in pages_above(page, have, deep):
+            if up not in shown:
+                # a page that covers a named file needs no reason to be listed
+                print(f"  {up}" if up in want else f"  {up}   (parent of {below})")
+                shown.add(up)
     if not want:
         print("  (no documentation page covers these files)")
     if unowned:
@@ -1728,6 +1741,17 @@ def owner_page(path: str, have: set[str], deep: dict) -> str:
         if f"{d}/{parts[i - 1]}.md" in have and parts[i - 1] != DATASHEETS and depth_ok(d, deep):
             return f"{d}/{parts[i - 1]}.md"
     return ""
+
+
+def pages_above(page: str, have: set[str], deep: dict) -> list[tuple[str, str]]:
+    """Each page above PAGE in the docs tree, nearest first, as (page above, page below it).
+    Only a page named for its folder climbs: any other covering page, a seam's, sits beside
+    its folder's page rather than under it, and listing that would hand over the other side."""
+    out, below = [], page
+    while folder_page(below) and (up := owner_page(os.path.dirname(below), have, deep)):
+        out.append((up, below))
+        below = up
+    return out
 
 
 def depth_ok(folder: str, deep: dict) -> bool:
