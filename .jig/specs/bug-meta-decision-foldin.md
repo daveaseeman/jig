@@ -33,7 +33,9 @@ changed, one fold-in line per page, the same way it asks a page whose docmap fil
 ## Design
 In `foldin_lines`, when `meta.json` is on trunk:
 - Read the changed ids: the decision ids on added or removed `| <prefix>N |` rows in the branch's
-  diff of `.md` files. This is the row regex M2 and `terms_changed` use.
+  diff of `.md` files. This is the row regex M2 and `terms_changed` use. One helper,
+  `changed_decisions`, is the only place the register is read, so spec `decision-log` (rows
+  move into `.jig/decisions.md`) changes one function.
 - For each entry file at HEAD whose text holds one of those ids as a whole id, add the page with
   its ids. `D-7` is not `D-70`. Skip `CHANGELOG.md` and any file holding a changed row.
 - Write one line per page with its ids in place of the file count. If docmap also names the page,
@@ -47,8 +49,10 @@ In `foldin_lines`, when `meta.json` is on trunk:
       `DECISIONS.md` or `CHANGELOG.md`. "No code changed" is gone, which is the reported symptom.
 - [ ] Smoke: `jig gate` refuses that note, and passes once the line is answered.
 - [ ] Smoke: a branch that marks D-007 `superseded by D-012` asks A.
+- [ ] Smoke: a page that mentions D-007 only in passing, mid-sentence, is asked (owner's call).
 - [ ] Smoke: a repo with no `meta.json` writes the fold-in it writes today (existing cases pass).
-- [ ] `bash tests/smoke.sh` and `claude plugin validate ./plugin` pass.
+- [ ] `bash tests/smoke.sh` and `claude plugin validate ./plugin` pass, and
+      `grep -rnE 'Maige|maige|Daisy|daisy|"E-' plugin` finds nothing.
 
 ## Out of scope
 - Changed glossary terms asking the pages that use them. A term is free text.
@@ -60,7 +64,7 @@ In `foldin_lines`, when `meta.json` is on trunk:
 - `plugin/templates/jig/jig.py` (`foldin_lines`)
 - `plugin/templates/jig/RULES.md` (Fold-in)
 - `tests/smoke.sh` (`metarepo`)
-- `marketing/FEATURES.md` (`docmap` + fold-in row)
+- `marketing/FEATURES.md` (`docmap` + fold-in row): the hubnode's, not this job's
 
 ## Alternatives considered
 - Docmap each page to the register — rejected because every row change would ask every page, and
