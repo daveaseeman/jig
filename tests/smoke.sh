@@ -942,6 +942,47 @@ msg="meta R3: the same job deleting CHANGELOG.md is refused"
 git rm -q CHANGELOG.md && printf 'x\n' > notes.txt && git add -A
 out=$(git commit -qm "TOOL: notes" 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'R3 CHANGELOG.md'" "$out"
 cd "$M"
+
+# A decision row and the pages citing it are one home: changing the row asks those pages.
+MF="$T/meta-fold"; mkdir -p "$MF" && cd "$MF" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
+$J init --meta --name docs >/dev/null && setentry DECISIONS.md README.md 'pages/*.md'
+mkdir -p pages notes && printf '| D-007 | x | accepted | 2026-11-01 |\n' >> DECISIONS.md
+printf '# A\n\nWe keep it short, as D-007 says. Retries follow D-020.\n\n## Undefined\n- retries — parked 2026-11-01.\n' > pages/a.md
+mkdir -p decisions && printf '| D-020 | r | accepted | 2026-11-01 |\n' > decisions/DECISIONS.md
+printf '# B\n\nSee D-0070.\n' > pages/b.md
+printf '# C\n\nD-007\n' > notes/c.md
+git add -A && git -c core.hooksPath=/dev/null commit -qm "meta-init"
+$J open d7 --branch b-d7 --shares DECISIONS.md >/dev/null && git add -A && git commit -qm "TOOL: open d7"
+cd .git/jig/worktrees/b-d7
+sed -i.bak 's/^| D-007 | x |/| D-007 | y |/' DECISIONS.md && rm DECISIONS.md.bak && printf -- '- D-007 y\n' >> CHANGELOG.md
+git add -A && git commit -qm "D-007: y" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
+note=$(ls .jig/handoffs/*.md)
+msg="meta fold-in: a changed row asks the entry page citing it in passing, naming the id"
+expect_pass grep -qx -- '- \[ \] pages/a.md — updated / no change because ___   (D-007)' "$note"
+msg="meta fold-in: a page asked only for a decision it cites gets one line, none for its Undefined entries"
+expect_pass test "$(grep -c 'pages/a.md' "$note")" = 1
+msg="meta fold-in: no line for D-0070's page, a page outside entry_files, the register or CHANGELOG.md"
+expect_pass sh -c "! grep -qE 'pages/b.md|notes/c.md|DECISIONS.md|CHANGELOG.md|no code changed' '$note'"
+git add -A && git commit -qm "TOOL: note d7" && cd "$MF"
+msg="meta fold-in: the gate refuses the note while the line is unanswered"
+expect_refuse gate_ok d7
+cd .git/jig/worktrees/b-d7 && pcfold && git add -A && git commit -qm "TOOL: answer d7" && cd "$MF"
+msg="meta fold-in: and passes once it is answered"
+expect_pass gate_ok d7
+$J open s7 --branch b-s7 --shares DECISIONS.md >/dev/null && git add -A && git commit -qm "TOOL: open s7"
+cd .git/jig/worktrees/b-s7
+sed -i.bak 's/^| D-007 | x | accepted |/| D-007 | x | superseded by D-012 |/' DECISIONS.md && rm DECISIONS.md.bak
+printf '| D-012 | z | accepted | 2026-11-02 |\n' >> DECISIONS.md && printf -- '- D-007, D-012\n' >> CHANGELOG.md
+git add -A && git commit -qm "D-007, D-012: z" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
+msg="meta fold-in: a row marked superseded by asks the page citing it"
+expect_pass grep -qx -- '- \[ \] pages/a.md — updated / no change because ___   (D-007)' .jig/handoffs/*.md
+cd "$MF" && $J open r20 --branch b-r20 --shares decisions/DECISIONS.md >/dev/null && git add -A && git commit -qm "TOOL: open r20"
+cd .git/jig/worktrees/b-r20 && printf '| D-020 | s | accepted | 2026-11-03 |\n' > decisions/DECISIONS.md
+git add -A && git commit -qm "D-020: s" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
+msg="meta fold-in: a row in a register outside entry_files still asks the entry page citing it"
+expect_pass grep -qx -- '- \[ \] pages/a.md — updated / no change because ___   (D-020)' .jig/handoffs/*.md
+cd "$M"
 }
 
 # ---------------------------------------------------------------- staging
@@ -3190,6 +3231,26 @@ behind
 msg="homes: update lists GLOSSARY.md under Repo files to review, and --apply leaves it alone"
 out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
 expect_pass sh -c "echo \"\$0\" | sed -n '/^Repo files to review/,/^\$/p' | grep -q '^  GLOSSARY.md: the glossary.s home is README.md § Glossary' && test -z \"\$(git status --porcelain GLOSSARY.md README.md)\" && test -f GLOSSARY.md" "$out"
+# The reading list climbs the docs tree from each covering page; fold-in doesn't.
+HL="$T/homes-reading"; pcnew "$HL" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+page docs/a/a.md && page docs/a/b/b.md && page docs/a/b/c/c.md && mkdir -p src/a/c && printf 'x\n' > src/a/lib.rs && printf 'x\n' > src/a/b.rs && printf 'x\n' > src/a/c/c.rs
+board "b['docmap'] = {'docs/a/a.md': ['src/a/lib.rs'], 'docs/a/b/b.md': ['src/a/b.rs'], 'docs/a/b/c/c.md': ['src/a/c/**']}" && git add -A && git commit -qm docmap
+rl() { $J reading-list "$@" | sed -n '/^Read first:/,/^$/p' | grep '^  docs/'; }
+msg="homes: reading-list for a subsystem's file prints its page, then its system's page marked as the parent"
+expect_pass test "$(rl src/a/b.rs)" = "$(printf '  docs/a/b/b.md\n  docs/a/a.md   (parent of docs/a/b/b.md)')"
+board "b['deep_subsystems'] = {'docs/a/b/c': 'own module'}" && git add -A && git commit -qm approve
+msg="homes: under an approved deep level, reading-list prints c, then b and a, each once and marked"
+expect_pass test "$(rl src/a/c/c.rs)" = "$(printf '  docs/a/b/c/c.md\n  docs/a/b/b.md   (parent of docs/a/b/c/c.md)\n  docs/a/a.md   (parent of docs/a/b/b.md)')"
+msg="homes: a page that covers a named file prints once, without the parent mark"
+expect_pass test "$(rl src/a/lib.rs src/a/b.rs)" = "$(printf '  docs/a/a.md\n  docs/a/b/b.md')"
+page docs/net/net.md && page docs/net/seam-gpio.md && mkdir -p main && printf 'x\n' > main/app.c
+board "b['docmap']['docs/net/seam-gpio.md'] = ['main/app.c']" && git add -A && git commit -qm seam
+msg="homes: a seam-style page not named for its folder prints no parent"
+expect_pass test "$(rl main/app.c)" = "  docs/net/seam-gpio.md"
+$J open RL --spec t --owns 'src/**' >/dev/null && git add -A && git commit -qm "open RL"
+( cd .git/jig/worktrees/RL && printf 'y\n' > src/a/b.rs && git add -A && git commit -qm b && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 )
+msg="homes: a handoff changing only a subsystem's file asks only its page"
+expect_pass sh -c "test \"\$(grep -c -- '^- \[ \] docs/' .git/jig/worktrees/RL/.jig/handoffs/RL-*.md)\" = 1 && grep -q -- '^- \[ \] docs/a/b/b.md' .git/jig/worktrees/RL/.jig/handoffs/RL-*.md"
 }
 
 # ---------------------------------------------------------------- update's AGENTS.md lines

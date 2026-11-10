@@ -182,7 +182,9 @@ its subsystems is asked about every change made in them.
 
 A **seam** page covers what crosses between two systems: in `docmap`, a page whose globs name
 files from both sides. `jig reading-list <files>` prints which pages to read before touching
-those files.
+those files, and after each the pages above it in the docs tree, marked as its parent, since a
+system's shared facts live on its own page. Fold-in still asks only the pages that cover a
+changed file.
 
 A page's folder holds the files the page links — a schematic, a snapshot of a definition, an
 image — beside the page and its subsystems' folders. `jig survey` lists a file there that no
@@ -306,6 +308,11 @@ Ownership comes from `docmap` in `config.json`:
 whenever a file it names changes. A changed source file nothing covers is listed as
 `UNOWNED` — add it to `docmap`, starting a new page from `.jig/docs-page.md`, or answer why
 it needs no page.
+
+In a metarepo, a decision row and the pages citing it are one home, so a branch that adds,
+edits or removes a row (marking it superseded included) also asks each entry page whose text
+cites that id, even in passing, with the ids on its line. The id matches whole: `D-7` is not
+`D-70`. The page holding the row and `CHANGELOG.md` are not asked.
 
 ## Sync
 
@@ -610,7 +617,7 @@ jig staging [resolve|drop <file>]   list staged files, or land / drop one
 jig repos [add repo|meta|para | rename <new>]  where your repos live (user config)
 jig open ... --reserve K    allocate scarce counter K to this job
 jig reserve <job> <K>       hubnode: give an open job the next number of counter K too
-jig reading-list <paths>    what to read before touching these files
+jig reading-list <paths>    what to read before touching these files, and the pages above
 jig install-hooks           rewrite the hooks
 jig status                  jobs, states, distance from trunk, dirt
 jig open <name> --spec … --owns … --shares … --after … --reserve schema
