@@ -1,7 +1,7 @@
 {
   "flat-pages": {
     "spec": ".jig/specs/flat-pages.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/hardware/SKILL.md",
