@@ -27,7 +27,7 @@
   },
   "bug-meta-decision-foldin": {
     "spec": ".jig/specs/bug-meta-decision-foldin.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [],
     "shares": [
