@@ -1,7 +1,7 @@
 {
   "bug-repos-jig-line": {
     "spec": ".jig/specs/bug-repos-jig-line.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
