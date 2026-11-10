@@ -128,10 +128,16 @@ database already past a number never runs a step of that number that merges late
 
 ## Documentation
 
-One page per system, `docs/<system>/<system>.md`. A subsystem's page sits in a folder of its
-own inside its system's, `docs/<system>/<subsystem>/<subsystem>.md`. Every page is named for
-its folder, so the path alone says what it covers. The tree names the product's own parts, not
-its files, so a rule that touches several files lives once.
+One page per system, `docs/<system>.md`. A subsystem's page sits in its system's folder,
+`docs/<system>/<subsystem>.md`. A page is a single file, flat in its parent's folder, until it
+holds more than itself — subsystem pages, files it links, a `datasheets/` folder; then it moves
+into a folder named for it, `docs/<system>/<system>.md`, with that company beside it, in the
+change that adds the first of them (`git mv`, its `docmap` key, its `boards` entry if it is a
+board's). The tree names the product's own parts, not its files, so a rule that touches several
+files lives once.
+
+In a folder that has a page, another `.md` is a flat page when `docmap` or `boards` names it, or it
+has an Invariants or Undefined section; anything else there is one of the folder page's files.
 
 A **subsystem** is a part of a system that works independently of the rest of it. It has files
 of its own, which the system's other parts don't edit, and the rest of the system reaches it
@@ -155,7 +161,7 @@ current, is the skeleton):
 1. **A lead paragraph**, with no heading of its own: what the system is and why it exists.
 2. **Body sections**, named for the system's own parts — the nouns its code has (Schema,
    Renderer, Sync) — never for a lifecycle or a genre (Overview, Notes, Misc, Changes). A
-   subsystem gets a page of its own, in a subsystem folder, once it has something to say that
+   subsystem gets a page of its own, beside its system's, once it has something to say that
    whoever works on it needs and its system's page doesn't; the parent's section then shrinks
    to a paragraph and a link. Until then it is a section, its files in its system page's globs.
 3. **`## Talks to`**, optional: what crosses the system's boundary, meaning what it calls, what
@@ -181,19 +187,22 @@ fold-in asks every page that covers a changed file, so a system page whose globs
 its subsystems is asked about every change made in them.
 
 A **seam** page covers what crosses between two systems: in `docmap`, a page whose globs name
-files from both sides. `jig reading-list <files>` prints which pages to read before touching
+files from both sides. It lives, as a datasheet two pages share does, in the nearest folder both
+systems sit under: `docs/<seam>.md` for two systems, flat, with no page above it. `jig reading-list <files>` prints which pages to read before touching
 those files, and after each the pages above it in the docs tree, marked as its parent, since a
 system's shared facts live on its own page. Fold-in still asks only the pages that cover a
 changed file.
 
 A page's folder holds the files the page links — a schematic, a snapshot of a definition, an
-image — beside the page and its subsystems' folders. `jig survey` lists a file there that no
-page links (a link from a note in the folder counts), and a file shaped like a page (with Invariants or Undefined, or the old Now, Rules
-and Checks) as a subsystem candidate: it gets a folder and a page of its own.
+image — beside the page and its subsystems' pages. `jig survey` lists a file there that no
+page links (a link from a note in the folder counts); a page named for its folder with nothing
+else in it, flat at its parent's (`docs/a/b/b.md`: flat at `docs/a/b.md`); and a flat page
+with a folder of its own name beside it, to move into. A flat page's own file left loose in its
+parent's folder is that folder page's to survey, so review catches it.
 
 A board, a screen, a battery are parts of the product, so each is a system or subsystem like
-any other: `docs/<board>/<board>.md`, or `docs/<system>/<board>/<board>.md` where the board is
-part of a larger system, beside the code's pages, never under a genre folder. Every board has a
+any other: `docs/<board>.md`, or `docs/<system>/<board>.md` where the board is part of a larger
+system, in a folder of its own once it holds files (a spec sheet makes a `datasheets/`), beside the code's pages, never under a genre folder. Every board has a
 page the repo builds, made from jig's board template (`/jig:hardware`) out of a hardware
 definition and checked against the code; a dev board gets one too, written from its vendor's
 spec sheet. It is a board page because `config.json`'s `boards` lists it, never because of where
@@ -241,9 +250,11 @@ URL and hash to fetch it again. Notes stay committed, and so does every file the
 
 - `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md` and `CHANGELOG.md` at the root, and
   `ROADMAP.md` there when `.jig/roadmap.md` exists (it is generated: Roadmap, below);
-- under `docs/`, a page named for its folder: `docs/<system>/<system>.md`,
+- under `docs/`, a page, flat or named for its folder: `docs/<system>.md` or
+  `docs/<system>/<system>.md`, `docs/<system>/<subsystem>.md` or
   `docs/<system>/<subsystem>/<subsystem>.md`, and a deeper one only where `deep_subsystems`
-  approves its folder and each level above it past the subsystem;
+  approves the folder it stands for (`docs/a/b/c` for `docs/a/b/c.md` and `docs/a/b/c/c.md`
+  alike) and each level above it past the subsystem;
 - any other file in a page's folder or below it, outside the folders of its subsystems;
 - nothing under `docs/hardware/`, the layout before boards were systems: survey and update
   say where each of its files goes, and `/jig:redocument` moves them;
@@ -252,12 +263,12 @@ URL and hash to fetch it again. Notes stay committed, and so does every file the
 
 Any other file has no home, and survey says which kind: an `AGENTS.md`, `CLAUDE.md` or
 `GEMINI.md` off root is a second rulebook; three or more sentences of this file word for word
-is a copy, which freezes while this file moves on; a page named for its folder below a
+is a copy, which freezes while this file moves on; a page, flat or in its folder, below a
 subsystem, with no `deep_subsystems` entry, is deep: fold it into its subsystem's page, or
-propose its folder to the owner with its rationale; a page outside its folder — one with an
-Invariants or Undefined section, or the old Now, Rules and Checks headings — goes under the
-nearest folder that has its own page, as a subsystem at most (into that page, where a folder
-of its own would be deeper), or to `docs/<name>/<name>.md`, even when it quotes this file;
+propose its folder to the owner with its rationale; a page outside the tree — one with an
+Invariants or Undefined section, or the old Now, Rules and Checks headings — goes flat beside
+the nearest page that has a folder, as a subsystem at most (into that page, where it would be
+deeper), or to `docs/<name>.md`, even when it quotes this file;
 anything else is a stray. A package's own rules file stays only on the owner's word. A
 file names a document by its path, or by its bare name only when no other tracked file has
 that name.

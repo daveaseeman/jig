@@ -605,10 +605,10 @@ msg="update: no template diff; eaec973's Lanes block is proposed for replacement
 expect_pass sh -c "! echo \"\$0\" | grep -q 'against the template' && echo \"\$0\" | grep -q '^  AGENTS.md: lines 24–28, .## Lanes (parallel sessions)., are a block jig retired: replace it, heading to the next heading, with .- Rulebook .\.jig/RULES\.md.'" "$out"
 msg="update: on the run that adds .jig/scripts/setup.sh to eaec973's layout, its setup: line is proposed"
 expect_pass sh -c "test ! -e .jig/scripts/setup.sh && echo \"\$0\" | grep -q '^  AGENTS.md: names no .\.jig/scripts/setup\.sh.: add under ## Commands .- setup:'" "$out"
-msg="update: a docs/HARDWARE.md that holds a board is proposed as docs/<board>/<board>.md, registered in boards"
+msg="update: a docs/HARDWARE.md that holds a board is proposed as docs/<board>.md, flat, registered in boards"
 sed -i.bak 's/^- MCU \/ board: TODO.*/- MCU \/ board: ESP32-S3-DevKitC-1 (N16R8)/' docs/HARDWARE.md && rm docs/HARDWARE.md.bak
 git commit -qam board-page
-expect_pass sh -c "$UP 2>&1 | grep -q 'rename it to docs/esp32-s3-devkitc-1/esp32-s3-devkitc-1.md, list it under boards'"
+expect_pass sh -c "$UP 2>&1 | grep -q 'rename it to docs/esp32-s3-devkitc-1.md, list it under boards'"
 msg="update: --apply leaves the files to review alone; a failing check is reported, exits 1, undoes nothing"
 out=$($UP --apply 2>&1); rc=$?
 expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q '.jig/scripts/check.sh FAILED (exit 2)' && test -f docs/HARDWARE.md && test -f .claude/skills/_skill-template/SKILL.md && git diff --cached --name-status | grep -q 'R100.*\.jig/specs/_template.md'" "$out"
@@ -663,8 +663,8 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
     ai-dev)
       msg="update $gen: REVIEW_LEDGER.md's untaken rows are DEFERRED.md; its taken rows are gone"
       expect_pass sh -c "grep -q L-001 .jig/ledgers/DEFERRED.md && grep -q L-003 .jig/ledgers/DEFERRED.md && grep -q L-005 .jig/ledgers/DEFERRED.md && ! grep -q 'L-00[24]' .jig/ledgers/DEFERRED.md && test ! -e docs/REVIEW_LEDGER.md"
-      msg="update $gen: a root HARDWARE.md naming a board moves to docs/<board>/<board>.md, byte for byte, and is registered in boards"
-      expect_pass sh -c "git diff --cached -M --name-status | grep -q '^R100.HARDWARE.md.docs/devkit-s3/devkit-s3.md' && python3 -c \"import json; assert json.load(open('.jig/config.json'))['boards'] == ['docs/devkit-s3/devkit-s3.md']\"";;
+      msg="update $gen: a root HARDWARE.md naming a board moves to docs/<board>.md, flat, byte for byte, and is registered in boards"
+      expect_pass sh -c "git diff --cached -M --name-status | grep -q '^R100.HARDWARE.md.docs/devkit-s3.md' && python3 -c \"import json; assert json.load(open('.jig/config.json'))['boards'] == ['docs/devkit-s3.md']\"";;
     claude-lane)
       msg="update $gen: board.json is the board, merged entries and claude-lane's own keys gone; the folder is gone"
       expect_pass sh -c "python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['trunk'] == 'main' and 'lanes' not in b and 'seen' not in b and 'main' not in b and 'next' not in b['reserve']['section'], b\" && test ! -e .claude/claude-lane && git diff --cached -M --name-status | grep -q '^R100.*old-2026-01-01.md'";;
@@ -1950,19 +1950,19 @@ expect_pass hrsurvey "assert r['datasheets_misplaced'] == [['docs/band/band.md',
 expect_pass sh -c "$J survey | grep -qF 'docs/band/band.md -> docs/watch/datasheets/rtc.pdf: move it to docs/datasheets/'"
 printf '# Band\n\nThe strap. [ds](../datasheets/qx-9.pdf)\n' > docs/band/band.md && git add -A && git commit -qm "band its own"
 
-msg="survey: a page-shaped file in another page's folder is a subsystem candidate"
+msg="survey: a page-shaped file beside its system's page is a flat part page, at home; a note there is a linked file"
 printf '# Power\n\nThe rails.\n\n## Invariants\n- 3.3V — the parts are 3.3V; held by review.\n' > docs/watch/power.md
 printf '# Bring-up\n' > docs/watch/bringup.md && printf '[bring-up](bringup.md)\n' >> docs/watch/watch.md
 git add -A && git commit -qm "candidate"
-expect_pass hrsurvey "h = {e['path']: e for e in r['homeless']}
-assert list(h) == ['docs/watch/power.md'], h
-assert h['docs/watch/power.md']['kind'] == 'page' and h['docs/watch/power.md']['to'] == 'docs/watch/power/power.md', h"
+expect_pass hrsurvey "assert r['homeless'] == [], r['homeless']
+assert [(e['path'], e['to']) for e in r['page_shapes']] == [('docs/band/band.md', 'docs/band.md')], r['page_shapes']"
 mkdir -p docs/watch/img && printf 'png' > docs/watch/img/scope.png && printf '![scope](img/scope.png)\n' >> docs/watch/bringup.md
 git add -A && git commit -qm "a note links an image"
 msg="datasheets: a file a note in the page's folder links is not unlinked"
 expect_pass hrsurvey "assert 'docs/watch/img/scope.png' not in r['datasheets_unlinked'], r['datasheets_unlinked']"
-msg="survey: the subsystem candidate is named as one"
-expect_pass sh -c "$J survey | grep -q 'docs/watch/power.md → docs/watch/power/power.md (a subsystem candidate'"
+msg="survey: the flat part page is read against the page contract"
+printf '\n## Invariants\n- Rails are 3.3V\n' > docs/watch/power.md && git add -A && git commit -qm "power bare invariant"
+expect_pass hrsurvey "assert 'docs/watch/power.md' in [e['path'] for e in r['page_contract']], r['page_contract']"
 
 msg="page contract: a board page is read against it like any page"
 printf '\n## Invariants\n- Pins are 3.3V\n' >> docs/watch/watch.md
@@ -3113,17 +3113,17 @@ page docs/systems/a.md && page docs/systems/b.md && page docs/c/c.md && page doc
 printf -- '- Pages live in `docs/systems/`.\n' >> AGENTS.md
 board "b['docmap'] = {'docs/systems/a.md': ['src/**']}"
 git add -A && git commit -qm pages
-msg="homes: survey gives each page its destination, nested under a folder with its own page, and passes docs/c/c.md"
-expect_pass homes "assert {p: h[p]['to'] for p in h if h[p]['kind'] == 'page'} == {'docs/systems/a.md': 'docs/a/a.md', 'docs/systems/b.md': 'docs/b/b.md', 'docs/c/d.md': 'docs/c/d/d.md'}, h
-assert 'docs/c/c.md' not in h, h"
+msg="homes: survey gives each page its destination, flat in docs/, and passes docs/c/c.md and docs/c/d.md, a flat part page beside it"
+expect_pass homes "assert {p: h[p]['to'] for p in h if h[p]['kind'] == 'page'} == {'docs/systems/a.md': 'docs/a.md', 'docs/systems/b.md': 'docs/b.md'}, h
+assert 'docs/c/c.md' not in h and 'docs/c/d.md' not in h, h"
 behind
-msg="homes: the dry run lists the three moves, the docmap key and the AGENTS.md line naming the folder"
+msg="homes: the dry run lists the two moves, the docmap key and the AGENTS.md line naming the folder"
 out=$($UP 2>&1)
-expect_pass sh -c "for w in 'git mv docs/systems/a.md docs/a/a.md' 'git mv docs/systems/b.md docs/b/b.md' 'git mv docs/c/d.md docs/c/d/d.md' '.jig/config.json docmap: docs/systems/a.md' 'AGENTS.md:[0-9]*: - Pages live in .docs/systems/.'; do echo \"\$0\" | grep -q \"^      \$w\" || { echo \"missing \$w\"; exit 1; }; done" "$out"
+expect_pass sh -c "for w in 'git mv docs/systems/a.md docs/a.md' 'git mv docs/systems/b.md docs/b.md' '.jig/config.json docmap: docs/systems/a.md' 'AGENTS.md:[0-9]*: - Pages live in .docs/systems/.'; do echo \"\$0\" | grep -q \"^      \$w\" || { echo \"missing \$w\"; exit 1; }; done" "$out"
 $UP --apply >/dev/null 2>&1 && git commit -qm update
-mkdir -p docs/a docs/b docs/c/d && git mv docs/systems/a.md docs/a/a.md && git mv docs/systems/b.md docs/b/b.md && git mv docs/c/d.md docs/c/d/d.md
+git mv docs/systems/a.md docs/a.md && git mv docs/systems/b.md docs/b.md
 sed -i.bak 's|`docs/systems/`|`docs/`|' AGENTS.md && rm AGENTS.md.bak
-board "b['docmap'] = {'docs/a/a.md': ['src/**']}" && git add -A && git commit -qm "docs: pages named for their folders"
+board "b['docmap'] = {'docs/a.md': ['src/**']}" && git add -A && git commit -qm "docs: pages flat in docs/"
 msg="homes: once the moves are carried out, survey lists none of them"
 expect_pass homes "assert not h, h"
 page docs/systems/c.md && git add -A && git commit -qm "c again" && behind
@@ -3135,10 +3135,10 @@ expect_pass sh -c "echo \"\$0\" | grep -q '^      fold docs/systems/c.md into do
 HD="$T/homes-deep"; pcnew "$HD" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 page docs/a/a.md && page docs/a/b/b.md && page docs/a/b/c/c.md && page docs/c/d/d.md && page docs/a/b/x.md
 git add -A && git commit -qm deep
-msg="homes: a page below a subsystem is deep, folding into its subsystem's page; docs/c/d/d.md passes; a page beside a subsystem's folds into it"
+msg="homes: a page below a subsystem is deep, folding into its subsystem's page; docs/c/d/d.md passes; a flat page beside a subsystem's is deep too"
 expect_pass homes "assert (h['docs/a/b/c/c.md']['kind'], h['docs/a/b/c/c.md']['to']) == ('deep', 'docs/a/b/b.md'), h
 assert 'docs/c/d/d.md' not in h and 'docs/a/b/b.md' not in h, h
-assert (h['docs/a/b/x.md']['kind'], h['docs/a/b/x.md']['to'], h['docs/a/b/x.md']['fold']) == ('page', 'docs/a/b/b.md', True), h"
+assert (h['docs/a/b/x.md']['kind'], h['docs/a/b/x.md']['to'], h['docs/a/b/x.md']['fold']) == ('deep', 'docs/a/b/b.md', True), h"
 msg="homes: survey prints the deep page under its own heading"
 out=$($J survey 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -A2 '^Pages below a subsystem' | tail -1 | grep -q '^  docs/a/b/c/c.md: fold it into docs/a/b/b.md, or ask the owner to approve docs/a/b/c in '" "$out"
@@ -3195,10 +3195,11 @@ python3 - <<'PY'
 import re
 rules = open('.jig/RULES.md').read()
 quoted = [s for s in re.split(r'(?<=[.!?])\s+', re.sub(r'\s+', ' ', rules)) if len(s) > 40 and s[0].isupper()][:3]
-open('docs/quoting.md', 'w').write('# Q\n\n## Now\n' + ' '.join(quoted) + '\n\n## Rules\nx\n\n## Checks\ny\n')
+import os; os.makedirs('docs/misc', exist_ok=True)
+open('docs/misc/quoting.md', 'w').write('# Q\n\n## Now\n' + ' '.join(quoted) + '\n\n## Rules\nx\n\n## Checks\ny\n')
 PY
 git add -A && git commit -qm quoting
-expect_pass homes "assert h['docs/quoting.md']['kind'] == 'page', h['docs/quoting.md']"
+expect_pass homes "assert h['docs/misc/quoting.md']['kind'] == 'page', h['docs/misc/quoting.md']"
 
 HX="$T/homes-meta-fresh"; pcnew "$HX" && git add -A && git commit -qm init && $J init --meta --name hx >/dev/null && git add -A && git commit -qm meta
 msg="homes: a fresh metarepo, its CHANGELOG.md included, has no homeless files"
@@ -3243,14 +3244,56 @@ msg="homes: under an approved deep level, reading-list prints c, then b and a, e
 expect_pass test "$(rl src/a/c/c.rs)" = "$(printf '  docs/a/b/c/c.md\n  docs/a/b/b.md   (parent of docs/a/b/c/c.md)\n  docs/a/a.md   (parent of docs/a/b/b.md)')"
 msg="homes: a page that covers a named file prints once, without the parent mark"
 expect_pass test "$(rl src/a/lib.rs src/a/b.rs)" = "$(printf '  docs/a/a.md\n  docs/a/b/b.md')"
-page docs/net/net.md && page docs/net/seam-gpio.md && mkdir -p main && printf 'x\n' > main/app.c
-board "b['docmap']['docs/net/seam-gpio.md'] = ['main/app.c']" && git add -A && git commit -qm seam
-msg="homes: a seam-style page not named for its folder prints no parent"
-expect_pass test "$(rl main/app.c)" = "  docs/net/seam-gpio.md"
+page docs/net/net.md && page docs/seam-gpio.md && mkdir -p main && printf 'x\n' > main/app.c && printf 'x\n' > main/x.c
+printf '# X\n\nThe x part.\n' > docs/net/x.md
+board "b['docmap']['docs/seam-gpio.md'] = ['main/app.c']; b['docmap']['docs/net/x.md'] = ['main/x.c']" && git add -A && git commit -qm seam
+msg="homes: a seam page, flat in docs/ where its two systems share a folder, prints no parent"
+expect_pass test "$(rl main/app.c)" = "  docs/seam-gpio.md"
+msg="homes: a docmap-named flat page in a system's folder climbs to that system's page, whatever its sections"
+expect_pass test "$(rl main/x.c)" = "$(printf '  docs/net/x.md\n  docs/net/net.md   (parent of docs/net/x.md)')"
 $J open RL --spec t --owns 'src/**' >/dev/null && git add -A && git commit -qm "open RL"
 ( cd .git/jig/worktrees/RL && printf 'y\n' > src/a/b.rs && git add -A && git commit -qm b && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 )
 msg="homes: a handoff changing only a subsystem's file asks only its page"
 expect_pass sh -c "test \"\$(grep -c -- '^- \[ \] docs/' .git/jig/worktrees/RL/.jig/handoffs/RL-*.md)\" = 1 && grep -q -- '^- \[ \] docs/a/b/b.md' .git/jig/worktrees/RL/.jig/handoffs/RL-*.md"
+
+# A page is one file, flat in its parent's folder, until it holds another.
+HF="$T/homes-flat"; pcnew "$HF" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p docs/a src/a src/b src/c && printf '# A\n\nThe a system. [notes](notes.md)\n' > docs/a/a.md
+printf '# B\n\nThe b part.\n' > docs/a/b.md && printf '# Notes\n\nsome notes\n' > docs/a/notes.md
+printf '# C\n\nThe c part.\n\n## Invariants\n- c is c — it is; held by review.\n' > docs/a/c.md
+printf 'x\n' > src/a/lib.rs && printf 'x\n' > src/b/b.rs && printf 'x\n' > src/c/c.rs
+board "b['docmap'] = {'docs/a/a.md': ['src/a/**'], 'docs/a/b.md': ['src/b/**'], 'docs/a/c.md': ['src/c/**']}"
+git add -A && git commit -qm flat
+msg="flat: docs/a/b.md (docmap names it) and docs/a/c.md (Invariants) are flat pages, docs/a/notes.md a linked file: survey reports none"
+expect_pass homes "assert not h and r['page_shapes'] == [] and r['datasheets_unlinked'] == [], (h, r['page_shapes'], r['datasheets_unlinked'])"
+msg="flat: reading-list for a flat part page's file prints it, then its system's page marked as the parent"
+expect_pass test "$(rl src/c/c.rs)" = "$(printf '  docs/a/c.md\n  docs/a/a.md   (parent of docs/a/c.md)')"
+mkdir -p docs/a/d && printf '# D\n\nThe d part.\n' > docs/a/d/d.md && git add -A && git commit -qm "d alone"
+msg="flat: a folder page alone in its folder is reported flat at docs/a/d.md, in --json and in print"
+out=$($J survey 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a/d/d.md: flat at docs/a/d.md' && python3 -c \"
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+assert [(e['path'], e['to'], e['into']) for e in r['page_shapes']] == [('docs/a/d/d.md', 'docs/a/d.md', False)], r['page_shapes']\"" "$out"
+behind
+msg="flat: update lists the one-file folder under Repo files to review with its git mv; --apply leaves it"
+out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Repo files to review/,/^\$/p' | grep -q '^  docs/a/d/d.md: flat at docs/a/d.md' && echo \"\$0\" | grep -q '^      git mv docs/a/d/d.md docs/a/d.md' && test -f docs/a/d/d.md && test -z \"\$(git status --porcelain docs)\"" "$out"
+git add -A && git commit -qm update
+printf 'pdf' > docs/a/d/wiring.pdf && printf '[wiring](wiring.pdf)\n' >> docs/a/d/d.md && git add -A && git commit -qm wiring
+msg="flat: with docs/a/d/wiring.pdf beside it, the folder page isn't reported"
+expect_pass homes "assert r['page_shapes'] == [], r['page_shapes']"
+mkdir -p docs/a/b && printf 'png' > docs/a/b/scope.png && git add -A && git commit -qm "b has a file"
+msg="flat: a flat page with a folder of its own name is told to move into it"
+expect_pass homes "assert [(e['path'], e['to'], e['into']) for e in r['page_shapes']] == [('docs/a/b.md', 'docs/a/b/b.md', True)], r['page_shapes']"
+git mv docs/a/b.md docs/a/b/b.md && printf '[scope](scope.png)\n' >> docs/a/b/b.md && printf '# E\n\nThe e part.\n' > docs/a/b/e.md
+board "b['docmap'] = {'docs/a/a.md': ['src/a/**'], 'docs/a/b/b.md': ['src/b/**'], 'docs/a/b/e.md': ['src/b/e/**']}" && git add -A && git commit -qm "b into its folder, e below it"
+msg="flat: docs/a/b/e.md, docmap-named, is deep without a deep_subsystems entry for docs/a/b/e"
+expect_pass homes "assert (h['docs/a/b/e.md']['kind'], h['docs/a/b/e.md']['to']) == ('deep', 'docs/a/b/b.md'), h
+assert r['page_shapes'] == [], r['page_shapes']"
+board "b['deep_subsystems'] = {'docs/a/b/e': 'own module'}" && git add -A && git commit -qm approve
+msg="flat: with docs/a/b/e approved, it is at home"
+expect_pass homes "assert not h, h"
 }
 
 # ---------------------------------------------------------------- update's AGENTS.md lines
@@ -3441,7 +3484,7 @@ assert any('no lead paragraph' in x for x in c['docs/nolead/nolead.md']), c"
 msg="page contract: a page in the contract and a misplaced page are not read against it"
 expect_pass pc "assert not {'docs/ui/ui.md', 'docs/misc/x.md'} & set(c), c"
 msg="page contract: a misplaced page with an Invariants section is a page, given its home"
-expect_pass pc "assert h['docs/misc/x.md']['kind'] == 'page' and h['docs/misc/x.md']['to'] == 'docs/x/x.md', h"
+expect_pass pc "assert h['docs/misc/x.md']['kind'] == 'page' and h['docs/misc/x.md']['to'] == 'docs/x.md', h"
 msg="page contract: survey prints them under their own heading"
 expect_pass sh -c "$J survey | grep -A9 '^Pages off the page contract' | grep -q '^  docs/old/old.md: old contract — convert'"
 msg="page contract: survey points a repo with old-contract pages at /jig:redocument, not /jig:adopt"

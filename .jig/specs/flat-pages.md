@@ -35,8 +35,8 @@ hold: part pages, linked files, a `datasheets/` folder.
   it holds another file; then it is `<parent folder>/<name>/<name>.md`, its files and part pages
   beside it. "Another file" is a part page, a linked file (a note, a schematic, a step file) or a
   `datasheets/` folder.
-- **Page or note.** In a folder that has a page, another `.md` is a flat page when `docmap` names
-  it or it has an Invariants or Undefined section; anything else is one of that page's linked files.
+- **Page or note.** In a folder that has a page, another `.md` is a flat page when `docmap` (or
+  `boards`) names it or it has an Invariants or Undefined section; anything else is one of that page's linked files.
 - **Depth counts the page, not its folder.** `docs/a/b.md` is a subsystem, as `docs/a/b/b.md` is;
   `docs/a/b/c.md` is a third level and needs `deep_subsystems` for `docs/a/b/c`, flat or not.
 - **Survey reports** a folder page alone in its folder (`docs/a/b/b.md` with nothing beside it:
@@ -48,7 +48,24 @@ hold: part pages, linked files, a `datasheets/` folder.
   (`git mv`, its `docmap` key, `boards` if it is a board page). RULES.md says so; the fold-in asks
   as for any page.
 - `owner_page()` and the reading list's walk-up (spec `reading-list-pages-above`) find a flat
-  page's parent as `docs/a/a.md` for `docs/a/b.md`.
+  page's parent as `docs/a/a.md` for `docs/a/b.md`: both count from `page_folder()`, the folder
+  a page stands for, `docs/a/b` for either shape.
+- **Which flat pages climb.** `pages_above` climbs from a folder page and from any flat page:
+  a page filed in a system's folder is that system's, whatever its sections. A seam page lives
+  where a datasheet two pages share does, in the nearest folder both systems sit under:
+  `docs/<seam>.md` for two systems, flat, with no page above it. Survey doesn't detect a
+  misfiled seam (its globs naming "both sides" isn't reliable to read); review catches it.
+  Smoke: the guard's seam page moves to `docs/seam-gpio.md` and prints no parent; a
+  docmap-named `docs/net/x.md` with no contract sections climbs to `docs/net/net.md`.
+- **Migration.** `jig update`'s root `HARDWARE.md` row goes flat, `docs/<board>.md`, since it
+  moves alone; into `docs/<board>/<board>.md` only where that page exists already.
+- **Wording.** RULES.md Documentation (the opening paragraph, the page-or-note rule, the seam
+  paragraph's home, the body
+  section's "beside its system's", the page-folder paragraph's survey reports, the board
+  paragraph) and Homes (the docs bullet; deep and misplaced pages flat); `jig.py`'s `DOC_HOMES`
+  docs line; `/jig:hardware` step 2 (flat when the page holds no file, `<home><board>.md` reads
+  as that path); `/jig:adopt`'s homes table (system and board rows); `/jig:redocument` step 2's
+  new paths; `/jig:update`'s wrong-shape findings; the AGENTS template's Firmware line.
 
 ## Done when
 - [ ] Smoke `homes`: `docs/a/a.md` and `docs/a/b.md` (docmap names it, or it has `## Invariants`):
@@ -60,7 +77,8 @@ hold: part pages, linked files, a `datasheets/` folder.
 - [ ] Smoke: `docs/a/b/c.md` (docmap-named) is deep without a `deep_subsystems` entry for `docs/a/b/c`.
 - [ ] Smoke: `jig update` lists `docs/a/b/b.md` under Repo files to review and, on `--apply`,
   leaves it (update never edits repo files unasked).
-- [ ] Smoke: `reading-list` for a file `docs/a/b.md` covers prints `docs/a/b.md`, then `docs/a/a.md`.
+- [ ] Smoke: `reading-list` for a file `docs/a/c.md` (Invariants) covers prints `docs/a/c.md`, then
+  `docs/a/a.md` marked as its parent; a seam page at `docs/seam-gpio.md` prints no parent.
 - [ ] RULES.md Homes and Documentation state the rule; `/jig:hardware`, `/jig:adopt`'s homes
   table, `/jig:redocument` and the AGENTS template's Firmware line give a board or part page as
   flat until it holds a file (a board with a spec sheet has `datasheets/`, so a folder).

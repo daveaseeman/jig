@@ -75,7 +75,9 @@ Otherwise:
    Cited is only for a pararepo.
 
    Verbs are `rewrite`, `merge`, `split`, `move`, `new`, `drop`. A new path is
-   `docs/<system>/<system>.md` or `docs/<system>/<subsystem>/<subsystem>.md`, no deeper. A
+   `docs/<system>.md` or `docs/<system>/<subsystem>.md`, no deeper, flat until the page holds
+   other files; one that does (part pages, files it links, `datasheets/`) is
+   `docs/<system>/<system>.md` or `docs/<system>/<subsystem>/<subsystem>.md`. A
    subsystem inside a subsystem is asked of the owner with its rationale, as `.jig/RULES.md`
    (Documentation) says, and lands as a `deep_subsystems` entry in `.jig/config.json` on trunk
    on a yes. Name the cleanup route in
