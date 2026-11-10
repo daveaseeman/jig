@@ -12,6 +12,10 @@ Run the repo's copy, from trunk with a clean tree:
 python3 .jig/jig.py release            # --minor, --major, or --version X.Y.Z for the first
 ```
 
+The release renames `## Unreleased` in `.jig/decisions.md` to `## vX.Y.Z - <date>` and adds an
+empty one above it. Before it runs, read Unreleased with the owner: a breaking change there
+(a `**Breaking:**` line, a superseded decision) means `--major`.
+
 ## Before it runs
 
 When the release protocol is being defined (below), or `.jig/scripts/publish.sh` still holds
@@ -35,11 +39,12 @@ is "nothing", delete the line and leave no steps. Commit it before the release.
     produces, one per kind of file: `["dist/*.dmg", "dist/*.exe"]`.
   - Run `release.sh` once by hand with a throwaway version if the user agrees, then put the
     tracked files back with `git checkout -- .`.
-  - In a metarepo, the release needs no steps. jig validates history, writes the changelog
+  - In a metarepo, the release needs no steps. jig validates history, writes the log's
     heading and tags.
 - **files staged**: list them. Resolving them (`/jig:stage`) is the usual answer. `--force`
   releases anyway and names them in the release commit; use it only when the user says so.
-- **no v\* tag yet**: ask for the first version and pass `--version X.Y.Z`.
+- **no v\* tag yet**: ask for the first version and pass `--version X.Y.Z` (or `--minor` for
+  0.1.0).
 - **a step failed**: tracked files are back as they were, and nothing is tagged. Show the
   output, fix the cause with the user, run it again.
 
