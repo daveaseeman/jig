@@ -2060,7 +2060,7 @@ expect_pass hrsurvey "h = {e['path']: e for e in r['homeless']}
 assert h['docs/hardware/watch.md']['kind'] == 'board' and h['docs/hardware/watch.md']['to'] == 'docs/watch/watch.md', h
 assert not [e for e in r['homeless'] if e['kind'] == 'stray'], h
 rows = {e['path']: e['to'] for e in r['old_boards']}
-assert rows == {'docs/hardware/band.md': 'docs/band/band.md',
+assert rows == {'docs/hardware/band.md': 'docs/band.md',
                 'docs/hardware/components/imu/qx.pdf': 'docs/watch/datasheets/imu-qx.pdf',
                 'docs/hardware/components/pmic/qx.pdf': 'docs/watch/datasheets/pmic-qx.pdf',
                 'docs/hardware/components/rtc/r.pdf': 'docs/datasheets/r.pdf', 'docs/hardware/watch.md': 'docs/watch/watch.md',
@@ -2127,6 +2127,29 @@ out=$($J update 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q '.gitignore: reference_files is ignore, and no line is jig.s' && ! echo \"\$0\" | grep -qF '.gitignore: \`docs/hardware'" "$out"
 $J update --apply >/dev/null 2>&1
 expect_pass test "$(cat .gitignore)" = "$(printf '*.log\ndocs/hardware/**/*.pdf')"
+
+# A flat board page and its folder form are one page: a job grows the folder with a git mv alone.
+HW2="$T/hwflat"; pcnew "$HW2" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p docs && printf '# Dev\n\nA dev board.\n' > docs/dev.md && printf 'CONFIG_X=y\n' > sdkconfig
+board "b['boards'] = ['docs/dev.md']; b['docmap'] = {'docs/dev.md': ['sdkconfig']}" && git add -A && git commit -qm "flat board"
+$J open HF1 --spec t --owns 'docs/**' >/dev/null 2>&1 && git add -A && git commit -qm "open HF1"
+(cd .git/jig/worktrees/HF1 && mkdir -p docs/dev/datasheets && git mv docs/dev.md docs/dev/dev.md \
+  && printf 'pdf\n' > docs/dev/datasheets/x.pdf && printf '[x](datasheets/x.pdf)\n' >> docs/dev/dev.md \
+  && git add -A && git commit -qm "dev grows a folder") && hwnote HF1
+msg="board gate: a flat board page boards lists moves into its folder with a datasheet on a job branch, and the gate passes"
+gate_ok HF1; rc=$?
+expect_pass sh -c "test $rc = 0 || { echo \"\$0\"; exit 1; }" "$out"
+msg="boards: a boards entry and docmap key in the flat form name the page in its folder form"
+git checkout -q HF1 -- docs && git rm -q --cached docs/dev.md 2>/dev/null; rm -f docs/dev.md; git add -A && git commit -qm "dev in its folder"
+expect_pass sh -c "python3 -c \"
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+assert r['boards_missing'] == [] and r['boards_unmapped'] == [] and r['boards_unpaged'] == [] and r['homeless'] == [], r\""
+msg="update: a lone page in the old docs/hardware/ layout goes flat, docs/<board>.md"
+expect_pass python3 -c "
+import sys; sys.path.insert(0, '.jig'); import jig
+rows = jig.old_board_rows(['docs/hardware/b.md', 'docs/hardware/c.md', 'docs/hardware/c/wiring.md'], lambda f: '# x\n')
+assert {r['path']: r['to'] for r in rows} == {'docs/hardware/b.md': 'docs/b.md', 'docs/hardware/c.md': 'docs/c/c.md', 'docs/hardware/c/wiring.md': 'docs/c/wiring.md'}, rows"
 }
 
 # ---------------------------------------------------------------- update: per file, whole subfolders, worktrees
@@ -3294,6 +3317,34 @@ assert r['page_shapes'] == [], r['page_shapes']"
 board "b['deep_subsystems'] = {'docs/a/b/e': 'own module'}" && git add -A && git commit -qm approve
 msg="flat: with docs/a/b/e approved, it is at home"
 expect_pass homes "assert not h, h"
+msg="flat: an approved deep folder page alone goes flat, and its approval still names a tracked page"
+expect_pass homes "assert r['deep_unmatched'] == [], r['deep_unmatched']"
+mkdir -p docs/a/b/f && printf '# F\n\nThe f part.\n' > docs/a/b/f.md && printf '# F2\n\nThe f part again.\n' > docs/a/b/f/f.md
+board "b['docmap']['docs/a/b/f.md'] = ['src/f/**']; b['deep_subsystems']['docs/a/b/f'] = 'own module'" && git add -A && git commit -qm "f twice"
+msg="flat: docs/a/b/f.md and docs/a/b/f/f.md together: the flat one folds into the folder page"
+expect_pass homes "assert [(e['path'], e['to'], e['into'], e['fold']) for e in r['page_shapes']] == [('docs/a/b/f.md', 'docs/a/b/f/f.md', True, True)], r['page_shapes']"
+
+# A flat page still owns the folder it has started to fill.
+HF2="$T/homes-flat-owner"; pcnew "$HF2" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p docs/a docs/b/datasheets src/a src/b && printf 'docs/**/datasheets/\n' > .gitignore
+printf '# A\n\nThe a system.\n\n## Invariants\n- a — x; held by review.\n' > docs/a.md
+printf '# B\n\nThe b part.\n\n## Invariants\n- b — x; held by review.\n' > docs/a/b.md
+printf '# B board\n\nThe b board. [x](b/datasheets/x.pdf)\n' > docs/b.md && printf 'pdf\n' > docs/b/datasheets/x.pdf
+printf 'x\n' > src/a/a.rs && printf 'x\n' > src/b/b.rs
+board "b['docmap'] = {'docs/a.md': ['src/a/**'], 'docs/a/b.md': ['src/a/b/**'], 'docs/b.md': ['src/b/**']}" && git add -A && git commit -qm owners
+msg="flat: a flat docs/a.md owns docs/a/, so docs/a/b.md stays its part and only a.md is told to move in"
+expect_pass homes "assert not h, h
+assert sorted((e['path'], e['to'], e['into']) for e in r['page_shapes']) == [('docs/a.md', 'docs/a/a.md', True), ('docs/b.md', 'docs/b/b.md', True)], r['page_shapes']"
+msg="flat: a flat page linking its own ignored datasheets/ is told to move in, not to share the file"
+expect_pass homes "assert r['datasheets_misplaced'] == [] and r['datasheets_orphan'] == [], r"
+mkdir -p docs/g src/g && printf '# G\n\nThe g system.\n' > docs/g.md && printf '# Seam\n\nThe seam.\n' > docs/a/seam-g.md && printf 'x\n' > src/g/g.rs
+board "b['docmap']['docs/g.md'] = ['src/g/**']; b['docmap']['docs/a/seam-g.md'] = ['src/a/a.rs', 'src/g/g.rs']" && git add -A && git commit -qm seam
+msg="flat: a page in one system's folder covering another system's file is named as a misfiled seam"
+out=$($J survey 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a/seam-g.md: covers files of two systems (also docs/g.md.s): a seam lives in their nearest shared folder' && python3 -c \"
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+assert r['seams_misfiled'] == [{'path': 'docs/a/seam-g.md', 'other': 'docs/g.md'}], r['seams_misfiled']\"" "$out"
 }
 
 # ---------------------------------------------------------------- update's AGENTS.md lines

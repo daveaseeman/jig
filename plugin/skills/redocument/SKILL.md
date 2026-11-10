@@ -43,8 +43,9 @@ Otherwise:
 1. **Seed it from survey.** Its old-contract pages, its pages outside the docs tree (with
    where survey says each goes), and its strays under `docs/` are the first rows. Every
    tracked doc under `docs/` gets a row or an explicit `drop`, board pages included. A board
-   page in an older layout, `docs/hardware/<board>.md`, gets a row to `docs/<board>/<board>.md`
-   with its `boards` entry; `docs/hardware/<board>/` moves into that folder, its vendor PDFs
+   page in an older layout, `docs/hardware/<board>.md`, gets a row to `docs/<board>.md` with its
+   `boards` entry, or to `docs/<board>/<board>.md` when files go with it; `docs/hardware/<board>/`
+   moves into that folder, its vendor PDFs
    into the folder's `datasheets/` (a PDF the repo wrote, a schematic, stays beside the page);
    and each file of `docs/hardware/components/<part>/` moves into the `datasheets/` of the
    page that links the part, or `docs/datasheets/` when two board pages link it. Survey's rows

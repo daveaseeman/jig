@@ -132,8 +132,9 @@ One page per system, `docs/<system>.md`. A subsystem's page sits in its system's
 `docs/<system>/<subsystem>.md`. A page is a single file, flat in its parent's folder, until it
 holds more than itself — subsystem pages, files it links, a `datasheets/` folder; then it moves
 into a folder named for it, `docs/<system>/<system>.md`, with that company beside it, in the
-change that adds the first of them (`git mv`, its `docmap` key, its `boards` entry if it is a
-board's). The tree names the product's own parts, not its files, so a rule that touches several
+change that adds the first of them. Both forms are one page: a `docmap` key or `boards` entry
+written in either names it in either, so a branch grows the folder with a `git mv` alone, and
+the key on trunk may be rewritten later or never. The tree names the product's own parts, not its files, so a rule that touches several
 files lives once.
 
 In a folder that has a page, another `.md` is a flat page when `docmap` or `boards` names it, or it

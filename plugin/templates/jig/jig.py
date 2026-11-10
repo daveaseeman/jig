@@ -1256,7 +1256,7 @@ def foldin_lines(root: Path, board: Board, branch: str) -> str:
     # overlay); only source files are flagged when no page covers them.
     pages, unowned = {}, []
     for f in changed:
-        owners = doc_owners(board, f)
+        owners = [page_in(p, at_head) for p in doc_owners(board, f)]
         for page in owners:
             pages.setdefault(page, []).append(f)
         if not owners and f.endswith(SRC_EXT) and f in at_head:
@@ -1274,7 +1274,7 @@ def foldin_lines(root: Path, board: Board, branch: str) -> str:
             continue
         # The page before this change: an entry the change already deleted was built here,
         # and still needs its answer.
-        text = git("show", f"{base}:{page}") or git("show", f"HEAD:{page}")
+        text = next((t for p in page_forms(page) for r in (base, "HEAD") if (t := git("show", f"{r}:{p}"))), "")
         out += [f'- [ ] Undefined in {page}: "{undef_key(e)}" — built / untouched / departed: ___'
                 for e in undefined_entries(text)]
     out += [f"- [ ] UNOWNED {f} — add to docmap (a new page starts from {DIR}/docs-page.md), "
@@ -1337,7 +1337,9 @@ def cmd_reading_list(root: Path, args) -> int:
     for pattern in args.paths:
         hits = [f for f in tracked(root) if matches(f, [pattern])] or [pattern]
         for f in hits:
-            owners = [p for p in doc_owners(board, f) if (root / p).exists()]
+            # A docmap key names the page in either form; list the one on disk.
+            owners = [q for p in doc_owners(board, f)
+                      if (q := next((g for g in page_forms(p) if (root / g).exists()), ""))]
             want += [p for p in owners if p not in want]
             if not owners and f.endswith(SRC_EXT):
                 unowned.append(f)
@@ -1470,7 +1472,7 @@ def cmd_gate(root: Path, args) -> int:
             if not u or l in open_lines:
                 continue
             for page in board_pages(board.data):
-                if matches(u.group(1), docmap.get(page) or []):
+                if matches(u.group(1), page_globs(docmap, page)):
                     open_lines.append(f"{l.strip()}   <- {page} is a board page covering it: "
                                       "code that runs on a board needs its page")
         if open_lines:
@@ -1662,7 +1664,7 @@ def reference_file(path: str, have: set[str] | None = None) -> bool:
     if have is None:
         return True
     i = parts.index(DATASHEETS, 1)
-    return i == 1 or "/".join(parts[:i]) + f"/{parts[i - 1]}.md" in have
+    return i == 1 or bool(folder_owner("/".join(parts[:i]), have))
 
 
 def reserved_page(path: str) -> bool:
@@ -1674,7 +1676,7 @@ def reserved_page(path: str) -> bool:
 
 def old_board_rows(files: list[str], read) -> list[dict]:
     """Every file in the old docs/hardware/ layout, as {path, to, board, why}: a page to
-    docs/<board>/<board>.md (BOARD: its boards entry); a board's files into that folder, its
+    docs/<board>.md, or docs/<board>/<board>.md when files go with it (BOARD: its boards entry); a board's files into that folder, its
     vendor PDFs into the folder's datasheets/; a part's files into the datasheets/ of the one
     board page that links the part, or docs/datasheets/ when two do, or none. A part's folder
     goes: a datasheet is a file in a page's datasheets/. Two files bound for one place, or one
@@ -1709,9 +1711,14 @@ def old_board_rows(files: list[str], read) -> list[dict]:
         else:
             why = "names no board: place it by hand"
         rows.append({"path": f, "to": to, "board": board, "fold": False, "why": why, "origin": origin})
+    # A page is flat until it holds another file (RULES.md, Documentation).
+    for r in (r for r in rows if r["board"]):
+        d = os.path.dirname(r["to"])
+        if not any(o["to"] and o["to"].startswith(f"{d}/") for o in rows if o is not r):
+            r["to"] = f"{d}.md"
     there = {f for f in files if not f.startswith(OLD_BOARDS)}
-    for r in (r for r in rows if r["board"] and r["to"] in there):
-        r["to"], r["board"], r["why"] = None, False, f"{r['to']} is there already: fold the two by hand"
+    for r in (r for r in rows if r["board"] and set(page_forms(r["to"])) & there):
+        r["to"], r["board"], r["why"] = None, False, f"{page_in(r['to'], there)} is there already: fold the two by hand"
     for _ in range(2):
         bound = {}
         for r in rows:
@@ -1750,7 +1757,7 @@ def flat_spot(path: str, have: set[str]) -> bool:
     return (path.startswith("docs/") and path.endswith(".md") and not folder_page(path)
             and not reference_file(path) and not path.startswith(OLD_BOARDS)
             and name not in RULES_NAMES and Path(path).stem != DATASHEETS
-            and (parent == "docs" or f"{parent}/{os.path.basename(parent)}.md" in have))
+            and (parent == "docs" or bool(folder_owner(parent, have))))
 
 
 def flat_page(path: str, have: set[str], docmap, read) -> bool:
@@ -1766,14 +1773,47 @@ def page_folder(path: str) -> str:
     return os.path.dirname(path) if folder_page(path) else path[:-len(".md")]
 
 
+def folder_owner(d: str, have: set[str]) -> str:
+    """The page that folder D stands for, in either form: d/<name>.md, or d.md still flat
+    beside the folder it has started to fill (survey says to move it in). Empty for none."""
+    name = os.path.basename(d)
+    if name == DATASHEETS or "/" not in d:
+        return ""
+    return next((p for p in (f"{d}/{name}.md", f"{d}.md") if p in have), "")
+
+
+def page_forms(path: str) -> tuple[str, ...]:
+    """A docs page's two forms, flat and in its folder: one page, whichever the tree holds.
+    docmap keys and boards entries name it in either, so a branch can grow the folder with a
+    git mv alone, since config.json is trunk's (R5)."""
+    if not (path.startswith("docs/") and path.endswith(".md")) or reference_file(path):
+        return (path,)
+    d = page_folder(path)
+    return (f"{d}.md", f"{d}/{os.path.basename(d)}.md")
+
+
+def same_page(a: str, b: str) -> bool:
+    return a in page_forms(b)
+
+
+def page_in(path: str, have) -> str:
+    """The form of page PATH that HAVE holds, PATH itself when it holds neither."""
+    return next((f for f in page_forms(path) if f in have), path)
+
+
+def page_globs(docmap: dict, page: str) -> list[str]:
+    """Every glob docmap gives PAGE, under a key in either of its forms."""
+    return [g for k, gs in docmap.items() if same_page(k, page) and isinstance(gs, list) for g in gs]
+
+
 def owner_page(path: str, have: set[str], deep: dict) -> str:
     """The page whose folder PATH sits in, nearest first: its own folder's page holds the
     files it links. Empty when no folder above PATH has a page."""
     parts = path.split("/")
     for i in range(len(parts) - 1, 1, -1):
         d = "/".join(parts[:i])
-        if f"{d}/{parts[i - 1]}.md" in have and parts[i - 1] != DATASHEETS and depth_ok(d, deep):
-            return f"{d}/{parts[i - 1]}.md"
+        if (page := folder_owner(d, have)) and depth_ok(d, deep):
+            return page
     return ""
 
 
@@ -1835,8 +1875,8 @@ def page_home(path: str, have: set[str], deep: dict) -> str:
         return f"{d}/{stem}/{stem}.md" if f"{d}/{stem}/{stem}.md" in have else f"{d}/{stem}.md"
     for i in range(len(folders), 1, -1):
         d = "/".join(folders[:i])
-        if f"{d}/{folders[i - 1]}.md" in have and folders[i - 1] != DATASHEETS and depth_ok(d, deep):
-            return there(d) if depth_ok(f"{d}/{stem}", deep) else f"{d}/{folders[i - 1]}.md"
+        if (page := folder_owner(d, have)) and depth_ok(d, deep):
+            return there(d) if depth_ok(f"{d}/{stem}", deep) else page
     return there("docs")
 
 
@@ -1927,21 +1967,44 @@ def page_shapes(root: Path, files: list[str], not_docs: list[str], docmap: set[s
     true). SKIP are the files with no home, reported already. NAMED is false where the flat
     page would be neither in DOCMAP nor page-shaped, so read as a note."""
     have, out = set(files), []
+    def company(f: str) -> bool:
+        # An ignored datasheet isn't tracked, but the folder on disk or the page's link says it's there.
+        d = page_folder(f)
+        return (any(g.startswith(f"{d}/") and g != f for g in have) or (root / d / DATASHEETS).is_dir()
+                or any(t.startswith(f"{d}/") for t in link_targets(f, read(f))))
     for f in files:
         if f in skip or matches(f, not_docs):
             continue
         if folder_page(f) and not f.startswith(OLD_BOARDS):
-            d = os.path.dirname(f)
-            # An ignored datasheet isn't tracked, but the folder or the page's link says it's there.
-            company = (any(g.startswith(f"{d}/") and g != f for g in have) or (root / d / DATASHEETS).is_dir()
-                       or any(t.startswith(f"{d}/") for t in link_targets(f, read(f))))
-            to = f"{os.path.dirname(d)}/{Path(f).stem}.md"
-            if not company and to not in have and flat_spot(to, have):
+            to = f"{page_folder(f)}.md"
+            if not company(f) and to not in have and flat_spot(to, have):
                 out.append({"path": f, "to": to, "into": False, "fold": False,
                             "named": f in docmap or page_shaped(read(f))})
-        elif flat_page(f, have, docmap, read) and any(g.startswith(f"{page_folder(f)}/") for g in have):
+        elif flat_page(f, have, docmap, read) and company(f):
             to = f"{page_folder(f)}/{Path(f).stem}.md"
             out.append({"path": f, "to": to, "into": True, "fold": to in have, "named": True})
+    return out
+
+
+def misfiled_seams(files: list[str], board: dict) -> list[dict]:
+    """Each page filed in a system's folder whose docmap globs cover a file another system's
+    page also covers, as {path, other}: a seam filed under one side, which the reading list
+    would climb from as that side's part. A board page under a system is its system's, whatever
+    its globs reach, so none is listed."""
+    docmap = board.get("docmap") if isinstance(board.get("docmap"), dict) else {}
+    boards = board_pages(board)
+    tops = {k: page_folder(k).split("/")[1] for k in docmap
+            if k.startswith("docs/") and k.endswith(".md") and page_folder(k).count("/") == 1}
+    out = []
+    for p, globs in docmap.items():
+        if (not isinstance(globs, list) or not p.startswith("docs/") or page_folder(p).count("/") < 2
+                or any(same_page(b, p) for b in boards)):
+            continue
+        system = page_folder(p).split("/")[1]
+        other = next((t for f in files if matches(f, globs)
+                      for t, s in tops.items() if s != system and matches(f, docmap[t] or [])), "")
+        if other:
+            out.append({"path": p, "other": other})
     return out
 
 
@@ -2081,7 +2144,7 @@ def unpaged_build(board: dict, files: list[str]) -> list[tuple[str, str]]:
     (an old-layout repo after update), and needs listing, not writing."""
     docmap = board.get("docmap") if isinstance(board.get("docmap"), dict) else {}
     pages = board_pages(board)
-    globs = [g for p in pages for g in (docmap.get(p) or [])]
+    globs = [g for p in pages for g in page_globs(docmap, p)]
     return [(f, next((p for p, gs in docmap.items() if isinstance(gs, list) and matches(f, gs)), ""))
             for f in files if board_build(f) and not matches(f, globs)]
 
@@ -2106,9 +2169,11 @@ def board_refusals(board: dict, trunk: str, at: str) -> list[str]:
            for f, page in unpaged_build(board, changed)]
     gone = set(git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
                    "--diff-filter=D", rng).splitlines())
+    # Flat to folder or back is the same page: boards names it in either form.
+    there = set(git("-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", at).splitlines())
     out += [f"{p} is a board page {CONFIG} boards lists, and this branch deletes or moves it: "
             "keep it, or move its boards and docmap entries with it on trunk first"
-            for p in board_pages(board) if p in gone]
+            for p in board_pages(board) if set(page_forms(p)) & gone and not set(page_forms(p)) & there]
     return out
 
 
@@ -2122,7 +2187,7 @@ def named_pages(board: dict) -> set[str]:
     """The files the board names as pages, docmap's keys and boards: a flat file is a page
     when one of these names it, whatever its sections."""
     docmap = board.get("docmap") if isinstance(board.get("docmap"), dict) else {}
-    return set(docmap) | set(board_pages(board))
+    return {f for p in set(docmap) | set(board_pages(board)) for f in page_forms(p)}
 
 
 # Markdown link targets: inline `[t](target "title")` and reference definitions `[d]: target`.
@@ -2150,7 +2215,7 @@ def shared_home(a: str, b: str, have: set[str]) -> str:
     """The datasheets/ of the nearest folder above both A and B that has a page of its own,
     docs/datasheets/ at the top."""
     common = os.path.commonpath([a, b]).split("/")
-    while len(common) > 1 and f"{'/'.join(common)}/{common[-1]}.md" not in have:
+    while len(common) > 1 and not folder_owner("/".join(common), have):
         common.pop()
     return f"{'/'.join(common)}/{DATASHEETS}/"
 
@@ -2174,7 +2239,7 @@ def datasheet_links(root: Path, files: list[str], pages: list[str], deep: dict,
             if not (root / path).exists() and (page, path) not in missing:
                 missing.append((page, path))
             owner = path[:path.index(f"/{DATASHEETS}/")]
-            here = os.path.dirname(page)
+            here = page_folder(page) if page in pages else os.path.dirname(page)
             if here != owner and not here.startswith(f"{owner}/"):
                 misplaced.append((page, path, shared_home(owner, here, have)))
     pool = f"docs/{DATASHEETS}/"
@@ -2209,7 +2274,7 @@ def cmd_survey(root: Path, args) -> int:
 
     deep = board.get("deep_subsystems") if isinstance(board.get("deep_subsystems"), dict) else {}
     # A trailing slash or a missing docs/ approves no folder, silently; say so.
-    report["deep_unmatched"] = [k for k in deep if not any(f.startswith(f"{k}/") for f in files)]
+    report["deep_unmatched"] = [k for k in deep if not any(f.startswith(f"{k}/") or f == f"{k}.md" for f in files)]
     docmap = named_pages(board)
     homes = {h["path"]: h for h in doc_homes(root, files, not_docs, deep=deep, docmap=docmap)}
     for f in md:
@@ -2239,8 +2304,8 @@ def cmd_survey(root: Path, args) -> int:
     # The fold-in asks about a page only when docmap names it, so a board page left out
     # of docmap is never checked against the code that targets that board.
     boards = board_pages(board)
-    report["boards_unmapped"] = [f for f in boards if f not in (board.get("docmap") or {})]
-    report["boards_missing"] = [f for f in boards if f not in files]
+    report["boards_unmapped"] = [f for f in boards if not any(same_page(k, f) for k in (board.get("docmap") or {}))]
+    report["boards_missing"] = [f for f in boards if page_in(f, set(files)) not in files]
     report["boards_unpaged"] = [{"path": f, "page": p} for f, p in unpaged_build(board, files)]
     have = set(files)
 
@@ -2249,6 +2314,7 @@ def cmd_survey(root: Path, args) -> int:
     flats = {f for f in md if flat_page(f, have, docmap, read)}
     pages = [f for f in md if (folder_page(f) or f in flats) and f not in homes and not matches(f, not_docs)]
     report["page_shapes"] = page_shapes(root, files, not_docs, docmap, set(homes), read)
+    report["seams_misfiled"] = misfiled_seams(files, board)
     report["datasheets_unlinked"], report["datasheets_missing"], report["datasheets_misplaced"] = datasheet_links(
         root, files, pages, deep, not_docs)
     report["datasheets_orphan"] = [f for f in files if reference_file(f) and not f.endswith(".md")
@@ -2308,6 +2374,12 @@ def cmd_survey(root: Path, args) -> int:
               "named for it:")
         for e in report["page_shapes"]:
             print(f"  {e['path']}: {shape_fix(e)}")
+    if report["seams_misfiled"]:
+        print(f"\nPages in one system's folder that cover another's files ({DIR}/RULES.md, "
+              "Documentation):")
+        for e in report["seams_misfiled"]:
+            print(f"  {e['path']}: covers files of two systems (also {e['other']}'s): a seam "
+                  "lives in their nearest shared folder")
     below = [e for e in report["homeless"] if e["kind"] == "deep"]
     if below:
         print(f"\nPages below a subsystem ({DIR}/RULES.md, Documentation); fold each into its "
@@ -4894,9 +4966,9 @@ def board_slug(text: str) -> str:
 
 def board_home(root: Path, slug: str) -> str:
     """Where an old single board page goes: flat, docs/<board>.md, since it moves alone;
-    into the board's folder page where one is there already, which the move then won't take."""
+    into the board's folder where it has one already, with files or its page in it."""
     folder = f"docs/{slug}/{slug}.md"
-    return folder if (root / folder).exists() else f"docs/{slug}.md"
+    return folder if (root / f"docs/{slug}").is_dir() else f"docs/{slug}.md"
 
 
 def hardware_rows(root: Path, files: list[str]) -> list[tuple[str, list[str]]]:
@@ -5432,9 +5504,9 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
                          {h["path"] for h in homeless}, read):
         if e["path"] in reviewed:
             continue
-        lines = commit_lines(os.path.dirname(e["path"]) + "/", [e])
-        if e["path"] in board_pages(board):
-            lines.append(f"{CONFIG} boards: {e['path']} → {e['to']}")
+        # docmap and boards name a page in either form, so the move needs no config edit.
+        lines = [l for l in commit_lines(os.path.dirname(e["path"]) + "/", [e])
+                 if not l.startswith(f"{CONFIG} docmap:")]
         out.append((e["path"], f"{shape_fix(e)} ({DIR}/RULES.md, Documentation). "
                     "On the owner's yes, in one commit:" + "".join(f"\n      {l}" for l in lines)))
     strays = len([h for h in homes if h["kind"] == "stray"])

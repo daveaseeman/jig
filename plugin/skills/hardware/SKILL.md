@@ -26,8 +26,9 @@ the code always matches it, and the check at the gate would catch nothing.
    Undefined is written only on the owner's word. The files the page leans on go in its
    folder. A page that holds none — the definition pasted or a URL, no datasheet saved — is
    flat instead, `docs/<board>.md` or `docs/<system>/<board>.md`, and wherever
-   `<home><board>.md` appears below, it is that path; it moves into its folder (`git mv`,
-   its `boards` and `docmap` keys) in the change that saves its first file:
+   `<home><board>.md` appears below, it is that path; it moves into its folder with a
+   `git mv` in the change that saves its first file. Its `boards` and `docmap` keys stay as
+   they are: either form names the page:
    - **The definition.** A file the user wrote is saved to `<home>`. A vendor's (a dev
      board's spec sheet, a reference manual) is saved to `<home>datasheets/`, with its source
      URL beside the link, in either `reference_files` mode: a board is not a part of itself.

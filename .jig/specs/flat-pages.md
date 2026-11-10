@@ -57,8 +57,20 @@ hold: part pages, linked files, a `datasheets/` folder.
   misfiled seam (its globs naming "both sides" isn't reliable to read); review catches it.
   Smoke: the guard's seam page moves to `docs/seam-gpio.md` and prints no parent; a
   docmap-named `docs/net/x.md` with no contract sections climbs to `docs/net/net.md`.
+- **One page, two forms.** `docs/a/b.md` and `docs/a/b/b.md` are the same page (`page_forms`):
+  a `docmap` key or `boards` entry in either form names it in either, and the gate's board
+  check reads a move between them as the same page. A job grows the folder with a `git mv`
+  and no config edit (config is trunk's, R5); the key on trunk may be rewritten later or never.
+- **A flat page owns the folder it has started to fill.** `owner_page`, `page_home`,
+  `flat_spot`, `reference_file` and `shared_home` take `docs/a.md` as the page of `docs/a/`
+  (`folder_owner`), so `docs/a/b.md` stays a's part while survey tells a.md to move in.
+  "Has company" counts tracked files, a `datasheets/` folder on disk and the page's links, in
+  both directions.
+- **Misfiled seams.** Survey names a page in one system's folder whose globs cover a file
+  another system's page covers ("covers files of two systems"); board pages are exempt.
 - **Migration.** `jig update`'s root `HARDWARE.md` row goes flat, `docs/<board>.md`, since it
-  moves alone; into `docs/<board>/<board>.md` only where that page exists already.
+  moves alone; into `docs/<board>/<board>.md` where `docs/<board>/` exists already. An old
+  `docs/hardware/<board>.md` goes flat too unless files move with it.
 - **Wording.** RULES.md Documentation (the opening paragraph, the page-or-note rule, the seam
   paragraph's home, the body
   section's "beside its system's", the page-folder paragraph's survey reports, the board
