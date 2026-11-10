@@ -1350,22 +1350,25 @@ printf '# s\n\nPer `mm/products/hardware/walyt.md § Two stages`.\n' > .jig/spec
 printf 'See products/hardware/walyt.md.\n' > docs/a.md
 printf '# h\n\nproducts/gone.md, `mm/products/hardware/walyt.md § Handoffonly`.\n' > .jig/handoffs/h.md
 git add -A && git commit -qm "cite mm" >/dev/null 2>&1
-printf '| B2 | `mm/products/hardware/walyt.md § Closedonly` | api/a.py | owner, 2026-11-10 | Closed |\n' >> .jig/ledgers/BUFFER.md
+printf '| B2 | `mm/products/hardware/walyt.md § Closedonly`, mm/products/gone.md | api/a.py | owner, 2026-11-10 | Closed |\n' >> .jig/ledgers/BUFFER.md
 git commit -qam "buffer: B2, as sync would have closed it" --no-verify
 cd "$MM" && git switch -q -c mv && mkdir -p products/walyt && git mv products/hardware/walyt.md products/walyt/walyt.md
 sed -i.bak 's/^## Interaction (rev 2)$/## Interaction/' products/walyt/walyt.md && rm products/walyt/walyt.md.bak && git rm -q products/gone.md
-printf -- '- walyt moved to products/walyt/; gone removed\n' >> CHANGELOG.md && git add -A && git commit -qm "WALYT: move it, drop gone" && $J reviewed >/dev/null
+printf '| D-001 | walyt moves | accepted | 2026-11-10 |\n' >> DECISIONS.md
+printf -- '- walyt moved to products/walyt/; gone removed; D-001\n' >> CHANGELOG.md && git add -A && git commit -qm "D-001, WALYT: move it, drop gone" && $J reviewed >/dev/null
 git switch -q main && git merge -q --no-ff --no-edit mv 2>/dev/null && $J release >/dev/null
 cd "$PP" && out=$($J sync 2>&1)
 msg="para sync: a newer release lists an entry file it moved, with every file here citing it, specs and ledgers included"
 expect_pass sh -c "echo \"\$0\" | grep -qF 'products/hardware/walyt.md (now products/walyt/walyt.md): used in .jig/ledgers/BUFFER.md, .jig/specs/s.md, docs/a.md'" "$out"
 msg="para sync: a heading only a BUFFER row cites is used there, not 'not used here'"
 expect_pass sh -c "echo \"\$0\" | grep -qF 'Interaction (rev 2): used in .jig/ledgers/BUFFER.md'" "$out"
-msg="para sync: a deleted entry file mentioned only in a handoff reads (removed): not used here"
+msg="para sync: a deleted entry file mentioned only in a handoff and a Closed BUFFER row reads (removed): not used here"
 expect_pass sh -c "echo \"\$0\" | grep -qF 'products/gone.md (removed): not used here'" "$out"
 setjson .jig/para.json pin v0.2.0 && $J init --para mm >/dev/null 2>&1 && git add -A && git commit -qm "meta: mm v0.1.0 → v0.2.0" >/dev/null 2>&1
 printf '# s2\n\nPer `mm/products/walyt/walyt.md § Interaction`.\n' > .jig/specs/s2.md
-printf '# s3\n\nPer products/walyt/walyt.md.\n' > .jig/specs/s3.md && git add -A && git commit -qm "specs: s2, s3" >/dev/null 2>&1
+printf '# s3\n\nPer products/walyt/walyt.md.\n' > .jig/specs/s3.md
+printf '# s4\n\nPer `mm/DECISIONS.md § D-001`,\nnot `mm/DECISIONS.md § D-009`.\n' > .jig/specs/s4.md
+mkdir -p mm && printf '# notes\n' > mm/notes.md && printf 'See mm/notes.md.\n' > docs/b.md && git add -A && git commit -qm "specs: s2, s3" >/dev/null 2>&1
 out=$($J sync 2>&1)
 msg="para sync: a spec citing <meta>/<path> the pin no longer has is named"
 expect_pass sh -c "echo \"\$0\" | grep -qF \".jig/specs/s.md:3 cites mm/products/hardware/walyt.md, which mm v0.2.0 doesn't have\"" "$out"
@@ -1373,6 +1376,10 @@ msg="para sync: a citation the pin has, file and heading, is not named"
 expect_pass sh -c "! echo \"\$0\" | grep -q 's2.md'" "$out"
 msg="para sync: a bare path naming a metarepo entry file is named, with the form to write"
 expect_pass sh -c "echo \"\$0\" | grep -qF '.jig/specs/s3.md:3 cites products/walyt/walyt.md bare: write it as \`mm/products/walyt/walyt.md\`'" "$out"
+msg="para sync: a citation of a decision id checks for its row, not a heading"
+expect_pass sh -c "echo \"\$0\" | grep -qF '.jig/specs/s4.md:4 cites mm/DECISIONS.md § D-009, which mm v0.2.0 has no row for' && ! echo \"\$0\" | grep -q 's4.md:3'" "$out"
+msg="para sync: a path in a folder here named like the metarepo is this repo's own, not a citation"
+expect_pass sh -c "! echo \"\$0\" | grep -q 'docs/b.md'" "$out"
 msg="para sync: a Closed BUFFER row and a handoff citing the old path are not named"
 expect_pass sh -c "echo \"\$0\" | grep -q 'BUFFER.md:.*walyt' && ! echo \"\$0\" | grep -qE 'Closedonly|Handoffonly|handoffs/'" "$out"
 
