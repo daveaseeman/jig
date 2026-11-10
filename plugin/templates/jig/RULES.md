@@ -261,6 +261,12 @@ here; what the code is now, its invariants and its parked work in `docs/`; a tas
 in `.jig/ledgers/DEFERRED.md`; know-how in the agent's skills; what outsiders need in
 `README.md`; history in git.
 
+A repo's terms are a `## Glossary` section of its root `README.md`, the definitions a document
+opens with: each term a `### <term>` heading of its own, saying what it means and what it is
+not, so `README.md § <term>` names it. No other glossary file is a home: survey lists a root
+`GLOSSARY.md` with `README.md § Glossary` as where it goes, and names each term in the section
+written as a bold word opening a paragraph (`**term** — …`) rather than a heading.
+
 `jig survey` also reads each page at home under `docs/`, board pages included, against the
 contract above, and names a page in the old Now, Rules and Checks shape (convert it: fold
 what it says into description, delete what no longer holds, keep as Invariants only what
@@ -479,6 +485,8 @@ does what that kind of repo needs.
 changelog line for, and what a pararepo caches. Its entries are globs, matched the way `owns`
 is: a folder of pages goes in as `docs/**/*.md`, and a new page there needs no edit. Nothing
 under `.jig/` counts, whatever the globs say.
+`jig init --meta` names `DECISIONS.md` and `README.md`, whose `## Glossary` holds the terms
+(Documentation), so a release's term report reads each term's heading.
 
 | Gate | Refuses |
 |---|---|

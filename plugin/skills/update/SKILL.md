@@ -49,6 +49,12 @@ Then make every line the proposal names in one commit — the `git mv`s, the doc
 `contract_paths`, the stale lines and, in a pararepo, a `BUFFER.md` row per cached pointer. Carry
 out each finding on a yes. Never propose adding a line that restates `.jig/RULES.md`: point at it.
 
+A root **`GLOSSARY.md`**: the glossary's home is `README.md § Glossary` now. On a yes, move each
+term into that section as a `### <term>` heading, its text below it, delete the file, replace it
+with `README.md` in a metarepo's `entry_files`, and repoint the lines that name it. In a metarepo
+this is one changelog line (`GLOSSARY: …`); a pararepo's citations of `GLOSSARY.md` are named
+at its next pin bump.
+
 The **AGENTS.md** lines are the few the template still needs there: the Rulebook line, a
 Commands line for a `.jig/scripts/` file the repo has or this run adds, and a block jig retired
 to replace with the Rulebook line, or delete when the line is already outside it. Show each line
