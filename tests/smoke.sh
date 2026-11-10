@@ -1583,6 +1583,12 @@ import importlib.util, sys; s = importlib.util.spec_from_file_location('j', '.ji
 assert j.repo_path('rp') is not None and j.repo_path('tools') is not None"
 msg="repos: the list marks this folder"
 expect_pass sh -c "$J repos | grep -q 'tools .*← here'"
+msg="repos: with no entry named jig, it says where tool reports wait"
+expect_pass sh -c "$J repos | grep -q 'tool reports wait'"
+msg="repos: with an entry named jig, it doesn't say reports wait in a folder"
+$J repos rename jig >/dev/null
+expect_pass sh -c "$J repos | grep -q 'jig .*← here'"
+expect_refuse sh -c "$J repos | grep -q 'tool reports wait'"
 }
 
 # ---------------------------------------------------------------- workflow
