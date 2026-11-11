@@ -5087,7 +5087,9 @@ def uncovered_paths(root: Path, loc: Path, para: dict) -> None:
     cited += [(e["id"], e["block"]) for e in log_entries(log.read_text(errors="replace") if log.is_file() else "", prefix)]
     if not cited:
         return
-    names = this_repo_names(root)
+    # "this" names this repo only in a pararepo's own pointers to the metarepo; in a metarepo
+    # decision, this/AGENTS.md is the metarepo's own file.
+    names = this_repo_names(root) - {"this"}
     for path in git("-c", "core.quotePath=false", "ls-files").splitlines():
         if path.startswith(f"{DIR}/") or matches(path, para.get("contract_paths", [])):
             continue
@@ -5098,7 +5100,7 @@ def uncovered_paths(root: Path, loc: Path, para: dict) -> None:
         ids = [i for i, line in cited
                if any(not m.group("name") or name_in(m.group("name"), names) for m in cite.finditer(line))]
         if ids:
-            print(f"{path} is named by {', '.join(dict.fromkeys(ids))}, and {path} is not a contract path. "
+            print(f"{path} is not a contract path, and {', '.join(dict.fromkeys(ids))} name it. "
                   f"If the decision describes something this repo can change there, add the path to "
                   f"\"contract_paths\" in {PARA}; if not, nothing is needed.")
 
