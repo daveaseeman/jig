@@ -1,7 +1,7 @@
 {
   "meta-docs-tree": {
     "spec": ".jig/specs/meta-docs-tree.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [
       "flat-pages",
       "bug-redocument-any-format"
@@ -14,20 +14,6 @@
       "plugin/templates/jig/RULES.md",
       "tests/smoke.sh",
       "plugin/skills/redocument/SKILL.md"
-    ],
-    "reserved": {}
-  },
-  "stage-ask-access": {
-    "spec": ".jig/specs/stage-ask-access.md",
-    "state": "claimed",
-    "after": [
-      "decision-log"
-    ],
-    "owns": [
-      "plugin/skills/feedback/SKILL.md"
-    ],
-    "shares": [
-      "plugin/skills/stage/SKILL.md"
     ],
     "reserved": {}
   },
