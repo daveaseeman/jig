@@ -2877,6 +2877,9 @@ SM="$T/sb-meta"; pcnew "$SM" && git add -A && git commit -qm init && $J init --m
 printf '| D-001 | the list shows ids (`sb-para/docs/ui.md`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
 printf '| D-002 | the other app has a page (`other-para/docs/x.md`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
 printf '| D-003 | the help page (`SB-Para/docs/z.md`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
+printf "| D-004 | The sync rule sits at the top of every product repo's \`AGENTS.md\` | accepted (owner) | 2026-11-01 |\n" >> DECISIONS.md
+printf '| D-005 | the agents file (`sb-para/AGENTS.md`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
+printf '| D-006 | the UI doc (`docs/ui.md`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
 git add -A && git commit -qm meta-init && $J release >/dev/null
 SP="$T/sb-para"; pcnew "$SP" && mkdir -p api docs && printf 'x=1\n' > api/a.py && printf '# UI\n' > docs/ui.md && printf '# X\n' > docs/x.md && printf '# Z\n' > docs/z.md && printf 'dist/\n' > .gitignore
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
@@ -2925,7 +2928,7 @@ msg="buffer: jig release with two Open rows opens one metarepo proposal whose sp
 out=$($J release --version 1.0.0 2>&1)
 expect_pass sh -c "test \$(git -C '$SM' branch --list 'propose/*' | wc -l) = 1 && git -C '$SM' rev-parse -q --verify refs/heads/propose/sb-para-buffer-v1.0.0 >/dev/null && git show v1.0.0:.jig/specs/buffer-v1.0.0.md | grep -qx -- '- B1' && git show v1.0.0:.jig/specs/buffer-v1.0.0.md | grep -qx -- '- B2' && grep -q 'meta: sbm proposal propose/sb-para-buffer-v1.0.0' .jig/specs/buffer-v1.0.0.md && test -z \"\$(git status --porcelain)\"" "$out"
 msg="buffer: the release warns, as jig sync does, of a path a metarepo decision cites that contract_paths doesn't cover"
-expect_pass sh -c "echo \"\$0\" | grep -q 'docs/ui.md is cited by D-001'" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -q 'docs/ui.md is named by D-001'" "$out"
 msg="buffer: the rows stay Open after the proposal"
 expect_pass sh -c "test \$(grep -c '| Open |\$' .jig/ledgers/BUFFER.md) = 2"
 brow B3 'ids paged' 'scrolled' 'third try' Open >> .jig/ledgers/BUFFER.md && printf 's=9\n' >> api/a.py && git add -A && git commit -qm "api: s"
@@ -2936,9 +2939,11 @@ msg="buffer: after the metarepo releases it, jig sync moves the pin and closes B
 before=$(git rev-parse HEAD); out=$($J sync 2>&1)
 expect_pass sh -c "test \"\$(git rev-list --count $before..HEAD)\" = 1 && git log -1 --format=%s | grep -qx 'meta: sbm v0.1.0 → v0.2.0' && grep -q '\"pin\": \"v0.2.0\"' .jig/para.json && grep -q 'at \`v0.2.0\`' AGENTS.md && grep -q '^| B1 .*| Closed |\$' .jig/ledgers/BUFFER.md && grep -q '^| B2 .*| Closed |\$' .jig/ledgers/BUFFER.md && grep -q '^| B3 .*| Open |\$' .jig/ledgers/BUFFER.md && test \"\$(git show --name-only --format= HEAD | sort | tr '\n' ' ')\" = '.jig/ledgers/BUFFER.md .jig/para.json AGENTS.md ' && test -z \"\$(git status --porcelain)\" && head -1 .jig/meta-cache/PIN | grep -qx v0.2.0" "$out"
 msg="buffer: jig sync reports a pararepo path a metarepo decision cites that contract_paths doesn't cover, and not one it covers or another repo's"
-expect_pass sh -c "echo \"\$0\" | grep -q 'docs/ui.md is cited by D-001 and is not a contract path' && ! echo \"\$0\" | grep -q 'api/a.py is cited' && ! echo \"\$0\" | grep -q 'docs/x.md is cited'" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -q 'docs/ui.md is named by D-001, D-006, and docs/ui.md is not a contract path' && ! echo \"\$0\" | grep -q 'api/a.py is named' && ! echo \"\$0\" | grep -q 'docs/x.md is named'" "$out"
+msg="buffer: a root file named bare is about every repo and isn't reported; after this repo's name it is, and the line asks"
+expect_pass sh -c "echo \"\$0\" | grep -qx 'AGENTS.md is named by D-005, and AGENTS.md is not a contract path. If the decision describes something this repo can change there, add the path to \"contract_paths\" in .jig/para.json; if not, nothing is needed.'" "$out"
 msg="buffer: a decision may name this repo in any case, the path still exact"
-expect_pass sh -c "echo \"\$0\" | grep -q 'docs/z.md is cited by D-003 and is not a contract path'" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -q 'docs/z.md is named by D-003, and docs/z.md is not a contract path'" "$out"
 msg="buffer P2: meta: buffered naming a Closed row is refused"
 printf '# c\n\n- meta: buffered B1\n' > .jig/specs/c.md && printf 'w=4\n' >> api/a.py && git add -A; expect_refuse git commit -qm "api: w"; undo
 msg="buffer: a second sync moves nothing"

@@ -23,7 +23,8 @@ handoff or when blocked.
    a feature request is interpreted into a spec as it says).
 5. In a pararepo (`.jig/para.json`), `jig sync` on trunk; report a newer release, and a
    header it says is out of date, in one line each; a pin it moved and the buffer rows it
-   closed, and each file it says is cited but not a contract path, in one line each.
+   closed, in one line each. Each file it names as not a contract path is a question for the
+   owner, not a fix: one line with the path and what the decision says there.
    In a metarepo (`.jig/meta.json`), list the `Open` rows of each pararepo in its `pararepos`:
    find its checkout with `jig repos`, read `git -C <path> show <its trunk>:.jig/ledgers/BUFFER.md`,
    and report each row's id and claim. Beside them, name this repo's unreleased buffer

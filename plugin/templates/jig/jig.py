@@ -5076,7 +5076,7 @@ def meta_citations(root: Path, para: dict, ids: str, loc: Path | None = None) ->
 def uncovered_paths(root: Path, loc: Path, para: dict) -> None:
     """Report this repo's files that a metarepo decision at the pin cites but contract_paths
     doesn't cover: the decision then describes behavior that can change with no P2 asking.
-    Only reported: the rule reads trunk's para.json, and adding a path is the owner's choice."""
+    A root file in ROOT_DOCS counts only after this repo's name. Only reported: the rule reads trunk's para.json, and adding a path is the owner's choice."""
     ids = decision_ids(loc, para['pin'])
     row = re.compile(rf"^\s*\|\s*({ids})\s*\|.*$", re.M)
     cited = [(m.group(1), m.group(0)) for f in sorted((root / CACHE).rglob("*.md"))
@@ -5092,13 +5092,15 @@ def uncovered_paths(root: Path, loc: Path, para: dict) -> None:
         if path.startswith(f"{DIR}/") or matches(path, para.get("contract_paths", [])):
             continue
         # The path whole, alone or after this repo's name: another pararepo's docs/ui.md is not
-        # this one's.
-        cite = named_path(rf"{re.escape(path)}(?![\w/-])", bare=True)
+        # this one's. A root file every repo has (AGENTS.md) named bare is about every repo, so
+        # only this repo's name in front of it points here.
+        cite = named_path(rf"{re.escape(path)}(?![\w/-])", bare=path not in ROOT_DOCS)
         ids = [i for i, line in cited
                if any(not m.group("name") or name_in(m.group("name"), names) for m in cite.finditer(line))]
         if ids:
-            print(f"{path} is cited by {', '.join(dict.fromkeys(ids))} and is not a contract path: "
-                  f"add it to \"contract_paths\" in {PARA} if this repo can change what it says")
+            print(f"{path} is named by {', '.join(dict.fromkeys(ids))}, and {path} is not a contract path. "
+                  f"If the decision describes something this repo can change there, add the path to "
+                  f"\"contract_paths\" in {PARA}; if not, nothing is needed.")
 
 
 def named_path(path: str, *, bare: bool = False) -> re.Pattern[str]:
