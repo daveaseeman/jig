@@ -5,12 +5,13 @@
     "after": [
       "bug-seam-ownerless-folder"
     ],
-    "owns": [
-      "plugin/templates/jig/RULES.md"
-    ],
+    "owns": [],
     "shares": [
+      "plugin/templates/jig/RULES.md",
       "plugin/templates/jig/jig.py",
-      "tests/smoke.sh"
+      "tests/smoke.sh",
+      "plugin/skills/subnode/SKILL.md",
+      "plugin/skills/stage/SKILL.md"
     ],
     "reserved": {}
   },
