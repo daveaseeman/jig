@@ -34,13 +34,18 @@ Then:
    ---
    ```
 
-2. Find the jig repo with `python3 .jig/jig.py repos` (it needs only `~/.config/jig/`). It is
+2. Find the jig repo with `python3 .jig/jig.py repos` (it reads `~/.config/jig/`). It is
    the entry named `jig`, or the one whose own name (`name` in its `.jig/config.json`) is
-   `jig`; `jig repos` shows it is registered by not printing where tool reports wait. If it is
-   registered, write the file into `<its path>/.jig/staging/` — ask for access to exactly that
-   folder. If not, write it into the `feedback/` folder beside your repos list
-   (`jig repos` prints where; `~/.config/jig/feedback/` by default). Never a temp folder:
-   reports there were lost when it was cleared.
+   `jig`; `jig repos` shows it is registered by not printing where tool reports wait. Request
+   access to each folder you need with the host's folder-access tool (in the Claude desktop app,
+   `request_directory`), `~/.config/jig/` first if you can't read it; if the host has none, ask
+   the user to add the folder to the session. Never stop at "no access": the folder is the
+   user's to grant. If it is registered, write the file into `<its path>/.jig/staging/`
+   (request exactly that folder; if it has no `.jig/staging/` yet, say so and suggest
+   `/jig:update` in that repo, and don't create it). If not, write it into the `feedback/`
+   folder beside your repos list (`jig repos` prints where; `~/.config/jig/feedback/` by
+   default), requesting that folder the same way. Never a temp folder: reports there were lost
+   when it was cleared.
 3. Print the path. The report waits there until `/jig:fix` runs in the jig repo.
 4. Stop. Do not edit `.jig/jig.py` or `.jig/RULES.md`, do not add a `WORKAROUND:` or a ledger row, do not commit.
    If the job is blocked, say so and ask the hubnode to park it.

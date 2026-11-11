@@ -24,9 +24,14 @@ repos list (`jig repos` prints where), which `jig staging` lists too.
 
 ## Staging a file
 
-Write it into the target's `.jig/staging/`, found with `jig repos` (needs only
-`~/.config/jig/` — then ask for access to exactly `<repo>/.jig/staging/`). Say `new` or
-`update`, and make `destination` as precise as you can, never an absolute path.
+Write it into the target's `.jig/staging/`, found with `jig repos`, which reads
+`~/.config/jig/`. Request access to each folder you need with the host's folder-access tool (in
+the Claude desktop app, `request_directory`): `~/.config/jig/` first if you can't read it, then
+exactly `<repo>/.jig/staging/`. If the host has no such tool, ask the user to add the folder to
+the session. Never stop at "no access": the folder is the user's to grant. If the repo has no
+`.jig/staging/` yet, there is nothing to grant: say so and suggest `/jig:update` in that repo;
+don't create the folder. Say `new` or `update`, and make `destination` as precise as you can,
+never an absolute path.
 
 A user story names who wants what and why. A feature request just describes what the thing
 should do, in the owner's words ("I want it to do xyz"): free prose, no template, no Done-when.
@@ -42,11 +47,13 @@ that spec carries the mark.
 - **spec / doc, update**: find the page — the path, else search for the filename, else ask
   from the description. Merge the content in with the user, add the line
   `Source: <source> (staged as <file name>)` as provenance, then `resolve`.
-- **decisions**: `resolve` appends the rows. Body lines that aren't rows (doc edits listed
-  with them) are refused: apply those with the user, delete them from the staged file,
-  resolve again. An `update` changes existing rows; edit them, then `resolve`.
-  In a metarepo, add the `CHANGELOG.md` line `resolve` prints before committing: M3 refuses
-  the commit on a branch with no line yet.
+- **decisions**: `destination: .jig/decisions.md`, the one log; any other is refused. The
+  body is entries, each `### D-?<slug> <title>` with its status line under it (`.jig/RULES.md`,
+  Decision log). `resolve` adds an open or proposed one under `## Open` and an accepted one
+  under `## Unreleased`. Lines before the first entry (doc edits listed with them) are refused:
+  apply those with the user, delete them from the staged file, resolve again. An `update`
+  changes an entry under `## Open` in place, or supersedes a released one with a new entry;
+  write it, then `resolve`. The entry is the change's line, so M3 needs no other.
 - **roadmap**: `destination: .jig/roadmap.md`, `change: update`; the body says what to add,
   rename, reorder or drop (a phase, a scope, an exit box) and why. It is the owner's decision,
   made on trunk: the hubnode applies it and commits with the file's `Source:` line in the
