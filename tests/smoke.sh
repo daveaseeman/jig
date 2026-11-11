@@ -4764,7 +4764,152 @@ $J repos rename North_Star other >/dev/null
 expect_pass sh -c "$J repos rename other north.star | grep -q 'warning: .*north.star'"
 }
 
-UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap boundary decisions supersede touches staging_batches"
+
+# ---------------------------------------------------------------- update's project sweep
+sec_sweep() {
+SW="$T/sweep"; pcnew "$SW" && mkdir -p docs && printf "# Q\n\nQ is.\n" > docs/q.md && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+UP="python3 $P/jig/jig.py update"
+printf '# P\n\nP keeps the list.\n\nBuilt as .jig/specs/x.md says, in phase 3.\n\n## Status\n\nhalf done\n\n## Undefined\n\n- Sync over BLE — stops at the GATT table; parked 2026-11-01.\n- Dark theme — stops at the palette;\n  parked 2026-11-02.\n' > docs/p.md
+printf -- '- [ ] ship it\n' > TODO.md && printf '| Feature | Why |\n| x | y |\n' > FEATURES.md
+git add -A && git -c core.hooksPath=/dev/null commit -qm planted
+out=$($UP 2>&1)
+msg="sweep: update lists each ## Undefined entry as the Up next item it would be, naming the page"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/p.md: ## Undefined entry → .jig/roadmap.md ## Up next.*- .p-sync-over-ble.: Sync over BLE; stops at the GATT table; parked 2026-11-01 (touches docs/p.md)' && echo \"\$0\" | grep -q 'Dark theme; stops at the palette; parked 2026-11-02 (touches docs/p.md)'" "$out"
+msg="sweep: a page line naming a spec, one saying phase 3, and a ## Status section are under Repo files to review"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/p.md: line 5: \".jig/specs/\" names the plan' && echo \"\$0\" | grep -q '^  docs/p.md: line 5: \"phase 3\"' && echo \"\$0\" | grep -q '^  docs/p.md: ## Status is the project'" "$out"
+msg="sweep: tracked TODO.md and FEATURES.md are each listed with their destination"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  TODO.md: the project.s plan: its items go to .jig/roadmap.md' && echo \"\$0\" | grep -q '^  FEATURES.md: the product: each feature goes to its system.s page'" "$out"
+msg="sweep: --sweep alone is a dry run that changes nothing"
+before=$(git status --porcelain); out=$($UP --sweep 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'Dry run' && test ! -e .jig/roadmap.md && test -z \"\$1\"" "$out" "$before"
+msg="sweep: --apply --sweep creates .jig/roadmap.md with both under ## Up next, removes the section, and commits"
+out=$($UP --apply --sweep 2>&1)
+expect_pass sh -c "grep -qx '## Up next' .jig/roadmap.md && grep -q '^- .p-sync-over-ble.: Sync over BLE; stops at the GATT table; parked 2026-11-01 (touches docs/p.md)\$' .jig/roadmap.md && grep -q 'parked 2026-11-02 (touches docs/p.md)\$' .jig/roadmap.md && ! grep -q Undefined docs/p.md && grep -q '^half done' docs/p.md && git commit -qm sweep" "$out"
+msg="sweep: a second dry run says nothing about it"
+out=$($UP 2>&1); expect_pass sh -c "! echo \"\$0\" | grep -q 'Undefined' && $UP --sweep | grep -q 'nothing to sweep'" "$out"
+msg="sweep: on a branch, --apply --sweep with entries trunk's roadmap lacks is refused, naming trunk (R5)"
+printf '\n## Undefined\n\n- Export — stops at CSV; parked 2026-11-03.\n' >> docs/p.md && git add -A && git -c core.hooksPath=/dev/null commit -qm more
+git switch -q -c side && out=$($UP --apply --sweep 2>&1); rc=$?; git switch -q main
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'edited on main only (R5)' && grep -q Undefined docs/p.md" "$out"
+git reset -q --hard HEAD~1 && git branch -qD side
+
+# A struck released entry: a ### Removed line naming it is what lets it go.
+sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
+printf 'mkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/release.sh
+board "b['release']['artifacts'] = ['dist/*.zip']" && printf 'dist/\n' > .gitignore
+ulog '### D-002 ids are numbers
+Accepted (owner, 2026-11-01).
+Touches: docs/p.md' && ulog '### D-001 Demo priorities: A, then B
+Accepted (owner, 2026-11-01).
+Touches: docs/p.md' && git add -A && git commit -qm "D-001, D-002" && $J release --minor >/dev/null
+msg="sweep: a released D-001 Demo priorities is listed as a project candidate, D-002 isn't"
+out=$($UP 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '^  .jig/decisions.md: D-001 Demo priorities: A, then B reads as project scope.*strike, split or keep' && ! echo \"\$0\" | grep -q 'D-002 ids'" "$out"
+msg="sweep: removing released D-001 with no ### Removed line naming it is refused"
+rment D-001 && git add -A; out=$(git commit -qm drop 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'D-001 is removed from release v0.1.0.*### Removed.*in the same commit'" "$out"
+msg="sweep: a ### Removed line naming D-002 doesn't let D-001 go"
+ulog '### Removed
+- D-002: project scope, not a product decision.' && rment D-001 && git add -A; expect_refuse git commit -qm drop; undo
+msg="sweep: removing it with an Unreleased ### Removed line naming D-001 commits, the release's other lines kept"
+ulog '### Removed
+- D-001: project scope, not a product decision.' && rment D-001 && git add -A
+expect_pass sh -c "git commit -qm 'D-001: struck' && ! grep -q '^### D-001' .jig/decisions.md && grep -qx '### D-002 ids are numbers' .jig/decisions.md"
+
+# Before --merge-log: a register's priority row and a Pending delivery section are listed, and a struck row is left out.
+SR2="$T/sweep-reg"; pcnew "$SR2" && printf '# Decisions\n\n| Id | Decision | Status | Date |\n|---|---|---|---|\n| D-001 | ids are numbers | accepted | 2026-11-01 |\n| D-002 | Demo priorities: 1) radio 2) screen | accepted | 2026-11-02 |\n\n## Pending delivery to the app\n\n- the radio patch\n' > DECISIONS.md
+git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
+out=$($UP 2>&1)
+msg="sweep: before --merge-log, update lists the register's priority row and its Pending delivery section, not the ids row"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  DECISIONS.md: row D-002 Demo priorities.*reads as project scope' && echo \"\$0\" | grep -q '^  DECISIONS.md: lines .* .## Pending delivery to the app. read as project scope' && ! echo \"\$0\" | grep -q 'row D-001'" "$out"
+msg="sweep: a row whose Status says struck is left out of the log --merge-log writes, its number named"
+sed -i.bak 's/| accepted | 2026-11-02 |/| struck | 2026-11-02 |/' DECISIONS.md && rm DECISIONS.md.bak && git add -A && git commit -qm "D-002: struck"
+out=$($UP --apply --merge-log 2>&1)
+expect_pass sh -c "grep -qx '### D-001 ids are numbers' .jig/decisions.md && ! grep -q '^### D-002' .jig/decisions.md && grep -q 'Struck as project scope before this log, and left out of it: D-002' .jig/decisions.md && echo \"\$0\" | grep -q 'D-002: struck as project scope, left out'" "$out"
+
+# In a metarepo the roadmap is trunk's (R5) and the pages a job's (M4): two runs.
+SM2="$T/sweep-meta"; mkdir -p "$SM2" && cd "$SM2" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init && $J init --meta >/dev/null 2>&1 && git add -A && git commit -qm "GLOSSARY: board"
+mkdir -p docs/g && printf '# A\n\nA is.\n\n## Undefined\n\n- Export — stops at CSV; parked 2026-11-03.\n' > docs/g/a.md && git add -A && git -c core.hooksPath=/dev/null commit -qm "GLOSSARY: a"
+msg="sweep: on a metarepo's trunk --apply --sweep writes the roadmap only, and names a job for the pages"
+out=$($UP --apply --sweep 2>&1)
+expect_pass sh -c "grep -q '^- .a-export.: Export; stops at CSV; parked 2026-11-03 (touches docs/g/a.md)' .jig/roadmap.md && grep -q Undefined docs/g/a.md && echo \"\$0\" | grep -q 'jig open project-sweep --shares docs/g/a.md' && git commit -qm 'TOOL: up next'" "$out"
+$J open project-sweep --shares docs/g/a.md >/dev/null && git add -A && git commit -qm "TOOL: open project-sweep"
+msg="sweep: in the job's worktree --apply --sweep removes the section whose entries trunk's roadmap holds, and commits"
+cd .git/jig/worktrees/project-sweep && out=$($UP --apply --sweep 2>&1) && ulog '- GLOSSARY: parked work leaves the pages.'
+expect_pass sh -c "! grep -q Undefined docs/g/a.md && echo \"\$0\" | grep -q 'already there' && git add -A && git commit -qm 'GLOSSARY: sweep'" "$out"
+
+# Review fixes: two sections on one page, not_docs, an entry file, the Removed line's form.
+SW3="$T/sweep-more"; pcnew "$SW3" && mkdir -p docs/BigPage docs/old && printf '# Q\n\nQ is.\n' > docs/q.md && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+printf '# T\n\nT is.\n\n## Undefined\n\n- One — stops at a; parked 2026-11-01.\n\n## Invariants\n\n- T holds — why; held by test_t.\n\n## Undefined\n\n- Two — stops at b; parked 2026-11-02.\n\n## Tail\n\nTail text.\n' > docs/t.md
+printf '# Big\n\nBig is.\n\n## Undefined\n\n- Sync stuff — stops at x; parked 2026-11-01.\n' > docs/BigPage/BigPage.md
+printf '# Old\n\nOld is.\n\n## Undefined\n\n- Kept — stops at y; parked 2026-11-01.\n' > docs/old/TODO.md
+board "b['not_docs'] = ['docs/old/**']" && git add -A && git -c core.hooksPath=/dev/null commit -qm planted
+out=$($UP 2>&1)
+msg="sweep: update skips not_docs pages and plan-named files under it, and lowercases a page stem in ids"
+expect_pass sh -c "! echo \"\$0\" | grep -q 'docs/old/' && echo \"\$0\" | grep -q '.bigpage-sync-stuff.: Sync stuff'" "$out"
+msg="sweep: a page with two ## Undefined sections around Invariants loses both, keeping Invariants and Tail, written once"
+out=$($UP --apply --sweep 2>&1)
+expect_pass sh -c "! grep -q Undefined docs/t.md && grep -qx '## Invariants' docs/t.md && grep -qx '## Tail' docs/t.md && grep -qx 'Tail text.' docs/t.md && grep -q 'T holds' docs/t.md && grep -q '(touches docs/t.md)' .jig/roadmap.md && test \$(grep -c 'touches docs/t.md' .jig/roadmap.md) = 2 && test \$(echo \"\$0\" | grep '^Written' | grep -o 'docs/t.md' | wc -l) = 1 && grep -q Undefined docs/old/TODO.md && git commit -qm sweep" "$out"
+msg="sweep: a ### Removed line that mentions D-001 in a sentence doesn't let released D-001 go"
+sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
+printf 'mkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/release.sh
+board "b['release']['artifacts'] = ['dist/*.zip']" && printf 'dist/\n' > .gitignore
+ulog '### D-002 ids are numbers
+Accepted (owner, 2026-11-01).
+Touches: docs/q.md' && ulog '### D-001 Demo priorities: A, then B
+Accepted (owner, 2026-11-01).
+Touches: docs/q.md' && git add -A && git commit -qm "D-001, D-002" && $J release --minor >/dev/null
+ulog '### Removed
+- The JSON fallback D-001 left in place.' && rment D-001 && git add -A; out=$(git commit -qm drop 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'D-001 is removed from release.*in the same commit'" "$out"
+msg="sweep: a ### Removed line naming an id the log still has is refused"
+ulog '### Removed
+- D-002: project scope, not a product decision.' && git add -A; out=$(git commit -qm keep 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'strikes an entry the log still has'" "$out"
+msg="sweep: - D-1: counts as D-001, by number, and lets it go"
+ulog '### Removed
+- D-1: project scope, not a product decision.' && rment D-001 && git add -A
+expect_pass sh -c "git commit -qm 'D-001: struck' && ! grep -q '^### D-001' .jig/decisions.md"
+
+msg="sweep: in a metarepo, an ## Undefined section on an entry file outside docs/ is listed and swept"
+SM3="$T/sweep-entry"; mkdir -p "$SM3" && cd "$SM3" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init && $J init --meta >/dev/null 2>&1 && git add -A && git commit -qm "GLOSSARY: board"
+setentry .jig/decisions.md README.md 'products/**' && mkdir -p products && printf '# W\n\nW is.\n\n## Undefined\n\n- Pairing — stops at keys; parked 2026-11-04.\n' > products/w.md && git add -A && git -c core.hooksPath=/dev/null commit -qm "GLOSSARY: w"
+out=$($UP 2>&1); out2=$($UP --apply --sweep 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^  products/w.md: ## Undefined entry' && grep -q '(touches products/w.md)' .jig/roadmap.md" "$out" "$out2"
+
+# A struck register row in an old-shape metarepo: M2 takes it, M3 asks its CHANGELOG line, and the job's merge leaves it out.
+SO="$T/sweep-old"; mkdir -p "$SO/.t" && git -C "$JR" archive v0.9.0 plugin/templates | tar -x -C "$SO/.t"
+cd "$SO" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r .t/plugin/templates/jig .jig && cp .t/plugin/templates/AGENTS.md .t/plugin/templates/CLAUDE.md . && rm -rf .t
+git add -A && git commit -qm init && $J init --meta --name so >/dev/null && git add -A && git commit -qm meta-init && $J release >/dev/null
+cp "$P/jig/jig.py" .jig/jig.py && git add -A && git commit -qm "TOOL: this jig"
+$J open o1 --shares DECISIONS.md CHANGELOG.md >/dev/null && git add -A && git commit -qm "TOOL: open o1"
+(cd .git/jig/worktrees/o1 && printf '| D-001 | radio first | superseded by D-002 | 2026-11-01 |\n| D-002 | Demo priorities: 1) radio 2) screen | accepted | 2026-11-02 |\n| D-003 | ids are numbers | accepted | 2026-11-02 |\n' >> DECISIONS.md \
+  && printf -- '- D-001, D-002, D-003\n' >> CHANGELOG.md && git add -A && git commit -qm "D-001, D-002, D-003: rows" && $J reviewed >/dev/null \
+  && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note o1")
+$J merge o1 >/dev/null 2>&1
+msg="sweep: old-shape metarepo: update lists the priority row before --merge-log"
+out=$($UP 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '^  DECISIONS.md: row D-002 Demo priorities.*reads as project scope'" "$out"
+$J open ml --shares DECISIONS.md CHANGELOG.md README.md >/dev/null && git add -A && git commit -qm "TOOL: open ml"
+cd .git/jig/worktrees/ml
+msg="sweep: old-shape metarepo: a row struck with no CHANGELOG.md line is refused (M3)"
+sed -i.bak 's/| accepted | 2026-11-02 |$/| struck | 2026-11-02 |/;/D-003/s/| struck |/| accepted |/' DECISIONS.md && rm DECISIONS.md.bak && git add -A
+out=$(git commit -qm "D-002: struck" 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'M3 DECISIONS.md changed: add a line to CHANGELOG.md' && ! echo \"\$0\" | grep -q 'M2 a decision row'" "$out"
+msg="sweep: old-shape metarepo: with its CHANGELOG.md line, the struck row commits (M2 takes struck)"
+printf -- '- D-002: struck, project scope\n' >> CHANGELOG.md && git add -A && expect_pass git commit -qm "D-002: struck"
+msg="sweep: --merge-log refuses while the struck D-002 supersedes D-001, naming both"
+out=$($UP --merge-log 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'D-001 is superseded by D-002, which is struck: strike D-001 too'" "$out"
+msg="sweep: D-001 struck too, the job's --apply --merge-log leaves both out of the log and keeps D-003"
+sed -i.bak 's/| superseded by D-002 |/| struck |/' DECISIONS.md && rm DECISIONS.md.bak && printf -- '- D-001: struck, project scope\n' >> CHANGELOG.md && git add -A && git commit -qm "D-001: struck" >/dev/null 2>&1
+out=$($UP --apply --merge-log 2>&1)
+expect_pass sh -c "grep -qx '### D-003 ids are numbers' .jig/decisions.md && ! grep -q '^### D-00[12]' .jig/decisions.md && grep -q 'left out of it: D-001, D-002' .jig/decisions.md && git commit -qm 'TOOL: merge the log'" "$out"
+}
+
+
+UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file

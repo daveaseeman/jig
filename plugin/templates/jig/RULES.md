@@ -321,8 +321,21 @@ passes the test), an Invariants entry with no why (` — `) or no holder (`held 
 page whose first line of text after its title is a heading rather than a lead paragraph. It
 lists, apart, the project in the product: a `## Status`, `## Current state`, `## Roadmap` or
 `## Undefined` heading on a page or a metarepo's entry file, and plan prose ("phase 3", "spec
-step 6") on a page or in the decision log, each with where it goes. `jig update` brings this file, not the pages: converting
-a repo's pages is a job of its own there.
+step 6") on a page or in the decision log, each with where it goes. `jig update --apply` brings this file; it
+changes a page only by `--sweep`, below, on the owner's yes, and reshaping a repo's pages is a job of its own there.
+
+`jig update` sweeps a repo onto the boundary, each move on the owner's yes. Under Repo files to
+review it lists each page's `## Undefined` entry as the `## Up next` item it would become, the
+project headings and plan prose above, each decision entry (or, before the log, register row or
+section) whose words read as scope (priorities, phases, milestones, a demo, a launch, a
+delivery queue, a sprint, "first, then"), and the repo's plan and register files with where
+each one's content goes: `TODO.md`, `BACKLOG.md`, `STATUS.md`, `PLAN.md` and a hand-written
+`ROADMAP.md` to `.jig/roadmap.md`; `FEATURES.md` to its systems' pages and decision entries;
+`RULES.md`, `CONVENTIONS.md` and `CONTRIBUTING.md` to `AGENTS.md` or a skill. It judges none of
+them. `jig update --apply --sweep` writes the Up next items to `.jig/roadmap.md`, creating it when
+absent, on trunk (R5), and removes each emptied Undefined section where the pages may change:
+on trunk, or in a metarepo a job's worktree (M4), where it removes only the sections whose
+entries trunk's roadmap holds.
 
 ## Fold-in
 
@@ -586,7 +599,11 @@ told its readers, and a reversal still goes in the new release's group as a `**B
 line. Any other change to a released section is refused, except adding ` [YANKED]` and its
 line, and adding or changing an entry's `Touches:` line, which says what the entry is about,
 not what it decided (M2 checks its pages); and so is removing an entry no accepted entry supersedes: an open or proposed entry may
-name what it would supersede, and retires nothing until it is accepted. `jig decision <id>` prints an
+name what it would supersede, and retires nothing until it is accepted. The one other removal is
+a struck entry, project scope rather than a decision (Documentation: Product and project): the
+commit removing it adds, under `## Unreleased` `### Removed`, a line naming its id
+(`- D-040: project scope, not a product decision.`). Before the log, a register row struck so
+says `struck` in its Status cell, and `--merge-log` leaves it out, its number still taken. `jig decision <id>` prints an
 entry and its supersedes chain, newest last; for a removed id it reads the entry from git, with
 the commit and release it stood in, and names what holds now. `jig update` lists a superseded
 entry an older log still holds, to remove.
@@ -883,6 +900,7 @@ jig release [--major|--minor|--patch|--version X.Y.Z] [--force]   the repo's rel
 jig survey [--json]         inventory the repo against the jig shape
 jig update [--apply]        bring the repo to the current jig layout (dry run without --apply)
 jig update [--apply] --merge-log   on the owner's yes: CHANGELOG.md and the register into .jig/decisions.md
+jig update [--apply] --sweep   on the owner's yes: pages' ## Undefined entries to ## Up next in .jig/roadmap.md
 jig staging [resolve|drop <file>]   list staged files, or land / drop one
 jig repos [add repo|meta|para | rename <new>]  where your repos live (user config)
 jig open ... --reserve K    allocate scarce counter K to this job
