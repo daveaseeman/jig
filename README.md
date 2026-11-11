@@ -27,16 +27,34 @@ without Claude Code.
 - **One always-loaded file, under 40 lines.** Agents read `AGENTS.md` on every task, and a long
   one gets ignored wholesale. Everything else loads when a task needs it.
 - **Docs move with the code.** A board maps docs pages to source files, and a handoff has to
-  answer for every page its change touched.
-- **Files from a chat land on purpose.** A spec or a user story written in some other chat goes
-  into the repo's `.jig/staging/` and waits there until a session in the repo resolves it. A
-  release is refused while anything is still staged.
+  answer for every page its change touched. A page stays a single file until it has something
+  to hold (a datasheet, a step file, its own parts), and only then gets a folder. Editing a
+  part's file hands you its page and the system page above it, and your own terms live in a
+  `## Glossary` section of the README, one heading per term, so anything can point at one.
+- **Every repo keeps one log of what changed and why.** `.jig/decisions.md` holds decision
+  entries (who decided, when, what it replaced) and plain change lines in Keep a Changelog's
+  groups, under one heading per release. A released section is frozen, so you change your mind
+  by writing a new entry that supersedes the old one, and `jig update` folds an old
+  `CHANGELOG.md` and decisions file into it when you say yes.
+- **The roadmap is worked out from the work.** Phases and scopes live in `.jig/roadmap.md`,
+  specs say which scopes they take, and a scope is done when the specs taking it have landed.
+  Nobody ticks a box to show progress. Each merge rewrites a `ROADMAP.md` kanban at the root
+  that any forge renders.
+- **Files from a chat land on purpose.** A spec, a user story, a feature request in your own
+  words ("I want it to do xyz") or a roadmap change written in some other chat goes into the
+  repo's `.jig/staging/` and waits there until a session in the repo resolves it. A feature
+  request comes back as a spec that lists everything it had to fill in, so you correct the
+  reading before anything gets built. A release is refused while anything is still staged.
 - **Every repo ships its own way, through one command.** `jig release` runs the repo's own
   `.jig/scripts/release.sh` (a plugin file for one repo, a `.dmg` and an `.exe` for another),
   checks the files it promised came out, and tags `vX.Y.Z`. The first time, `/jig:release`
   asks you what the repo builds and writes the script with you.
-- **Repos that share decisions stay in sync.** A *metarepo* holds definitions and decisions; each
-  *pararepo* cites it at a released tag, and `jig sync` on its trunk reports when a newer release lands.
+- **Repos that share decisions stay in sync.** A *metarepo* holds the definitions and decisions
+  several products share, sorted into the genre folders it declares at init (products,
+  features, principles and concepts, or your own). Each *pararepo* cites it at a released tag
+  as `<metarepo>/<path> § <heading>`, and `jig sync` checks every citation on every run: a page
+  the metarepo moved, a heading it renamed, a decision it dropped. A change to a decision asks
+  every page that cites it whether it still holds.
 - **It's portable.** The repo half is one stdlib Python file, some JSON and POSIX hooks. You can
   run every command by hand, and any other agent tool can call the same ones.
 
@@ -56,6 +74,8 @@ person prototyping actually needs. Then I added the things none of them enforce.
 | Scarce numbers (migrations, sections) | | | | | | handed out by the board, refused by the hook |
 | Rules enforced from trunk's copy | | | | | | ✅ |
 | Docs must move with code | | | | | | the gate refuses an unanswered page |
+| Decisions and releases | | | | | | one log per repo, frozen at each release |
+| Roadmap progress | | | | | | worked out from landed work, never ticked by hand |
 | Workarounds | a comment, maybe | | | | | labeled and ledgered, or the hook refuses |
 | A fixed shape for bug investigation | | | | | | five steps before any fix |
 | Runs without the AI tool | | | | | | ✅ stdlib Python and git hooks |
@@ -82,7 +102,8 @@ This repo holds two things:
   wrappers around it.
 
 Everything jig makes in your repo lives in `.jig/`, so nobody mistakes it for your project.
-Your root gets an `AGENTS.md` and a one-line `CLAUDE.md`, and that's it.
+Your root gets an `AGENTS.md`, a one-line `CLAUDE.md`, and a generated `ROADMAP.md` if you keep a
+roadmap, and that's it.
 
 A task moves through:
 
@@ -113,9 +134,12 @@ before touching any file of yours:
 /jig:update
 ```
 
-A repo on jig whose pages need converting: in the old Now / Rules / Checks shape, or outside the
-docs tree in any format. The hubnode proposes a
-remap for you to approve, then lands one page per job and deletes the old docs at the end:
+A repo on jig whose pages need converting, whatever format they're in: the old Now / Rules /
+Checks shape, a house format of your own, or pages sitting outside `docs/`. The hubnode proposes
+a remap for you to approve, traces every claim to the code (or, in a metarepo, to a decision),
+then lands one page per job and deletes the old docs at the end. A page that's already in place
+and only drifted from the page contract doesn't need any of that, and `/jig:update` lists it to
+fix where it sits:
 
 ```
 /jig:redocument
@@ -128,6 +152,7 @@ Day to day:
 /jig:bug <symptom>       # investigate before fixing
 /jig:review              # fresh-context review, once per handoff
 /jig:stage               # send a file from this chat to a repo, or resolve what's staged
+jig roadmap --write      # print the roadmap's state and rewrite ROADMAP.md
 /jig:repos add repo      # register this folder so other chats can stage files to it
 /jig:release             # build and tag a version, the way this repo ships
 /jig:hubnode             # the session that owns trunk, the board and merges
