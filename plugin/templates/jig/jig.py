@@ -2938,9 +2938,12 @@ def log_entries(text: str, prefix: str) -> list[dict]:
 
 
 def status_parts(status: str, prefix: str) -> tuple[str, str, str, list[str]] | None:
-    """(status, who, date, superseded ids) from `Accepted (Dave, 2026-11-10). Supersedes D-007.`"""
+    """(status, who, date, superseded ids) from `Accepted (Dave, 2026-11-10). Supersedes D-007.`
+    Who is any text before the last date, as a register row's note was: `Proposed (runtime team,
+    from the 2026-10-27 research, 2026-10-27).` So every row the old M2 took converts to a line
+    this one takes."""
     ids = log_id_re(prefix)
-    m = re.fullmatch(rf"({'|'.join(LOG_STATUSES)}) \((?:([^(),]+), )?(\d{{4}}-\d{{2}}-\d{{2}})\)\."
+    m = re.fullmatch(rf"({'|'.join(LOG_STATUSES)}) \((?:(.+), )?(\d{{4}}-\d{{2}}-\d{{2}})\)\."
                      rf"(?: Supersedes ({ids}(?:,? (?:and )?{ids})*)\.)?", status)
     if not m:
         return None
@@ -6618,7 +6621,9 @@ def row_entry(cells: list[str], header: list[str]) -> dict:
         # A title starting with a status word would read as a status: it moves to the body.
         title, rest = "Decision", [cells[title_i], *rest]
     return {"id": cells[0].strip(), "title": title, "status": line, "rest": rest, "where": where,
-            "word": word, "by": by.group(1) if by and word == "superseded" else None}
+            "word": word, "by": by.group(1) if by and word == "superseded" else None,
+            # What the old M2 refused stays refused: no status cell, or no date.
+            "bad": status_i is None or not dates}
 
 
 def paragraphs(lines: list[tuple[int, str]]) -> list[list[tuple[int, str]]]:
@@ -6792,7 +6797,10 @@ def cmd_merge_log(root: Path, apply: bool) -> int:
     m = merged_log(root)
     text, keep = m["text"], m["keep"]
     gone = [f for f, _ in sources if f not in keep]
-    problems = log_problems(text, m["prefix"])
+    problems = [f"M2 {f}: row {e['id']} has no status cell or no date, as the old M2 asked"
+                for f in old_registers(root)
+                for e in parse_register((root / f).read_text(errors="replace"), old_prefix(root))[0] if e["bad"]]
+    problems += log_problems(text, m["prefix"])
     print("Merging into " + LOG + ":")
     for f, what in sources:
         print(f"  {f} ({what}), " + ("kept for what has no home" if f in keep else "removed after"))

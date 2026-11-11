@@ -4011,7 +4011,7 @@ expect_pass sh -c "echo \"\$0\" | grep -q 'DECISIONS.md (now .jig/decisions.md)'
 # that have no place in the log.
 PX="$T/old-plain"; pcnew "$PX"
 printf '# Changelog\n\nOwner note: older history is in the wiki.\n\n## [Unreleased]\n- D-003 later\n\n## [1.0.0] - 2026-01-01\n- D-001–D-002 the first rules\n' > CHANGELOG.md
-printf '# Decisions\n\n| # | Decision | Status | Binds | Date |\n|---|---|---|---|---|\n| D-001 | a | accepted (Ann) | api | 2026-01-01 |\n| D-002 | b | accepted (Ann) | api | 2026-01-01 |\n| D-003 | c | proposed (Bo) | ui | 2026-02-01 |\n\n## Pending delivery\n\nAccepted (Dave): hold the queue.\n' > DECISIONS.md
+printf '# Decisions\n\n| # | Decision | Status | Binds | Date |\n|---|---|---|---|---|\n| D-001 | a | accepted (Ann) | api | 2026-01-01 |\n| D-002 | b | accepted (Ann) | api | 2026-01-01 |\n| D-003 | c | proposed (Bo) | ui | 2026-02-01 |\n| D-004 | d | Proposed (runtime team, from the 2026-10-27 identity research) | ui | 2026-10-27 |\n| D-005 | e | Accepted (Dave, after review) | ui | 2026-10-28 |\n\n## Pending delivery\n\nAccepted (Dave): hold the queue.\n' > DECISIONS.md
 git add -A && git commit -qm init
 out=$($J init 2>&1)
 msg="init: beside a CHANGELOG.md and a register, it writes no log, naming --merge-log"
@@ -4021,12 +4021,20 @@ msg="migration: an untracked CHANGELOG.md is refused before anything is written"
 git rm -q --cached CHANGELOG.md && git commit -qm untrack && out=$($UP --apply --merge-log 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"isn't tracked\" && test ! -e .jig/decisions.md" "$out"
 git add CHANGELOG.md && git commit -qm retrack
+msg="migration: a row the old M2 refused (no status) is refused too, before anything is written"
+PY2="$T/old-bad"; pcnew "$PY2" && printf '# Decisions\n\n| Id | Decision | Status | Date |\n|---|---|---|---|\n| D-001 | a |  | 2026-01-01 |\n' > DECISIONS.md \
+  && git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
+out=$($UP --apply --merge-log 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'row D-001 has no status cell or no date' && test ! -e .jig/decisions.md && test -f DECISIONS.md" "$out"
+cd "$PX"
 msg="migration: a log holding only init's seed doesn't stop the merge"
 cp "$DL/.jig/decisions.md" /dev/null && python3 -c "import sys; sys.path.insert(0, '.jig'); import importlib.util as u; s=u.spec_from_file_location('j', '.jig/jig.py'); m=u.module_from_spec(s); s.loader.exec_module(m); open('.jig/decisions.md','w').write(m.LOG_SEED)" && git add -A && git commit -qm seed
 out=$($UP --apply --merge-log 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q '^Written .jig/decisions.md'" "$out"
 msg="migration: a range in a release line places each id; [Unreleased] is the one Unreleased; a # column is the id and Binds stays named"
 expect_pass sh -c "sed -n '/^## v1.0.0 - 2026-01-01/,\$p' .jig/decisions.md | grep -qx '### D-001 a' && sed -n '/^## v1.0.0 - 2026-01-01/,\$p' .jig/decisions.md | grep -qx '### D-002 b' && test \$(grep -ci '^## \[*unreleased' .jig/decisions.md) = 1 && grep -qx -- '- D-003 later' .jig/decisions.md && grep -qx 'Proposed (Bo, 2026-02-01).' .jig/decisions.md && grep -qx 'Binds: api' .jig/decisions.md"
+msg="migration: a row's note with commas and a date in it converts to a status line M2 takes, and the result checks clean"
+expect_pass sh -c "grep -qx 'Proposed (runtime team, from the 2026-10-27 identity research, 2026-10-27).' .jig/decisions.md && grep -qx 'Accepted (Dave, after review, 2026-10-28).' .jig/decisions.md && $J check --staged | grep -qx ok"
 msg="migration: what has no home stays in the old file, as written, and the run names it"
 expect_pass sh -c "echo \"\$0\" | grep -q 'no home, move by hand: DECISIONS.md' && grep -qx '## Pending delivery' DECISIONS.md && grep -qx 'Accepted (Dave): hold the queue.' DECISIONS.md && ! grep -q '^| D-' DECISIONS.md && grep -qx 'Owner note: older history is in the wiki.' CHANGELOG.md && ! grep -q '^## ' CHANGELOG.md" "$out"
 cd "$DL"
