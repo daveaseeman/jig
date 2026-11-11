@@ -1085,6 +1085,29 @@ printf 'Source: chat d.md (staged as d.md)\n' >> docs/x/x.md
 msg="staging: once it does, the update resolves"
 expect_pass sh -c "$J staging resolve d.md && test ! -e .jig/staging/d.md"
 
+msg="staging: an update to AGENTS.md with no marked trunk commit is refused, naming the commit route"
+stage g.md this doc update AGENTS.md
+out=$($J staging resolve g.md 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'with .Source: chat g.md (staged as g.md). in the commit message, never in the file' && ! echo \"\$0\" | grep -q 'keeping'" "$out"
+msg="staging: a marked commit that didn't change AGENTS.md doesn't count"
+git commit -q --allow-empty -m "x" -m "Source: chat g.md (staged as g.md)"
+expect_refuse $J staging resolve g.md
+printf '\n- one more rule\n' >> AGENTS.md && git add AGENTS.md
+git commit -qm "agents: one more rule" -m "Source: chat g.md (staged as g.md)"
+msg="staging: once a trunk commit that changed AGENTS.md carries the mark, it resolves with no mark in the file"
+expect_pass sh -c "$J staging resolve g.md && test ! -e .jig/staging/g.md && ! grep -q 'staged as g.md' AGENTS.md"
+msg="staging: a mark only on the merge of a job that changed AGENTS.md resolves it"
+stage h.md this doc update AGENTS.md
+git switch -q -c rules-job && printf -- '- a rule from a job\n' >> AGENTS.md && git commit -qam "agents: a rule"
+git switch -q main && git merge -q --no-ff rules-job -m "merge rules-job" -m "Source: chat h.md (staged as h.md)"
+expect_pass sh -c "$J staging resolve h.md && test ! -e .jig/staging/h.md"
+msg="staging: a new GEMINI.md is written with no mark, and resolves once a trunk commit adding it carries one"
+stage m.md this doc new GEMINI.md '# Gemini\n\n- a rule\n'
+expect_refuse $J staging resolve m.md
+expect_pass sh -c "test -e .jig/staging/m.md && grep -qx '# Gemini' GEMINI.md && ! grep -q 'staged as' GEMINI.md"
+git add GEMINI.md && git commit -qm "gemini" -m "Source: chat m.md (staged as m.md)"
+expect_pass sh -c "$J staging resolve m.md && test ! -e .jig/staging/m.md && ! grep -q 'staged as' GEMINI.md"
+
 msg="staging: a new doc is written with a Source footer"
 stage n.md this doc new docs/n/n.md; $J staging resolve n.md >/dev/null
 expect_pass grep -q '^Source: chat n.md (staged as n.md)' docs/n/n.md

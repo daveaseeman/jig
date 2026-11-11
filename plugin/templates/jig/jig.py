@@ -5741,6 +5741,20 @@ def cmd_staging(root: Path, args) -> int:
             "the header, then resolve again", 1)
     if kind == "spec" and not dest.startswith(f"{DIR}/specs/"):
         dest = f"{DIR}/specs/{Path(dest).name}"
+    if dest in RULES_NAMES:
+        # A root rules file is loaded on every agent turn, so a provenance line there costs
+        # every load: like the roadmap, the trunk commit that changed it carries the mark.
+        # --full-history sees a mark on a job's merge commit, the usual way the file arrives.
+        trunk = Board.load(root, working_tree=True).trunk
+        if git("log", trunk, "--full-history", "-F", f"--grep={mark}", "--format=%h", "--", dest):
+            return done(f"applied to {dest} on {trunk}")
+        if change == "new" and not inside(dest).exists():
+            inside(dest).write_text(body.lstrip("\n"))
+            step = f"wrote {dest} with no mark in it: commit it"
+        else:
+            step = f"needs judgment: edit {dest} with this file's content and commit the edit"
+        die(f"{step}, on {trunk} or in a job merged to {trunk}, with `{mark}` in the commit "
+            "message, never in the file, then resolve again", 1)
     prefix = log_prefix(Board.trunk_name(root))
     if change == "update":
         if kind == "decisions":
