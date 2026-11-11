@@ -4217,6 +4217,118 @@ expect_pass sh -c "echo \"\$0\" | grep -q 'no home, move by hand: DECISIONS.md' 
 cd "$DL"
 }
 
+# ---------------------------------------------------------------- a superseded entry is removed
+rment() { python3 -c "import re,sys; f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(re.sub(r'(?ms)^### '+sys.argv[1]+r' .*?(?=^##)', '', s))" "$1"; }
+sec_supersede() {
+SR="$T/sr"; pcnew "$SR" && git add -A && git commit -qm init && $J init >/dev/null
+sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
+printf 'mkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/release.sh
+board "b['release']['artifacts'] = ['dist/*.zip']" && printf 'dist/\n' > .gitignore
+ulog '### Added
+- IDS: Number them.' && ulog '### D-001 ids are numbers
+Accepted (owner, 2026-11-01).
+Touches: docs/shared.md' && git add -A && git commit -qm "board, D-001" && $J release --minor >/dev/null
+msg="supersede: removing a released entry with nothing superseding it is refused, naming it"
+rment D-001 && git add -A; out=$(git commit -qm drop 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'D-001 is removed from release v0.1.0, and no entry in the log supersedes it'" "$out"
+msg="supersede: editing a released change line is still refused"
+sed -i.bak 's/^- IDS: Number them\.$/- IDS: Number all./' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
+out=$(git commit -qm edit 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is frozen'" "$out"
+msg="supersede: a proposed entry naming Supersedes D-001 removes nothing: removing D-001 with it is refused"
+ulog '### D-002 maybe strings
+Proposed (2026-11-02). Supersedes D-001.
+Touches: docs/shared.md' Open && rment D-001 && git add -A; out=$(git commit -qm proposal 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'D-001 is removed from release v0.1.0, and no entry in the log supersedes it'" "$out"
+msg="supersede: one commit adding D-002 that supersedes D-001 and removing D-001 from v0.1.0 is accepted, change lines kept"
+ulog '### D-002 ids are strings
+Accepted (owner, 2026-11-02). Supersedes D-001.
+Touches: docs/shared.md' && rment D-001 && git add -A
+expect_pass sh -c "git commit -qm 'D-002: strings' && ! grep -q '^### D-001' .jig/decisions.md && grep -qx -- '- IDS: Number them.' .jig/decisions.md"
+msg="supersede: a later commit touching the log passes M2, Supersedes D-001 resolving through history"
+ulog '### Changed
+- IDS: Strings now.' && git add -A; expect_pass git commit -qm "IDS: strings"
+msg="supersede: a supersedes link to an id the log never had is refused"
+ulog '### D-003 x
+Accepted (owner, 2026-11-03). Supersedes D-099.
+Touches: docs/shared.md' && git add -A; out=$(git commit -qm d3 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'supersedes D-099, which has no entry'" "$out"
+msg="supersede: jig decision D-001 prints it from git, the release it was in, and D-002 as what holds now"
+out=$($J decision D-001 2>&1); expect_pass sh -c "echo \"\$0\" | grep -qx '### D-001 ids are numbers' && echo \"\$0\" | grep -q 'in v0.1.0' && echo \"\$0\" | grep -q 'superseded by D-002' && echo \"\$0\" | grep -q 'What holds now is D-002'" "$out"
+msg="supersede: jig decision D-002 names D-001 as superseded and removed"
+out=$($J decision D-002 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'D-002 supersedes D-001, which is removed'" "$out"
+msg="supersede: jig decision of an id never in the log fails"
+expect_refuse $J decision D-077
+$J open sj >/dev/null && git add -A && git commit -qm "open sj"
+cd .git/jig/worktrees/sj
+msg="supersede: a job removing an Unreleased entry nothing supersedes is refused (R3)"
+rment D-002 && git add -A; expect_refuse git commit -qm drop; undo
+msg="supersede: a job adding D-?ids-uuid that supersedes D-002 and removing D-002 is accepted, and merges"
+ulog '### D-?ids-uuid ids are uuids
+Accepted (owner, 2026-11-04). Supersedes D-002.
+Touches: docs/shared.md' && rment D-002 && git add -A
+expect_pass git commit -qm "D-?ids-uuid: uuids"
+$J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note sj" && cd "$SR"
+msg="supersede: jig merge numbers it D-003, and trunk's log has no D-002"
+out=$($J merge sj 2>&1); expect_pass sh -c "grep -qx '### D-003 ids are uuids' .jig/decisions.md && ! grep -q '^### D-002' .jig/decisions.md" "$out"
+msg="supersede: jig decision D-001 walks two removals to D-003"
+out=$($J decision D-001 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'D-002 is superseded by D-003' && echo \"\$0\" | grep -q 'What holds now is D-003'" "$out"
+msg="supersede: on trunk, D-004 superseding D-003, an id given only in a merge commit, removes it and passes M2"
+ulog '### D-004 ids are ulids
+Accepted (owner, 2026-11-05). Supersedes D-003.
+Touches: docs/shared.md' && rment D-003 && git add -A; expect_pass git commit -qm "D-004: ulids"
+git clone -q --depth 1 "file://$SR" "$T/shallow" && cd "$T/shallow"
+msg="supersede: in a shallow clone, a log commit passes M2 though D-003's entry is in history it lacks"
+ulog '### Changed
+- IDS: Shallow.' && git add -A; expect_pass $J check --staged; undo
+msg="supersede: in a shallow clone, jig decision D-003 says the clone is shallow"
+out=$($J decision D-003 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'this clone is shallow'" "$out"
+cd "$SR"
+msg="supersede: jig update lists a superseded entry the log still holds under Repo files to review"
+ulog '### D-006 keep the old way
+Accepted (owner, 2026-11-05). Supersedes D-005.
+Touches: docs/shared.md
+
+### D-005 the old way
+Accepted (owner, 2026-11-05).
+Touches: docs/shared.md' && ulog '### D-007 maybe go back
+Proposed (2026-11-06). Supersedes D-004.
+Touches: docs/shared.md' Open && git add -A && git commit -qm "D-005, D-006, D-007"
+out=$($J update 2>&1); expect_pass sh -c "echo \"\$0\" | grep -A9 'Repo files to review' | grep -q 'D-005 is superseded by D-006: remove it; the entry superseding it names it'" "$out"
+msg="supersede: jig update doesn't list an entry only a proposal supersedes"
+expect_pass sh -c "! echo \"\$0\" | grep -q 'D-004 is superseded'" "$out"
+
+SM2="$T/sm"; mkdir -p "$SM2" && cd "$SM2" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
+$J init --meta --name sm >/dev/null && git add -A && git commit -qm meta-init && $J release >/dev/null
+git switch -q -c a && ulog '### D-001 ids are numbers
+Accepted (owner, 2026-11-01).
+Touches: docs/shared.md' && git add -A && git commit -qm "D-001: ids" && $J reviewed >/dev/null
+git switch -q main && git merge -q --no-ff --no-edit a && $J release >/dev/null
+SP="$T/sp"; mkdir -p "$SP" && cd "$SP" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p api .jig/specs && printf 'x=1\n' > api/a.py
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+git clone -q "$SM2" smclone && $J init --para sm --location smclone --contract 'api/**' >/dev/null && git add -A && git commit -qm para-init
+printf '# s\n\nPer `sm/.jig/decisions.md § D-001`.\n' > .jig/specs/s.md && git add -A && git commit -qm "cite sm" >/dev/null 2>&1
+cd "$SM2" && git switch -q -c b && ulog '### D-002 ids are strings
+Accepted (owner, 2026-11-02). Supersedes D-001.
+Touches: docs/shared.md' && rment D-001 && git add -A && git commit -qm "D-002: strings" && $J reviewed >/dev/null
+git switch -q main && git merge -q --no-ff --no-edit b && $J release >/dev/null
+cd "$SP" && git -C smclone pull -q 2>/dev/null && setjson .jig/para.json pin v0.3.0 && $J init --para sm >/dev/null 2>&1 \
+  && git add -A && git commit -qm "meta: sm v0.2.0 → v0.3.0" >/dev/null 2>&1; out=$($J sync 2>&1)
+msg="supersede: a pararepo citing a removed metarepo entry is told after the pin bump, with the successor named"
+expect_pass sh -c "echo \"\$0\" | grep -qF '.jig/specs/s.md:3 cites sm/.jig/decisions.md § D-001, which sm' && echo \"\$0\" | grep -qF 'has no row for: now sm/.jig/decisions.md § D-002'" "$out"
+cd "$SM2" && git switch -q -c c && ulog '### D-003 ids are uuids
+Accepted (owner, 2026-11-03). Supersedes D-002.
+Touches: docs/shared.md' && rment D-002 && git add -A && git commit -qm "D-003: uuids" && $J reviewed >/dev/null
+git switch -q main && git merge -q --no-ff --no-edit c && $J release >/dev/null
+cd "$SP" && git -C smclone pull -q 2>/dev/null && setjson .jig/para.json pin v0.4.0 && $J init --para sm >/dev/null 2>&1 \
+  && git add -A && git commit -qm "meta: sm v0.3.0 → v0.4.0" >/dev/null 2>&1; out=$($J sync 2>&1)
+msg="supersede: a citation two removals back walks the metarepo's history to the entry that holds at the pin"
+expect_pass sh -c "echo \"\$0\" | grep -qF 'has no row for: now sm/.jig/decisions.md § D-003'" "$out"
+cd "$SR"
+}
+
+
 
 sec_touches() {
 # A decision names the pages it touches; jig puts each pair touching one page in front of a reader.
@@ -4290,6 +4402,22 @@ rm -rf .jig/handoffs && git switch -q main
 msg="touches update: a live entry with no Touches is listed under Repo files to review"
 out=$($UP 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'D-001 old one has no Touches line'" "$out"
+
+# The backfill reaches a release: a released entry may gain its Touches line, and nothing else.
+sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
+printf 'mkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/release.sh
+board "b['release']['artifacts'] = ['dist/*.zip']" && printf 'dist/\n' >> .gitignore && git add -A \
+  && git commit -qm "release protocol" && $J release --minor >/dev/null 2>&1
+touch_d1() { python3 -c "import sys; f='.jig/decisions.md'; s=open(f).read(); a='### D-001 old one\nAccepted (owner, 2026-11-01).\n'; assert a in s; s=s.replace(a, a+'Touches: '+sys.argv[1]+'\n'); open(f,'w').write(s.replace('log it.', sys.argv[2]) if len(sys.argv) > 2 else s)" "$@"; }
+msg="touches release: backfilling Touches on a released entry passes"
+touch_d1 docs/a.md && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
+expect_pass sh -c "test $rc = 0 && git show HEAD:.jig/decisions.md | grep -q '^## v0.1.0 - '" "$out"
+msg="touches release: the same backfill with the entry's body edited too is refused as frozen"
+touch_d1 docs/a.md 'log everything.' && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'release v0.1.0 is frozen'" "$out"
+msg="touches release: a backfill naming no docs page is refused by M2"
+touch_d1 AGENTS.md && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'D-001 touches AGENTS.md' && ! echo \"\$0\" | grep -q frozen" "$out"
 
 # The reported symptom: a pararepo entry and the metarepo's on one feature, put side by side.
 TM="$T/tm"; pcnew "$TM" && git add -A && git commit -qm init && $J init --meta --name hub --genres features >/dev/null
@@ -4407,7 +4535,8 @@ Touches: docs/features/gestures.md'
 cd "$T"
 }
 
-UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap decisions touches"
+
+UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap decisions supersede touches"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file

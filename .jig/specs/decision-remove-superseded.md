@@ -51,6 +51,9 @@ entry names the old id, and git keeps the old text. A release's change lines sta
 - **Existing logs.** `jig update` lists every superseded entry still in the log under Repo files
   to review, with the edit "remove it; the entry superseding it names it". It makes the edit
   only on a yes, as it does for other repo files.
+- **Only an accepted entry removes.** An Open or Proposed entry may name `Supersedes`, but only
+  an accepted one's link lets the old entry go, counts as what holds now, or is a successor a
+  pararepo is pointed to (added after review: a proposal must not retire a live decision).
 - RULES.md: "Frozen releases" becomes "Released sections", covering the removal rule. "Newer
   wins" says a superseded decision is removed, not marked.
 
@@ -78,7 +81,9 @@ entry names the old id, and git keeps the old text. A release's change lines sta
 ## Touches
 - `plugin/templates/jig/jig.py` (`frozen_problems`, `log_problems`, `cmd_decision`, sync's
   citation check, update's repo files)
-- `plugin/templates/jig/RULES.md` (Decision log, Metarepo and pararepos: Newer wins, the M2 row)
+- `plugin/templates/jig/RULES.md` (Decision log, Metarepo and pararepos: Newer wins, the M2 and R3 rows)
+- `plugin/skills/subnode/SKILL.md`, `plugin/skills/stage/SKILL.md` ("supersede, never edit" becomes
+  "supersede and remove"; added after review)
 - `tests/smoke.sh`
 - `marketing/FEATURES.md` (main checkout only: the decision log row)
 

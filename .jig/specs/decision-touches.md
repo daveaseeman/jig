@@ -70,6 +70,16 @@ answers, pair by pair, whether they agree. jig picks the pairs and the reviewer 
   A "conflicts" answer with no resolution is blocking.
 - **Placement hint.** In a metarepo, `jig survey` names each metarepo page that two pararepos'
   entries touch while the metarepo has no entry on it ("probably the metarepo's").
+- **Amended after review (Nov 11).**
+  - A released entry may gain or change its `Touches:` line and nothing else: the line says what
+    the entry is about, not what it decided, so adding it doesn't rewrite a release. Without this,
+    a backfill could reach released entries only by renumbering every one of them.
+  - The gate recomputes the pair lines on its scratch merge and refuses one the note doesn't
+    answer, so two jobs adding entries on the same page at the same time meet there.
+  - A `Touches:` pointer names a docs page (in a metarepo, a page under `docs/`), in the pointer
+    forms RULES.md defines (`<repo>/<path>`, `<repo>:<path>`). A metarepo names only its own pages.
+  - A peer log jig couldn't read (no cache, a cache at another pin, a pararepo not found) is a
+    line to answer, not a note.
 - **Backfill.** `jig update` lists each live entry with no `Touches:` under Repo files to review.
   The one-time audit prompt's approved mapping is written in this form so a session can apply it.
 
