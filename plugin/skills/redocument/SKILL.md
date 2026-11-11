@@ -65,7 +65,10 @@ Otherwise:
    each old page's row, every `§ <heading>` a pointer names (or the bare path). The remap is
    then the pointer crosswalk too. Migration moves pointers; it never changes a claim.
 
-   **In a metarepo** (`.jig/meta.json` on trunk), every page goes to `docs/<genre>/<name>.md`,
+   **In a metarepo** (`.jig/meta.json` on trunk), first drop each `not_docs` glob survey says
+   hides pages (a code repo's reading of the tree, where they were content, not docs): on the
+   owner's yes, on trunk, then survey again, so its rows seed the remap. Every page goes to
+   `docs/<genre>/<name>.md`,
    a genre being a folder `meta.json`'s `genres` declares (any folder under `docs/` when it
    declares none): survey's `to` keeps a page's top folder as its genre, and a page at the root,
    or a genre nested in a genre, is placed by the remap. Give the table a Cited-by column: on

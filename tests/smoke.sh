@@ -3464,6 +3464,21 @@ mkdir -p docs/products/w/datasheets && printf '# a\n\n## Undefined\n' > docs/pro
 msg="meta docs: a genre adds no depth: a page there with subsystems moves into its folder, docs/products/w/w.md"
 expect_pass mhomes "assert [e['to'] for e in r['page_shapes'] if e['path'] == 'docs/products/w.md'] == ['docs/products/w/w.md'], r['page_shapes']"
 git rm -rq --cached docs/products/w && rm -r docs/products/w
+mkdir -p features/echo && printf '# echo\n\nEcho is.\n' > features/echo/echo.md && printf '# spells\n\nSpells.\n' > features/echo/spells.md
+printf '# Glossary\n\n**x** — y\n' > GLOSSARY.md && git add -A
+msg="meta docs: a page outside docs/ named for its folder, and a file beside it, are both pages to move"
+expect_pass mhomes "assert h['features/echo/echo.md']['to'] == 'docs/features/echo.md' and h['features/echo/spells.md']['to'] == 'docs/features/spells.md', h"
+msg="meta docs: GLOSSARY.md is bound for README.md § Glossary, not a genre"
+expect_pass mhomes "assert h['GLOSSARY.md']['to'] == 'README.md § Glossary', h['GLOSSARY.md']"
+msg="meta docs: the Doc homes line gives the genre tree"
+out=$($J survey 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'docs/<genre>/<name>.md each page'" "$out"
+python3 -c "import json; p='.jig/config.json'; d=json.load(open(p)); d['not_docs'] = ['features/**', 'DECISIONS.md']; json.dump(d, open(p, 'w'))"
+msg="meta docs: a not_docs glob hiding pages is named, and survey still routes to /jig:redocument"
+out=$($J survey 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'glob features/\*\* hides 2 pages' && ! echo \"\$0\" | grep -q 'glob DECISIONS.md' && echo \"\$0\" | tail -1 | grep -q '/jig:redocument'" "$out"
+python3 -c "import json; p='.jig/config.json'; d=json.load(open(p)); d['not_docs'] = []; json.dump(d, open(p, 'w'))"
+git commit -qm docs --no-verify
+msg="meta docs: update proposes genres from the folders under docs/, and docs/**/*.md for entry_files"
+out=$($UP 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '\"genres\": \[\"products\"\]' && echo \"\$0\" | grep -q 'docs/\*\*/\*.md'" "$out"
 
 MG="$T/meta-genres"; mkdir -p "$MG" && cd "$MG" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
@@ -3477,6 +3492,8 @@ msg="meta docs: with genres set, docs/misc/z.md is in an undeclared genre"
 out=$($J survey 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/misc/z.md: misc/ is no genre'" "$out"
 MC="$T/meta-custom"; mkdir -p "$MC" && cd "$MC" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && git add -A && git commit -qm init && $J init --meta --no-hooks --genres a,b >/dev/null
+msg="meta docs: --genres puts docs/**/*.md in entry_files, so pararepos cite the pages"
+expect_pass python3 -c "import json; assert 'docs/**/*.md' in json.load(open('$MG/.jig/meta.json'))['entry_files']"
 msg="meta docs: --genres a,b writes those two, each a ### heading"
 expect_pass sh -c "python3 -c \"import json; assert json.load(open('.jig/meta.json'))['genres'] == ['a', 'b']\" && grep -qx '### a' README.md && grep -qx '### b' README.md"
 
