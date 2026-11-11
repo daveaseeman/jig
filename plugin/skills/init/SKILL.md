@@ -77,4 +77,5 @@ Then:
 6. Offer to register the repo with `/jig:repos add repo` (or `add meta` / `add para`), so a chat can find its `.jig/staging/`.
 7. Report: files created, TODOs remaining, the git hooks installed, and that jobs are available (`/jig:hubnode`, `/jig:subnode`) but need no setup until a second session starts.
 
-Keep `AGENTS.md` under 40 lines. If it's longer after filling, cut.
+Keep `AGENTS.md` under 40 rule lines (blank lines, headings and table rows don't count), as
+`jig survey` counts them. If it's longer after filling, cut.
