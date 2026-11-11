@@ -1,7 +1,7 @@
 {
   "decision-touches": {
     "spec": ".jig/specs/decision-touches.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [
       "decision-remove-superseded"
     ],
