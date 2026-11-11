@@ -1,16 +1,1 @@
-{
-  "bug-gate-scratch-left": {
-    "spec": ".jig/specs/bug-gate-scratch-left.md",
-    "state": "gated",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh",
-      "plugin/skills/hubnode/SKILL.md",
-      "plugin/skills/update/SKILL.md"
-    ],
-    "reserved": {}
-  }
-}
+{}

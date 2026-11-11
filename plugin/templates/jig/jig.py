@@ -836,6 +836,9 @@ def cmd_open(root: Path, args) -> int:
         die(f"open a job from {board.trunk} (the hubnode's checkout)")
     if args.name in board.jobs:
         die(f"job {args.name} already exists")
+    if file_safe(args.name).startswith("gate-"):
+        die(f"a job name can't start with gate-: worktrees/{file_safe(args.name)} is where "
+            f"`jig gate {args.name[5:]}` checks out, and removes when that job is gated")
     # Notes and gate scratch are named file_safe(job): two open jobs sharing that stem would
     # each commit the same note path the same day, an add/add conflict at the second merge.
     twin = [n for n in board.jobs if file_safe(n) == file_safe(args.name)]
@@ -931,6 +934,57 @@ def cmd_reserve(root: Path, args) -> int:
     return 0
 
 
+def gate_scratch(name: str) -> str:
+    """Where `jig gate` checks a job out, relative to the primary checkout."""
+    return f"{worktrees_dir()}/gate-{file_safe(name)}"
+
+
+def gate_scratch_problem(where: Path, shown: str) -> str | None:
+    """Why the checkout at WHERE can't be removed as gate scratch, or None when it can. The
+    gate's checkout is detached; anything on a branch at that path is someone's work. Untracked
+    files are setup's (a venv, a build) and go with it."""
+    top = git("rev-parse", "--show-toplevel", cwd=str(where))
+    if not top or Path(top).resolve() != where.resolve():
+        return f"{shown} is not a checkout jig's gate made: look at it, then delete it"
+    branch = git("symbolic-ref", "-q", "--short", "HEAD", cwd=str(where))
+    if branch:
+        return (f"{shown} has branch {branch} checked out, so it isn't a gate's scratch: "
+                "jig leaves it alone")
+    remove = f"`git worktree remove --force {shown}`"
+    if git("rev-parse", "-q", "--verify", "MERGE_HEAD", cwd=str(where)):
+        return f"{shown} has a merge in progress: look at it, then {remove}"
+    edited = git("diff", "--name-only", "HEAD", cwd=str(where)).splitlines()
+    if edited:
+        # An install in setup.sh can rewrite a tracked lockfile after a passing check.
+        return (f"{shown} has tracked changes ({', '.join(edited[:5])}), from setup.sh or a hand "
+                f"edit: copy any edit to the job's branch, then {remove}")
+    return None
+
+
+def remove_checkout(where: Path) -> bool:
+    ok = subprocess.run(["git", "worktree", "remove", "--force", str(where)],
+                        capture_output=True).returncode == 0
+    # A folder deleted by hand leaves git's record; prune it so the next gate and update agree.
+    git("worktree", "prune")
+    return ok and not where.exists()
+
+
+def remove_gate_scratch(name: str, why: str) -> None:
+    """Remove the job's gate checkout once it is spent. jig made it, so jig removes it: a
+    printed remove command was run by nobody."""
+    scratch = gate_scratch(name)
+    where = main_root() / scratch
+    git("worktree", "prune")
+    if not where.exists():
+        return
+    problem = gate_scratch_problem(where, scratch)
+    if problem:
+        die(f"{problem}, and {why} again")
+    if not remove_checkout(where):
+        die(f"git couldn't remove {scratch}: `git worktree remove --force {scratch}`, and {why} again")
+    print(f"removed the gate's scratch checkout {scratch}")
+
+
 def cmd_mark(root: Path, args) -> int:
     board = Board.load(root, working_tree=True)
     if args.name not in board.jobs:
@@ -939,6 +993,9 @@ def cmd_mark(root: Path, args) -> int:
         die(f"a job is merged by `jig merge {args.name}`, which deletes its entry in the merge commit")
     if args.state not in STATES:
         die(f"state must be one of {', '.join(STATES)}")
+    if args.state == "gated":
+        # Gated means the checks ran: the checkout they ran in is spent.
+        remove_gate_scratch(args.name, f"`jig mark {args.name} gated`")
     board.jobs[args.name]["state"] = args.state
     board.save()
     print(f"{args.name}: {args.state}")
@@ -980,6 +1037,8 @@ def cmd_merge(root: Path, args) -> int:
     if since:
         die(f"{branch} has changed since the commit {notes[-1]} names ({', '.join(since[:5])}): "
             "hand off again and gate that, or merge the gated commit by hand")
+    # A job merged without being marked gated still leaves nothing of its gate behind.
+    remove_gate_scratch(name, f"`jig merge {name}`")
     # The subject ends in `merge <job>` either way: the gate's deleted-branch fallback finds
     # the job by it. A caller who already wrote it out isn't given it twice.
     subject = args.subject or ""
@@ -1585,31 +1644,42 @@ def cmd_gate(root: Path, args) -> int:
         print(f"warning: {weak}", file=sys.stderr)
     # The commit the note names, never the job's live worktree, which may have moved on; and
     # trunk merged in the way `jig sync` merges it, so the gate checks the merge a sync makes.
-    scratch = f"{worktrees_dir()}/gate-{file_safe(name)}"
+    scratch = gate_scratch(name)
     where = main_root() / scratch
-    if where.exists():
-        die(f"{scratch} is left from an earlier gate: `git worktree remove --force {scratch}`, "
-            "then gate again")
+    # A gate whose checks failed is gated again after a new handoff, with no mark between.
+    remove_gate_scratch(name, f"`jig gate {name}`")
     subprocess.run(["git", "worktree", "add", "--detach", str(where), commit], stdout=subprocess.DEVNULL)
     if not where.exists():
         die(f"git worktree add {scratch} {commit[:12]} failed")
-    stuck = merge_trunk(board, where)
+    try:
+        stuck = merge_trunk(board, where)
+    except SystemExit:
+        # The merge failed without conflicts; the checkout holds nothing of anyone's.
+        if not remove_checkout(where):
+            print(f"jig: remove the checkout: git worktree remove --force {scratch}", file=sys.stderr)
+        raise
     if stuck:
+        # Nothing in it is anyone's: the half-done merge is jig's own.
+        gone = remove_checkout(where)
         print(f"merging {trunk} into {scratch} needs a hand in {', '.join(stuck)}: the job resolves "
-              f"that by `jig sync` and hands off again. Remove the checkout: "
-              f"git worktree remove --force {scratch}", file=sys.stderr)
+              f"that by `jig sync` and hands off again. "
+              + ("The checkout is removed." if gone else
+                 f"Remove the checkout: git worktree remove --force {scratch}"), file=sys.stderr)
         return 1
     print(f"{scratch} holds {commit[:12]} with {trunk} merged in. Run the project checks there; "
           "jig never runs them:\n")
     # As the hooks run it: itself when executable (any language), through bash when not.
     check = f"./{DIR}/scripts/check.sh"
-    print(f"  cd {scratch} && {'' if os.access(where / check, os.X_OK) else 'bash '}{check}")
-    # --force: setup.sh ran there and may have left untracked files (a venv, a build).
-    print(f"  cd - && git worktree remove --force {scratch}\n")
+    # A subshell: a shell left inside the checkout would sit in a deleted folder once it's removed.
+    print(f"  (cd {scratch} && {'' if os.access(where / check, os.X_OK) else 'bash '}{check})")
+    print()
     if job is not None:
-        print(f"Then: jig mark {name} gated, and on the owner's word: jig merge {name}")
+        print(f"Then: jig mark {name} gated, which removes {scratch}, and on the owner's word: "
+              f"jig merge {name}")
     else:
-        print("Then merge it. (No job: solo work, so there is no board state to mark.)")
+        # No job, no state change to hang the removal on.
+        print("Then merge it, and remove the checkout (no job: solo work, so there is no board "
+              f"state to mark):\n  git worktree remove --force {scratch}")
     return 0
 
 
@@ -6277,12 +6347,14 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
     return out
 
 
-def worktree_refusals(root: Path, old_folders: tuple) -> list[str]:
+def worktree_refusals(root: Path, old_folders: tuple) -> tuple[list[str], list[Path]]:
     """One line per worktree git records and per folder in an old worktrees folder, each with
-    the command for its case. A repo folder renamed under its worktrees leaves records whose
-    paths are gone and checkouts that moved with it: `remove` on such a record drops it and
-    strands the checkout, so it gets `repair` first. update runs none of these: removal needs
-    someone to look at uncommitted work."""
+    the command for its case, and the gate scratch checkouts update may remove itself. A repo
+    folder renamed under its worktrees leaves records whose paths are gone and checkouts that
+    moved with it: `remove` on such a record drops it and strands the checkout, so it gets
+    `repair` first. update runs none of the refusals' commands: removal needs someone to look
+    at uncommitted work. A gate checkout is jig's scratch, so only a tracked edit there needs
+    that look."""
     def shown(p: Path) -> str:
         try:
             return p.relative_to(root).as_posix()
@@ -6325,10 +6397,24 @@ def worktree_refusals(root: Path, old_folders: tuple) -> list[str]:
             if d.is_dir() and not scan(d):
                 folders[d] = None
     out = []
+    scratch: list[Path] = []
     claimed = set()
+    gates = (git_common() / "jig" / "worktrees").resolve()
     for rid, path in records.items():
         if path.exists():
             claimed.add(path.resolve())
+            # The gate's checkout is detached; a job named gate-x has a branch checked out.
+            try:
+                detached = not (store / rid / "HEAD").read_text().startswith("ref:")
+            except OSError:
+                detached = False
+            if path.resolve().parent == gates and path.name.startswith("gate-") and detached:
+                problem = gate_scratch_problem(path, shown(path))
+                if problem:
+                    out.append(f"gate scratch {problem}")
+                else:
+                    scratch.append(path)
+                continue
             out.append(f"worktree {shown(path)}: `git worktree remove {shown(path)}`")
             continue
         moved = [d for d, i in folders.items() if i == rid]
@@ -6342,7 +6428,7 @@ def worktree_refusals(root: Path, old_folders: tuple) -> list[str]:
         old = any((root / f.rstrip("/")) in d.parents for f in old_folders)
         if old and d.resolve() not in claimed:
             out.append(f"{shown(d)} is not a checkout git knows: look, then delete it")
-    return out
+    return out, scratch
 
 
 def cmd_update(root: Path, args) -> int:
@@ -6393,7 +6479,8 @@ def cmd_update(root: Path, args) -> int:
                        "first: update moves files their worktrees rely on")
     # Today's board is at .jig/ too, so .jig/worktrees/ is old only beside an older board.
     old_ignores = OLD_IGNORES if board_at != CONFIG or version < STAMP else OLD_IGNORES[1:]
-    refused += worktree_refusals(root, old_ignores)
+    worktrees, gate_left = worktree_refusals(root, old_ignores)
+    refused += worktrees
     # A tracked change mid-move would leave jig half-moved; a re-run must still see the old layout.
     dirty = git("status", "--porcelain", "--untracked-files=no")
 
@@ -6501,7 +6588,8 @@ def cmd_update(root: Path, args) -> int:
 
     moved_board = board_at != CONFIG or not (root / JOBS).exists()
     actions = bool(plan["moves"] or replace or edits or moved_board or steps or ignore_lines
-                   or stale_hooks or aidev_state or untracked or cache_line or ref_line or removed)
+                   or stale_hooks or aidev_state or untracked or cache_line or ref_line or removed
+                   or gate_left)
     if not actions:
         print("up to date")
         for w in warnings:
@@ -6551,8 +6639,10 @@ def cmd_update(root: Path, args) -> int:
         print("\nSteps:")
         for s in steps:
             print(f"  {s[0]}")
-    if ignore_lines or stale_hooks or aidev_state or untracked or cache_line or ref_line:
+    if ignore_lines or stale_hooks or aidev_state or untracked or cache_line or ref_line or gate_left:
         print("\nGit state:")
+        for w in gate_left:
+            print(f"  remove {os.path.relpath(w, root)} (gate scratch, removed on --apply)")
         for l in ignore_lines:
             print(f"  .gitignore: remove `{l.strip()}` (worktrees live in .git/jig/worktrees/ now)")
         for l in cache_line:
@@ -6637,6 +6727,10 @@ def cmd_update(root: Path, args) -> int:
                 pass
     if aidev_state:
         shutil.rmtree(git_common() / "aidev")
+    for w in gate_left:
+        if not remove_checkout(w):
+            warnings.append(f"git couldn't remove {os.path.relpath(w, root)}: "
+                            f"`git worktree remove --force {os.path.relpath(w, root)}`")
     cmd_install_hooks(root, argparse.Namespace(replace=False))
     report()
     check = root / DIR / "scripts" / "check.sh"
