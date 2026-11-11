@@ -2636,9 +2636,8 @@ def cmd_survey(root: Path, args) -> int:
         if (folder_page(f) or f in flats) and (f not in homes or homes[f]["kind"] == "deep")
         and not matches(f, not_docs)
         and (probs := page_problems((root / f).read_text(errors="replace") if (root / f).exists() else ""))]
-    meta = load_meta(Board.trunk_name(root))
-    product = [f for f in md if product_file(f, meta) and (f == LOG or not matches(f, not_docs))]
-    sids = scope_ids(read(ROADMAP))
+    product = product_pages(root, md)
+    sids = scope_ids(at_rev(Board.trunk_name(root), ROADMAP))
     report["project_in_product"] = [
         {"path": f, "problems": probs} for f in product
         if (probs := (project_sections(read(f)) if f != LOG else []) + project_prose(read(f), sids))]
@@ -3345,11 +3344,13 @@ def removed_entries(old: str, new: str) -> tuple[str, list[dict]]:
     prefix = log_prefix_of(old)
     now = log_entries(new, prefix)
     gone = [e for e in log_entries(old, prefix) if e["id"] not in {n["id"] for n in now}]
-    named = {s for e in now for s in replaced(e, prefix)} | struck_ids(old, new, prefix)
+    named = {s for e in now for s in replaced(e, prefix)}
+    struck = struck_ids(old, new, prefix)
     lines = old.splitlines()
     for e in reversed(gone):
         del lines[e["start"]:e["start"] + e["block"].count("\n") + 1]
-    return "\n".join(lines), [e for e in gone if e["id"] not in named and e["section"] != "Open"]
+    return "\n".join(lines), [e for e in gone if e["id"] not in named and e["section"] != "Open"
+                              and id_number(e["id"], prefix) not in struck]
 
 
 def removed_lines(text: str) -> set[str]:
@@ -3365,12 +3366,18 @@ def removed_lines(text: str) -> set[str]:
     return out
 
 
-def struck_ids(old: str, new: str, prefix: str) -> set[str]:
-    """The ids a change line NEW adds under ## Unreleased ### Removed names: a project entry
-    struck from the log has no product successor, so that line is what lets it go, even from
-    a release."""
-    return {i for line in removed_lines(new) - removed_lines(old)
-            for i in re.findall(rf"(?<![\w-]){re.escape(prefix)}\d+(?!\d)", line)}
+def struck_ids(old: str, new: str, prefix: str) -> set[int]:
+    """The numbers of the ids NEW's added `- D-040: …` lines under ## Unreleased ### Removed
+    open with: a project entry struck from the log has no product successor, so that line is
+    what lets it go, even from a release. Only the line's own id: one it mentions later in a
+    sentence is a change line about something else."""
+    rx = re.compile(rf"- {re.escape(prefix)}(\d+):")
+    return {int(m.group(1)) for line in removed_lines(new) - removed_lines(old) if (m := rx.match(line))}
+
+
+def id_number(eid: str, prefix: str) -> int | None:
+    m = re.fullmatch(rf"{re.escape(prefix)}(\d+)", eid)
+    return int(m.group(1)) if m else None
 
 
 def touches_dropped(lines: list[str], keep: bool = False) -> list[str]:
@@ -3397,8 +3404,14 @@ def frozen_problems(old: str, new: str) -> list[str]:
     old, bare = removed_entries(old, new)
     out += [f"{LOG}: {e['id']} is removed from release {e['section']}, and no entry in the log "
             f"supersedes it: an entry is removed only by the commit adding the accepted one "
-            f"that says `Supersedes {e['id']}.`, or, struck as project scope, a line under "
-            f"## Unreleased ### Removed naming it" for e in bare if e["section"] not in ("Unreleased", "")]
+            f"that says `Supersedes {e['id']}.`, or, struck as project scope, by the commit adding "
+            f"under ## Unreleased ### Removed the line `- {e['id']}: project scope, not a product "
+            f"decision.`: add it in the same commit" for e in bare if e["section"] not in ("Unreleased", "")]
+    prefix = log_prefix_of(new)
+    have = {id_number(e["id"], prefix) for e in log_entries(new, prefix)}
+    out += [f"{LOG}: the ### Removed line for {prefix}{n:03d} strikes an entry the log still has: "
+            f"remove the entry in the same commit, or drop the line"
+            for n in sorted(struck_ids(old, new, prefix) & have)]
     after = release_sections(new)
     for version, (day, yanked, body) in release_sections(old).items():
         if version not in after:
@@ -7784,6 +7797,10 @@ def merged_log(root: Path) -> dict:
     if preamble:
         keep[CHANGELOG] = as_written(old, paragraphs(preamble))
     p = prefix or (re.match(r"[A-Z][A-Z0-9]*-", entries[0]["id"]).group(0) if entries else "D-")
+    # A row a struck row superseded would come back accepted, since nothing in the log retires it.
+    gone_live = [f"{e['id']} is superseded by {e['by']}, which is struck: strike {e['id']} too "
+                 f"(Status `struck`), or un-strike {e['by']}"
+                 for e in entries if e["by"] and decision_id(e["by"]) in {decision_id(x) for x in struck}]
     by_id = {decision_id(e["id"]): e for e in entries}
     for e in entries:
         new = by_id.get(decision_id(e["by"])) if e["by"] else None
@@ -7821,7 +7838,8 @@ def merged_log(root: Path) -> dict:
     notes = [f"{', '.join(ids)} → {w}" for w, ids in placed.items()]
     notes += [f"{', '.join(rejected)}: rejected, left out (their numbers stay taken)"] if rejected else []
     notes += [f"{', '.join(struck)}: struck as project scope, left out (their numbers stay taken)"] if struck else []
-    return {"text": text, "notes": notes, "homeless": homeless, "keep": keep, "prefix": p}
+    return {"text": text, "notes": notes, "homeless": homeless, "keep": keep, "prefix": p,
+            "struck_live": gone_live}
 
 
 def names_of(root: Path, gone: list[str]) -> list[tuple[str, int]]:
@@ -7918,7 +7936,7 @@ def cmd_merge_log(root: Path, apply: bool) -> int:
     problems = [f"M2 {f}: row {e['id']} has no status cell or no date, as the old M2 asked"
                 for f in old_registers(root)
                 for e in parse_register((root / f).read_text(errors="replace"), old_prefix(root))[0] if e["bad"]]
-    problems += log_problems(text, m["prefix"])
+    problems += log_problems(text, m["prefix"]) + m["struck_live"]
     print("Merging into " + LOG + ":")
     for f, what in sources:
         print(f"  {f} ({what}), " + ("kept for what has no home" if f in keep else "removed after"))
@@ -7988,14 +8006,33 @@ PLAN_FILES = {
 }
 
 
+def product_pages(root: Path, files: list[str]) -> list[str]:
+    """The files that describe the product, as survey and update read them for the project: docs
+    pages, the decision log and a metarepo's entry files, less what not_docs sets aside."""
+    try:
+        not_docs = Board.load(root).data.get("not_docs") or []
+    except SystemExit:
+        not_docs = []
+    meta = load_meta(Board.trunk_name(root))
+    return [f for f in files if f.endswith(".md") and product_file(f, meta)
+            and (f == LOG or not matches(f, not_docs))]
+
+
 def plan_files(root: Path, files: list[str], reviewed: list[str]) -> list[tuple[str, str]]:
     """The repo's plan and register files, each with where its content goes. ROADMAP.md is jig's
     generated view where a roadmap exists, and a copy of jig carries its own RULES.md."""
+    try:
+        board = Board.load(root).data
+    except SystemExit:
+        board = {}
+    skip = named_pages(board)
+    not_docs = board.get("not_docs") or []
     out = []
     for f in files:
         name = Path(f).name.upper()
         what = next((v for k, v in PLAN_FILES.items() if k.upper() == name), None)
-        if (what is None or f in reviewed or f.startswith((f"{DIR}/", ".claude/"))
+        if (what is None or f in reviewed or f in skip or matches(f, not_docs)
+                or f.startswith((f"{DIR}/", ".claude/"))
                 or (root / f).parent.joinpath("jig.py").exists()
                 or (name == "ROADMAP.MD" and f == ROADMAP_VIEW and (root / ROADMAP).exists())):
             continue
@@ -8034,7 +8071,6 @@ def project_review(root: Path, files: list[str], reviewed: list[str]) -> list[tu
     """The project in the product, for update's Repo files to review: each page's Undefined
     entry as the Up next item `--sweep` would write, project sections and plan prose on pages,
     decision entries that read as scope, and the repo's plan and register files."""
-    meta = load_meta(Board.trunk_name(root))
     sids = scope_ids(at_rev(Board.trunk_name(root), ROADMAP))
     out = []
     for s in undefined_sweep(root, files, at_rev(Board.trunk_name(root), ROADMAP)):
@@ -8042,8 +8078,8 @@ def project_review(root: Path, files: list[str], reviewed: list[str]) -> list[tu
                  f"(`jig update --sweep`): {i['line']}") for i in s["items"]]
         if s["prose"]:
             out.append((s["page"], "## Undefined holds text besides its entries: move it by hand"))
-    for f in files:
-        if not product_file(f, meta) or not (root / f).is_file():
+    for f in product_pages(root, files):
+        if not (root / f).is_file():
             continue
         text = (root / f).read_text(errors="replace")
         heads = [] if f == LOG else [p for p in project_sections(text) if not p.startswith("## Undefined")]
@@ -8075,8 +8111,8 @@ def undefined_sweep(root: Path, files: list[str], roadmap: str) -> list[dict]:
     have = parse_up_next(roadmap)
     taken = {i["id"] for i in have}
     out = []
-    for page in files:
-        if not (page.startswith("docs/") and page.endswith(".md")) or reference_file(page):
+    for page in product_pages(root, files):
+        if page == LOG:
             continue
         text = (root / page).read_text(errors="replace") if (root / page).is_file() else ""
         lines = text.splitlines()
@@ -8097,7 +8133,7 @@ def undefined_sweep(root: Path, files: list[str], roadmap: str) -> list[dict]:
                 if same:
                     iid = same["id"]
                 else:
-                    words = re.findall(r"[a-z0-9]+", f"{Path(page).stem} {what.split(';')[0].lower()}")[:4]
+                    words = re.findall(r"[a-z0-9]+", f"{Path(page).stem.lower()} {what.split(';')[0].lower()}")[:4]
                     base_id = "-".join(words) or "parked"
                     iid, k = base_id, 2
                     while iid in taken:
@@ -8120,11 +8156,16 @@ def without_sections(text: str, spans: list[tuple[int, int]]) -> str:
 def with_up_next(text: str, items: list[str]) -> str:
     """The roadmap TEXT with ITEMS appended under ## Up next, which is added when it has none."""
     lines = text.splitlines()
-    at = next((n for n, l in enumerate(lines) if re.match(r"##\s+(.+?)\s*$", l)
-               and l[2:].strip().lower() == UP_NEXT.lower()), None)
+    heads, fence = [], False
+    for n, l in enumerate(lines):
+        if l.lstrip().startswith("```"):
+            fence = not fence
+        elif not fence and re.match(r"##\s+(.+?)\s*$", l):
+            heads.append(n)
+    at = next((n for n in heads if lines[n][2:].strip().lower() == UP_NEXT.lower()), None)
     if at is None:
         return "\n".join(trimmed(lines) + ["", f"## {UP_NEXT}", *items]).lstrip("\n") + "\n"
-    end = next((n for n in range(at + 1, len(lines)) if lines[n].startswith("## ")), len(lines))
+    end = next((n for n in heads if n > at), len(lines))
     while end > at + 1 and not lines[end - 1].strip():
         end -= 1
     return "\n".join(lines[:end] + items + lines[end:]) + "\n"
@@ -8152,7 +8193,7 @@ def cmd_sweep(root: Path, apply: bool) -> int:
         for i in s["items"]:
             print(f"  → {ROADMAP} ## {UP_NEXT}: {i['line']}" + ("  (already there)" if i["there"] else ""))
     job = (f"open a job for the pages on {trunk} (`jig open project-sweep --shares "
-           f"{' '.join(s['page'] for s in movable)}`), and run `jig update --apply --sweep` in its "
+           f"{' '.join(dict.fromkeys(s['page'] for s in movable))}`), and run `jig update --apply --sweep` in its "
            "worktree: it removes the sections whose entries the roadmap holds")
     if not apply:
         print("\nDry run: nothing changed. On the owner's yes: jig update --apply --sweep"
@@ -8173,10 +8214,13 @@ def cmd_sweep(root: Path, apply: bool) -> int:
         (root / ROADMAP).write_text(with_up_next(text, [i["line"] for i in new]))
         written.append(ROADMAP)
     if pages_here:
+        # Every span is a line range of the page as read, so a page's sections go in one write.
+        spans: dict[str, list[tuple[int, int]]] = {}
         for s in movable:
-            (root / s["page"]).write_text(without_sections(
-                (root / s["page"]).read_text(errors="replace"), [s["span"]]))
-            written.append(s["page"])
+            spans.setdefault(s["page"], []).append(s["span"])
+        for page, ss in spans.items():
+            (root / page).write_text(without_sections((root / page).read_text(errors="replace"), ss))
+            written.append(page)
     if written:
         git("add", "--", *written, check=True)
     print(f"\nWritten {', '.join(written) or 'nothing'}. Staged, nothing committed: commit it here"

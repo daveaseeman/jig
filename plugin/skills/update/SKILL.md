@@ -80,8 +80,10 @@ headings; you and the owner judge what is product.
   a released entry go); if the work is still live, it becomes a roadmap item. **Split**: a new
   accepted entry superseding it keeps the product part, and the project part goes to the
   roadmap. **Keep**: it is a product decision. Before `--merge-log`, a struck register row's
-  Status cell says `struck`, and the merge leaves it out; a listed register section (a delivery
-  queue) goes to the roadmap or is deleted before the merge.
+  Status cell says `struck`, and the merge leaves it out; in a metarepo that edit is a job's
+  and, like any register change before the log, it takes a `CHANGELOG.md` line (M3). A row that
+  a struck row supersedes is struck too, or the merge refuses: it would come back accepted. A
+  listed register section (a delivery queue) goes to the roadmap or is deleted before the merge.
 - A **plan or register file** is listed with where its content goes: `TODO.md`, `BACKLOG.md`,
   `STATUS.md`, `PLAN.md` or a hand-written `ROADMAP.md` to `.jig/roadmap.md`; `FEATURES.md` to its
   systems' pages, each row's who and why to a decision entry; `RULES.md`, `CONVENTIONS.md`,

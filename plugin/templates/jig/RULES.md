@@ -321,8 +321,8 @@ passes the test), an Invariants entry with no why (` — `) or no holder (`held 
 page whose first line of text after its title is a heading rather than a lead paragraph. It
 lists, apart, the project in the product: a `## Status`, `## Current state`, `## Roadmap` or
 `## Undefined` heading on a page or a metarepo's entry file, and plan prose ("phase 3", "spec
-step 6") on a page or in the decision log, each with where it goes. `jig update` brings this file, not the pages: converting
-a repo's pages is a job of its own there.
+step 6") on a page or in the decision log, each with where it goes. `jig update --apply` brings this file; it
+changes a page only by `--sweep`, below, on the owner's yes, and reshaping a repo's pages is a job of its own there.
 
 `jig update` sweeps a repo onto the boundary, each move on the owner's yes. Under Repo files to
 review it lists each page's `## Undefined` entry as the `## Up next` item it would become, the
