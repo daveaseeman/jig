@@ -44,7 +44,7 @@ Some of them are survey's home findings. A **rules** file off root: fold what st
 `AGENTS.md` or a page's Invariants, repoint the lines named, delete it — but a package's own rules
 file in a monorepo may stay on the owner's word, so ask before proposing the delete. A **copy** of `.jig/RULES.md`:
 delete it and point what names it at `.jig/RULES.md`. A page at home but **off the page contract** (no lead paragraph, an invariant with
-no why or holder, a section after Undefined) is fixed where it sits: show its problems and the
+no why or holder, the old Now / Rules / Checks shape) is fixed where it sits: show its problems and the
 edit that answers each, and make it on a yes. A folder of **pages**: before the moves,
 ask whether each page is a subsystem to nest under its system's folder rather than a system of
 its own. Nest only system/subsystem: a page **below a subsystem** (survey's `deep`) folds into
@@ -56,6 +56,40 @@ and `boards` entry; ask before each.
 Then make every line the proposal names in one commit — the `git mv`s, the docmap keys,
 `contract_paths`, the stale lines and, in a pararepo, a `BUFFER.md` row per cached pointer. Carry
 out each finding on a yes. Never propose adding a line that restates `.jig/RULES.md`: point at it.
+
+**The project in the product** (`.jig/RULES.md`, Documentation: Product and project) comes off
+pages and out of decisions, one item at a time, each only on a yes. jig lists by words and
+headings; you and the owner judge what is product.
+
+- An **`## Undefined` entry** is listed as the Up next item it would become. Ask per entry: parked
+  work goes to Up next (the default); an open product question becomes an `## Open` entry in
+  `.jig/decisions.md` that the page cites; a present-tense product fact goes into the page body,
+  undated. Make the second and third by hand first. Then `jig update --apply --sweep` moves the
+  rest to `## Up next` in `.jig/roadmap.md`, creating it when absent, and removes the emptied
+  sections; a section holding other text stays, to move by hand. The roadmap is trunk's (R5), so
+  run it there; in a metarepo the pages are a job's (M4): ask the hubnode to open the job the
+  run names, and run `--apply --sweep` again in its worktree, which removes the sections whose
+  entries trunk's roadmap holds. A clean tree is required.
+- A **page line** naming a spec, a handoff, the roadmap, a phase or scope id, or "phase 3",
+  and a **`## Status`, `## Current state` or `## Roadmap`** section: propose the rewrite that
+  drops the reference and keeps the product fact. A sentence that is all project leaves the
+  page, and if its work is still live it becomes an Up next item.
+- A **decision entry** that reads as project scope: sort it with the owner. **Strike**, the
+  whole entry is project: remove it, and add under `## Unreleased` `### Removed` the line
+  `- D-040: project scope, not a product decision.` in the same commit (that line is what lets
+  a released entry go); if the work is still live, it becomes a roadmap item. **Split**: a new
+  accepted entry superseding it keeps the product part, and the project part goes to the
+  roadmap. **Keep**: it is a product decision. Before `--merge-log`, a struck register row's
+  Status cell says `struck`, and the merge leaves it out; in a metarepo that edit is a job's
+  and, like any register change before the log, it takes a `CHANGELOG.md` line (M3). A row that
+  a struck row supersedes is struck too, or the merge refuses: it would come back accepted. A
+  listed register section (a delivery queue) goes to the roadmap or is deleted before the merge.
+- A **plan or register file** is listed with where its content goes: `TODO.md`, `BACKLOG.md`,
+  `STATUS.md`, `PLAN.md` or a hand-written `ROADMAP.md` to `.jig/roadmap.md`; `FEATURES.md` to its
+  systems' pages, each row's who and why to a decision entry; `RULES.md`, `CONVENTIONS.md`,
+  `CONTRIBUTING.md` to `AGENTS.md` (40 lines at most) or a skill. Propose each conversion;
+  remove the file in the same change once all of it moved. A file that holds pages goes to
+  `/jig:redocument`.
 
 A root **`CHANGELOG.md`** and a **decision register** (`DECISIONS.md`, or a metarepo's entry file
 of decision rows) merge into `.jig/decisions.md`, the one log (`.jig/RULES.md`, Decision log). Run

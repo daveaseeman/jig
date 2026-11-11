@@ -2636,9 +2636,8 @@ def cmd_survey(root: Path, args) -> int:
         if (folder_page(f) or f in flats) and (f not in homes or homes[f]["kind"] == "deep")
         and not matches(f, not_docs)
         and (probs := page_problems((root / f).read_text(errors="replace") if (root / f).exists() else ""))]
-    meta = load_meta(Board.trunk_name(root))
-    product = [f for f in md if product_file(f, meta) and (f == LOG or not matches(f, not_docs))]
-    sids = scope_ids(read(ROADMAP))
+    product = product_pages(root, md)
+    sids = scope_ids(at_rev(Board.trunk_name(root), ROADMAP))
     report["project_in_product"] = [
         {"path": f, "problems": probs} for f in product
         if (probs := (project_sections(read(f)) if f != LOG else []) + project_prose(read(f), sids))]
@@ -2873,7 +2872,9 @@ DECISION_STATUSES = ("open", "proposed", "accepted", "superseded", "rejected")
 # Before the log, a register row's Status cell, whole: a word alone, with a note in
 # parentheses, or "superseded by D-12". Whole-cell, because a Decision cell often starts with a
 # status word ("Open question: …").
-STATUS_CELL = re.compile(rf"(?:{'|'.join(DECISION_STATUSES)})(?:\s*\(.*\)|\s+by\s+\S+)?")
+# A register row may also be struck: project scope, not a decision, which --merge-log leaves out.
+ROW_STATUSES = (*DECISION_STATUSES, "struck")
+STATUS_CELL = re.compile(rf"(?:{'|'.join(ROW_STATUSES)})(?:\s*\(.*\)|\s+by\s+\S+)?")
 # A commit's subject starts with the ids it touches (D-022: …, GLOSSARY: …), so git log is
 # the decision index. A branch's entry isn't numbered yet: its subject leads with D-?<slug>.
 SUBJECT_ID = r"(?:[A-Z][A-Z0-9_-]*|[A-Za-z][\w-]*\?[a-z0-9]+(?:-[a-z0-9]+)*)"
@@ -2983,7 +2984,7 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
         if not (any(STATUS_CELL.fullmatch(c) for c in cells)
                 and any(re.fullmatch(r"\d{4}-\d{2}-\d{2}", c) for c in cells)):
             out.append(f"M2 a decision row needs a Status cell that is exactly a status "
-                       f"({'/'.join(DECISION_STATUSES)}), optionally `(note)` or "
+                       f"({'/'.join(ROW_STATUSES)}), optionally `(note)` or "
                        f"`by {meta['decision_prefix']}…`, and a date (YYYY-MM-DD): "
                        f"{m.group(0)[1:].strip()}")
     # M3 a change to what pararepos cite is recorded where they will read it. Judged on the
@@ -3344,10 +3345,39 @@ def removed_entries(old: str, new: str) -> tuple[str, list[dict]]:
     now = log_entries(new, prefix)
     gone = [e for e in log_entries(old, prefix) if e["id"] not in {n["id"] for n in now}]
     named = {s for e in now for s in replaced(e, prefix)}
+    struck = struck_ids(old, new, prefix)
     lines = old.splitlines()
     for e in reversed(gone):
         del lines[e["start"]:e["start"] + e["block"].count("\n") + 1]
-    return "\n".join(lines), [e for e in gone if e["id"] not in named and e["section"] != "Open"]
+    return "\n".join(lines), [e for e in gone if e["id"] not in named and e["section"] != "Open"
+                              and id_number(e["id"], prefix) not in struck]
+
+
+def removed_lines(text: str) -> set[str]:
+    """The change lines under ## Unreleased, ### Removed."""
+    out, section, group = set(), "", ""
+    for line in text.splitlines():
+        if line.startswith("## "):
+            section, group = line[3:].strip(), ""
+        elif line.startswith("### "):
+            group = line[4:].strip()
+        elif section == "Unreleased" and group == "Removed" and line.startswith("- "):
+            out.add(line.rstrip())
+    return out
+
+
+def struck_ids(old: str, new: str, prefix: str) -> set[int]:
+    """The numbers of the ids NEW's added `- D-040: …` lines under ## Unreleased ### Removed
+    open with: a project entry struck from the log has no product successor, so that line is
+    what lets it go, even from a release. Only the line's own id: one it mentions later in a
+    sentence is a change line about something else."""
+    rx = re.compile(rf"- {re.escape(prefix)}(\d+):")
+    return {int(m.group(1)) for line in removed_lines(new) - removed_lines(old) if (m := rx.match(line))}
+
+
+def id_number(eid: str, prefix: str) -> int | None:
+    m = re.fullmatch(rf"{re.escape(prefix)}(\d+)", eid)
+    return int(m.group(1)) if m else None
 
 
 def touches_dropped(lines: list[str], keep: bool = False) -> list[str]:
@@ -3367,14 +3397,21 @@ def touches_dropped(lines: list[str], keep: bool = False) -> list[str]:
 
 def frozen_problems(old: str, new: str) -> list[str]:
     """A commit may remove a superseded entry from a released section, in the commit adding the
-    entry superseding it; add or change an entry's Touches line (M2 checks its pages); and add
+    entry superseding it, or a struck one, in the commit adding a ### Removed line naming it; add or change an entry's Touches line (M2 checks its pages); and add
     ` [YANKED]` to a release heading with one line under it saying why. Anything else in a
     released section, its change lines above all, is frozen."""
     out: list[str] = []
     old, bare = removed_entries(old, new)
     out += [f"{LOG}: {e['id']} is removed from release {e['section']}, and no entry in the log "
             f"supersedes it: an entry is removed only by the commit adding the accepted one "
-            f"that says `Supersedes {e['id']}.`" for e in bare if e["section"] not in ("Unreleased", "")]
+            f"that says `Supersedes {e['id']}.`, or, struck as project scope, by the commit adding "
+            f"under ## Unreleased ### Removed the line `- {e['id']}: project scope, not a product "
+            f"decision.`: add it in the same commit" for e in bare if e["section"] not in ("Unreleased", "")]
+    prefix = log_prefix_of(new)
+    have = {id_number(e["id"], prefix) for e in log_entries(new, prefix)}
+    out += [f"{LOG}: the ### Removed line for {prefix}{n:03d} strikes an entry the log still has: "
+            f"remove the entry in the same commit, or drop the line"
+            for n in sorted(struck_ids(old, new, prefix) & have)]
     after = release_sections(new)
     for version, (day, yanked, body) in release_sections(old).items():
         if version not in after:
@@ -7244,6 +7281,8 @@ def worktree_refusals(root: Path, old_folders: tuple) -> tuple[list[str], list[P
 def cmd_update(root: Path, args) -> int:
     if getattr(args, "merge_log", False):
         return cmd_merge_log(root, args.apply)
+    if getattr(args, "sweep", False):
+        return cmd_sweep(root, args.apply)
     here = Path(__file__).resolve().parent
     files = tracked(root)
     board_row = next(olds for new, olds in LAYOUT if new == CONFIG)
@@ -7391,6 +7430,7 @@ def cmd_update(root: Path, args) -> int:
     review += [(LOG, f"{e} has no Touches line: add one under its status line, naming the pages "
                 f"it touches ({DIR}/RULES.md, Decision log)") for e in untouched_entries(root, trunk)]
     review += superseded_kept(root)
+    review += project_review(root, files, [f for f, _ in review])
     have_ignores = {l.strip() for l in ignore.read_text().splitlines()} if ignore.exists() else set()
     if (new_board.get("reference_files") == "ignore" and not ref_line
             and not set(REFERENCE_IGNORES) <= have_ignores):
@@ -7752,13 +7792,14 @@ def merged_log(root: Path) -> dict:
         homeless += [(CHANGELOG, p) for p in paragraphs(preamble)]
     keep: dict[str, str] = {}          # an old file's leftover, kept in it after the merge
     rejected: list[str] = []
+    struck: list[str] = []
     for f in old_registers(root):
         found, notes = parse_register((root / f).read_text(errors="replace"), prefix)
         p = prefix or (re.match(r"[A-Z][A-Z0-9]*-", found[0]["id"]).group(0) if found else "D-")
         by_num = {}
         for e in found:
-            if e["word"] == "rejected":
-                rejected.append(e["id"])
+            if e["word"] in ("rejected", "struck"):
+                (rejected if e["word"] == "rejected" else struck).append(e["id"])
                 continue
             entries.append(e)
             by_num[int(re.sub(r"\D", "", e["id"]) or 0)] = e
@@ -7774,6 +7815,10 @@ def merged_log(root: Path) -> dict:
     if preamble:
         keep[CHANGELOG] = as_written(old, paragraphs(preamble))
     p = prefix or (re.match(r"[A-Z][A-Z0-9]*-", entries[0]["id"]).group(0) if entries else "D-")
+    # A row a struck row superseded would come back accepted, since nothing in the log retires it.
+    gone_live = [f"{e['id']} is superseded by {e['by']}, which is struck: strike {e['id']} too "
+                 f"(Status `struck`), or un-strike {e['by']}"
+                 for e in entries if e["by"] and decision_id(e["by"]) in {decision_id(x) for x in struck}]
     by_id = {decision_id(e["id"]): e for e in entries}
     for e in entries:
         new = by_id.get(decision_id(e["by"])) if e["by"] else None
@@ -7797,6 +7842,9 @@ def merged_log(root: Path) -> dict:
     if rejected:
         # Their numbers stay taken: numbering starts above every id the log has ever named.
         head += f"Rejected before this log, and left out of it: {', '.join(rejected)} (git keeps their rows).\n\n"
+    if struck:
+        head += (f"Struck as project scope before this log, and left out of it: {', '.join(struck)} "
+                 "(git keeps their rows).\n\n")
     text = head + "## Open\n\n" + "\n".join(blocks("Open")) + "\n## Unreleased\n\n"
     text += "\n".join(blocks("Unreleased") + trimmed(unreleased[1:])) + "\n"
     for heading, body, _ in sections:
@@ -7807,7 +7855,9 @@ def merged_log(root: Path) -> dict:
         placed.setdefault(e["where"].replace("## ", ""), []).append(e["id"])
     notes = [f"{', '.join(ids)} → {w}" for w, ids in placed.items()]
     notes += [f"{', '.join(rejected)}: rejected, left out (their numbers stay taken)"] if rejected else []
-    return {"text": text, "notes": notes, "homeless": homeless, "keep": keep, "prefix": p}
+    notes += [f"{', '.join(struck)}: struck as project scope, left out (their numbers stay taken)"] if struck else []
+    return {"text": text, "notes": notes, "homeless": homeless, "keep": keep, "prefix": p,
+            "struck_live": gone_live}
 
 
 def names_of(root: Path, gone: list[str]) -> list[tuple[str, int]]:
@@ -7904,7 +7954,7 @@ def cmd_merge_log(root: Path, apply: bool) -> int:
     problems = [f"M2 {f}: row {e['id']} has no status cell or no date, as the old M2 asked"
                 for f in old_registers(root)
                 for e in parse_register((root / f).read_text(errors="replace"), old_prefix(root))[0] if e["bad"]]
-    problems += log_problems(text, m["prefix"])
+    problems += log_problems(text, m["prefix"]) + m["struck_live"]
     print("Merging into " + LOG + ":")
     for f, what in sources:
         print(f"  {f} ({what}), " + ("kept for what has no home" if f in keep else "removed after"))
@@ -7952,6 +8002,248 @@ def cmd_merge_log(root: Path, apply: bool) -> int:
           + ("" if on_trunk_now or not said else
              f"; once it merges, `jig update --apply --merge-log` on {trunk} rewrites the board")
           + (", then repoint what names the old files" if refs else "") + ".")
+    return 0
+
+
+# ---------------------------------------------------------------- project sweep
+
+# Words that mark a decision as the project's: an order, a phase, a delivery queue. Words only,
+# since "phase" and "launch" have product meanings too: update lists, and the owner sorts.
+SCOPE_WORDS = re.compile(r"(?i)\bprioriti|\bphases?\b|\bmilestones?\b|\bdemo\b|\blaunch|"
+                         r"\buntil\b[^.]*\bpasses\b|\bpending delivery\b|\bsprints?\b|\bfirst,? then\b")
+# Plan and register files a repo kept before jig, by name, and where what each holds goes.
+PLAN_FILES = {
+    **{n: f"the project's plan: its items go to {ROADMAP}, parked work under ## {UP_NEXT} "
+          "naming the pages it touches; remove the file once it is empty"
+       for n in ("TODO.md", "BACKLOG.md", "STATUS.md", "PLAN.md", "ROADMAP.md")},
+    "FEATURES.md": "the product: each feature goes to its system's page under docs/, and each "
+                   f"row's who and why to a decision entry in {LOG}; remove the file once it is empty",
+    **{n: "rules for agents: what still binds goes to AGENTS.md (40 lines at most) or a skill; "
+          "remove the file once it is empty"
+       for n in ("RULES.md", "CONVENTIONS.md", "CONTRIBUTING.md")},
+}
+
+
+def product_pages(root: Path, files: list[str]) -> list[str]:
+    """The files that describe the product, as survey and update read them for the project: docs
+    pages, the decision log and a metarepo's entry files, less what not_docs sets aside."""
+    try:
+        not_docs = Board.load(root).data.get("not_docs") or []
+    except SystemExit:
+        not_docs = []
+    meta = load_meta(Board.trunk_name(root))
+    return [f for f in files if f.endswith(".md") and product_file(f, meta)
+            and (f == LOG or not matches(f, not_docs))]
+
+
+def plan_files(root: Path, files: list[str], reviewed: list[str]) -> list[tuple[str, str]]:
+    """The repo's plan and register files, each with where its content goes. ROADMAP.md is jig's
+    generated view where a roadmap exists, and a copy of jig carries its own RULES.md."""
+    try:
+        board = Board.load(root).data
+    except SystemExit:
+        board = {}
+    skip = named_pages(board)
+    not_docs = board.get("not_docs") or []
+    out = []
+    for f in files:
+        name = Path(f).name.upper()
+        what = next((v for k, v in PLAN_FILES.items() if k.upper() == name), None)
+        if (what is None or f in reviewed or f in skip or matches(f, not_docs)
+                or f.startswith((f"{DIR}/", ".claude/"))
+                or (root / f).parent.joinpath("jig.py").exists()
+                or (name == "ROADMAP.MD" and f == ROADMAP_VIEW and (root / ROADMAP).exists())):
+            continue
+        out.append((f, what))
+    return out
+
+
+def scope_candidates(root: Path) -> list[tuple[str, str]]:
+    """Decision entries, or before --merge-log a register's rows and notes, whose text reads as
+    the project's. The owner sorts each: strike, split or keep."""
+    ask = "strike, split or keep (/jig:update says how)"
+    out = []
+    text = (root / LOG).read_text(errors="replace") if (root / LOG).is_file() else ""
+    for e in log_entries(text, log_prefix_of(text)):
+        if m := SCOPE_WORDS.search(e["block"]):
+            out.append((LOG, f"{e['id']} {e['title']} reads as project scope (\"{m.group(0)}\"): {ask}"))
+    for f, _ in log_sources(root):
+        if f == CHANGELOG:
+            continue
+        entries, notes = parse_register((root / f).read_text(errors="replace"), old_prefix(root))
+        for e in entries:
+            body = " ".join([e["title"], *e["rest"]])
+            if e["word"] not in ("rejected", "struck") and (m := SCOPE_WORDS.search(body)):
+                out.append((f, f"row {e['id']} {clip(e['title'])} reads as project scope "
+                            f"(\"{m.group(0)}\"): {ask}; a struck row's Status cell says Struck, "
+                            "and --merge-log leaves it out"))
+        for para in notes:
+            if m := SCOPE_WORDS.search(" ".join(l for _, l in para)):
+                out.append((f, f"lines {para[0][0]}–{para[-1][0]} `{clip(para[0][1].strip())}` read as "
+                            f"project scope (\"{m.group(0)}\"): to {ROADMAP}, or delete them, before "
+                            "--merge-log"))
+    return out
+
+
+def project_review(root: Path, files: list[str], reviewed: list[str]) -> list[tuple[str, str]]:
+    """The project in the product, for update's Repo files to review: each page's Undefined
+    entry as the Up next item `--sweep` would write, project sections and plan prose on pages,
+    decision entries that read as scope, and the repo's plan and register files."""
+    sids = scope_ids(at_rev(Board.trunk_name(root), ROADMAP))
+    out = []
+    for s in undefined_sweep(root, files, at_rev(Board.trunk_name(root), ROADMAP)):
+        out += [(s["page"], f"## Undefined entry → {ROADMAP} ## {UP_NEXT}, on a yes "
+                 f"(`jig update --sweep`): {i['line']}") for i in s["items"]]
+        if s["prose"]:
+            out.append((s["page"], "## Undefined holds text besides its entries: move it by hand"))
+    for f in product_pages(root, files):
+        if not (root / f).is_file():
+            continue
+        text = (root / f).read_text(errors="replace")
+        heads = [] if f == LOG else [p for p in project_sections(text) if not p.startswith("## Undefined")]
+        out += [(f, p) for p in heads + project_prose(text, sids)]
+    return out + scope_candidates(root) + plan_files(root, files, reviewed)
+
+
+def undefined_sections(text: str) -> list[tuple[int, int]]:
+    """(start, end) line indexes of each `## Undefined` section, outside fenced code."""
+    lines, out, fence, start = text.splitlines(), [], False, None
+    for n, line in enumerate(lines):
+        if line.lstrip().startswith(("```", "~~~")):
+            fence = not fence
+        m = None if fence else re.match(r"^ {0,3}##[ \t]+(.*?)[ \t#]*$", line)
+        if m:
+            if start is not None:
+                out.append((start, n))
+            start = n if m.group(1).strip().lower() == "undefined" else None
+    if start is not None:
+        out.append((start, len(lines)))
+    return out
+
+
+def undefined_sweep(root: Path, files: list[str], roadmap: str) -> list[dict]:
+    """Each page's `## Undefined` section: {page, items: [{id, line, there}], prose, span}. An
+    entry `<what> — stops at <where>; parked <date>.` becomes the Up next item
+    `` - `<page>-<what>`: <what>; stops at <where>; parked <date> (touches <page>) ``. One the
+    roadmap already holds, same text and page, keeps its id and is `there`."""
+    have = parse_up_next(roadmap)
+    taken = {i["id"] for i in have}
+    out = []
+    for page in product_pages(root, files):
+        if page == LOG:
+            continue
+        text = (root / page).read_text(errors="replace") if (root / page).is_file() else ""
+        lines = text.splitlines()
+        for a, b in undefined_sections(text):
+            entries: list[str] = []
+            prose = False
+            for line in lines[a + 1:b]:
+                if re.match(r"^[-*+][ \t]+\S", line):
+                    entries.append(re.sub(r"^[-*+][ \t]+", "", line).strip())
+                elif line.strip() and entries and line[0] in " \t":
+                    entries[-1] += " " + line.strip()
+                elif line.strip() and not re.fullmatch(r"\s*<!--.*-->\s*", line):
+                    prose = True
+            items = []
+            for e in entries:
+                what = re.sub(r"\s+—\s+stops at\s+", "; stops at ", e, count=1).rstrip(" .")
+                same = next((i for i in have if i["what"] == what and page in i["touches"]), None)
+                if same:
+                    iid = same["id"]
+                else:
+                    words = re.findall(r"[a-z0-9]+", f"{Path(page).stem.lower()} {what.split(';')[0].lower()}")[:4]
+                    base_id = "-".join(words) or "parked"
+                    iid, k = base_id, 2
+                    while iid in taken:
+                        iid, k = f"{base_id}-{k}", k + 1
+                taken.add(iid)
+                items.append({"id": iid, "there": bool(same),
+                              "line": f"- `{iid}`: {what} (touches {page})"})
+            out.append({"page": page, "items": items, "prose": prose, "span": (a, b)})
+    return out
+
+
+def without_sections(text: str, spans: list[tuple[int, int]]) -> str:
+    """TEXT with each span of lines removed, and the blank lines it leaves at the end."""
+    lines = text.splitlines()
+    for a, b in sorted(spans, reverse=True):
+        lines[a:b] = []
+    return "\n".join(trimmed(lines)) + "\n"
+
+
+def with_up_next(text: str, items: list[str]) -> str:
+    """The roadmap TEXT with ITEMS appended under ## Up next, which is added when it has none."""
+    lines = text.splitlines()
+    heads, fence = [], False
+    for n, l in enumerate(lines):
+        if l.lstrip().startswith("```"):
+            fence = not fence
+        elif not fence and re.match(r"##\s+(.+?)\s*$", l):
+            heads.append(n)
+    at = next((n for n in heads if lines[n][2:].strip().lower() == UP_NEXT.lower()), None)
+    if at is None:
+        return "\n".join(trimmed(lines) + ["", f"## {UP_NEXT}", *items]).lstrip("\n") + "\n"
+    end = next((n for n in heads if n > at), len(lines))
+    while end > at + 1 and not lines[end - 1].strip():
+        end -= 1
+    return "\n".join(lines[:end] + items + lines[end:]) + "\n"
+
+
+def cmd_sweep(root: Path, apply: bool) -> int:
+    """`jig update --sweep`: each page's ## Undefined entries to Up next items, on the owner's
+    yes. The roadmap is written on trunk (R5); the pages wherever they may change, which in a
+    metarepo is a job (M4), so there the sweep is two runs: trunk first, then the job."""
+    if not (root / CONFIG).exists():
+        die("run `jig update --apply` first: the sweep runs on the current layout", 2)
+    trunk = Board.trunk_name(root)
+    on_trunk_now = git("branch", "--show-current") == trunk
+    roadmap = at_rev(trunk, ROADMAP)
+    found = undefined_sweep(root, tracked(root), roadmap)
+    if not found:
+        print("no ## Undefined section on any page: nothing to sweep")
+        return 0
+    new = [i for s in found for i in s["items"] if not i["there"]]
+    movable = [s for s in found if not s["prose"]]
+    pages_here = not ((root / META).exists() and on_trunk_now)
+    for s in found:
+        print(f"{s['page']}: ## Undefined" + (", kept: it holds text besides its entries, to move by hand"
+                                               if s["prose"] else ", removed" if pages_here else ""))
+        for i in s["items"]:
+            print(f"  → {ROADMAP} ## {UP_NEXT}: {i['line']}" + ("  (already there)" if i["there"] else ""))
+    job = (f"open a job for the pages on {trunk} (`jig open project-sweep --shares "
+           f"{' '.join(dict.fromkeys(s['page'] for s in movable))}`), and run `jig update --apply --sweep` in its "
+           "worktree: it removes the sections whose entries the roadmap holds")
+    if not apply:
+        print("\nDry run: nothing changed. On the owner's yes: jig update --apply --sweep"
+              + (f" on {trunk}" if new and not on_trunk_now else "")
+              + ("" if pages_here else f"; then, in a metarepo, the pages are a job's (M4): {job}"))
+        return 0
+    if git("status", "--porcelain", "--untracked-files=no"):
+        die("commit or stash tracked changes first: the sweep edits pages by name", 2)
+    if new and not on_trunk_now:
+        die(f"{ROADMAP} is edited on {trunk} only (R5): run `jig update --apply --sweep` there "
+            "first; it writes the items, then this run removes the sections", 2)
+    written = []
+    if new:
+        if not roadmap and (root / ROADMAP_VIEW).is_file():
+            die(f"{ROADMAP_VIEW} is the repo's own, and with {ROADMAP} it would be jig's generated "
+                f"view: move what it holds into {ROADMAP} first (`jig update` lists it)", 2)
+        text = roadmap or "# Roadmap\n"
+        (root / ROADMAP).write_text(with_up_next(text, [i["line"] for i in new]))
+        written.append(ROADMAP)
+    if pages_here:
+        # Every span is a line range of the page as read, so a page's sections go in one write.
+        spans: dict[str, list[tuple[int, int]]] = {}
+        for s in movable:
+            spans.setdefault(s["page"], []).append(s["span"])
+        for page, ss in spans.items():
+            (root / page).write_text(without_sections((root / page).read_text(errors="replace"), ss))
+            written.append(page)
+    if written:
+        git("add", "--", *written, check=True)
+    print(f"\nWritten {', '.join(written) or 'nothing'}. Staged, nothing committed: commit it here"
+          + (f"; `jig roadmap --write` regenerates {ROADMAP_VIEW}" if ROADMAP in written else "")
+          + ("" if pages_here else f". The pages are a job's in a metarepo (M4): {job}") + ".")
     return 0
 
 
@@ -8062,6 +8354,7 @@ def main(argv: list[str] | None = None) -> int:
     up = sub.add_parser("update", help="bring this repo to the current jig layout (dry run)")
     up.add_argument("--apply", action="store_true", help="make the changes the dry run lists")
     up.add_argument("--merge-log", action="store_true", help=f"on the owner's yes: merge CHANGELOG.md and the decision register into {LOG}")
+    up.add_argument("--sweep", action="store_true", help=f"on the owner's yes: move pages' ## Undefined entries to {UP_NEXT} in {ROADMAP}")
     hk = sub.add_parser("hook")
     hk.add_argument("name")
     hk.add_argument("rest", nargs="*")
