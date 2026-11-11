@@ -1085,6 +1085,15 @@ printf 'Source: chat d.md (staged as d.md)\n' >> docs/x/x.md
 msg="staging: once it does, the update resolves"
 expect_pass sh -c "$J staging resolve d.md && test ! -e .jig/staging/d.md"
 
+msg="staging: an update to AGENTS.md with no marked trunk commit is refused, naming the commit route"
+stage g.md this doc update AGENTS.md
+out=$($J staging resolve g.md 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'with .Source: chat g.md (staged as g.md). in the message' && ! echo \"\$0\" | grep -q 'keeping'" "$out"
+printf '\n- one more rule\n' >> AGENTS.md && git add AGENTS.md
+git commit -qm "agents: one more rule" -m "Source: chat g.md (staged as g.md)"
+msg="staging: once a trunk commit that changed AGENTS.md carries the mark, it resolves with no mark in the file"
+expect_pass sh -c "$J staging resolve g.md && test ! -e .jig/staging/g.md && ! grep -q 'staged as g.md' AGENTS.md"
+
 msg="staging: a new doc is written with a Source footer"
 stage n.md this doc new docs/n/n.md; $J staging resolve n.md >/dev/null
 expect_pass grep -q '^Source: chat n.md (staged as n.md)' docs/n/n.md

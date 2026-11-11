@@ -670,7 +670,9 @@ whose body says what to add, rename, reorder or drop, and why. Like a story, not
 decided: the hubnode shows the owner the diff, applies it on trunk on a yes, regenerates
 `ROADMAP.md`, and commits with the staged file's `Source: … (staged as <file>)` line in the
 message. `resolve` waits until a trunk commit that changed `.jig/roadmap.md` carries that line;
-the roadmap itself carries no provenance.
+the roadmap itself carries no provenance. An update to a root rules file (`AGENTS.md`,
+`CLAUDE.md`, `GEMINI.md`) resolves the same way, since that file is loaded on every turn; a page
+under `docs/` carries the line itself.
 
 A report on jig itself is `kind: feedback`, staged in the jig repo, whose header also names
 `from` (the reporting repo, required) and `jig_version`. When the jig repo isn't in `jig repos`,

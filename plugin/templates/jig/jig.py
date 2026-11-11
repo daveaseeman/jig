@@ -5754,6 +5754,14 @@ def cmd_staging(root: Path, args) -> int:
                     f"superseded by a new accepted entry that removes it in the same commit, never edited), "
                     f"then resolve again", 1)
             return done(f"entries confirmed in {dest}")
+        if dest in RULES_NAMES:
+            # A root rules file is loaded on every agent turn, so a provenance line there costs
+            # every load: like the roadmap, the trunk commit that changed it carries the mark.
+            trunk = Board.load(root, working_tree=True).trunk
+            if not git("log", trunk, "-F", f"--grep={mark}", "--format=%h", "--", dest):
+                die(f"needs judgment: edit {dest} on {trunk} with this file's content and commit "
+                    f"the edit with `{mark}` in the message, then resolve again", 1)
+            return done(f"applied to {dest} on {trunk}")
         if not landed(dest):
             die(f"needs judgment: edit {dest} with this file's content, keeping `{mark}` in it "
                 "as provenance, then resolve again", 1)
