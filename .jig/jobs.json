@@ -19,7 +19,7 @@
   },
   "stage-ask-access": {
     "spec": ".jig/specs/stage-ask-access.md",
-    "state": "ready",
+    "state": "gated",
     "after": [
       "decision-log"
     ],
