@@ -1736,6 +1736,8 @@ printf -- '- trunk\n' >> CHANGELOG.md && git commit -qam "trunk appends"
 msg="gate: with an append conflict between trunk and the note commit, the scratch checkout has trunk merged and no conflict, and the check is printed"
 out=$($J gate K 2>&1); s=.git/jig/worktrees/gate-K
 expect_pass sh -c "echo \"\$0\" | grep -q 'cd $s && ./.jig/scripts/check.sh' && test \"\$(git -C $s rev-list --parents -n1 HEAD | wc -w | tr -d ' ')\" = 3 && test -z \"\$(git -C $s status --porcelain)\" && ! grep -q '^<<<<<<<' $s/CHANGELOG.md && grep -q '^- K' $s/CHANGELOG.md && grep -q '^- trunk' $s/CHANGELOG.md" "$out"
+msg="gate: a second gate of K, with no mark between, replaces the leftover checkout"
+expect_pass sh -c "$J gate K >/dev/null 2>&1 && test -d $s"
 msg="mark: with a tracked edit in the gate checkout, jig mark K gated refuses, naming it"
 printf 'edit\n' >> $s/K.py
 out=$($J mark K gated 2>&1); rc=$?
@@ -1745,12 +1747,21 @@ msg="mark: jig mark K gated removes the gate checkout, untracked files and all"
 mkdir -p $s/venv && printf 'x\n' > $s/venv/x
 expect_pass sh -c "$J mark K gated >/dev/null 2>&1 && test ! -e $s && ! git worktree list | grep -q gate-K"
 git commit -qam "K gated"
+msg="open: a job name starting with gate- is refused"
+expect_refuse $J open gate-K
+msg="mark: a branch checkout at L's gate path is someone's work: mark refuses and leaves it, untracked files and all"
+wt .git/jig/worktrees/gate-L -b gate-L && printf 'x\n' > .git/jig/worktrees/gate-L/newwork.py
+out=$($J mark L gated 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'has branch gate-L checked out' && test -f .git/jig/worktrees/gate-L/newwork.py && python3 -c \"import json,sys; sys.exit(json.load(open('.jig/jobs.json'))['L']['state'] != 'claimed')\"" "$out"
+git worktree remove --force .git/jig/worktrees/gate-L && git branch -q -D gate-L
 for j in K L M; do ( cd "$MS/.git/jig/worktrees/$j" && [ $j = M ] || $J sync >/dev/null 2>&1 ); done
 ( cd "$MS/.git/jig/worktrees/M" && git -c merge.conflictStyle=diff3 merge -q main >/dev/null 2>&1
   printf -- '# Changelog\n- trunk\n- M\n' > CHANGELOG.md && printf 'x=2\n' > M.py && git add -A && git commit -q --no-edit )
 ( cd "$MS/.git/jig/worktrees/L" && printf 'x=2\n' > L.py && git commit -qam "L after its note" )
 msg="merge: a job synced after its handoff, append conflict resolved by the sync, merges with no new handoff"
-$J gate K >/dev/null 2>&1
+msg="gate: a gate folder deleted by hand is pruned, so the next gate checks out there again"
+$J gate K >/dev/null 2>&1; rm -rf $s
+expect_pass sh -c "$J gate K >/dev/null 2>&1 && test -d $s"
 expect_pass $J merge K
 msg="merge: jig merge K, gated again and never marked, leaves no gate checkout"
 expect_pass sh -c "test ! -e $s && ! git worktree list | grep -q gate-K"
@@ -2703,6 +2714,9 @@ msg="gate: a check.sh that isn't executable is printed as bash ./.jig/scripts/ch
 out=$($J gate L 2>&1); git worktree remove --force .git/jig/worktrees/gate-L 2>/dev/null
 expect_pass sh -c "echo \"\$0\" | grep -q '&& bash ./.jig/scripts/check.sh'" "$out"
 $J merge K >/dev/null 2>&1
+msg="gate: M conflicts with trunk in common.txt: the gate stops, naming it, and removes its own checkout"
+out=$($J gate M 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'needs a hand in common.txt' && echo \"\$0\" | grep -q 'The checkout is removed' && test ! -e .git/jig/worktrees/gate-M && ! git worktree list | grep -q gate-M" "$out"
 msg="merge: L, unsynced, conflicts only in CHANGELOG.md: refused, naming jig sync, with trunk left clean"
 out=$($J merge L 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig sync. the job, then merge' && ! git rev-parse -q --verify MERGE_HEAD && test -z \"\$(git status --porcelain --untracked-files=no)\" && grep -q '\"L\"' .jig/jobs.json" "$out"
