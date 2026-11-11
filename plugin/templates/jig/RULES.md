@@ -658,15 +658,19 @@ source is in it; a file for another repo moves into that repo's staging, found t
 `jig repos`. `jig staging drop <file>` deletes it and records nothing: it was never committed.
 
 A batch whose files depend on each other says so in each file's optional `after:` header: the
-staged file names it waits for. `jig staging` lists files so each comes after those it names (name
-order otherwise), and marks an `after` that names a file neither staged nor carried by a landed
-file. `resolve` refuses a file while one it waits for is still staged. `jig staging check <file>…`
-checks a batch's headers before it is staged, from outside any repo: an unknown kind, a missing
-key, an absolute destination, a target `jig repos` doesn't list, an `after` naming no file in the
-batch or the target's staging. A spec resolved new, whose `## Workflow` is empty or missing, gets
-`jig workflow`'s lines, as `/jig:spec` writes them. `jig repos` and `jig repos add` warn when two
-names are equal once case and punctuation are dropped, printing both paths: a file staged for one
-lands in the other.
+staged file names it waits for (`a` reads as `a.md`). `jig staging` lists files so each comes after
+those it names (name order otherwise), and fails on a cycle, naming its members and the files that
+wait on it. A waited-for file that isn't staged is gone: resolved, dropped or forwarded. `resolve`
+refuses a file while one it waits for is still staged, naming the cycle if there is one.
+`jig staging check <file>…` checks a batch's headers before it is staged, from outside any repo,
+and fails on an unknown kind, a missing key, a destination outside the target (absolute, or
+climbing out with `..`, as `resolve` judges it), a target `jig repos` doesn't list (case ignored, as
+`resolve` matches it), an `after` naming no file in the batch or the target's staging, or a cycle.
+A spec resolved new, whose `## Workflow` is empty or missing, gets `jig workflow`'s lines, as
+`/jig:spec` writes them; while `jig workflow` refuses, so does `resolve`. `jig repos`, `repos add`
+and `repos rename` warn when two names are equal once case and punctuation are dropped, printing
+both paths, and `check` warns on a target that has such a twin: a file staged for one lands in the
+other. The warning doesn't fail anything, since both may be meant.
 
 A feature request is `kind: feature-request`: the owner's own words for what the product
 should do ("I want it to do xyz"), with no required shape. A story names who wants what and

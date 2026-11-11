@@ -4285,6 +4285,10 @@ def repo_path(name: str) -> Path | None:
     for e in repos.values():
         if name in repo_identity(Path(e["path"])):
             return Path(e["path"])
+    # A human types the name, so `App` finds `app`, as a staged header's target does.
+    for n, e in repos.items():
+        if name_in(name, {n} | repo_identity(Path(e["path"]))):
+            return Path(e["path"])
     return None
 
 
@@ -4353,6 +4357,7 @@ def cmd_repos(root: Path, args) -> int:
         repos[new] = repos.pop(old)
         save_repos(repos)
         print(f"{old} is now {new} → {repos[new]['path']}")
+        warn_near_duplicates(repos, new)
         return 0
     for name, e in sorted(repos.items()):
         missing = "" if Path(e["path"]).is_dir() else "   (missing)"
@@ -5659,16 +5664,20 @@ def decision_id(cell: str) -> str:
 
 
 def after_names(head: dict) -> list[str]:
-    """The staged files this one waits for: names, comma- or space-separated."""
-    return [Path(n).name for n in re.split(r"[,\s]+", head.get("after", "")) if n]
+    """The staged files this one waits for: names, comma- or space-separated, a YAML list's
+    brackets and quotes tolerated, `a` read as `a.md` since staged files are Markdown."""
+    names = [Path(n).name for n in re.split(r"[,\s\[\]'\"]+", head.get("after", "")) if n]
+    return [n if n.endswith(".md") else f"{n}.md" for n in names]
 
 
-def batch_order(files: list[Path]) -> tuple[list[Path], set[str]]:
+def batch_order(files: list[Path]) -> tuple[list[Path], dict[str, set[str]], set[str]]:
     """Files in an order where each comes after those its `after:` names, name order within a
-    level, and the names caught in a cycle, which go last: no order satisfies them."""
+    level; then, last since no order gets them through, each file in an `after` cycle with the
+    cycle's members, and the files that only wait on one."""
     names = {f.name: f for f in files}
-    waits = {f.name: {n for n in after_names(read_staged(f)[0]) if n in names and n != f.name}
+    edges = {f.name: {n for n in after_names(read_staged(f)[0]) if n in names and n != f.name}
              for f in files}
+    waits = {n: set(w) for n, w in edges.items()}
     out: list[Path] = []
     while waits:
         ready = sorted(n for n, w in waits.items() if not w)
@@ -5679,34 +5688,53 @@ def batch_order(files: list[Path]) -> tuple[list[Path], set[str]]:
             del waits[n]
         for w in waits.values():
             w.difference_update(ready)
-    return out + [names[n] for n in sorted(waits)], set(waits)
+
+    def reach(n: str) -> set[str]:
+        seen, todo = set(), list(waits.get(n, ()))
+        while todo:
+            m = todo.pop()
+            if m not in seen:
+                seen.add(m)
+                todo += waits.get(m, ())
+        return seen
+    reaches = {n: reach(n) for n in waits}
+    cycles = {n: {m for m in r if n in reaches[m]} for n, r in reaches.items() if n in r}
+    return out + [names[n] for n in sorted(waits)], cycles, set(waits) - set(cycles)
 
 
-def landed_anywhere(name: str) -> bool:
-    """Whether a file staged as NAME left a mark: in a tracked file, or in a commit message (a
-    roadmap change). Decision entries and dropped files leave none."""
-    mark = f"(staged as {name})"
-    return bool(git("grep", "-lF", mark, "--", ".") or git("log", "-F", f"--grep={mark}",
-                                                             "--format=%h", "-1"))
+def stuck_note(name: str, cycles: dict[str, set[str]], blocked: set[str]) -> str:
+    if name in cycles:
+        return f"after: in a cycle with {', '.join(sorted(cycles[name] - {name}))}"
+    return "after: waits on a cycle" if name in blocked else ""
+
+
+def escapes(dest: str) -> bool:
+    """A destination is relative to the target's root and stays under it: no absolute path,
+    no home folder, no drive, no `..` climbing out. `resolve` and `check` judge it alike."""
+    return (dest.startswith(("/", "~", "\\")) or bool(re.match(r"[A-Za-z]:", dest))
+            or os.path.normpath(dest).split(os.sep)[0] == "..")
 
 
 def fill_workflow(root: Path, text: str) -> tuple[str, str]:
     """A spec staged from a chat can't run `jig workflow` against this repo's config, so its
-    `## Workflow` arrives empty: resolve writes the lines /jig:spec would. A section that holds
-    anything but comments is the author's, and stays."""
+    `## Workflow` arrives empty: resolve writes the lines /jig:spec would, or refuses as it
+    does. A section that holds anything but comments is the author's, and stays."""
+    head = re.search(r"^##[ \t]+workflow\b.*$", text, re.I | re.M)
+    nxt = re.search(r"^## ", text[head.end():], re.M) if head else None
+    body = text[head.end():head.end() + nxt.start()] if nxt else text[head.end():] if head else ""
+    if head and re.sub(r"<!--.*?-->", "", body, flags=re.S).strip():
+        return text, ""
     steps, bad = workflow_steps(Board.load(root, working_tree=True).data)
     if bad:
-        return text, f"; ## Workflow left empty, as `jig workflow` refuses: {'; '.join(bad)}"
+        die("\n  ".join(["the spec's ## Workflow is empty, and `jig workflow` refuses:", *bad,
+                         f"fix {CONFIG}, then resolve again"]), 1)
     lines = "\n".join(f"{k}: tier {v['tier']}, effort {v['effort']}" for k, v in steps.items())
-    sec = re.search(r"^## Workflow[ \t]*\n(.*?)(?=^## |\Z)", text, re.S | re.M)
-    if not sec:
+    if not head:
         return text.rstrip("\n") + f"\n\n## Workflow\n{lines}\n", "; ## Workflow added"
-    if re.sub(r"<!--.*?-->", "", sec.group(1), flags=re.S).strip():
-        return text, ""
-    body = sec.group(1).rstrip("\n")
-    body = f"{body}\n{lines}\n" if body.strip() else f"{lines}\n"
-    rest = text[sec.end(1):]
-    return text[:sec.start(1)] + body + ("\n" + rest if rest else ""), "; ## Workflow filled"
+    kept = body.strip("\n")
+    rest = text[head.end() + nxt.start():] if nxt else ""
+    return (text[:head.end()] + "\n" + (f"{kept}\n" if kept else "") + f"{lines}\n"
+            + (f"\n{rest}" if rest else "")), "; ## Workflow filled"
 
 
 def cmd_staging_check(args) -> int:
@@ -5716,6 +5744,7 @@ def cmd_staging_check(args) -> int:
     if not files:
         die("which files? jig staging check <file>…", 2)
     batch = {f.name for f in files}
+    _, cycles, blocked = batch_order([f for f in files if f.is_file()])
     bad = False
     for f in files:
         if not f.is_file():
@@ -5723,30 +5752,37 @@ def cmd_staging_check(args) -> int:
             bad = True
             continue
         head, _, problems = read_staged(f)
+        notes = []
         dest = head.get("destination", "")
-        if dest.startswith(("/", "~")) or re.match(r"[A-Za-z]:[\\/]", dest):
-            problems.append(f"destination {dest!r} is absolute: give a path inside the target")
+        if dest and escapes(dest):
+            problems.append(f"destination {dest!r} is outside the target: give a path relative "
+                            "to its root")
         target = head.get("target", "")
         there = repo_path(target) if target and target != "this" else None
         if target and target != "this" and not there:
             problems.append(f"target {target!r} isn't in {repos_file()} (`jig repos` lists them)")
+        # A warning only: the owner may keep both names on purpose.
         for a, b in near_duplicates(load_repos()):
-            if target in (a, b):
-                problems.append(f"target {target!r}: {a} and {b} are both in the repos list; "
-                                "make sure it is the one you mean")
+            if name_in(target, {a, b}):
+                notes.append(f"target {target!r}: {a} and {b} are both in the repos list; "
+                             "make sure it is the one you mean")
         have = batch | ({p.name for p in staged_files(there)} if there else set())
         problems += [f"after {n}: not in this batch or the target's staging"
                      for n in after_names(head) if n not in have]
+        if stuck := stuck_note(f.name, cycles, blocked):
+            problems.append(f"{stuck}: no order resolves it; fix one header's after:")
         print(f"{f.name}: {'ok' if not problems else ''}".rstrip())
         for p in problems:
             print(f"    {p}")
+        for n in notes:
+            print(f"    warning: {n}")
         bad |= bool(problems)
     return 1 if bad else 0
 
 
 def cmd_staging(root: Path, args) -> int:
     if args.action not in ("resolve", "drop"):
-        files, cycle = batch_order(staged_files(root))
+        files, cycles, blocked = batch_order(staged_files(root))
         waiting = fallback_files()
         if not files and not waiting:
             print(f"nothing staged in {STAGING}")
@@ -5757,7 +5793,6 @@ def cmd_staging(root: Path, args) -> int:
             why = "" if repo_path("jig") else " (the jig repo isn't in repos.json)"
             print(f"{len(waiting)} waiting in {feedback_dir()}{why}:")
         bad = False
-        here = {f.name for f in files + waiting}
         for f in files + waiting:
             head, _, problems = read_staged(f)
             origin = f", from {head['from']}" if head.get("from") else ""
@@ -5767,13 +5802,11 @@ def cmd_staging(root: Path, args) -> int:
             for p in problems:
                 print(f"      {p}")
                 bad = True
-            if f.name in cycle:
-                print(f"      after: in a cycle with {', '.join(sorted(cycle - {f.name}))}")
+            # A waited-for file that isn't staged is gone: resolved, dropped or forwarded.
+            # `check`, which sees the batch before it is staged, catches a misspelt name.
+            if stuck := stuck_note(f.name, cycles, blocked):
+                print(f"      {stuck}")
                 bad = True
-            # A note, not a failure: a resolved decisions file or a dropped one leaves no mark.
-            for n in after_names(head):
-                if n not in here and not landed_anywhere(n):
-                    print(f"      after {n}: not staged, and nothing here carries its mark")
         return 1 if bad else 0
 
     if not args.file:
@@ -5797,8 +5830,11 @@ def cmd_staging(root: Path, args) -> int:
     still = [n for n in after_names(head)
              if n != path.name and ((main_root() / STAGING / n).exists() or (feedback_dir() / n).exists())]
     if still:
-        die(f"{path.name} waits for {', '.join(still)}, still staged: resolve or drop "
-            f"{'it' if len(still) == 1 else 'them'} first", 1)
+        _, cycles, blocked = batch_order(staged_files(main_root()) + fallback_files())
+        stuck = stuck_note(path.name, cycles, blocked)
+        die(f"{path.name} waits for {', '.join(still)}, still staged: "
+            + (f"{stuck}, so no order resolves it; fix one header's after:" if stuck else
+               f"resolve or drop {'it' if len(still) == 1 else 'them'} first"), 1)
     kind, change, dest = (head.get(k, "") for k in ("kind", "change", "destination"))
     mark = provenance(head, path)
 
@@ -5814,7 +5850,7 @@ def cmd_staging(root: Path, args) -> int:
     def inside(rel: str) -> Path:
         """A destination stays inside the repo: no absolute path, no climbing out with .."""
         out = (root / rel).resolve()
-        if Path(rel).is_absolute() or not out.is_relative_to(root.resolve()):
+        if escapes(rel) or not out.is_relative_to(root.resolve()):
             die(f"destination {rel!r} is outside this repo: give a path relative to its root", 2)
         return out
 

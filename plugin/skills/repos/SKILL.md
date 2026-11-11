@@ -26,7 +26,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" repos <args>
   <new>`** renames any entry. A rename is an alias in this list only. The repo's own name
   still finds it, so a pararepo citing a metarepo you renamed keeps working.
 
-Both the list and `add` warn when two names are equal once case and punctuation are dropped
+The list, `add` and `rename` warn when two names are equal once case and punctuation are dropped
 (`NorthStar`, `north-star`), printing both paths. Show the warning: ask whether both are meant,
 and offer a `rename` so the two read apart.
 

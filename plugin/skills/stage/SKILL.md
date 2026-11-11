@@ -45,12 +45,15 @@ that spec carries the mark.
 - **Order.** When a file needs another landed first, put that file's name in its `after:`
   header: a roadmap change before a spec that takes its scopes, a spec before the doc that
   describes it. `jig staging` lists the batch in that order, and `resolve` refuses a file while
-  one it waits for is still staged. Leave `after:` out when the files are independent.
-- **Check before you say it's staged.** Run the plugin's copy on every file you wrote:
+  one it waits for is still staged. Leave `after:` out when the files are independent, and never
+  make two files wait on each other.
+- **Check before you say it's staged.** Run the plugin's copy on every file of the batch at once:
   `python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" staging check <file>…`. It runs outside
-  any repo and names each bad header: an unknown kind, a missing key, an absolute destination, a
-  target `jig repos` doesn't list or one with a near-identical name beside it, an `after` naming
-  no file in the batch. Fix each, run it again, and say the batch is staged only once it passes.
+  any repo and names each bad header: an unknown kind, a missing key, a destination outside the
+  target, a target `jig repos` doesn't list, an `after` naming no file in the batch, a cycle. Fix
+  each, run it again, and say the batch is staged only once it passes. A warning that the target
+  has a near-identical name beside it doesn't fail the check: confirm with the user that the
+  target is the repo they mean.
 - **Workflow.** Leave a spec's `## Workflow` empty: you can't run `jig workflow` against the
   target's config, and `resolve` fills it.
 - **A sweep** that skips work the target already has must read its `.jig/specs/`,
@@ -60,9 +63,11 @@ that spec carries the mark.
 ## Resolving
 
 `python3 .jig/jig.py staging` lists what's there, each file after the ones its `after:`
-names: resolve them in that order. A file marked `after <name>: not staged` waits for one that
-was dropped or never staged; ask whether it still stands. A new spec whose `## Workflow` is
-empty or missing resolves with `jig workflow`'s lines in it. For each file, with the user:
+names: resolve them in that order. A file whose `after` names one no longer staged is free to
+resolve: that file was resolved, dropped or forwarded. A cycle is listed as one: show the
+user, and fix one header's `after:` with them. A new spec whose `## Workflow` is
+empty or missing resolves with `jig workflow`'s lines in it, or is refused while
+`jig workflow` refuses. For each file, with the user:
 
 - **spec / doc, new**: `jig staging resolve <file>` writes it, with its source.
 - **spec / doc, update**: find the page — the path, else search for the filename, else ask
