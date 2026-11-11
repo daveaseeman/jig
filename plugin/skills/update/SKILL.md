@@ -55,6 +55,22 @@ Then make every line the proposal names in one commit — the `git mv`s, the doc
 `contract_paths`, the stale lines and, in a pararepo, a `BUFFER.md` row per cached pointer. Carry
 out each finding on a yes. Never propose adding a line that restates `.jig/RULES.md`: point at it.
 
+A root **`CHANGELOG.md`** and a **decision register** (`DECISIONS.md`, or a metarepo's entry file
+of decision rows) merge into `.jig/decisions.md`, the one log (`.jig/RULES.md`, Decision log). Run
+`jig update --merge-log` and show what it prints: where each row lands, each rejected row it
+leaves out, each piece with no home (it stays in its old file, to move by hand), the
+`entry_files`, `append_files` and counter rewrites, the files that still name the old ones, and
+the log itself. Say each removal out loud. On a yes:
+
+- **in a metarepo**, the merge is a job, as any change to its files is: ask the hubnode to open
+  one (`jig open merge-log --shares CHANGELOG.md <register>`), run `--apply --merge-log` in its
+  worktree and commit there, and hand it off and merge it like any job. Then, on trunk,
+  `--apply --merge-log` again rewrites the board (`append_files`, the counter): commit that;
+- **elsewhere**, `--apply --merge-log` on trunk does all of it: commit it there.
+
+Then, on a yes each, move what had no home and repoint the files it named. A refusal names rows the merged log wouldn't
+pass M2 with: show them, and fix the register with the owner first.
+
 A root **`GLOSSARY.md`**: the glossary's home is `README.md § Glossary` now. On a yes, move each
 term into that section as a `### <term>` heading, its text below it, delete the file, replace it
 with `README.md` in a metarepo's `entry_files`, and repoint the lines that name it. In a metarepo

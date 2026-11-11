@@ -34,7 +34,7 @@ STATES = ["claimed", "building", "ready", "gated", "parked"]
 # The layout this copy of jig writes into the config's "version". Any change that adds a
 # LAYOUT row, a config default or an update STEP bumps it. Nothing branches on it except
 # update's refusal to take a newer repo back to an older jig.
-STAMP = 9
+STAMP = 10
 BOARD_DEFAULTS = {
     "version": STAMP,
     "name": "",            # init and update fill it with the folder name; staging's targets match it
@@ -297,6 +297,28 @@ def has_log(trunk: str) -> bool:
     return bool(git("ls-tree", "--name-only", trunk, "--", LOG))
 
 
+def holds_old_log(text: str, path: str, prefix: str | None) -> bool:
+    """Whether a file still is a log from before .jig/decisions.md: a CHANGELOG.md with its
+    sections, or a register with rows. What the merge leaves behind (a preamble, a note) isn't."""
+    if path == CHANGELOG:
+        return bool(re.search(r"^## ", text, re.M))
+    return bool(rows_in(text, prefix))
+
+
+def migrated_here(trunk: str, staged: bool, meta: dict | None) -> bool:
+    """This change is the merge into the log: it adds the log and no longer holds CHANGELOG.md's
+    sections or a register's rows. A change that adds a log beside the old files is no merge,
+    and the old rules still judge it."""
+    if not in_index(LOG, staged):
+        return False
+    entry = (meta or {}).get("entry_files", [])
+    prefix = (meta or {}).get("decision_prefix")
+    olds = [f for f in git("ls-tree", "-r", "--name-only", trunk).splitlines()
+            if f == CHANGELOG or (f.endswith(".md") and not f.startswith(f"{DIR}/")
+                                  and (f in entry or Path(f).name.lower() == "decisions.md"))]
+    return not any(holds_old_log(in_index(f, staged), f, prefix) for f in olds)
+
+
 def changelog_only_grows(trunk: str, staged: bool) -> bool:
     """CHANGELOG.md is still there and this change deletes none of its lines."""
     if not in_index(CHANGELOG, staged):
@@ -378,6 +400,11 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
                 for k, v in held_numbers(l).items():
                     held.setdefault(k, set()).update(v)
                 who = "the job being merged"
+        # The numbers the merge itself gave the job's new entries are the job's too.
+        given = numbers_given(trunk) if tips else set()
+        for k, v in (board.data.get("reserve") or {}).items():
+            if given and isinstance(v, dict) and matches(LOG, v.get("files") or []):
+                held.setdefault(k, set()).update(given)
     head = git("rev-parse", "HEAD") if job is None and not branch else ""
     if head and subprocess.run(["git", "merge-base", "--is-ancestor", head, trunk],
                                capture_output=True).returncode:
@@ -579,7 +606,11 @@ def cmd_init(root: Path, args) -> int:
     if not (root / JOBS).exists():
         (root / JOBS).write_text("{}\n")
         print(f"wrote {JOBS}")
-    if not (root / LOG).exists():
+    if not (root / LOG).exists() and old_log_files(root):
+        # A seed here would leave nothing for the merge to fill: the old files go in first.
+        print(f"{LOG} not written: {', '.join(f for f, _ in old_log_files(root))} merge into it "
+              "with `jig update --merge-log`, on the owner's yes")
+    elif not (root / LOG).exists():
         (root / LOG).write_text(LOG_SEED)
         print(f"wrote {LOG}")
     rc = 0
@@ -2225,7 +2256,8 @@ COORDINATION = [
       ".github/copilot-instructions.md", "GEMINI.md", ".kiro/steering"]),
     ("decision records (ADRs)", f"{DIR}/specs/ decisions + {WORKAROUNDS}",
      ["docs/adr", "docs/decisions", "adr", "decisions"]),
-    ("changelog", "kept; merges are recorded by git", ["CHANGELOG.md", "CHANGES.md", "HISTORY.md"]),
+    ("changelog", f"{DIR}/decisions.md: `jig update --merge-log` merges a root CHANGELOG.md into it",
+     ["CHANGELOG.md", "CHANGES.md", "HISTORY.md"]),
     ("handoff / round records", f"{DIR}/handoffs/",
      [".claude/handoffs", "handoffs", "docs/handoffs", "records", "docs/records"]),
     ("skills directory", ".claude/skills/ (kept as is)",
@@ -2777,10 +2809,12 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
                            f"(`jig reviewed`), then merge")
         return out
     entry = meta["entry_files"]
-    logged = has_log(trunk)
+    # The log's rules start once trunk has it, or with the change that merges the old files into
+    # it; a branch that only adds a log beside them can't switch the old rules off.
+    by_log = has_log(trunk) or migrated_here(trunk, staged, meta)
     # M2, before the log: a decision row carries its status and date
     rx = re.compile(rf"^\+\s*\|\s*{re.escape(meta['decision_prefix'])}\d+\s*\|(.*)$", re.M)
-    md = [p for p in paths if p.endswith(".md")] if not logged else []
+    md = [p for p in paths if p.endswith(".md")] if not by_log else []
     diff = git("diff", "-U0", base(trunk), *(["--cached"] if staged else []), "--", *md) if md else ""
     for m in rx.finditer(diff):
         cells = [c.lower() for c in table_cells(m.group(1))]
@@ -2800,14 +2834,14 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
              or "HEAD")
     branch_paths = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", since,
                        *(["--cached"] if staged else [])).splitlines()
-    record = LOG if logged else CHANGELOG
+    record = LOG if by_log else CHANGELOG
     cited = [p for p in branch_paths if p and p != record and is_entry(p, entry)]
     # A README's prose is the metarepo's own; pararepos cite only its Glossary section.
     if "README.md" in cited and glossary_text(at_rev(since, "README.md")) == glossary_text(
             in_index("README.md", staged)):
         cited.remove("README.md")
     if cited and (record not in branch_paths or not in_index(record, staged)):
-        out.append(f"M3 {', '.join(cited)} changed: add a line{' or an entry' if logged else ''} "
+        out.append(f"M3 {', '.join(cited)} changed: add a line{' or an entry' if by_log else ''} "
                    f"to {record} under ## Unreleased")
     # M4 nothing lands on main except merges; jig's own bookkeeping (the board, handoffs) is
     # the exception, since the hubnode keeps it on trunk. The decision log isn't bookkeeping:
@@ -2968,7 +3002,7 @@ LOG_SEED = (
     "## Open\n\n## Unreleased\n")
 LOG_STATUSES = ("Accepted", "Open", "Proposed")
 CHANGE_GROUPS = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
-RELEASE_HEADING = re.compile(r"^## (v\d+\.\d+\.\d+) - (\d{4}-\d{2}-\d{2})( \[YANKED\])?[ \t]*$")
+RELEASE_HEADING = re.compile(r"^## (v\d+\.\d+(?:\.\d+)?) - (\d{4}-\d{2}-\d{2})( \[YANKED\])?[ \t]*$")
 # A status belongs on the line under the heading, where it can change without renaming the entry.
 HEADING_STATUS = re.compile(rf"(?i)(?:^(?:{'|'.join(DECISION_STATUSES)})\s*[:—–-]|[(\[]\s*(?:"
                             rf"{'|'.join(DECISION_STATUSES)})\b|(?:\s[—–-]|:)\s*(?:{'|'.join(DECISION_STATUSES)})"
@@ -3033,9 +3067,12 @@ def log_entries(text: str, prefix: str) -> list[dict]:
 
 
 def status_parts(status: str, prefix: str) -> tuple[str, str, str, list[str]] | None:
-    """(status, who, date, superseded ids) from `Accepted (Dave, 2026-11-10). Supersedes D-007.`"""
+    """(status, who, date, superseded ids) from `Accepted (Dave, 2026-11-10). Supersedes D-007.`
+    Who is any text before the last date, as a register row's note was: `Proposed (runtime team,
+    from the 2026-10-27 research, 2026-10-27).` So every row the old M2 took converts to a line
+    this one takes."""
     ids = log_id_re(prefix)
-    m = re.fullmatch(rf"({'|'.join(LOG_STATUSES)}) \((?:([^(),]+), )?(\d{{4}}-\d{{2}}-\d{{2}})\)\."
+    m = re.fullmatch(rf"({'|'.join(LOG_STATUSES)}) \((?:(.+), )?(\d{{4}}-\d{{2}}-\d{{2}})\)\."
                      rf"(?: Supersedes ({ids}(?:,? (?:and )?{ids})*)\.)?", status)
     if not m:
         return None
@@ -3178,7 +3215,13 @@ def number_placeholders(root: Path, trunk: str) -> list[str]:
     if not found:
         return []
     nums = [m.group(1) for m in re.finditer(rf"^### {re.escape(prefix)}(\d+)", log, re.M)]
-    top = max((int(n) for n in nums), default=0)
+    # Above every number the log names now or ever did, so a rejected entry's is never given
+    # again, and above every number an open job holds from a counter over the log.
+    board = Board.load(root)
+    held = [n for k, v in (board.data.get("reserve") or {}).items()
+            if isinstance(v, dict) and matches(LOG, v.get("files") or [])
+            for j in board.jobs.values() for n in held_numbers(j).get(k, ())]
+    top = max([highest_id(log, prefix, history=True), *held])
     width = max([3, *(len(n) for n in nums)])
     given = {p: f"{prefix}{top + i:0{width}d}" for i, p in enumerate(dict.fromkeys(found), 1)}
     ph = re.compile(rf"(?<![\w-])(?:{'|'.join(map(re.escape, given))})(?![\w-])")
@@ -3192,6 +3235,21 @@ def number_placeholders(root: Path, trunk: str) -> list[str]:
     if msg.is_file():
         msg.write_text(msg.read_text().rstrip("\n") + "\n\nNumbered: " + ", ".join(lines) + "\n")
     return lines
+
+
+def numbers_given(trunk: str) -> set[int]:
+    """In a merge on trunk, the numbers `jig merge` gave the job's D-?<slug> entries: an index
+    entry whose title is a placeholder entry's in what is merged in, numbered where that side
+    has no such number. A counter over the log takes them as the job's own (R6)."""
+    merging = merging_commits()
+    if len(merging) != 1:
+        return set()
+    prefix = log_prefix(trunk)
+    theirs = log_entries(git("show", f"{merging[0]}:{LOG}"), prefix)
+    titles = {e["title"] for e in theirs if "?" in e["id"]}
+    had = {e["id"] for e in theirs}
+    return {int(e["id"][len(prefix):]) for e in log_entries(git("show", f":{LOG}"), prefix)
+            if e["title"] in titles and e["id"] not in had and e["id"][len(prefix):].isdigit()}
 
 
 def head_texts_at(rev: str, paths: list[str]) -> list[tuple[str, str]]:
@@ -4016,9 +4074,26 @@ def terms_changed(loc: Path, old: str, new: str) -> list[str]:
     # The README's other headings (Install, Usage) are prose, not terms: only its Glossary counts.
     readme = "README.md" in paths
     log = LOG in paths
-    paths = [f for f in paths if f not in ("README.md", LOG)]
+    regs = merged_registers(loc, old, new)
+    paths = [f for f in paths if f not in ("README.md", LOG, *regs)]
     found = []
-    if log:
+    if regs:
+        # Across the merge into the log the same decisions changed shape, not meaning: only an
+        # entry whose title or status differs from its row is news.
+        prefix = decision_prefix_at(loc, new)
+        def shape(title: str, status: str) -> tuple[str, str]:
+            return title.strip(), re.sub(r" Supersedes .*$", "", status.strip())
+        was = {decision_id(e["id"]): shape(e["title"], e["status"]) for r in regs
+               for e in parse_register(git("show", f"{old}:{r}", cwd=str(loc)), decision_prefix_at(loc, old))[0]
+               if e["word"] != "rejected"}
+        entries = log_entries(git("show", f"{new}:{LOG}", cwd=str(loc)), prefix)
+        now = {decision_id(e["id"]): (e["id"], shape(e["title"], e["status"]), e["status"]) for e in entries}
+        for i, (shown, sh, status) in now.items():
+            if was.get(i) != sh:
+                found.append(shown)
+                found += (status_parts(status, prefix) or ("", "", "", []))[3]
+        found += [i for i in was if i not in now]
+    elif log:
         # An entry added, edited or removed, and what a new entry supersedes: a pararepo cites
         # the old id, and needs to hear that it no longer holds.
         prefix = decision_prefix_at(loc, new)
@@ -4214,12 +4289,24 @@ def newer_release(root: Path, loc: Path, name: str, pin: str, latest: str) -> li
             f"those alone as `meta: {name} {pin} → {latest}` with this report as the body."]
 
 
+def merged_registers(loc: Path, old: str, new: str) -> list[str]:
+    """The registers OLD held rows in that the merge into the log, between OLD and NEW, took."""
+    if git("ls-tree", "--name-only", old, "--", LOG, cwd=str(loc)) or \
+            not git("ls-tree", "--name-only", new, "--", LOG, cwd=str(loc)):
+        return []
+    prefix = decision_prefix_at(loc, old)
+    return [f for f in entry_paths(old, str(loc)) if f != LOG and f.endswith(".md")
+            and rows_in(git("show", f"{old}:{f}", cwd=str(loc)), prefix)]
+
+
 def entries_moved(loc: Path, old: str, new: str) -> list[tuple[str, str | None]]:
     """Each entry file at OLD that NEW lacks, with where it went (None: removed). git's rename
-    detection names the new path, so no changelog line has to be read for it."""
+    detection names the new path, so no changelog line has to be read for it. A register the
+    merge into the log took went there."""
     paths = sorted((set(entry_paths(old, str(loc))) | set(entry_paths(new, str(loc)))) - {CHANGELOG})
     if not paths:
         return []
+    regs = merged_registers(loc, old, new)
     out = []
     for line in git("-c", "core.quotePath=false", "--literal-pathspecs", "diff", "-M", "--name-status",
                     old, new, "--", *paths, cwd=str(loc)).splitlines():
@@ -4227,7 +4314,7 @@ def entries_moved(loc: Path, old: str, new: str) -> list[tuple[str, str | None]]
         if f[0].startswith("R"):
             out.append((f[1], f[2]))
         elif f[0] == "D":
-            out.append((f[1], None))
+            out.append((f[1], LOG if f[1] in regs else None))
     return out
 
 
@@ -5676,6 +5763,9 @@ STEPS: list = [
     (f"widen {META}'s tag_pattern to accept vX.Y.Z: every repo now releases with three parts",
      lambda root, after: meta_pattern_old(root), widen_meta_pattern),
     (ledger_step, lambda root, after: REVIEW_LEDGER in after, fold_ledger),
+    (f"add {LOG}, the decision log: no CHANGELOG.md or register here to merge into it",
+     lambda root, after: LOG not in after and not (root / LOG).exists() and not log_sources(root),
+     lambda root, here: ((root / LOG).write_text(LOG_SEED), git("add", "--", LOG))),
 ]
 
 
@@ -6023,6 +6113,10 @@ def files_to_review(root: Path, plan: dict, template: Path | None = None,
         out.append(("GLOSSARY.md", f"the glossary's home is README.md § Glossary now ({DIR}/RULES.md, "
                     f"Documentation): move each term there as a `### <term>` heading, delete the file"
                     f"{meta}, and repoint what names it"))
+    for f, what in log_sources(root):
+        out.append((f, f"{what}: merged into {LOG} on a yes — `jig update --merge-log` shows the "
+                       f"log it would write, `jig update --apply --merge-log` writes it and removes "
+                       f"the old files"))
     return out + agents_lines(root, template, arriving)
 
 
@@ -6252,6 +6346,8 @@ def worktree_refusals(root: Path, old_folders: tuple) -> list[str]:
 
 
 def cmd_update(root: Path, args) -> int:
+    if getattr(args, "merge_log", False):
+        return cmd_merge_log(root, args.apply)
     here = Path(__file__).resolve().parent
     files = tracked(root)
     board_row = next(olds for new, olds in LAYOUT if new == CONFIG)
@@ -6555,6 +6651,403 @@ def cmd_update(root: Path, args) -> int:
     return 0 if passed else 1
 
 
+# ------------------------------------------------------- the log, from what came before it
+
+# A release heading as an old CHANGELOG.md wrote it: `## v0.3.0 — date`, or Keep a Changelog's
+# `## [0.3.0] - date`. Its Unreleased may be `## [Unreleased]`.
+OLD_RELEASE = re.compile(r"^## \[?v?(\d+\.\d+(?:\.\d+)?)\]?[ \t]*[—–-][ \t]*(\d{4}-\d{2}-\d{2})(.*)$")
+OLD_UNRELEASED = re.compile(r"^## \[?unreleased\]?[ \t]*$", re.I)
+# What jig's old seeds wrote into the two files: no owner wrote it, so it needs no new home.
+OLD_SEED = re.compile(r"^(?:# Changelog|# Decisions|Every change to an entry file adds a line here; "
+                      r"`jig release` turns Unreleased into the next version\.|"
+                      r"<!-- One row per decision\..*-->)[ \t]*$")
+DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def id_numbers(text: str, prefix: str) -> set[int]:
+    """Every decision number TEXT names, a range (`D-029–D-044`, `D-029-044`) as each in it."""
+    p = re.escape(prefix)
+    out = {int(n) for n in re.findall(rf"(?<![\w-]){p}(\d+)(?!\d)", text)}
+    for a, b in re.findall(rf"(?<![\w-]){p}(\d+)[ \t]*[–—-][ \t]*(?:{p})?(\d+)(?!\d)", text):
+        if 0 < int(b) - int(a) < 1000:
+            out |= set(range(int(a), int(b) + 1))
+    return out
+
+
+def highest_id(text: str, prefix: str, history: bool = False) -> int:
+    """The highest decision number ever written in the log: its text, and with HISTORY every
+    version of it on this branch, so a rejected entry's number is never given again."""
+    seen = id_numbers(text, prefix)
+    if history:
+        seen |= {int(n) for n in re.findall(rf"(?<![\w-]){re.escape(prefix)}(\d+)(?!\d)",
+                                            git("log", "-p", "--format=", "HEAD", "--", LOG))}
+    return max(seen, default=0)
+
+
+def rows_in(text: str, prefix: str | None) -> list[str]:
+    """A register's decision rows: the repo's prefix, or any uppercase one where none is set."""
+    p = re.escape(prefix) if prefix else r"[A-Z][A-Z0-9]*-"
+    rx = re.compile(rf"^\s*\|\s*{p}\d+\s*\|")
+    return [l.rstrip() for l in text.splitlines() if rx.match(l)]
+
+
+def old_prefix(root: Path) -> str | None:
+    meta = root / META
+    return ({**META_DEFAULTS, **json.loads(meta.read_text() or "{}")}["decision_prefix"]
+            if meta.exists() else None)
+
+
+def old_registers(root: Path) -> list[str]:
+    """The decision registers to merge: a metarepo's entry files, or a file named DECISIONS.md
+    anywhere outside .jig/, that hold decision rows."""
+    meta = root / META
+    entry = json.loads(meta.read_text() or "{}").get("entry_files", []) if meta.exists() else []
+    return [f for f in tracked(root) if not f.startswith(f"{DIR}/") and f.endswith(".md")
+            and (f in entry or Path(f).name.lower() == "decisions.md")
+            and rows_in((root / f).read_text(errors="replace"), old_prefix(root))]
+
+
+def old_log_files(root: Path) -> list[tuple[str, str]]:
+    """The files a log would be merged from, each with a line saying what it holds."""
+    out = []
+    if (root / CHANGELOG).is_file():
+        n = sum(1 for l in (root / CHANGELOG).read_text(errors="replace").splitlines() if OLD_RELEASE.match(l))
+        out.append((CHANGELOG, f"the release log, {n} release section{'s' if n != 1 else ''}"))
+    for f in old_registers(root):
+        n = len(rows_in((root / f).read_text(errors="replace"), old_prefix(root)))
+        out.append((f, f"a decision register, {n} row{'s' if n != 1 else ''}"))
+    return out
+
+
+def log_is_seed(root: Path) -> bool:
+    return (root / LOG).is_file() and (root / LOG).read_text() == LOG_SEED
+
+
+def log_sources(root: Path) -> list[tuple[str, str]]:
+    """What `--merge-log` would fold into the log. None once the log holds anything but the
+    seed: the merge is done once, and a seed `jig init` wrote is still empty."""
+    return old_log_files(root) if not (root / LOG).exists() or log_is_seed(root) else []
+
+
+def register_header(lines: list[str]) -> list[str]:
+    """A register's header row: its first cell names the id column, `Id` or `#`."""
+    for l in lines:
+        if l.lstrip().startswith("|"):
+            cells = table_cells(l)
+            if cells and cells[0].strip().lower() in ("id", "#"):
+                return cells
+    return []
+
+
+def row_entry(cells: list[str], header: list[str]) -> dict:
+    """One register row as an entry: id, title, status line, extra lines, and where it goes."""
+    named = {h.strip().lower(): i for i, h in enumerate(header)} if header else {}
+    status_i = next((i for i, c in enumerate(cells) if STATUS_CELL.fullmatch(c.lower())), None)
+    dates = [i for i, c in enumerate(cells) if DATE.fullmatch(c)]
+    title_i = named.get("decision", next((i for i in range(1, len(cells)) if i not in (status_i, *dates)), None))
+    status = cells[status_i] if status_i is not None else ""
+    word = status.lower().split()[0].split("(")[0] if status else ""
+    note = re.search(r"\((.*)\)", status)
+    by = re.search(r"\bby\s+(\S+)", status, re.I)
+    # A row with a date it was accepted and one it was superseded keeps the first: the decision's.
+    day = min((cells[i] for i in dates), default="0000-00-00")
+    who = (note.group(1).strip() if note else "")
+    title = cells[title_i] if title_i is not None else ""
+    rest = [f"{header[i] if i < len(header) and header[i] else 'Note'}: {c}" for i, c in enumerate(cells)
+            if i not in (0, status_i, title_i, *dates) and c]
+    if word in ("open", "proposed"):
+        line, where = f"{word.capitalize()} ({who + ', ' if who else ''}{day}).", "Open"
+    else:
+        # A superseded decision was accepted once; the entry superseding it says so.
+        line, where = f"Accepted ({who or 'not recorded'}, {day}).", ""
+    if HEADING_STATUS.search(title):
+        # A title starting with a status word would read as a status: it moves to the body.
+        title, rest = "Decision", [cells[title_i], *rest]
+    return {"id": cells[0].strip(), "title": title, "status": line, "rest": rest, "where": where,
+            "word": word, "by": by.group(1) if by and word == "superseded" else None,
+            # What the old M2 refused stays refused: no status cell, or no date.
+            "bad": status_i is None or not dates}
+
+
+def paragraphs(lines: list[tuple[int, str]]) -> list[list[tuple[int, str]]]:
+    """Leftover lines as notes: blank-separated paragraphs, a heading keeping what follows it
+    together until the next heading, since a section is one thing to place."""
+    out: list[list[tuple[int, str]]] = []
+    cur: list[tuple[int, str]] = []
+    section = False
+    last = None
+    for n, l in lines:
+        gap = last is not None and n > last + 1
+        if l.lstrip().startswith("#"):
+            if cur:
+                out.append(cur)
+            cur, section = [(n, l)], True
+        elif gap and not section and cur:
+            out.append(cur)
+            cur = [(n, l)]
+        else:
+            cur.append((n, l))
+        last = n
+    if cur:
+        out.append(cur)
+    return out
+
+
+def as_written(text: str, paras: list[list[tuple[int, str]]]) -> str:
+    """Leftover paragraphs as the old file had them: each one's lines, blank ones inside it
+    included, and a blank line between them."""
+    lines = text.splitlines()
+    return "\n\n".join("\n".join(lines[p[0][0] - 1:p[-1][0]]) for p in paras) + "\n"
+
+
+def parse_register(text: str, prefix: str | None) -> tuple[list[dict], list[list[tuple[int, str]]]]:
+    """A register's entries, and its other lines as notes: nothing the owner wrote is dropped."""
+    lines = text.splitlines()
+    header = register_header(lines)
+    rows = set(rows_in(text, prefix))
+    entries = [row_entry(table_cells(l), header) for l in lines if l.rstrip() in rows]
+    left = [(n, l) for n, l in enumerate(lines, 1)
+            if l.strip() and l.rstrip() not in rows and not OLD_SEED.match(l)
+            and not (l.lstrip().startswith("|") and (table_cells(l) == header
+                                                     or all(re.fullmatch(r":?-+:?", c) for c in table_cells(l))))]
+    return entries, paragraphs(left)
+
+
+def merged_log(root: Path) -> dict:
+    """The log `--merge-log` writes, what it says about each row, and what found no home."""
+    prefix = old_prefix(root)
+    old = (root / CHANGELOG).read_text(errors="replace") if (root / CHANGELOG).is_file() else ""
+    sections: list[list] = []      # [heading, body lines, is a release]
+    preamble: list[tuple[int, str]] = []
+    unreleased: list[str] = []
+    cur = None
+    for n, line in enumerate(old.splitlines(), 1):
+        m = OLD_RELEASE.match(line)
+        if m:
+            yank = " [YANKED]" if "YANKED" in m.group(3) else ""
+            cur = [f"## v{m.group(1)} - {m.group(2)}{yank}", [], True]
+            sections.append(cur)
+        elif OLD_UNRELEASED.match(line):
+            cur = None
+            unreleased.append("")      # one Unreleased, however the old file spelled it
+        elif line.startswith("## "):
+            cur = [line.rstrip(), [], False]
+            sections.append(cur)
+        elif cur is not None:
+            cur[1].append(line)
+        elif unreleased:
+            unreleased.append(line)
+        elif line.strip() and not OLD_SEED.match(line):
+            preamble.append((n, line))
+    entries: list[dict] = []
+    homeless: list[tuple[str, list[tuple[int, str]]]] = []
+    if preamble:
+        homeless += [(CHANGELOG, p) for p in paragraphs(preamble)]
+    keep: dict[str, str] = {}          # an old file's leftover, kept in it after the merge
+    rejected: list[str] = []
+    for f in old_registers(root):
+        found, notes = parse_register((root / f).read_text(errors="replace"), prefix)
+        p = prefix or (re.match(r"[A-Z][A-Z0-9]*-", found[0]["id"]).group(0) if found else "D-")
+        by_num = {}
+        for e in found:
+            if e["word"] == "rejected":
+                rejected.append(e["id"])
+                continue
+            entries.append(e)
+            by_num[int(re.sub(r"\D", "", e["id"]) or 0)] = e
+        for para in notes:
+            nums = id_numbers("\n".join(l for _, l in para), p)
+            if len(nums) == 1 and (e := by_num.get(next(iter(nums)))) and not para[0][1].lstrip().startswith("#"):
+                e["rest"] += [""] + [l for _, l in para]
+            else:
+                homeless.append((f, para))
+        mine = [para for g, para in homeless if g == f]
+        if mine:
+            keep[f] = as_written((root / f).read_text(errors="replace"), mine)
+    if preamble:
+        keep[CHANGELOG] = as_written(old, paragraphs(preamble))
+    p = prefix or (re.match(r"[A-Z][A-Z0-9]*-", entries[0]["id"]).group(0) if entries else "D-")
+    by_id = {decision_id(e["id"]): e for e in entries}
+    for e in entries:
+        new = by_id.get(decision_id(e["by"])) if e["by"] else None
+        if new:
+            new["status"] = new["status"][:-1] + f". Supersedes {e['id']}."
+    for e in entries:
+        if e["where"]:
+            continue
+        # An accepted row goes to the oldest release whose lines name it, ranges included.
+        num = int(re.sub(r"\D", "", e["id"]) or 0)
+        hit = [sec for sec in sections if sec[2] and num in id_numbers("\n".join(sec[1]), p)]
+        e["where"] = hit[-1][0] if hit else "Unreleased"
+
+    def blocks(where: str) -> list[str]:
+        out = []
+        for e in entries:
+            if e["where"] == where:
+                out += [f"### {e['id']} {e['title']}".rstrip(), e["status"], *([""] + e["rest"] if e["rest"] else []), ""]
+        return out
+    head = LOG_SEED.replace("## Open\n\n## Unreleased\n", "")
+    if rejected:
+        # Their numbers stay taken: numbering starts above every id the log has ever named.
+        head += f"Rejected before this log, and left out of it: {', '.join(rejected)} (git keeps their rows).\n\n"
+    text = head + "## Open\n\n" + "\n".join(blocks("Open")) + "\n## Unreleased\n\n"
+    text += "\n".join(blocks("Unreleased") + trimmed(unreleased[1:])) + "\n"
+    for heading, body, _ in sections:
+        text += f"\n{heading}\n\n" + "\n".join(blocks(heading) + trimmed(body)) + "\n"
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    placed: dict[str, list[str]] = {}
+    for e in entries:
+        placed.setdefault(e["where"].replace("## ", ""), []).append(e["id"])
+    notes = [f"{', '.join(ids)} → {w}" for w, ids in placed.items()]
+    notes += [f"{', '.join(rejected)}: rejected, left out (their numbers stay taken)"] if rejected else []
+    return {"text": text, "notes": notes, "homeless": homeless, "keep": keep, "prefix": p}
+
+
+def names_of(root: Path, gone: list[str]) -> list[tuple[str, int]]:
+    """The repo's files that still name a merged file, to repoint: jig's own copies aside."""
+    if not gone:
+        return []
+    # The merge rewrites the config and meta.json itself.
+    skip = (f"{DIR}/jig.py", f"{DIR}/RULES.md", f"{DIR}/docs-page.md", LOG, CONFIG, META)
+    hits = git("grep", "-c", "-F", *[a for g in gone for a in ("-e", g)], "--").splitlines()
+    out = []
+    for h in hits:
+        f, _, n = h.rpartition(":")
+        if f in gone or f in skip or f.startswith((f"{DIR}/handoffs/", f"{DIR}/meta-cache/")):
+            continue
+        out.append((f, int(n)))
+    return out
+
+
+def board_rewrite(root: Path, merged: set[str], prefix: str) -> tuple[dict, list[str]]:
+    """The board after the merge: append_files and a reserve counter over MERGED name the log
+    instead, the counter counting every number the log names, a rejected one's included."""
+    data = json.loads((root / CONFIG).read_text())
+    said = []
+    appends = list(dict.fromkeys(LOG if a in merged else a for a in data.get("append_files", [])))
+    if appends != data.get("append_files", []):
+        said.append(f"{CONFIG} append_files: {data.get('append_files')} → {appends}")
+        data["append_files"] = appends
+    for k, v in (data.get("reserve") or {}).items():
+        if isinstance(v, dict) and any(f in merged for f in v.get("files") or []):
+            data["reserve"][k] = {**v, "files": [LOG], "pattern": rf"(?<![\w-]){re.escape(prefix)}(\d+)(?!\d)"}
+            said.append(f"{CONFIG} reserve.{k}: files {v.get('files')} → [{LOG}], counting every id the log names")
+    return data, said
+
+
+def stale_board_names(root: Path) -> set[str]:
+    """Once the log exists: the old files the board still names that hold no old log any more."""
+    data = json.loads((root / CONFIG).read_text())
+    meta = root / META
+    entry = json.loads(meta.read_text() or "{}").get("entry_files", []) if meta.exists() else []
+    named = set(data.get("append_files", [])) | {f for v in (data.get("reserve") or {}).values()
+                                                 if isinstance(v, dict) for f in v.get("files") or []}
+    old = {f for f in named if f == CHANGELOG or Path(f).name.lower() == "decisions.md" or f in entry}
+    return {f for f in old if f != LOG and not ((root / f).is_file() and holds_old_log(
+        (root / f).read_text(errors="replace"), f, old_prefix(root)))}
+
+
+def cmd_merge_log(root: Path, apply: bool) -> int:
+    """`jig update --merge-log`: fold a root CHANGELOG.md and the decision register into the log,
+    on the owner's yes. Their words are kept: what has no place in the log stays where it was.
+    The board is the hubnode's, on trunk: merged on a branch, it is rewritten there after."""
+    if not (root / CONFIG).exists():
+        die("run `jig update --apply` first: the merge runs on the current layout", 2)
+    trunk = Board.trunk_name(root)
+    on_trunk_now = git("branch", "--show-current") == trunk
+    if (root / LOG).exists() and not log_is_seed(root):
+        stale = stale_board_names(root)
+        if not stale:
+            print(f"{LOG} exists: nothing to merge")
+            return 0
+        data, said = board_rewrite(root, stale, log_prefix_of((root / LOG).read_text()))
+        print("The board still names files the log took:")
+        for line in said:
+            print(f"  {line}")
+        if not apply:
+            print("Dry run: nothing changed. On trunk: jig update --apply --merge-log")
+            return 0
+        if not on_trunk_now:
+            die(f"the board is edited on {trunk} only (R5): run this there", 2)
+        (root / CONFIG).write_text(json.dumps(data, indent=2) + "\n")
+        git("add", "--", CONFIG, check=True)
+        print(f"\nRewritten {CONFIG}. Staged, nothing committed: commit it on {trunk}.")
+        return 0
+    sources = log_sources(root)
+    if not sources:
+        print(f"no CHANGELOG.md or decision register to merge: `jig update --apply` writes an empty {LOG}")
+        return 0
+    meta = root / META
+    # In a metarepo the merge changes its own files, which trunk takes only as a reviewed merge.
+    branch_needed = meta.exists() and on_trunk_now
+    job = (f"open a job for it on {trunk} (`jig open merge-log --shares "
+           f"{' '.join(f for f, _ in sources)}`), run this in its worktree, and merge it; then run "
+           f"`jig update --apply --merge-log` on {trunk} again, for the board")
+    if apply and branch_needed:
+        die(f"in a metarepo the merge is a change to its files (M4): {job}", 2)
+    have = set(tracked(root))
+    untracked = [f for f, _ in sources if f not in have]
+    if untracked:
+        die(f"{', '.join(untracked)} isn't tracked: commit it, or move it aside, then merge", 2)
+    if apply and git("status", "--porcelain", "--untracked-files=no"):
+        die("commit or stash tracked changes first: the merge removes files by name", 2)
+    m = merged_log(root)
+    text, keep = m["text"], m["keep"]
+    gone = [f for f, _ in sources if f not in keep]
+    problems = [f"M2 {f}: row {e['id']} has no status cell or no date, as the old M2 asked"
+                for f in old_registers(root)
+                for e in parse_register((root / f).read_text(errors="replace"), old_prefix(root))[0] if e["bad"]]
+    problems += log_problems(text, m["prefix"])
+    print("Merging into " + LOG + ":")
+    for f, what in sources:
+        print(f"  {f} ({what}), " + ("kept for what has no home" if f in keep else "removed after"))
+    for n in m["notes"]:
+        print(f"  {n}")
+    for f, para in m["homeless"]:
+        print(f"  no home, move by hand: {f}:{para[0][0]}–{para[-1][0]} `{para[0][1].strip()[:60]}`")
+    entry = json.loads(meta.read_text() or "{}").get("entry_files", []) if meta.exists() else None
+    kept_entry = [LOG, *[e for e in entry if e not in gone and e != LOG]] if entry is not None else None
+    if entry is not None:
+        print(f"  {META} entry_files: {entry} → {kept_entry}")
+    # What a kept file holds is no log any more: lines are appended to the log now.
+    data, said = board_rewrite(root, {f for f, _ in sources}, m["prefix"])
+    for line in said:
+        print(f"  {line}" + ("" if on_trunk_now else f" (on {trunk}, after the merge)"))
+    refs = names_of(root, [f for f, _ in sources])
+    for f, n in refs:
+        print(f"  repoint what names the old files: {f} ({n} line{'s' if n != 1 else ''})")
+    if problems:
+        print("refused: the merged log wouldn't pass M2; fix these rows first:", file=sys.stderr)
+        for p in problems:
+            print(f"  {p}", file=sys.stderr)
+        return 2
+    if not apply:
+        print(f"\n--- {LOG}, as it would be written ---\n{text}")
+        print("Dry run: nothing changed. On the owner's yes: "
+              + (job if branch_needed else "jig update --apply --merge-log"))
+        return 0
+    (root / LOG).write_text(text)
+    for f in gone:
+        git("rm", "-q", "--", f, check=True)
+    for f, rest in keep.items():
+        (root / f).write_text(rest)
+    if entry is not None:
+        d = json.loads(meta.read_text())
+        d["entry_files"] = kept_entry
+        meta.write_text(json.dumps(d, indent=2) + "\n")
+    if on_trunk_now:
+        (root / CONFIG).write_text(json.dumps(data, indent=2) + "\n")
+    git("add", "--", LOG, *keep, *([META] if entry is not None else []),
+        *([CONFIG] if on_trunk_now else []), check=True)
+    print(f"\nWritten {LOG}" + (f"; {', '.join(gone)} removed" if gone else "")
+          + (f"; {', '.join(keep)} kept, holding only what has no home: move it by hand" if keep else "")
+          + ". Staged, nothing committed: commit it here"
+          + ("" if on_trunk_now or not said else
+             f"; once it merges, `jig update --apply --merge-log` on {trunk} rewrites the board")
+          + (", then repoint what names the old files" if refs else "") + ".")
+    return 0
+
+
 def update_blocked(why: list[str]) -> int:
     print("blocked: the repo would not work after an update, so nothing was changed", file=sys.stderr)
     for w in why:
@@ -6660,6 +7153,7 @@ def main(argv: list[str] | None = None) -> int:
     rp.add_argument("--name", help="add: the name to call it by (default: its own)")
     up = sub.add_parser("update", help="bring this repo to the current jig layout (dry run)")
     up.add_argument("--apply", action="store_true", help="make the changes the dry run lists")
+    up.add_argument("--merge-log", action="store_true", help=f"on the owner's yes: merge CHANGELOG.md and the decision register into {LOG}")
     hk = sub.add_parser("hook")
     hk.add_argument("name")
     hk.add_argument("rest", nargs="*")

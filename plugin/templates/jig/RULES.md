@@ -506,6 +506,41 @@ its `CHANGELOG.md`, which any job may add to, and the release writes the version
 there (`## vX.Y.Z — YYYY-MM-DD`). Staged decisions land in the register as rows. The log's rules
 start with the commit that adds it.
 
+`jig update` lists a root `CHANGELOG.md` and the register as files to review and changes neither
+on its own. `jig update --merge-log` shows the log they would make; on the owner's yes,
+`--apply --merge-log` writes it and removes both:
+
+- each release section keeps its lines as written, its heading in the log's form, and an
+  `## [Unreleased]` is the log's one `## Unreleased`;
+- an open or proposed row becomes an entry under `## Open`, keeping who proposed it;
+- an accepted row becomes an entry in the oldest release whose lines name its id, ranges
+  (`D-029–D-044`) included, or under `## Unreleased` when none does, a row superseded by
+  another becoming the one the newer entry supersedes, dated when it was accepted;
+- a rejected row is left out, since git keeps it; the log's preamble names its id, so the
+  number stays taken;
+- a note that names one id joins that entry's body;
+- in a metarepo, `entry_files` names the log in place of what was merged; in the board,
+  `append_files` and a `reserve` counter over the old files count the log instead, every id
+  it names included.
+
+Nothing the owner wrote is dropped. What has no place in the log (a preamble, a note naming
+several ids, a section of its own) stays in its old file, which keeps only that, and the run
+lists each piece to move by hand. It also lists every file that still names the old ones, to
+repoint. A row's words are kept: a decision that opens with a status word goes under a plain
+`Decision` heading, and a row with no who says `not recorded`. A who is any text before the
+last date, as a row's note was, so every row the old M2 took converts; one it refused is refused
+here too, before anything is written. In a metarepo the merge is a change to its files, so it is
+a job: run on trunk, `--apply --merge-log` refuses and names `jig open`; in the job's worktree it
+writes everything but the board, the job merges like any other, and `--apply --merge-log` on
+trunk then rewrites the board (R5). Elsewhere it runs on trunk, board included. The log's rules
+judge the change that merges the old files away, one that adds the log and no longer holds
+CHANGELOG.md's sections or a register's rows; one that adds a log beside them is still judged by
+the old rules, as is everything until trunk has the log. A repo with neither file gets an empty log from `jig update --apply`,
+and `jig init` writes none beside them, leaving them for the merge. Numbering, by `jig merge`
+or a counter, starts above every id the log has ever named, so a rejected one's is never given
+again. A pararepo's bump across the merge reports the register's move on one line, and only the
+decisions whose title or status changed.
+
 ## Staging
 
 `.jig/staging/` is where a chat drops a file meant for a repo: a spec, a doc, decision entries, a
@@ -728,6 +763,7 @@ jig init --meta | --para <metarepo> --contract <globs>   ... as a metarepo / par
 jig release [--major|--minor|--patch|--version X.Y.Z] [--force]   the repo's release protocol, then tag, then publish
 jig survey [--json]         inventory the repo against the jig shape
 jig update [--apply]        bring the repo to the current jig layout (dry run without --apply)
+jig update [--apply] --merge-log   on the owner's yes: CHANGELOG.md and the register into .jig/decisions.md
 jig staging [resolve|drop <file>]   list staged files, or land / drop one
 jig repos [add repo|meta|para | rename <new>]  where your repos live (user config)
 jig open ... --reserve K    allocate scarce counter K to this job
