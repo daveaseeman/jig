@@ -1,1 +1,61 @@
-{}
+{
+  "update-project-sweep": {
+    "spec": ".jig/specs/update-project-sweep.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/update/SKILL.md"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh"
+    ],
+    "reserved": {}
+  },
+  "bug-root-file-contract-path": {
+    "spec": ".jig/specs/bug-root-file-contract-path.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/hubnode/SKILL.md"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh"
+    ],
+    "reserved": {}
+  },
+  "bug-staged-rules-update": {
+    "spec": ".jig/specs/bug-staged-rules-update.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/init/SKILL.md"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh"
+    ],
+    "reserved": {}
+  },
+  "staging-batches": {
+    "spec": ".jig/specs/staging-batches.md",
+    "state": "claimed",
+    "after": [
+      "bug-staged-rules-update"
+    ],
+    "owns": [
+      "plugin/skills/stage/SKILL.md",
+      "plugin/skills/repos/SKILL.md"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh"
+    ],
+    "reserved": {}
+  }
+}
