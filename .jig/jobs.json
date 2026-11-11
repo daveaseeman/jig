@@ -1,7 +1,7 @@
 {
   "bug-gate-scratch-left": {
     "spec": ".jig/specs/bug-gate-scratch-left.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
