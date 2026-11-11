@@ -558,6 +558,23 @@ out=$($UP 2>&1); rc=$?
 expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'git worktree remove .*up-extra'" "$out"
 git worktree remove "$T/up-extra"
 
+# A gate's scratch checkout left behind is jig's own: update removes it rather than refusing.
+wt --detach .git/jig/worktrees/gate-J HEAD && mkdir -p .git/jig/worktrees/gate-J/venv && printf 'x\n' > .git/jig/worktrees/gate-J/venv/x
+wt .git/jig/worktrees/J -b J
+msg="update: a leftover gate-J is listed as gate scratch and isn't refused; job J's own worktree still is"
+out=$($UP 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'remove .git/jig/worktrees/gate-J (gate scratch, removed on --apply)' && ! echo \"\$0\" | grep -q 'git worktree remove .git/jig/worktrees/gate-J' && echo \"\$0\" | grep -q 'git worktree remove .git/jig/worktrees/J'" "$out"
+git worktree remove .git/jig/worktrees/J && git branch -q -D J
+msg="update: a gate checkout with a tracked edit stays a refusal, naming it"
+printf 'edit\n' >> .git/jig/worktrees/gate-J/AGENTS.md
+out=$($UP 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'gate scratch .git/jig/worktrees/gate-J has tracked changes'" "$out"
+git -C .git/jig/worktrees/gate-J checkout -q -- AGENTS.md
+msg="update: --apply removes the leftover gate checkout, untracked files and all"
+$UP --apply >/dev/null 2>&1
+expect_pass sh -c "test ! -e .git/jig/worktrees/gate-J && ! git worktree list | grep -q gate-J"
+git reset -q --hard
+
 msg="update: --apply refuses with tracked changes, and changes nothing"
 printf 'x\n' >> AGENTS.md
 before=$(snap); rc=$(code $UP --apply); after=$(snap)
@@ -1719,13 +1736,24 @@ printf -- '- trunk\n' >> CHANGELOG.md && git commit -qam "trunk appends"
 msg="gate: with an append conflict between trunk and the note commit, the scratch checkout has trunk merged and no conflict, and the check is printed"
 out=$($J gate K 2>&1); s=.git/jig/worktrees/gate-K
 expect_pass sh -c "echo \"\$0\" | grep -q 'cd $s && ./.jig/scripts/check.sh' && test \"\$(git -C $s rev-list --parents -n1 HEAD | wc -w | tr -d ' ')\" = 3 && test -z \"\$(git -C $s status --porcelain)\" && ! grep -q '^<<<<<<<' $s/CHANGELOG.md && grep -q '^- K' $s/CHANGELOG.md && grep -q '^- trunk' $s/CHANGELOG.md" "$out"
-git worktree remove --force "$s"
+msg="mark: with a tracked edit in the gate checkout, jig mark K gated refuses, naming it"
+printf 'edit\n' >> $s/K.py
+out=$($J mark K gated 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '$s has tracked changes (K.py)' && test -d $s && grep -q '\"state\": \"claimed\"' .jig/jobs.json" "$out"
+git -C $s checkout -q -- K.py
+msg="mark: jig mark K gated removes the gate checkout, untracked files and all"
+mkdir -p $s/venv && printf 'x\n' > $s/venv/x
+expect_pass sh -c "$J mark K gated >/dev/null 2>&1 && test ! -e $s && ! git worktree list | grep -q gate-K"
+git commit -qam "K gated"
 for j in K L M; do ( cd "$MS/.git/jig/worktrees/$j" && [ $j = M ] || $J sync >/dev/null 2>&1 ); done
 ( cd "$MS/.git/jig/worktrees/M" && git -c merge.conflictStyle=diff3 merge -q main >/dev/null 2>&1
   printf -- '# Changelog\n- trunk\n- M\n' > CHANGELOG.md && printf 'x=2\n' > M.py && git add -A && git commit -q --no-edit )
 ( cd "$MS/.git/jig/worktrees/L" && printf 'x=2\n' > L.py && git commit -qam "L after its note" )
 msg="merge: a job synced after its handoff, append conflict resolved by the sync, merges with no new handoff"
+$J gate K >/dev/null 2>&1
 expect_pass $J merge K
+msg="merge: jig merge K, gated again and never marked, leaves no gate checkout"
+expect_pass sh -c "test ! -e $s && ! git worktree list | grep -q gate-K"
 msg="merge: a commit of the job's own after the note refuses, naming its files"
 out=$($J merge L 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'changed since .*(L.py)'" "$out"
 msg="merge: a sync whose resolution adds an edit jig sync wouldn't make refuses, naming the file"
@@ -2667,9 +2695,9 @@ for j in K L M; do
     && { [ $j = L ] || printf '%s\n' "$j" > common.txt; } && git add -A \
     && git commit -qm "$j" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $j" )
 done
-msg="gate: an executable check.sh is printed as ./.jig/scripts/check.sh, with git worktree remove --force"
+msg="gate: an executable check.sh is printed as ./.jig/scripts/check.sh, and marking gated is the cleanup, not a hand-run remove"
 out=$($J gate L 2>&1); git worktree remove --force .git/jig/worktrees/gate-L 2>/dev/null
-expect_pass sh -c "echo \"\$0\" | grep -q '&& ./.jig/scripts/check.sh' && echo \"\$0\" | grep -q 'git worktree remove --force .git/jig/worktrees/gate-L'" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -q '&& ./.jig/scripts/check.sh' && echo \"\$0\" | grep -q 'jig mark L gated, which removes .git/jig/worktrees/gate-L' && ! echo \"\$0\" | grep -q 'git worktree remove'" "$out"
 chmod -x .jig/scripts/check.sh && git add .jig/scripts/check.sh && git commit -qm "check.sh not executable"
 msg="gate: a check.sh that isn't executable is printed as bash ./.jig/scripts/check.sh"
 out=$($J gate L 2>&1); git worktree remove --force .git/jig/worktrees/gate-L 2>/dev/null

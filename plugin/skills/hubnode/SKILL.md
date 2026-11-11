@@ -111,8 +111,8 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
    Its brief says: in any throwaway repo, set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched. Smoke runs need no waiting on each
    other; each uses only its own temp folder. The run's output always goes to
    `$(git rev-parse --git-common-dir)/jig/gate-<name>.out`, named after the scratch checkout
-   `jig gate` printed (`/` in the name as `-`), outside `worktrees/`, which the next
-   gate removes; a failure nobody can reproduce is reported with that path, so it can be read.
+   `jig gate` printed (`/` in the name as `-`), outside `worktrees/`, so it outlives the
+   checkout; a failure nobody can reproduce is reported with that path, so it can be read.
    A run that can outlast the shell's foreground limit is waited on as `/jig:verify` says:
    background, its exit notice or its pid, never a match.
 3. Read the note against the diff: every done-when item has evidence, shared files are
@@ -121,7 +121,7 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
    as your own fix.
 4. **Do not re-review the diff.** The subnode's adversarial review is the review. You are
    checking that it happened and that the result matches the spec.
-5. `jig mark <name> gated`, commit `jobs.json`, then on the owner's word
+5. `jig mark <name> gated` (it removes the scratch checkout), commit `jobs.json`, then on the owner's word
    `jig merge <name> -m "shared files: ..."`. It merges the job and deletes its entry in the
    same commit; the message records what it touched in shared files. In a repo whose
    subjects lead with ids, add `--subject "<ids>"`, e.g. `--subject "D-001, D-002"`: the

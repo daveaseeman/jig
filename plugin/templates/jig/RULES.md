@@ -349,9 +349,12 @@ else stops with the files named, and a person resolves it.
    and the commit. A job may hand off several times.
 2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it sets
    up a **detached scratch checkout of the commit the note names**, with trunk merged in the
-   way `jig sync` merges it, and prints the check to run there and the cleanup. It never runs
+   way `jig sync` merges it, and prints the check to run there. It never runs
    the check: whoever runs it runs the same command. Never the job's live worktree, which the
    subnode may still be building in.
+   The scratch checkout lives until the job is marked gated or merged: `jig mark <job> gated`
+   and `jig merge <job>` remove it, untracked files and all, and refuse while it holds a
+   tracked edit, which belongs on the job's branch. `jig update` removes one left behind.
    The hooks set that checkout up with `.jig/scripts/setup.sh`, when it is added and again
    after its merge of trunk, so the checks run in an environment built from the job's own
    manifests.
