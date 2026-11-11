@@ -15,7 +15,7 @@
   },
   "staging-batches": {
     "spec": ".jig/specs/staging-batches.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [
       "bug-staged-rules-update"
     ],
