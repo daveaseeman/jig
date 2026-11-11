@@ -1,7 +1,7 @@
 {
   "meta-docs-tree": {
     "spec": ".jig/specs/meta-docs-tree.md",
-    "state": "gated",
+    "state": "ready",
     "after": [
       "flat-pages",
       "bug-redocument-any-format"
