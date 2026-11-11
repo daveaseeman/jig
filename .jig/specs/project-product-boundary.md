@@ -59,6 +59,11 @@ pages it will touch.
   - `jig survey` also lists text like "phase 3" or "spec step 6" on pages and in entries. A hook
     can't judge prose, so survey reports it and nothing refuses.
   - Specs, handoffs and the roadmap may cite pages and decisions freely.
+  - Amended after review (Nov 11): the hook refuses only what can't be product text: the
+    `.jig/specs/`, `.jig/handoffs/` and `.jig/roadmap.md` paths anywhere, and a full scope id inside
+    backticks. Bare phase names and scope ids (`1`, `alpha`, `v1/api`) are ordinary words often
+    enough that survey lists them instead. A moved page's old lines aren't new, and a metarepo's
+    entry files count as pages.
 - **Retire `## Undefined`.** It leaves the page contract, `docs-page.md` and the page checks. Its
   two meanings each get a home:
   - **Parked work** becomes an item under a new reserved `## Up next` section in
@@ -92,7 +97,7 @@ pages it will touch.
 - [ ] RULES.md states the boundary and one-way references (Documentation, Decision log, Roadmap,
   Homes). § Roadmap no longer calls a scope a decision, and Undefined is gone from the page
   contract and `docs-page.md`.
-- [ ] Smoke: adding `.jig/specs/x.md` or `phase-1/screen` (a scope id the roadmap has) to a docs
+- [ ] Smoke: adding `.jig/specs/x.md` or `` `phase-1/screen` `` (a scope id the roadmap has) to a docs
   page, or to a decision entry, is refused by the hook with the line named. The same reference in
   a spec passes.
 - [ ] Smoke: `jig survey` lists "phase 3" in a page's text, and a `## Status` or `## Undefined`
