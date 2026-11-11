@@ -17,20 +17,6 @@
     ],
     "reserved": {}
   },
-  "stage-ask-access": {
-    "spec": ".jig/specs/stage-ask-access.md",
-    "state": "gated",
-    "after": [
-      "decision-log"
-    ],
-    "owns": [
-      "plugin/skills/feedback/SKILL.md"
-    ],
-    "shares": [
-      "plugin/skills/stage/SKILL.md"
-    ],
-    "reserved": {}
-  },
   "decision-log-migration": {
     "spec": ".jig/specs/decision-log.md",
     "state": "claimed",
