@@ -39,7 +39,7 @@
   },
   "decision-log": {
     "spec": ".jig/specs/decision-log.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/hubnode/SKILL.md",
