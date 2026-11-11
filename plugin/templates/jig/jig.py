@@ -1924,11 +1924,16 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
                         "fold": False, "naming": sorted(named),
                         "named_at": [f"{n}:{i}" for n in sorted(named) for i in named[n]]})
             continue
+        # A README is its folder's own document for outsiders: docmap naming one asks it on
+        # every change, so it is read, and it stays where it is.
+        if f in docmap and Path(f).name == "README.md":
+            continue
         flat = flat_page(f, have, docmap, read)
         # A page's own files are at home, but a page-shaped file in a subfolder with no page
         # of its own is a page in the wrong place.
         shaped = (not flat and not folder_page(f) and not reference_file(f)
-                  and f.startswith("docs/") and owner_page(f, have, deep) and page_shaped(read(f)))
+                  and f.startswith("docs/") and owner_page(f, have, deep)
+                  and (f in docmap or page_shaped(read(f))))
         if f == "GLOSSARY.md":
             named = naming(root, f, files)
             out.append({"path": f, "kind": "stray", "to": f"README.md § {GLOSSARY_HOME[3:]}",
@@ -1945,7 +1950,9 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
             kind = "rules"
         elif folder_page(f) or flat:
             kind, to = "deep", deep_home(f, deep, have)
-        elif f.startswith("docs/") and page_shaped(text):
+        # The board naming a file makes it a page in any format and anywhere: fold-in asks
+        # it on every change, so it is no stray, whatever its sections are called.
+        elif f in docmap or (f.startswith("docs/") and page_shaped(text)):
             kind, to = "page", page_home(f, have, deep)
         elif rules and len([s for s in sentences(text) if s in rules]) >= 3:
             kind = "copy"
@@ -2488,10 +2495,20 @@ def cmd_survey(root: Path, args) -> int:
     old_pages = any(p.startswith("old contract") for e in report["page_contract"] for p in e["problems"]) \
         or any(h["kind"] in ("page", "deep") and old_contract((root / h["path"]).read_text(errors="replace"))
                for h in report["homeless"] if (root / h["path"]).is_file())
+    outside = any(h["kind"] == "page" for h in report["homeless"])
+    # A repo on jig never adopts again: redocument converts pages, update fixes them in place.
+    on_jig = (root / CONFIG).exists()
+    # A deep page is folded or approved, not edited where it sits, as update leaves it.
+    in_place = [e for e in report["page_contract"] if e["path"] not in homes]
     print(f"An older jig's board is at {old}: run /jig:update first, not /jig:adopt or /jig:init."
           if old else "Pages in the old Now / Rules / Checks shape: run /jig:redocument to convert them."
           if old_pages else f"Board pages in the old {OLD_BOARDS} layout: run /jig:redocument to move them."
-          if report["old_boards"] else "Run /jig:adopt to turn this into a migration plan.")
+          if report["old_boards"] else "Pages outside the docs tree: run /jig:redocument to convert them."
+          if outside and on_jig else "Pages off the page contract where they sit: run /jig:update "
+          "to review each in place." if in_place and on_jig
+          else "On jig already, no page to convert: give each file above its home."
+          if report["homeless"] and on_jig else "On jig already: nothing to do."
+          if on_jig else "Run /jig:adopt to turn this into a migration plan.")
     return 0
 
 # ------------------------------------------------------------------- metarepo
@@ -5478,10 +5495,11 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
                          "and the next `jig release` proposes them")
         return lines
 
-    for folder in dict.fromkeys(os.path.dirname(h["path"]) + "/" for h in pages):
+    # A root file has no folder to empty: its group is the root's pages, under their own names.
+    for folder in dict.fromkeys((os.path.dirname(h["path"]) + "/").lstrip("/") for h in pages):
         group = [h for h in pages if h["path"].startswith(folder) and "/" not in h["path"][len(folder):]]
         lines = commit_lines(folder, group)
-        out.append((folder, f"{len(group)} page{'s' if len(group) > 1 else ''} outside the docs "
+        out.append((folder or ", ".join(h["path"] for h in group), f"{len(group)} page{'s' if len(group) > 1 else ''} outside the docs "
                     f"tree ({DIR}/RULES.md, Documentation). Ask whether each is a subsystem to "
                     "nest; then, in one commit:" + "".join(f"\n      {l}" for l in lines)))
     old = [r for r in old_board_rows(after, read) if r["to"]]
@@ -5509,6 +5527,16 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
                  if not l.startswith(f"{CONFIG} docmap:")]
         out.append((e["path"], f"{shape_fix(e)} ({DIR}/RULES.md, Documentation). "
                     "On the owner's yes, in one commit:" + "".join(f"\n      {l}" for l in lines)))
+    # A page at home but off the contract is fixed where it sits; redocument only converts.
+    flats = {f for f in after if flat_page(f, set(after), docmap, read)}
+    homeless_at = {h["path"] for h in homeless}
+    for f in after:
+        if ((folder_page(f) or f in flats) and f not in homeless_at and f not in reviewed
+                and not matches(f, board.get("not_docs") or [])):
+            probs = [p for p in page_problems(read(f)) if not p.startswith("old contract")]
+            if probs:
+                out.append((f, f"off the page contract ({DIR}/RULES.md, Documentation): "
+                            + "; ".join(probs) + ". On the owner's yes, edit it where it sits"))
     strays = len([h for h in homes if h["kind"] == "stray"])
     if strays:
         out.append((f"{strays} document{'s have' if strays > 1 else ' has'} no home", "`/jig:survey`"))
@@ -5742,6 +5770,11 @@ def cmd_update(root: Path, args) -> int:
         print("up to date")
         for w in warnings:
             print(f"warning: {w}")
+        # The repo's own files are no layout action, but they are still the plan survey sent here.
+        if review:
+            print("\nRepo files to review (update never applies these):")
+            for f, what in review:
+                print(f"  {f}: {what}")
         if board_at == CONFIG and (root / PARA).exists():
             for line in removal_blocks(root, trunk, always=False):
                 print(line)

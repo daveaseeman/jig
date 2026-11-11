@@ -267,7 +267,8 @@ Any other file has no home, and survey says which kind: an `AGENTS.md`, `CLAUDE.
 is a copy, which freezes while this file moves on; a page, flat or in its folder, below a
 subsystem, with no `deep_subsystems` entry, is deep: fold it into its subsystem's page, or
 propose its folder to the owner with its rationale; a page outside the tree — one with an
-Invariants or Undefined section, or the old Now, Rules and Checks headings — goes flat beside
+Invariants or Undefined section, the old Now, Rules and Checks headings, or any file `docmap`
+names, whatever its format — goes flat beside
 the nearest page that has a folder, as a subsystem at most (into that page, where it would be
 deeper), or to `docs/<name>.md`, even when it quotes this file;
 anything else is a stray. A package's own rules file stays only on the owner's word. A

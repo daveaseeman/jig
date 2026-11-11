@@ -62,21 +62,16 @@ start() {
   if git cat-file -e main:.jig/redocument.md 2>/dev/null; then
     echo "resume: .jig/redocument.md is on trunk; refusals skipped"; return
   fi
-  local survey; survey="$($J survey --json)"
-  python3 - "$survey" <<'EOF' || { echo "no old-format pages: nothing to redocument"; return; }
-import json, re, sys
-r = json.loads(sys.argv[1])
-heads = lambda p: {"Now", "Rules", "Checks"} <= set(re.findall(r"^## (\w+)", open(p).read(), re.M))
-old = [e["path"] for e in r["page_contract"] if any(p.startswith("old contract") for p in e["problems"])]
-old += [h["path"] for h in r["homeless"] if h["kind"] == "page" and heads(h["path"])]
-sys.exit(0 if old else 1)
-EOF
+  # The skill goes on only when survey's last line names it: jig.py alone decides.
+  if ! $J survey | tail -1 | grep -q '/jig:redocument'; then
+    echo "no page to convert: nothing to redocument"; return
+  fi
   local status; status="$($J status)"
   if [ "$status" != "no jobs open" ]; then
     echo "jobs open: $(echo "$status" | awk '/^  [^ ]/ {print $1}' | paste -sd, - | sed 's/,/, /g'); redocument runs on a quiet board"
     return
   fi
-  echo "start: old-format pages found, board quiet"
+  echo "start: pages to convert found, board quiet"
 }
 
 # Hubnode step 1: the seed rows survey gives, before the owner's judgment in step 2.
@@ -114,7 +109,7 @@ echo "-- jig survey"; $J survey
 echo "-- before starting"; start
 echo "-- remap seed (step 1), proposed to the owner as the step 2 table"; seed
 
-echo; echo "== refusal: no old-format pages"
+echo; echo "== refusal: no page to convert"
 repo "$T/clean"
 mkdir -p docs/store && printf '# Store\n\nThe store keeps rows in SQLite.\n\n## Schema\n\nVersion 3.\n' > docs/store/store.md
 git add -A && git commit -qm docs

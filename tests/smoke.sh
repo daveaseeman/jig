@@ -482,7 +482,7 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
 
   msg="update $name: a second --apply is up to date and changes nothing"
   before=$(git status --porcelain); out=$($UP --apply 2>&1); after=$(git status --porcelain)
-  expect_pass test "$out" = "up to date" -a "$before" = "$after"
+  expect_pass test "$(echo "$out" | head -1)" = "up to date" -a "$before" = "$after"
 
   if [ "$style" = dot ]; then          # see the update skill, step 3
     msg="update $name: trunk's old checker refuses the update commit on R7 alone"
@@ -526,7 +526,7 @@ msg="update: once the board is current at .jig/, a root specs/, scripts/check.sh
 mkdir -p specs jig/specs && printf '# spec\n' > specs/api.md && printf 'echo mine\n' > scripts/check.sh
 printf '# mine\n' > jig/specs/x.md && printf '{"lanes": {}}\n' > jig/lanes.json.example
 git add -A && git commit -qm own
-expect_pass test "$($UP 2>&1)" = "up to date"
+expect_pass test "$($UP 2>&1 | head -1)" = "up to date"
 git reset -q --hard HEAD~1
 
 msg="update: a board stamped above this jig refuses"
@@ -538,7 +538,7 @@ git reset -q --hard HEAD~1
 
 msg="update: an up-to-date repo says so even with a worktree open"
 git worktree add -q --detach "$T/up-extra0" HEAD 2>/dev/null
-expect_pass test "$($UP 2>&1)" = "up to date"
+expect_pass test "$($UP 2>&1 | head -1)" = "up to date"
 git worktree remove --force "$T/up-extra0"
 printf '# behind\n' >> .jig/jig.py && git commit -qam behind   # the refusals below need a plan
 
@@ -674,7 +674,7 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
   esac
 
   msg="update $gen: a second update is up to date"
-  expect_pass test "$($UP 2>&1)" = "up to date"
+  expect_pass test "$($UP 2>&1 | head -1)" = "up to date"
 
   msg="update $gen: the update commits with the hooks on, and survey then finds no homeless files"
   expect_pass sh -c "git commit -qm update && python3 -c \"
@@ -1841,7 +1841,7 @@ done
 msg="init --para after update and a commit succeeds, and the next update is up to date"
 $UP --apply >/dev/null 2>&1; git add -A && git commit -qm update >/dev/null 2>&1
 out=$($J init --para docs --contract 'src/**' 2>&1); rc=$?     # docs: this section's metarepo
-expect_pass sh -c "test $rc = 0 && test -f .jig/para.json && test \"\$($UP 2>&1)\" = 'up to date'" "$out"
+expect_pass sh -c "test $rc = 0 && test -f .jig/para.json && test \"\$($UP 2>&1 | head -1)\" = 'up to date'" "$out"
 }
 
 # ---------------------------------------------------------------- ledger rows of the wrong shape
@@ -3345,6 +3345,51 @@ expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a/seam-g.md: covers files of 
 import json, subprocess
 r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 assert r['seams_misfiled'] == [{'path': 'docs/a/seam-g.md', 'other': 'docs/g.md'}], r['seams_misfiled']\"" "$out"
+
+# A house-format page the board names is a page wherever it sits; a jig repo never adopts again.
+HF="$T/homes-house"; pcnew "$HF" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p docs/crates/s src/s && printf 'x\n' > src/s/s.rs
+for n in store lib; do printf '# %s\n\n## Does\nKeeps rows.\n\n## Gotchas\nNone.\n' $n > docs/crates/s/$n.md; done
+board "b['docmap'] = {'docs/crates/s/store.md': ['src/s/s.rs'], 'docs/crates/s/lib.md': ['src/s/**']}" && git add -A && git commit -qm house
+msg="house: docmap pages in any format are pages outside the docs tree, not unread strays, and survey says /jig:redocument"
+out=$($J survey 2>&1)
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Pages outside the docs tree/,/^\$/p' | grep -q '^  docs/crates/s/store.md → docs/store.md' && echo \"\$0\" | sed -n '/^Pages outside the docs tree/,/^\$/p' | grep -q '^  docs/crates/s/lib.md → docs/lib.md' && ! echo \"\$0\" | grep -q 'never read since' && echo \"\$0\" | tail -1 | grep -q 'run /jig:redocument'" "$out"
+behind
+msg="house: update proposes moving both, with their docmap keys"
+out=$($UP 2>&1)
+expect_pass sh -c "for w in 'git mv docs/crates/s/store.md docs/store.md' 'git mv docs/crates/s/lib.md docs/lib.md' '.jig/config.json docmap: docs/crates/s/store.md' '.jig/config.json docmap: docs/crates/s/lib.md'; do echo \"\$0\" | grep -q \"^      \$w\" || { echo \"missing \$w\"; exit 1; }; done" "$out"
+
+HL="$T/homes-nolead"; pcnew "$HL" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p docs/s && printf '# S\n\n## Part\n\nText.\n' > docs/s/s.md && git add -A && git commit -qm page
+msg="house: a page at home with no lead paragraph sends a jig repo to /jig:update, not adopt or redocument"
+expect_pass sh -c "$J survey | tail -1 | grep -q 'run /jig:update to review each in place'"
+msg="house: on a current repo, update is up to date, exits 0, and still lists the page with its problem"
+out=$($UP 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | head -1 | grep -qx 'up to date' && echo \"\$0\" | sed -n '/^Repo files to review/,/^\$/p' | grep -q '^  docs/s/s.md: off the page contract .*no lead paragraph'" "$out"
+msg="house: a clean jig repo's survey says nothing to do"
+printf '# S\n\nS keeps rows.\n\n## Part\n\nText.\n' > docs/s/s.md && git commit -qam lead
+expect_pass sh -c "$J survey | tail -1 | grep -qx 'On jig already: nothing to do.'"
+msg="house: a docmap key at the root moves to docs/ alone, with only its own references"
+mkdir -p src && printf 'x\n' > src/x.py && printf '# Architecture\n\n## Layers\nTwo.\n' > ARCHITECTURE.md
+printf '# App\n\nSee ARCHITECTURE.md and src/x.py.\n' > README.md
+board "b['docmap'] = {'ARCHITECTURE.md': ['src/**']}" && git add -A && git commit -qm arch
+out=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^  ARCHITECTURE.md: 1 page outside the docs tree' && echo \"\$0\" | grep -q '^      git mv ARCHITECTURE.md docs/ARCHITECTURE.md' && ! echo \"\$0\" | grep -q '^  /: ' && ! echo \"\$0\" | grep -q 'AGENTS.md:[0-9]'" "$out"
+msg="house: package READMEs that docmap names stay where they are"
+mkdir -p crates/a crates/b && printf '# a\n\nThe a crate.\n' > crates/a/README.md && printf '# b\n\nThe b crate.\n' > crates/b/README.md
+board "b['docmap'] = {'crates/a/README.md': ['src/**'], 'crates/b/README.md': ['src/**']}" && git add -A && git commit -qm crates
+out=$($UP 2>&1)
+expect_pass sh -c "! echo \"\$0\" | grep -q 'git mv crates/' && python3 -c \"
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+assert not {'crates/a/README.md', 'crates/b/README.md'} & {h['path'] for h in r['homeless']}, r['homeless']\"" "$out"
+msg="house: the same page in a repo with no board still gets /jig:adopt"
+HN="$T/homes-noboard"; pcnew "$HN" && mkdir -p docs/s && printf '# S\n\n## Part\n\nText.\n' > docs/s/s.md && git add -A && git commit -qm init
+expect_pass sh -c "$J survey | tail -1 | grep -q 'Run /jig:adopt'"
+msg="house: a jig repo with only a stray gets no /jig:adopt line"
+HS="$T/homes-stray"; pcnew "$HS" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p docs && printf 'Ideas.\n' > docs/ideas.md && git add -A && git commit -qm stray
+expect_pass sh -c "! $J survey | grep -q '/jig:adopt'"
 }
 
 # ---------------------------------------------------------------- update's AGENTS.md lines

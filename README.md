@@ -113,7 +113,8 @@ before touching any file of yours:
 /jig:update
 ```
 
-A repo on jig whose `docs/` still use the old Now / Rules / Checks pages. The hubnode proposes a
+A repo on jig whose pages need converting: in the old Now / Rules / Checks shape, or outside the
+docs tree in any format. The hubnode proposes a
 remap for you to approve, then lands one page per job and deletes the old docs at the end:
 
 ```
