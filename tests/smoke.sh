@@ -4638,7 +4638,75 @@ cd "$T"
 }
 
 
-UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap boundary decisions supersede touches"
+# ---------------------------------------------------------------- a staged batch: after:, check, Workflow, near names
+sec_staging_batches() {
+export JIG_CONFIG="$T/sb-repos.json" XDG_CONFIG_HOME="$T/sb-config"
+SB="$T/sb"; mkdir -p "$SB" && cd "$SB" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+stage a.md this doc new docs/a.md
+stage b.md this doc new docs/b.md && sed -i.bak 's/^status: staged$/after: a.md\nstatus: staged/' .jig/staging/b.md
+stage c.md this doc new docs/c.md && sed -i.bak 's/^status: staged$/after: b.md\nstatus: staged/' .jig/staging/c.md
+rm .jig/staging/*.bak
+# named so name order and after: order disagree
+mv .jig/staging/a.md .jig/staging/z.md && sed -i.bak 's/^after: a.md$/after: z.md/' .jig/staging/b.md && rm .jig/staging/b.md.bak
+msg="staging: the list puts each file after the one its after: names (z, b, c), not in name order"
+expect_pass test "$($J staging | sed -n 's/^  \([a-z]\.md\):.*/\1/p' | tr '\n' ' ')" = "z.md b.md c.md "
+msg="staging: resolve refuses c.md while b.md, which it waits for, is staged, and names b.md"
+out=$($J staging resolve c.md 2>&1); rc=$?
+expect_pass sh -c "test $rc -ne 0 && echo \"\$0\" | grep -q 'waits for b.md' && test -f .jig/staging/c.md" "$out"
+msg="staging: an after: naming a file neither staged nor landed is marked"
+sed -i.bak 's/^after: b.md$/after: gone.md/' .jig/staging/c.md && rm .jig/staging/c.md.bak
+expect_pass sh -c "$J staging | grep -q 'after gone.md: not staged'"
+msg="staging: an after: naming a resolved file isn't marked, and its waiter resolves"
+$J staging resolve z.md >/dev/null && git add -A && git commit -qm "z"
+expect_pass sh -c "! $J staging | grep -q 'after z.md: not staged' && $J staging resolve b.md"
+$J staging drop c.md >/dev/null
+
+msg="staging: a spec with an empty ## Workflow resolves with jig workflow's lines in it"
+stage w.md this spec new w.md '# W\n\n## Intent\nx\n\n## Workflow\n<!-- fill -->\n\n## After\ny\n'
+$J staging resolve w.md >/dev/null
+expect_pass sh -c "$J workflow > '$T/wf' && sed -n '/^## Workflow/,/^## After/p' .jig/specs/w.md | grep -vE '^(## |<!--|\$)' | diff - '$T/wf' && grep -q '^## After' .jig/specs/w.md"
+msg="staging: a spec with no ## Workflow gets one"
+stage v.md this spec new v.md '# V\n\n## Intent\nx\n'
+$J staging resolve v.md >/dev/null
+expect_pass sh -c "sed -n '/^## Workflow/,\$p' .jig/specs/v.md | tail -n +2 | diff - '$T/wf'"
+msg="staging: a spec whose ## Workflow holds lines keeps them"
+stage u.md this spec new u.md '# U\n\n## Workflow\nspec: tier 1, effort 1\n'
+$J staging resolve u.md >/dev/null
+expect_pass test "$(sed -n '/^## Workflow/,$p' .jig/specs/u.md | tail -n +2)" = "spec: tier 1, effort 1"
+
+$J repos add north-star "$SB" >/dev/null
+OUT="$T/sb-out"; mkdir -p "$OUT"
+printf -- '---\nstaged: true\ntarget: north-star\nchange: new\ndestination: docs/x.md\nsource: chat\nstatus: staged\n---\nx\n' > "$OUT/nokind.md"
+printf -- '---\nstaged: true\ntarget: north-star\nkind: doc\nchange: new\ndestination: docs/x.md\nsource: chat\nstatus: staged\n---\nx\n' > "$OUT/good.md"
+msg="staging check: run outside any repo, a file with no kind: is named, and it exits non-zero"
+out=$(cd "$OUT" && python3 "$P/jig/jig.py" staging check nokind.md good.md 2>&1); rc=$?
+expect_pass sh -c "test $rc -ne 0 && echo \"\$0\" | grep -q 'no kind' && echo \"\$0\" | grep -q '^good.md: ok'" "$out"
+msg="staging check: a good file passes"
+expect_pass sh -c "cd '$OUT' && python3 '$P/jig/jig.py' staging check good.md"
+msg="staging check: an absolute destination, an after: outside the batch and an unlisted target are each named"
+printf -- '---\nstaged: true\ntarget: nowhere\nkind: doc\nchange: new\ndestination: /tmp/x.md\nsource: chat\nafter: missing.md\nstatus: staged\n---\nx\n' > "$OUT/worse.md"
+out=$(cd "$OUT" && python3 "$P/jig/jig.py" staging check worse.md 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'is absolute' && echo \"\$0\" | grep -q 'after missing.md' && echo \"\$0\" | grep -q \"target 'nowhere'\"" "$out"
+msg="staging check: an after: naming a file already in the target's staging passes"
+stage y.md this doc new docs/y.md
+sed 's/^status: staged$/after: y.md\nstatus: staged/' "$OUT/good.md" > "$OUT/next.md"
+expect_pass sh -c "cd '$OUT' && python3 '$P/jig/jig.py' staging check next.md"
+
+msg="repos: NorthStar and north-star are flagged on the list, with both paths"
+NS="$T/NorthStarDir"; mkdir -p "$NS"
+$J repos add NorthStar "$NS" >/dev/null
+out=$($J repos 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'NorthStar and north-star' && echo \"\$0\" | grep -q 'NorthStarDir\$' && echo \"\$0\" | grep -q '/sb\$'" "$out"
+msg="repos add: adding a near-duplicate name warns"
+expect_pass sh -c "$J repos add North_Star '$T' | grep -q 'warning: North_Star'"
+msg="staging check: a target with a near-duplicate in the list is flagged"
+out=$(cd "$OUT" && python3 "$P/jig/jig.py" staging check good.md 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'both in the repos list'" "$out"
+}
+
+
+UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap boundary decisions supersede touches staging_batches"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file

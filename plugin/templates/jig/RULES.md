@@ -657,6 +657,17 @@ with other content wait until the work is done and the
 source is in it; a file for another repo moves into that repo's staging, found through
 `jig repos`. `jig staging drop <file>` deletes it and records nothing: it was never committed.
 
+A batch whose files depend on each other says so in each file's optional `after:` header: the
+staged file names it waits for. `jig staging` lists files so each comes after those it names (name
+order otherwise), and marks an `after` that names a file neither staged nor carried by a landed
+file. `resolve` refuses a file while one it waits for is still staged. `jig staging check <file>…`
+checks a batch's headers before it is staged, from outside any repo: an unknown kind, a missing
+key, an absolute destination, a target `jig repos` doesn't list, an `after` naming no file in the
+batch or the target's staging. A spec resolved new, whose `## Workflow` is empty or missing, gets
+`jig workflow`'s lines, as `/jig:spec` writes them. `jig repos` and `jig repos add` warn when two
+names are equal once case and punctuation are dropped, printing both paths: a file staged for one
+lands in the other.
+
 A feature request is `kind: feature-request`: the owner's own words for what the product
 should do ("I want it to do xyz"), with no required shape. A story names who wants what and
 why; a request only describes. Both resolve into a spec carrying their source. Because a
@@ -680,7 +691,8 @@ resolves or drops files from it. A report resolves like a story: into a spec car
 While anything is staged, a report for this repo in that `feedback/` folder included,
 `jig release` refuses; `--force` releases anyway and names the staged files in the release
 commit. Commits, pushes and gates don't look at staging. A chat needs access to `~/.config/jig/` (where
-`jig repos` keeps paths) and then to one repo's `.jig/staging/`, nothing more.
+`jig repos` keeps paths) and then to one repo's `.jig/staging/`; a sweep that skips what the target
+already has also reads its `.jig/specs/`, `.jig/roadmap.md` and `.jig/decisions.md`.
 
 ## Metarepo and pararepos
 
