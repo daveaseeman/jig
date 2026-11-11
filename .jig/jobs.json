@@ -19,7 +19,7 @@
   },
   "decision-log-migration": {
     "spec": ".jig/specs/decision-log.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [
       "plugin/skills/release/SKILL.md"
