@@ -58,7 +58,7 @@ All findings from the review of d897b21 and the hubnode's two clone trials are f
 
 ## Shared files changed
 - `plugin/templates/jig/jig.py`: the migration block (`merged_log`, `cmd_merge_log` and helpers),
-  the `logged` guard in `meta_rules`, R6's merge-given numbers, numbering above every id,
+  `migrated_here` (which rules judge a change) in `meta_rules`, R6's merge-given numbers, numbering above every id,
   `terms_changed` and `entries_moved` across the migration, the update STEP and STAMP 10, init's
   seed, and survey's adoption row.
 - `plugin/templates/jig/RULES.md`: Decision log migration paragraphs, Commands.
