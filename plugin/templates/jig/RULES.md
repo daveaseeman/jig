@@ -61,7 +61,7 @@ a rename changes both of its paths: R3–R5, P1, P2 and P4 count each.
 - **R3** A job changes only its `owns`, its `shares`, `common`, or files new to the repo, and
   adds to `.jig/decisions.md` (Decision log), whatever its lists say. There it changes lines in
   place only under `## Open`, and a line it added itself, and removes an entry only in adding
-  the one that supersedes it.
+  the accepted one that supersedes it.
 - **R4** Another open job's `owns` is refused even if this job also lists it.
 - **R5** The board is the hubnode's: `config.json` and `jobs.json` are edited on trunk only.
   So is the roadmap, the owner's: `.jig/roadmap.md`, and `ROADMAP.md` where trunk has a
@@ -495,19 +495,20 @@ resolved and added, before its commit. On trunk an id is a number: M2 refuses a 
 entry there, and `jig release` refuses to release one.
 
 **Released sections.** The log shows what holds now; git keeps what held before. A reversed
-decision is a new entry whose status line ends `Supersedes D-007.`, and the commit adding it
-removes D-007's whole block (its heading through the line before the next heading), wherever it
+decision is a new accepted entry whose status line ends `Supersedes D-007.`, and the commit
+adding it removes D-007's whole block (its heading through the line before the next heading), wherever it
 sits, a released section included. A release keeps its change lines: they are what that version
 told its readers, and a reversal still goes in the new release's group as a `**Breaking:**`
 line. Any other change to a released section is refused, except adding ` [YANKED]` and its
-line, and so is removing an entry nothing in the log supersedes. `jig decision <id>` prints an
+line, and so is removing an entry no accepted entry supersedes: an open or proposed entry may
+name what it would supersede, and retires nothing until it is accepted. `jig decision <id>` prints an
 entry and its supersedes chain, newest last; for a removed id it reads the entry from git, with
 the commit and release it stood in, and names what holds now. `jig update` lists a superseded
 entry an older log still holds, to remove.
 
 **Checked** in every repo, by the hook, whenever a commit touches the log: each entry's status
 line and date, an accepted entry's who, supersedes links that resolve (to an entry in the log,
-or in trunk's history of it), one entry per id, and that a release or `## Unreleased` holds
+or in trunk's history of it; a shallow clone, which can't say, passes them), one entry per id, and that a release or `## Unreleased` holds
 accepted entries only (M2); and the released sections.
 `jig release` renames `## Unreleased` to the version's heading and adds an empty one above it.
 A repo that never releases just grows Unreleased.

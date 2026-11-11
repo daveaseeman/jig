@@ -52,8 +52,8 @@ that spec carries the mark.
   Decision log). `resolve` adds an open or proposed one under `## Open` and an accepted one
   under `## Unreleased`. Lines before the first entry (doc edits listed with them) are refused:
   apply those with the user, delete them from the staged file, resolve again. An `update`
-  changes an entry under `## Open` in place, or supersedes a released one with a new entry;
-  write it, then `resolve`. The entry is the change's line, so M3 needs no other.
+  changes an entry under `## Open` in place, or supersedes an accepted one with a new accepted
+  entry that removes it in the same commit; write it, then `resolve`. The entry is the change's line, so M3 needs no other.
 - **roadmap**: `destination: .jig/roadmap.md`, `change: update`; the body says what to add,
   rename, reorder or drop (a phase, a scope, an exit box) and why. It is the owner's decision,
   made on trunk: the hubnode applies it and commits with the file's `Source:` line in the

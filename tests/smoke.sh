@@ -4201,6 +4201,10 @@ expect_pass sh -c "echo \"\$0\" | grep -q 'D-001 is removed from release v0.1.0,
 msg="supersede: editing a released change line is still refused"
 sed -i.bak 's/^- IDS: Number them\.$/- IDS: Number all./' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
 out=$(git commit -qm edit 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is frozen'" "$out"
+msg="supersede: a proposed entry naming Supersedes D-001 removes nothing: removing D-001 with it is refused"
+ulog '### D-002 maybe strings
+Proposed (2026-11-02). Supersedes D-001.' Open && rment D-001 && git add -A; out=$(git commit -qm proposal 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'D-001 is removed from release v0.1.0, and no entry in the log supersedes it'" "$out"
 msg="supersede: one commit adding D-002 that supersedes D-001 and removing D-001 from v0.1.0 is accepted, change lines kept"
 ulog '### D-002 ids are strings
 Accepted (owner, 2026-11-02). Supersedes D-001.' && rment D-001 && git add -A
@@ -4234,13 +4238,23 @@ out=$($J decision D-001 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'D-002 
 msg="supersede: on trunk, D-004 superseding D-003, an id given only in a merge commit, removes it and passes M2"
 ulog '### D-004 ids are ulids
 Accepted (owner, 2026-11-05). Supersedes D-003.' && rment D-003 && git add -A; expect_pass git commit -qm "D-004: ulids"
+git clone -q --depth 1 "file://$SR" "$T/shallow" && cd "$T/shallow"
+msg="supersede: in a shallow clone, a log commit passes M2 though D-003's entry is in history it lacks"
+ulog '### Changed
+- IDS: Shallow.' && git add -A; expect_pass $J check --staged; undo
+msg="supersede: in a shallow clone, jig decision D-003 says the clone is shallow"
+out=$($J decision D-003 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'this clone is shallow'" "$out"
+cd "$SR"
 msg="supersede: jig update lists a superseded entry the log still holds under Repo files to review"
 ulog '### D-006 keep the old way
 Accepted (owner, 2026-11-05). Supersedes D-005.
 
 ### D-005 the old way
-Accepted (owner, 2026-11-05).' && git add -A && git commit -qm "D-005, D-006"
+Accepted (owner, 2026-11-05).' && ulog '### D-007 maybe go back
+Proposed (2026-11-06). Supersedes D-004.' Open && git add -A && git commit -qm "D-005, D-006, D-007"
 out=$($J update 2>&1); expect_pass sh -c "echo \"\$0\" | grep -A9 'Repo files to review' | grep -q 'D-005 is superseded by D-006: remove it; the entry superseding it names it'" "$out"
+msg="supersede: jig update doesn't list an entry only a proposal supersedes"
+expect_pass sh -c "! echo \"\$0\" | grep -q 'D-004 is superseded'" "$out"
 
 SM2="$T/sm"; mkdir -p "$SM2" && cd "$SM2" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
@@ -4260,6 +4274,13 @@ cd "$SP" && git -C smclone pull -q 2>/dev/null && setjson .jig/para.json pin v0.
   && git add -A && git commit -qm "meta: sm v0.2.0 → v0.3.0" >/dev/null 2>&1; out=$($J sync 2>&1)
 msg="supersede: a pararepo citing a removed metarepo entry is told after the pin bump, with the successor named"
 expect_pass sh -c "echo \"\$0\" | grep -qF '.jig/specs/s.md:3 cites sm/.jig/decisions.md § D-001, which sm' && echo \"\$0\" | grep -qF 'has no row for: now sm/.jig/decisions.md § D-002'" "$out"
+cd "$SM2" && git switch -q -c c && ulog '### D-003 ids are uuids
+Accepted (owner, 2026-11-03). Supersedes D-002.' && rment D-002 && git add -A && git commit -qm "D-003: uuids" && $J reviewed >/dev/null
+git switch -q main && git merge -q --no-ff --no-edit c && $J release >/dev/null
+cd "$SP" && git -C smclone pull -q 2>/dev/null && setjson .jig/para.json pin v0.4.0 && $J init --para sm >/dev/null 2>&1 \
+  && git add -A && git commit -qm "meta: sm v0.3.0 → v0.4.0" >/dev/null 2>&1; out=$($J sync 2>&1)
+msg="supersede: a citation two removals back walks the metarepo's history to the entry that holds at the pin"
+expect_pass sh -c "echo \"\$0\" | grep -qF 'has no row for: now sm/.jig/decisions.md § D-003'" "$out"
 cd "$SR"
 }
 
