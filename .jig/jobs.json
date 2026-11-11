@@ -1,7 +1,7 @@
 {
   "project-product-boundary": {
     "spec": ".jig/specs/project-product-boundary.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/templates/jig/jig.py",
