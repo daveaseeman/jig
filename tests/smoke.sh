@@ -3484,7 +3484,7 @@ mkdir -p docs/systems/rest && printf '# Rest\n\nThe rest page. [scope](scope.png
 board "b['docmap']['docs/systems/rest/rest.md'] = ['src/g/g.rs']" && git add -A && git commit -qm "folder page in an ownerless folder"
 msg="flat: a folder page in a folder no page owns is listed once, to move with its folder, and never as a seam"
 out=$($J survey 2>&1)
-expect_pass sh -c "test \$(echo \"\$0\" | grep -c 'docs/systems/rest/rest.md') = 1 && python3 -c \"
+expect_pass sh -c "test \$(echo \"\$0\" | grep -c 'docs/systems/rest/rest.md') = 1 && ! echo \"\$0\" | grep -q 'sits in docs/systems/rest/rest.md' && python3 -c \"
 import json, subprocess
 r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 h = {e['path']: e for e in r['homeless']}

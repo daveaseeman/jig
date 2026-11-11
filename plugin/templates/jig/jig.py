@@ -2612,7 +2612,9 @@ def cmd_survey(root: Path, args) -> int:
         print(f"\nPages outside the docs tree ({DIR}/RULES.md, Documentation); move each, "
               "or nest it\nunder its system's folder if it is a subsystem:")
         for e in misplaced:
-            inside = owner_page(e["path"], have, deep)
+            # A folder page owns its own folder: what it sits in is the folder above.
+            p = e["path"]
+            inside = owner_page(os.path.dirname(p) if folder_page(p) else p, have, deep)
             # At a metarepo's root, nothing in the path says which genre: the remap picks one.
             to = e["to"] or f"docs/<genre>/{Path(e['path']).name}"
             print(f"  {e['path']} → {to}{' (fold it in: that page exists)' if e['fold'] else ''}"
