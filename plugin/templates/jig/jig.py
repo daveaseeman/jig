@@ -2049,8 +2049,16 @@ def at_home(path: str, registers: list[str], deep: dict, have: set[str] = frozen
     page's folder that isn't a page is one of that page's files, wherever it sits below it."""
     # ROADMAP.md is a home only as the view of a roadmap; a hand-written one is a stray.
     return (path in ROOT_DOCS or (path == ROADMAP_VIEW and ROADMAP in have) or reference_file(path, have) or path in registers
-            or (folder_page(path) and depth_ok(os.path.dirname(path), deep))
+            or (folder_page(path) and depth_ok(os.path.dirname(path), deep) and system_above(path, have, deep))
             or (not folder_page(path) and bool(owner_page(path, have, deep))))
+
+
+def system_above(page: str, have: set[str], deep: dict) -> bool:
+    """A folder page sits where a page may: its folder is a system's, flat in the page root,
+    or inside a folder a page owns. A folder no page owns is no system, so a page below it is
+    misplaced, the test a flat page passes through owner_page."""
+    up = os.path.dirname(os.path.dirname(page))
+    return page_root(up) or bool(owner_page(os.path.dirname(page), have, deep))
 
 
 def page_home(path: str, have: set[str], deep: dict) -> str:
@@ -2058,11 +2066,16 @@ def page_home(path: str, have: set[str], deep: dict) -> str:
     system's folder; else a system of its own, flat in docs/. A page of that name already
     there, flat or in its folder, is where it folds. Where the page would be deeper than the
     docs tree allows, the nearest page itself: fold it in. In a metarepo, the system of its own
-    is flat in its genre folder."""
+    is flat in its genre folder. A page in its own folder moves with that folder, so it climbs
+    from the folder above and lands in its folder unless the flat form is there to fold into."""
     stem, folders = Path(path).stem, path.split("/")[:-1]
+    own = folder_page(path)
+    if own:
+        folders = folders[:-1]
 
     def there(d: str) -> str:
-        return f"{d}/{stem}/{stem}.md" if f"{d}/{stem}/{stem}.md" in have else f"{d}/{stem}.md"
+        flat, inner = f"{d}/{stem}.md", f"{d}/{stem}/{stem}.md"
+        return flat if (own and flat in have) or (not own and inner not in have) else inner
     for i in range(len(folders), 1, -1):
         d = "/".join(folders[:i])
         if (page := folder_owner(d, have)) and depth_ok(d, deep):
@@ -2169,6 +2182,8 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
         # A page first: one that quotes the rulebook is still the repo's page, not a copy.
         if "/" in f and Path(f).name in RULES_NAMES:
             kind = "rules"
+        elif folder_page(f) and not system_above(f, have, deep):
+            kind, to = "page", page_home(f, have, deep)
         elif folder_page(f) or flat:
             kind, to = "deep", deep_home(f, deep, have)
         # The board naming a file makes it a page in any format and anywhere: fold-in asks

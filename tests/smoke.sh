@@ -3277,7 +3277,7 @@ expect_pass sh -c "echo \"\$0\" | grep -q '^      fold docs/systems/c.md into do
 
 # The docs tree is two levels deep; a third only on the owner's deep_subsystems entry.
 HD="$T/homes-deep"; pcnew "$HD" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
-page docs/a/a.md && page docs/a/b/b.md && page docs/a/b/c/c.md && page docs/c/d/d.md && page docs/a/b/x.md
+page docs/a/a.md && page docs/a/b/b.md && page docs/a/b/c/c.md && page docs/c/c.md && page docs/c/d/d.md && page docs/a/b/x.md
 git add -A && git commit -qm deep
 msg="homes: a page below a subsystem is deep, folding into its subsystem's page; docs/c/d/d.md passes; a flat page beside a subsystem's is deep too"
 expect_pass homes "assert (h['docs/a/b/c/c.md']['kind'], h['docs/a/b/c/c.md']['to']) == ('deep', 'docs/a/b/b.md'), h
@@ -3480,6 +3480,16 @@ assert r['seams_misfiled'] == [{'path': 'docs/a/seam-g.md', 'other': 'docs/g.md'
 git mv docs/a.md docs/a/a.md && board "b['docmap']['docs/a/a.md'] = b['docmap'].pop('docs/a.md')" && git add -A && git commit -qm "a into its folder"
 msg="flat: with its system page in the folder, docs/a/a.md, the seam is still named"
 expect_pass homes "assert r['seams_misfiled'] == [{'path': 'docs/a/seam-g.md', 'other': 'docs/g.md'}], r['seams_misfiled']"
+mkdir -p docs/systems/rest && printf '# Rest\n\nThe rest page. [scope](scope.png)\n' > docs/systems/rest/rest.md && printf 'png' > docs/systems/rest/scope.png
+board "b['docmap']['docs/systems/rest/rest.md'] = ['src/g/g.rs']" && git add -A && git commit -qm "folder page in an ownerless folder"
+msg="flat: a folder page in a folder no page owns is listed once, to move with its folder, and never as a seam"
+out=$($J survey 2>&1)
+expect_pass sh -c "test \$(echo \"\$0\" | grep -c 'docs/systems/rest/rest.md') = 1 && python3 -c \"
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+h = {e['path']: e for e in r['homeless']}
+assert (h['docs/systems/rest/rest.md']['kind'], h['docs/systems/rest/rest.md']['to']) == ('page', 'docs/rest/rest.md'), h
+assert r['seams_misfiled'] == [{'path': 'docs/a/seam-g.md', 'other': 'docs/g.md'}], r['seams_misfiled']\"" "$out"
 
 # A house-format page the board names is a page wherever it sits; a jig repo never adopts again.
 HF="$T/homes-house"; pcnew "$HF" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
