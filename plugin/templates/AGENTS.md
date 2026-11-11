@@ -21,6 +21,7 @@ Risk: R0 — personal prototype, single user, nothing shipped. Optimize for spee
 - Commit often; the git hook runs the rules. Never `--no-verify`.
 - A mergeable chunk is a handoff: checks pass → adversarial review (/jig:review) → `jig reviewed` → `jig handoff --spec .jig/specs/<task>.md`. Review happens once per handoff, not per commit. A chunk that doesn't finish its spec hands off with `--partial`.
 - Same fix twice → write a skill (see /jig:retro).
+- A choice that outlives its spec, or a change a release's reader can act on, gets an entry or a line under `## Unreleased` in `.jig/decisions.md`, as `.jig/RULES.md` (Decision log) says.
 - Rulebook `.jig/RULES.md`, enforced by `python3 .jig/jig.py`. Roles: /jig:hubnode, /jig:subnode.
 
 ## Code

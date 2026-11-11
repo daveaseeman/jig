@@ -17,25 +17,6 @@
     ],
     "reserved": {}
   },
-  "decision-log": {
-    "spec": ".jig/specs/decision-log.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/skills/hubnode/SKILL.md",
-      "plugin/skills/subnode/SKILL.md",
-      "plugin/skills/release/SKILL.md",
-      "plugin/skills/stage/SKILL.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh",
-      "plugin/skills/update/SKILL.md",
-      "plugin/templates/AGENTS.md"
-    ],
-    "reserved": {}
-  },
   "stage-ask-access": {
     "spec": ".jig/specs/stage-ask-access.md",
     "state": "claimed",
@@ -47,6 +28,23 @@
     ],
     "shares": [
       "plugin/skills/stage/SKILL.md"
+    ],
+    "reserved": {}
+  },
+  "decision-log-migration": {
+    "spec": ".jig/specs/decision-log.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/release/SKILL.md"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "plugin/skills/update/SKILL.md",
+      "plugin/skills/hubnode/SKILL.md",
+      "plugin/templates/AGENTS.md"
     ],
     "reserved": {}
   }
