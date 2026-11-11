@@ -1,6 +1,6 @@
 ---
 name: hardware
-description: Spec a board from a hardware definition the user supplies, as its own page in a docs folder named for the board, check it against the code, and install the skills the page lists. Use when a board is ready to spec, when a handoff's fold-in asks for a board page, or when asked to install hardware skills.
+description: Spec a board from a hardware definition the user supplies, as its own page under docs/, in a folder named for the board once it holds files, check it against the code, and install the skills the page lists. Use when a board is ready to spec, when a handoff's fold-in asks for a board page, or when asked to install hardware skills.
 ---
 
 A board page records what a board is, so the code can be checked against it. It is written
@@ -24,7 +24,11 @@ the code always matches it, and the check at the gate would catch nothing.
    entry keeps its why and gets its holder, or goes. A part not yet driven by code on this
    board is `no` in the Components table's Verified column, never an Undefined entry:
    Undefined is written only on the owner's word. The files the page leans on go in its
-   folder:
+   folder. A page that holds none — the definition pasted or a URL, no datasheet saved — is
+   flat instead, `docs/<board>.md` or `docs/<system>/<board>.md`, and wherever
+   `<home><board>.md` appears below, it is that path; it moves into its folder with a
+   `git mv` in the change that saves its first file. Its `boards` and `docmap` keys stay as
+   they are: either form names the page:
    - **The definition.** A file the user wrote is saved to `<home>`. A vendor's (a dev
      board's spec sheet, a reference manual) is saved to `<home>datasheets/`, with its source
      URL beside the link, in either `reference_files` mode: a board is not a part of itself.

@@ -1,6 +1,6 @@
 ---
 name: redocument
-description: Migrate a jig repo's docs/ from the old Now/Rules/Checks pages to the current page contract in one supervised pass - a remap the owner approves, one job per surviving page, old docs removed at the end with every reference to them. Run by the hubnode; subnodes follow its Subnode section from their kickoff.
+description: Convert a jig repo's pages - in the old Now/Rules/Checks shape, outside the docs tree in any format, or in the old board layout - to the current page contract in one supervised pass - a remap the owner approves, one job per surviving page, old docs removed at the end with every reference to them. Run by the hubnode; subnodes follow its Subnode section from their kickoff.
 disable-model-invocation: true
 ---
 
@@ -24,15 +24,15 @@ half: open the pointers branch before any job. The run's own open jobs are not "
 Otherwise:
 
 1. **Bring the layout current.** Run `/jig:update` first and land what it proposes, except
-   its page moves for old-contract pages: decline those, because the remap places them (and
+   its page moves: decline them all, because the remap places every page (and
    in a pararepo `update` would add a BUFFER row per cached pointer, which this run's
    pointers branch replaces). Starting from a current layout means the two never propose
    different moves for the same files.
-2. **Refuse unless old-format pages exist.** Run `jig survey`. Go on only if it names at
-   least one page "old contract — convert" under *Pages off the page contract*, a page
-   under *Pages outside the docs tree* whose file has the Now, Rules and Checks headings, or
-   any file under *Board files in the old docs/hardware/ layout*. Otherwise say
-   `no old-format pages: nothing to redocument` and stop.
+2. **Refuse unless there is a page to convert.** Run `jig survey`. Go on only if its last
+   line names `/jig:redocument`: a page in the old Now / Rules / Checks shape, a page outside
+   the docs tree in any format, or a board file in the old layout. Otherwise say
+   `no page to convert: nothing to redocument` and stop. A page at home but off the contract
+   is not a conversion: `/jig:update` lists it with its problems and edits it where it sits.
 3. **Refuse unless the board is quiet.** Run `jig status`. Go on only if it says
    `no jobs open`. Otherwise say `jobs open: <names>; redocument runs on a quiet board` and
    stop: fold-in would ask a page that is about to die about live code changes. Those jobs
@@ -40,11 +40,14 @@ Otherwise:
 
 ## Hubnode: the remap
 
-1. **Seed it from survey.** Its old-contract pages, its pages outside the docs tree (with
-   where survey says each goes), and its strays under `docs/` are the first rows. Every
+1. **Seed it from survey.** Every page to convert is a first row: its old-contract pages, and
+   its pages outside the docs tree, in whatever format (with where survey says each goes).
+   Its strays under `docs/` are rows too. A page at home but off the contract is update's,
+   not the remap's. Every
    tracked doc under `docs/` gets a row or an explicit `drop`, board pages included. A board
-   page in an older layout, `docs/hardware/<board>.md`, gets a row to `docs/<board>/<board>.md`
-   with its `boards` entry; `docs/hardware/<board>/` moves into that folder, its vendor PDFs
+   page in an older layout, `docs/hardware/<board>.md`, gets a row to `docs/<board>.md` with its
+   `boards` entry, or to `docs/<board>/<board>.md` when files go with it; `docs/hardware/<board>/`
+   moves into that folder, its vendor PDFs
    into the folder's `datasheets/` (a PDF the repo wrote, a schematic, stays beside the page);
    and each file of `docs/hardware/components/<part>/` moves into the `datasheets/` of the
    page that links the part, or `docs/datasheets/` when two board pages link it. Survey's rows
@@ -75,7 +78,9 @@ Otherwise:
    Cited is only for a pararepo.
 
    Verbs are `rewrite`, `merge`, `split`, `move`, `new`, `drop`. A new path is
-   `docs/<system>/<system>.md` or `docs/<system>/<subsystem>/<subsystem>.md`, no deeper. A
+   `docs/<system>.md` or `docs/<system>/<subsystem>.md`, no deeper, flat until the page holds
+   other files; one that does (part pages, files it links, `datasheets/`) is
+   `docs/<system>/<system>.md` or `docs/<system>/<subsystem>/<subsystem>.md`. A
    subsystem inside a subsystem is asked of the owner with its rationale, as `.jig/RULES.md`
    (Documentation) says, and lands as a `deep_subsystems` entry in `.jig/config.json` on trunk
    on a yes. Name the cleanup route in
@@ -165,11 +170,15 @@ Your spec carries the job's remap rows and the Sources. You write only your page
    `.jig/handoffs/`, `.jig/specs/`, the ledgers (DEFERRED, WORKAROUNDS, BUFFER), and any
    source the `## Sources` names. **Tracing migrates and verifies; it never invents.** A
    claim with no source is flagged in the report, not written on the page.
+   In a metarepo there is no code, so a claim traces to its decision row or to the pararepo
+   file a pointer names. A claim whose only record is the old page is kept as worded and
+   flagged, never left off.
 2. **Write** the page from `.jig/docs-page.md`, to the contract: a lead paragraph, sections
    named for the system's parts, optional Talks to, optional Invariants, optional Undefined
    last. An old page's list of what it uses or serves goes under `## Talks to`, keeping only
    what crosses the system's boundary; calls inside the system are the body's or nowhere.
-   Every old Rules entry gets exactly one fate:
+   Every claim of the old page, a Rules entry or a house-format section's statement, gets
+   exactly one fate:
    - **still true of the code** → described in the body;
    - **passes the admission test** (a why it must hold, and what holds it) → `## Invariants`,
      as `- <fact> — <why>; held by <holder>.`;

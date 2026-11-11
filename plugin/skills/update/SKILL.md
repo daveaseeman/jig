@@ -12,7 +12,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" update
 
 That is a dry run. It changes nothing, and its exit code says what you have:
 
-- **0, "up to date".** Say so and stop.
+- **0, "up to date".** Say so. If it lists Repo files to review, show each as below and ask
+  about each; otherwise stop.
 - **0, a plan.** Show the plan: moves, files written from jig, removals, board edits, git
   state. Say each removal out loud — an old tool's script or rendered board, a merged entry,
   a review ledger's taken rows — since the diff is the only other place it shows. Ask. On a
@@ -40,11 +41,16 @@ one's proposed edit and ask about each; make it only on a yes. `--apply` never t
 Some of them are survey's home findings. A **rules** file off root: fold what still binds into
 `AGENTS.md` or a page's Invariants, repoint the lines named, delete it — but a package's own rules
 file in a monorepo may stay on the owner's word, so ask before proposing the delete. A **copy** of `.jig/RULES.md`:
-delete it and point what names it at `.jig/RULES.md`. A folder of **pages**: before the moves,
+delete it and point what names it at `.jig/RULES.md`. A page at home but **off the page contract** (no lead paragraph, an invariant with
+no why or holder, a section after Undefined) is fixed where it sits: show its problems and the
+edit that answers each, and make it on a yes. A folder of **pages**: before the moves,
 ask whether each page is a subsystem to nest under its system's folder rather than a system of
 its own. Nest only system/subsystem: a page **below a subsystem** (survey's `deep`) folds into
 its subsystem's page, unless the owner approves its folder for `deep_subsystems` with a rationale
-as `.jig/RULES.md` (Documentation) says; that entry lands on trunk on a yes.
+as `.jig/RULES.md` (Documentation) says; that entry lands on trunk on a yes. A page in the
+**wrong shape**: a folder page with nothing else in its folder goes flat beside its parent's
+page, and a flat page with a folder of its own name moves into it, each with its docmap key
+and `boards` entry; ask before each.
 Then make every line the proposal names in one commit — the `git mv`s, the docmap keys,
 `contract_paths`, the stale lines and, in a pararepo, a `BUFFER.md` row per cached pointer. Carry
 out each finding on a yes. Never propose adding a line that restates `.jig/RULES.md`: point at it.

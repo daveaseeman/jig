@@ -33,11 +33,11 @@ Each one gets exactly one job and one home:
 | `AGENTS.md` | rules an agent needs on every task — and nothing else |
 | `CLAUDE.md` | one line importing AGENTS.md |
 | `README.md` | for people outside the repo |
-| `docs/<system>/<system>.md` | what the code is now, one page per system; a subsystem stays a section until it has something to say that its system's page doesn't, then gets `docs/<system>/<subsystem>/<subsystem>.md`, no deeper without the owner's `deep_subsystems` entry; the files a page links sit in its folder |
+| `docs/<system>.md` | what the code is now, one page per system; a subsystem stays a section until it has something to say that its system's page doesn't, then gets `docs/<system>/<subsystem>.md`, no deeper without the owner's `deep_subsystems` entry; a page is flat until it holds other files (part pages, files it links, `datasheets/`), then moves into a folder named for it, `docs/<system>/<system>.md`, with them beside it |
 | `.jig/specs/` | a task in flight |
 | `.jig/ledgers/WORKAROUNDS.md` | patches that are in the code |
 | `.jig/ledgers/DEFERRED.md` | review findings that are not |
-| `docs/<board>/<board>.md` | one per board, a system or a subsystem like any other, listed in `boards` in `.jig/config.json`: components, wiring, toolchain, flash |
+| `docs/<board>.md` | one per board, a system or a subsystem like any other, in its folder once it holds files (`docs/<board>/<board>.md` beside its `datasheets/`), listed in `boards` in `.jig/config.json`: components, wiring, toolchain, flash |
 | `docs/…/datasheets/` | the vendor documents a page leans on, in that page's folder; one two pages use, in the nearest folder both share |
 | `docs/datasheets/` | a vendor document two systems use: reference files only, never a page |
 | `.claude/skills/` | reusable know-how, loaded on demand |

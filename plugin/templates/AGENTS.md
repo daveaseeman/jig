@@ -35,7 +35,7 @@ Risk: R0 — personal prototype, single user, nothing shipped. Optimize for spee
 - A new `.md` outside the homes `.jig/RULES.md` (Documentation) lists means its home wasn't found. `jig survey` lists the strays.
 
 ## Firmware (delete if not applicable)
-- Each board this repo builds for gets its page, `docs/<board>/<board>.md` (or a subsystem's folder in a larger system), listed in `boards` in `.jig/config.json`, before code for it passes the gate (/jig:hardware). Where one exists, read it before touching a pin, bus, or peripheral, and load the skills it lists.
+- Each board this repo builds for gets its page, `docs/<board>.md` (a subsystem's page in a larger system; in a folder of its own, `docs/<board>/<board>.md`, once it holds files), listed in `boards` in `.jig/config.json`, before code for it passes the gate (/jig:hardware). Where one exists, read it before touching a pin, bus, or peripheral, and load the skills it lists.
 - Logic gets unit tests. Driver code gets run on hardware. Don't mock a bus to make a driver "testable."
 - Graphics: emulate first. Everything else: flash as soon as confident it won't brick.
 

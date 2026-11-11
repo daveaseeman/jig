@@ -1,42 +1,4 @@
 {
-  "flat-pages": {
-    "spec": ".jig/specs/flat-pages.md",
-    "state": "claimed",
-    "after": [],
-    "owns": [
-      "plugin/skills/hardware/SKILL.md",
-      "plugin/skills/adopt/SKILL.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh",
-      "plugin/skills/redocument/SKILL.md",
-      "plugin/skills/update/SKILL.md",
-      "plugin/templates/AGENTS.md"
-    ],
-    "reserved": {}
-  },
-  "bug-redocument-any-format": {
-    "spec": ".jig/specs/bug-redocument-any-format.md",
-    "state": "claimed",
-    "after": [
-      "flat-pages"
-    ],
-    "owns": [
-      "plugin/skills/survey/SKILL.md",
-      "tests/redocument-fixture.sh",
-      "README.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh",
-      "plugin/skills/redocument/SKILL.md",
-      "plugin/skills/update/SKILL.md"
-    ],
-    "reserved": {}
-  },
   "meta-docs-tree": {
     "spec": ".jig/specs/meta-docs-tree.md",
     "state": "claimed",
@@ -57,7 +19,7 @@
   },
   "decision-log": {
     "spec": ".jig/specs/decision-log.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/hubnode/SKILL.md",
@@ -71,6 +33,20 @@
       "tests/smoke.sh",
       "plugin/skills/update/SKILL.md",
       "plugin/templates/AGENTS.md"
+    ],
+    "reserved": {}
+  },
+  "stage-ask-access": {
+    "spec": ".jig/specs/stage-ask-access.md",
+    "state": "claimed",
+    "after": [
+      "decision-log"
+    ],
+    "owns": [
+      "plugin/skills/feedback/SKILL.md"
+    ],
+    "shares": [
+      "plugin/skills/stage/SKILL.md"
     ],
     "reserved": {}
   }
