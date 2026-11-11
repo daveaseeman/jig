@@ -64,6 +64,21 @@ Otherwise:
    checkout's folder name, and any alias `jig repos` lists for this checkout. Names fold case. Give the table a Cited column: on
    each old page's row, every `§ <heading>` a pointer names (or the bare path). The remap is
    then the pointer crosswalk too. Migration moves pointers; it never changes a claim.
+
+   **In a metarepo** (`.jig/meta.json` on trunk), every page goes to `docs/<genre>/<name>.md`,
+   a genre being a folder `meta.json`'s `genres` declares (any folder under `docs/` when it
+   declares none): survey's `to` keeps a page's top folder as its genre, and a page at the root,
+   or a genre nested in a genre, is placed by the remap. Give the table a Cited-by column: on
+   each moved page's row, every pararepo file that cites its path or one of its headings, one
+   `git grep` per pararepo in `meta.json`'s `pararepos`, on its trunk, at the checkout
+   `jig repos` lists:
+
+   ```sh
+   git -C <pararepo checkout> grep -n -F <old path> <trunk>
+   ```
+
+   Those are the citations the release carrying the moves breaks, so it is a major, and
+   `jig sync` names each move and each stale citation to the pararepos.
 2. **Propose it as a table** and iterate with the owner until approved:
 
    | Old path(s) | New path | Verb | Notes | Cited |
@@ -75,7 +90,7 @@ Otherwise:
    | — | `docs/gap/gap.md` | new | code with no page | |
    | `docs/old/old.md` | — | drop | describes code that is gone | |
 
-   Cited is only for a pararepo.
+   Cited is only for a pararepo, Cited-by only for a metarepo.
 
    Verbs are `rewrite`, `merge`, `split`, `move`, `new`, `drop`. A new path is
    `docs/<system>.md` or `docs/<system>/<subsystem>.md`, no deeper, flat until the page holds
@@ -153,6 +168,9 @@ Otherwise:
      the pin holds it;
    - removes every old path's `docmap` key from `.jig/config.json`, `drop` rows included
      (on trunk, by the hubnode, either route);
+   - in a metarepo, rewrites `meta.json`'s `entry_files` to the new paths (`docs/<genre>/**/*.md`
+     for a genre whose pages pararepos cite), in the same final job, so what pararepos cite
+     moves with the pages;
    - repoints every tracked reference to an old path — README, `AGENTS.md`, other pages,
      comments — at its new path, or removes it for a `drop`. Find them with
      `git grep -n -F <old path>`, one old path at a time.

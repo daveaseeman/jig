@@ -43,6 +43,20 @@ Then run `python3 .jig/jig.py init` — it writes the board and installs the git
 enforce the rules. Those hooks are the real enforcement and work with or without any AI tool.
 Jobs' worktrees go in `.git/jig/worktrees/`, so nothing needs gitignoring.
 
+**A metarepo** holds shared definitions, decisions and conventions for several other repos, and
+no code. If the user says this repo is one, or it has no code and other repos cite it, ask
+first. Its pages sit in genre folders, `docs/<genre>/<name>.md` (`.jig/RULES.md`, Metarepo and
+pararepos), so ask which genres it uses, offering two templates:
+
+- **product ecosystem**: `products`, `features`, `principles`, `concepts`;
+- **custom**: the folder names the user gives.
+
+Then run `python3 .jig/jig.py init --meta --genres product-ecosystem`, or
+`--genres <a,b,c>`, in place of the plain `init`. It writes `.jig/meta.json` with the genres, and
+a `### <genre>` heading for each under `README.md § Glossary`, where each genre is defined
+once: a genre gets no page of its own. Fill each heading's TODO with the user, or name it as
+remaining.
+
 Then:
 
 1. **Firmware?** If the repo has `sdkconfig`, `platformio.ini`, `idf_component.yml`, `west.yml`, `*.ino`, or a `main/` with C, keep the "Firmware" section of `AGENTS.md` and copy nothing else for it: when a board is ready to spec, `/jig:hardware` writes its page from a definition the user gives, and installs the skills it lists. Otherwise delete the "Firmware" section. If unsure, ask one question.
