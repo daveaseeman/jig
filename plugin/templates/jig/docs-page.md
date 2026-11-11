@@ -4,7 +4,8 @@
 
 ## <Part>
 
-<What this part is and does on trunk today, in present tense. Name each section for a part
+<What this part is and does on trunk today, in present tense: never when or in what order it
+will change, and no spec, phase or scope, which are .jig/roadmap.md's. Name each section for a part
 the code has (Schema, Renderer, Sync), never Overview, Notes or Changes. A part with files of
 its own, which the rest of the system reaches only through its interfaces, is a subsystem. It
 gets a folder and a page of its own once it has something to say that whoever works on it
@@ -26,10 +27,3 @@ page or contract where one exists. Calls inside the system stay in the body.>
 must hold and what holds it: a named test, review, or on screen.>
 
 - <Fact> — <why it must hold>; held by <test_name>.
-
-## Undefined
-
-<Optional, always last; delete the section if nothing is parked. Written only on the owner's
-word. Nothing here binds or promises.>
-
-- <What was parked> — stops at <where the work stops>; parked <YYYY-MM-DD>.

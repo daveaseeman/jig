@@ -26,16 +26,21 @@ Report the output, then say what it means in a few lines:
 - **Rules files, copies, pages.** Survey checks every Markdown file against the homes
   `.jig/RULES.md` (Documentation) lists, by shape. An `AGENTS.md`, `CLAUDE.md` or `GEMINI.md` off
   root is a second rulebook; a file with three of RULES.md's sentences is a copy that froze; a
-  page in the wrong folder (an Invariants or Undefined section, the old Now/Rules/Checks, or
+  page in the wrong folder (an Invariants section or a retired Undefined one, the old Now/Rules/Checks, or
   any file `docmap` names, whatever its format) is printed with where it goes. Each line carries its fix; `/jig:update` proposes the same ones
   with everything they touch.
 - **Pages off the page contract.** A page describes what is built: a lead paragraph, sections
   named for the system's parts, optional Talks to (what crosses the boundary), optional
-  Invariants, optional Undefined last. Survey names an
+  Invariants. Survey names an
   old Now/Rules/Checks page ("old contract — convert", a job of its own in this repo,
   `/jig:redocument`: fold what it says into description, delete what no longer holds, keep as
-  Invariants only entries with a why and a holder), an invariant missing its why or holder, a
-  section after Undefined, and a page with no lead paragraph.
+  Invariants only entries with a why and a holder), an invariant missing its why or holder,
+  and a page with no lead paragraph.
+- **The project in the product.** A page or a decision entry says what the product does
+  today; phases, order and parked work are `.jig/roadmap.md`'s. Survey names a `## Status`,
+  `## Current state`, `## Roadmap` or `## Undefined` heading on a page or an entry file, and
+  prose like "phase 3" or "spec step 6" on a page or in the log, each with where it goes. Ask
+  of each: is this about the product, or about when and in what order we build it?
 - **No docmap.** Handoff can't tell which page a change touches until pages are mapped to globs.
 - **Missing pieces.** What `/jig:init` would add.
 - **How parallel work is coordinated today.** What the repo already has, under its standard

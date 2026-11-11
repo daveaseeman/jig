@@ -22,8 +22,7 @@ the code always matches it, and the check at the gate would catch nothing.
    says nothing. The template is on the page contract (`.jig/RULES.md`, Documentation): the
    lead paragraph says what the board is and where it was defined from, and each Invariants
    entry keeps its why and gets its holder, or goes. A part not yet driven by code on this
-   board is `no` in the Components table's Verified column, never an Undefined entry:
-   Undefined is written only on the owner's word. The files the page leans on go in its
+   board is `no` in the Components table's Verified column. The files the page leans on go in its
    folder. A page that holds none — the definition pasted or a URL, no datasheet saved — is
    flat instead, `docs/<board>.md` or `docs/<system>/<board>.md`, and wherever
    `<home><board>.md` appears below, it is that path; it moves into its folder with a

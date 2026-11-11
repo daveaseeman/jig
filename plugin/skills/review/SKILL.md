@@ -58,6 +58,13 @@ Its job is to find the reason this change is wrong. Its questions:
    Two outcomes for one situation, neither an exception the other permits, is a conflict:
    blocking until the change resolves it. Does each added entry open with its rule sentence?
 
+9. For each decision entry and each page change the diff adds, ask: is this about the product, or about when and in what order we build it? An entry or a page
+   line that is the project (a priority order, a delivery queue, a phase, build status, "not
+   built yet", parked work) is blocking: it goes to `.jig/roadmap.md` (`## Up next` for parked
+   work, naming its pages), and the page or entry keeps only what the product does today
+   (`.jig/RULES.md`, Documentation, Product and project). "Demo priorities: A, then B" is the
+   roadmap's, never an entry. The hook catches paths and scope ids; prose is yours to catch.
+
 A file in `.jig/staging/` is not decided; a finding that rests on one says so.
 
 Don't rerun the full checks: the author ran them and showed the output, and the gate runs them

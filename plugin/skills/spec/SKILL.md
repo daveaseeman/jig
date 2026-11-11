@@ -16,10 +16,14 @@ Before writing code:
 4. List the files you expect to touch. If the list is long or you're unsure, inspect first and revise. In a pararepo, say whether any is a contract path (`.jig/para.json`): then the change needs a row in `.jig/ledgers/BUFFER.md` (or `meta: buffered <row id>` here), a metarepo proposal (`jig propose`), `meta: <name> pointers <branch>` (`jig propose --pointers`) when it only moves what metarepo pointers point at, or `meta: none — <reason>`. Working ahead of the metarepo while behavior settles is the buffer's job. In a metarepo, a spec that changes a claim lists every place that states it, found by meaning and not only by its words, and its done-when covers each one (RULES.md: Every copy). Each changed claim is stated only at its home, with a pointer everywhere else (RULES.md: What the metarepo holds): a contract lives in the metarepo, where a decision row and the pages citing it as their source are one home; a claim one pararepo owns lives in that pararepo.
 5. Read the pages `python3 .jig/jig.py reading-list <those files>` prints. A page describes
    the code; where it disagrees, the code on trunk is reality and the page is stale. For each
-   entry under a page's `## Undefined` that touches the task's files, say in the spec which
-   it is: **adopt** (this task builds it; building it moves its content into the body and
-   deletes the entry), **depart** (the task goes another way, and why), or **leave** (out of
-   scope). Never add an Undefined entry unless the owner says to.
+   roadmap item it lists under a page (an `## Up next` item or a scope), say in the spec which
+   it is: **adopt** (this task builds it; its content goes into the page's body, and an Up
+   next item leaves the roadmap when the job merges), **depart** (the task goes another way,
+   and why), or **leave** (out of scope). Parked work is an Up next item, added on the owner's
+   word as a roadmap change (`/jig:stage`), never written on a page. The spec is where project
+   meets product: of each decision entry and page change it plans, ask is this about the product, or about when and in what order we build it? What is the
+   project stays in the spec or the roadmap; the pages and entries it writes describe the
+   product, and never name the spec, a phase or a scope.
 6. Fill `## Workflow` with `python3 .jig/jig.py workflow`'s output, as printed (add the
    heading if the template has none). If it exits non-zero, the config breaks a rule: stop
    and give the owner its refusal; write no Workflow lines. It's the repo's settings at writing time: never change a

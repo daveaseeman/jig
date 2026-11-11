@@ -140,7 +140,7 @@ the key on trunk may be rewritten later or never. The tree names the product's o
 files lives once.
 
 In a folder that has a page, another `.md` is a flat page when `docmap` or `boards` names it, or it
-has an Invariants or Undefined section; anything else there is one of the folder page's files.
+has an Invariants section (or a retired `## Undefined`); anything else there is one of the folder page's files.
 
 A **subsystem** is a part of a system that works independently of the rest of it. It has files
 of its own, which the system's other parts don't edit, and the rest of the system reaches it
@@ -158,7 +158,26 @@ its subsystem's page or to propose.
 
 A page describes what is built: what is true of its system on trunk today, in present-tense
 prose. It is not a rulebook; this file holds the rules about documentation, and no page
-restates them. Every page, in this order (`.jig/docs-page.md`, which `jig update` keeps
+restates them.
+
+**Product and project.** A page and a decision entry are about the product: what it is and how
+it behaves today. Priorities, phases, ordering, delivery queues, build status and "not built
+yet, phase n" are the project, and live in `.jig/roadmap.md` only (Roadmap). A spec is where
+the two meet: it takes project items and turns them into product, as code, pages and decisions.
+A page may say what the product doesn't do today ("Changing the PIN isn't supported"); it never
+says when, or in what order, that will change. References run one way: a spec, a handoff or
+the roadmap cites pages and decisions freely, and a page or a decision entry never names
+`.jig/specs/`, `.jig/handoffs/`, `.jig/roadmap.md`, `ROADMAP.md`, or a phase or scope, built or
+not. The hook refuses an added line in a page under `docs/`, in `.jig/decisions.md` or in a
+metarepo's entry file that names `.jig/specs/`, `.jig/handoffs/` or `.jig/roadmap.md`, or a
+scope id the roadmap has in code quotes (`` `alpha/screen` ``), and names the line; a moved
+page's old lines aren't new. What can be product text too, it can't judge: `ROADMAP.md`, a
+bare scope id ("the v1/api endpoint"), a phase name, prose like "phase 3" or "spec step 6".
+`jig survey` lists those. The hook also refuses a `roadmap.md` under `docs/` or matching a
+metarepo's `entry_files`: the roadmap is `.jig/roadmap.md`, and the root `ROADMAP.md` is
+exempt only where `.jig/roadmap.md` exists.
+
+Every page, in this order (`.jig/docs-page.md`, which `jig update` keeps
 current, is the skeleton):
 
 1. **A lead paragraph**, with no heading of its own: what the system is and why it exists.
@@ -174,10 +193,13 @@ current, is the skeleton):
    inline, why it must hold and what holds it — a named test, review, or on screen:
    `- Rows are at least 44px — the touch-target minimum; held by test_touch_targets.` An
    entry without a why and a holder is description, and goes in the body or nowhere.
-5. **`## Undefined`**, optional and always last: work parked mid-build, written only on the
-   owner's word. Each entry says what was parked, where it stops, and the date. Nothing in it
-   binds, and nothing in it is a promise. It is parked work, placed where the work lives;
-   review findings not taken go in `.jig/ledgers/DEFERRED.md` instead, never in both.
+
+A page has no `## Undefined`, `## Status`, `## Current state` or `## Roadmap` section: each holds
+the project. Work parked mid-build is an item under `## Up next` in `.jig/roadmap.md`, naming
+the pages it will touch (Roadmap), written only on the owner's word. An open product question
+is an `## Open` entry in `.jig/decisions.md`, which the page may cite. Review findings not taken
+go in `.jig/ledgers/DEFERRED.md`. `jig survey` lists each such heading with where its content
+goes; a page that still carries one works as before until it is moved.
 
 Trunk's code is reality. A page that disagrees with the code is a stale page, and gets fixed.
 An invariant the code breaks is a finding the handoff surfaces for a person to rule on, never
@@ -271,7 +293,7 @@ Any other file has no home, and survey says which kind: an `AGENTS.md`, `CLAUDE.
 is a copy, which freezes while this file moves on; a page, flat or in its folder, below a
 subsystem, with no `deep_subsystems` entry, is deep: fold it into its subsystem's page, or
 propose its folder to the owner with its rationale; a page outside the tree — one with an
-Invariants or Undefined section, the old Now, Rules and Checks headings, or any file `docmap`
+Invariants section or a retired Undefined one, the old Now, Rules and Checks headings, or any file `docmap`
 names, whatever its format — goes flat beside
 the nearest page that has a folder, as a subsystem at most (into that page, where it would be
 deeper), or to `docs/<name>.md`, even when it quotes this file;
@@ -280,9 +302,9 @@ file names a document by its path, or by its bare name only when no other tracke
 that name.
 
 Each kind of document has one home: rules in `AGENTS.md`, and the rules about documentation
-here; what the code is now, its invariants and its parked work in `docs/`; a task in flight in
+here; what the code is now and its invariants in `docs/`; a task in flight in
 `.jig/specs/`; decisions that outlive their spec, and what a release changed, in
-`.jig/decisions.md`; the phases and scopes ahead in `.jig/roadmap.md`; patches in the code in `.jig/ledgers/WORKAROUNDS.md`; review findings not taken
+`.jig/decisions.md`; the phases, scopes and parked work ahead in `.jig/roadmap.md`; patches in the code in `.jig/ledgers/WORKAROUNDS.md`; review findings not taken
 in `.jig/ledgers/DEFERRED.md`; know-how in the agent's skills; what outsiders need in
 `README.md`; history in git.
 
@@ -295,9 +317,11 @@ written as a bold word opening a paragraph (`**term** — …`) rather than a he
 `jig survey` also reads each page at home under `docs/`, board pages included, against the
 contract above, and names a page in the old Now, Rules and Checks shape (convert it: fold
 what it says into description, delete what no longer holds, keep as Invariants only what
-passes the test), an Invariants entry with no why (` — `) or no holder (`held by`), any
-section after `## Undefined`, and a page whose first line of text after its title is a
-heading rather than a lead paragraph. `jig update` brings this file, not the pages: converting
+passes the test), an Invariants entry with no why (` — `) or no holder (`held by`), and a
+page whose first line of text after its title is a heading rather than a lead paragraph. It
+lists, apart, the project in the product: a `## Status`, `## Current state`, `## Roadmap` or
+`## Undefined` heading on a page or a metarepo's entry file, and plan prose ("phase 3", "spec
+step 6") on a page or in the decision log, each with where it goes. `jig update` brings this file, not the pages: converting
 a repo's pages is a job of its own there.
 
 ## Fold-in
@@ -307,14 +331,14 @@ works out every documentation page that covers a file the branch changed — a f
 several, such as its system page and the page of the board it runs on — and writes a
 checklist into the note. A moved file asks the page that covered its old path too. Each line
 asks whether the page still describes the code: it is either ticked as updated — the stale
-sentences edited, deleting text included — or says why none went stale. Each entry under
-`## Undefined` on a covering page gets a line of its own, answered **built**, **untouched**,
-or **departed: <why>**, with anything after the answer the answerer's to add. Built means
-moved, not copied: the work's description enters the body and the entry is deleted in the same
-change. The gate refuses a built entry still on the page, word for word or reworded: a new
-entry whose name (the text before its first ` — `) holds the built one's, or is close to it, is
-that entry. A new entry unlike it is new parked work, and passes. `jig gate` refuses while a line is
-unanswered; untouched and departed are answers.
+sentences edited, deleting text included — or says why none went stale. Each roadmap item
+naming a covering page with `(touches …)`, an `## Up next` item or a taken scope, gets a line
+of its own, answered **built**, **untouched**, or **departed: <why>**, with anything after the
+answer the answerer's to add. Built means the work's description is in the page's body now. The
+roadmap changes on trunk only, so `jig merge` deletes an Up next item answered built from
+`.jig/roadmap.md` in the merge commit and rewrites `ROADMAP.md`; a scope's state comes from its
+specs, as ever. Solo work on trunk has no merge: there `jig gate` refuses while an item the
+note answers built is still under Up next, so it is deleted on trunk in a commit of its own. `jig gate` refuses while a line is unanswered; untouched and departed are answers.
 
 Ownership comes from `docmap` in `config.json`:
 
@@ -425,12 +449,23 @@ Optional: a repo with no `.jig/roadmap.md` has no roadmap, and nothing here appl
 The product is the repo, so there is one roadmap and no product level in it.
 
 - **The source**, `.jig/roadmap.md`: phases as `## <phase>` headings, in order (no dates: order
-  is file order); every `## ` heading is a phase. Each has an `Exit when:` checklist of what
+  is file order); every `## ` heading but `## Up next` is a phase. Each has an `Exit when:` checklist of what
   the owner checks, a `Scopes:` list of `` - `<scope>`: <what it is> `` (unindented, the name
   with no space or `/`), or both. A scope's id is `<phase>/<scope>`. "Every scope is done" is
   implied, never written as a box. A duplicate phase or scope id, a phase with neither list,
   or a line under `Scopes:` that isn't a scope is refused by the hook, by line, and reported
-  by `jig roadmap`.
+  by `jig roadmap`. A scope may end with `(touches docs/<page>.md, …)`, the pages it will change.
+- **Up next**, the one reserved section that isn't a phase: work parked mid-build, in no order,
+  on the owner's word. Each item reads
+  `` - `<id>`: <what is parked>; stops at <where>; parked <YYYY-MM-DD> (touches docs/<page>.md, …) ``,
+  unindented, and names the pages it will touch; the hook refuses one that names none, or a
+  duplicate id, by line. `jig reading-list` prints, after each page, the Up next items and the
+  scopes not yet done that name it, and fold-in asks about them (Fold-in). An item answered
+  built leaves the roadmap in the merge commit.
+- **A touched page exists**, in either form. `jig roadmap` reports one that doesn't; on trunk
+  the hook refuses a commit that leaves an item or a scope touching no page, so a page renamed
+  or deleted there is re-pointed in the same commit; and `jig merge` re-points each page the job
+  moved.
 - **Specs take scopes** with a `Scope:` line under `Source:`, e.g. `Scope: alpha/screen,
   alpha/battery`. Many-to-many: a spec may take several scopes, a scope may be taken by several
   specs, and a spec with no `Scope:` line takes none.
@@ -444,12 +479,15 @@ The product is the repo, so there is one roadmap and no product level in it.
   the rest *next*.
 - **The view**, `ROADMAP.md` at the root, generated from tracked files and never edited by hand: a line of the
   phases with their states, then per phase its exit boxes and a board, a table with Open, Taken
-  and Done columns holding its scopes, each with its specs linked. Plain Markdown, so it renders
+  and Done columns holding its scopes, each with its specs linked, then Up next, each item with
+  its pages. Plain Markdown, so it renders
   anywhere. `jig merge` rewrites it in the merge commit, when states change; after solo work on
   trunk, `jig roadmap --write` rewrites it, and `jig roadmap` says when it is stale.
 - **R5** covers both files: they change on trunk only. In a metarepo, M4 lets the hubnode
-  commit `ROADMAP.md` on trunk like the rest of jig's bookkeeping. A phase or a scope is a decision, not
-  work, and a branch regenerating the view would only make merge conflicts.
+  commit `ROADMAP.md` on trunk like the rest of jig's bookkeeping. Phases and scopes are the
+  owner's plan, not work, so they change on trunk only, and a branch regenerating the view would
+  only make merge conflicts. A roadmap change asks for no decision entry and no change line:
+  git keeps its history.
 - **The hook refuses** a spec whose `Scope:` names a scope trunk's roadmap doesn't have (on
   trunk, the commit's own roadmap), and on trunk a roadmap change that drops or renames a scope
   a spec still takes, naming the spec: re-point it in the same commit.
@@ -466,7 +504,9 @@ means here. Then three kinds of section, top to bottom:
 - `## vX.Y.Z - YYYY-MM-DD`: one per release, newest first, with a plain hyphen.
 
 **A decision entry** is a heading with the id and title, never a status, then a status line,
-then a `Touches:` line, then the body: what was decided, why, and what it is not.
+then a `Touches:` line, then the body: what was decided, why, and what it is not. An entry is
+about the product (Documentation, Product and project): a priority order, a delivery queue or
+a phase is the roadmap's, never an entry, and an entry names no spec, handoff or scope.
 
 ```
 ### D-012 Store opens graph.sqlite read-only
@@ -696,7 +736,7 @@ and every other Markdown file outside `docs/` that isn't a root document or a de
 (a file named `DECISIONS.md`, or holding decision rows), with `docs/<its top folder>/<name>.md`
 as where it goes; `/jig:redocument` moves them. `entry_files` never makes a page's home.
 There, a claim's source is a decision row or the pararepo file a pointer names; an Invariant's
-holder is an accepted decision id; Undefined holds the page's open questions. A dated state
+holder is an accepted decision id; an open question is an `## Open` entry in its log. A dated state
 section is checked against the pararepo's trunk and folded into the body or dropped.
 
 `entry_files` in `meta.json` lists what pararepos cite: what a release counts, what M3 asks a
