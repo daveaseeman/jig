@@ -27,8 +27,8 @@ say so and stop: the owner set them, and the hubnode raises a session before bri
 - Your numbers are the board's. Never take one by looking at what seems free.
 - A choice that outlives your spec, or a change a release's reader can act on, goes in
   `.jig/decisions.md` (`.jig/RULES.md`, Decision log), which any job may add to. Write a new
-  decision as `### D-?<slug> <title>`; `jig merge` numbers it. Never edit a released section:
-  supersede the entry with a new one.
+  decision as `### D-?<slug> <title>`; `jig merge` numbers it. To change an accepted entry
+  trunk has, supersede it with a new accepted entry and remove the old one in the same commit.
 - Keep merges mechanical: append rather than edit shared prose; new routes in your own
   handler registered by one line; new tests in your own file; a new fixture as a new file.
 - Commit often. The hook runs the rules; when it refuses, fix the cause. Never `--no-verify`.

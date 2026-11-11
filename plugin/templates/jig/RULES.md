@@ -60,7 +60,8 @@ a rename changes both of its paths: R3–R5, P1, P2 and P4 count each.
 - **R2** A job is built in its own worktree.
 - **R3** A job changes only its `owns`, its `shares`, `common`, or files new to the repo, and
   adds to `.jig/decisions.md` (Decision log), whatever its lists say. There it changes lines in
-  place only under `## Open`, and a line it added itself.
+  place only under `## Open`, and a line it added itself, and removes an entry only in adding
+  the accepted one that supersedes it.
 - **R4** Another open job's `owns` is refused even if this job also lists it.
 - **R5** The board is the hubnode's: `config.json` and `jobs.json` are edited on trunk only.
   So is the roadmap, the owner's: `.jig/roadmap.md`, and `ROADMAP.md` where trunk has a
@@ -493,13 +494,22 @@ alone. A merge that stops on conflicts numbers them with `jig merge --number`, o
 resolved and added, before its commit. On trunk an id is a number: M2 refuses a `D-?<slug>`
 entry there, and `jig release` refuses to release one.
 
-**Frozen releases.** A commit that changes a line in a released section is refused, except
-adding ` [YANKED]` and its line. A reversed decision is a new entry that supersedes the old;
-`jig decision <id>` prints an entry and its supersedes chain, newest last.
+**Released sections.** The log shows what holds now; git keeps what held before. A reversed
+decision is a new accepted entry whose status line ends `Supersedes D-007.`, and the commit
+adding it removes D-007's whole block (its heading through the line before the next heading), wherever it
+sits, a released section included. A release keeps its change lines: they are what that version
+told its readers, and a reversal still goes in the new release's group as a `**Breaking:**`
+line. Any other change to a released section is refused, except adding ` [YANKED]` and its
+line, and so is removing an entry no accepted entry supersedes: an open or proposed entry may
+name what it would supersede, and retires nothing until it is accepted. `jig decision <id>` prints an
+entry and its supersedes chain, newest last; for a removed id it reads the entry from git, with
+the commit and release it stood in, and names what holds now. `jig update` lists a superseded
+entry an older log still holds, to remove.
 
 **Checked** in every repo, by the hook, whenever a commit touches the log: each entry's status
-line and date, an accepted entry's who, supersedes links that resolve, one entry per id, and
-that a release or `## Unreleased` holds accepted entries only (M2); and the frozen releases.
+line and date, an accepted entry's who, supersedes links that resolve (to an entry in the log,
+or in trunk's history of it; a shallow clone, which can't say, passes them), one entry per id, and that a release or `## Unreleased` holds
+accepted entries only (M2); and the released sections.
 `jig release` renames `## Unreleased` to the version's heading and adds an empty one above it.
 A repo that never releases just grows Unreleased.
 
@@ -655,7 +665,7 @@ or changes a line there, so the README's other prose changes without a log line.
 | Gate | Refuses |
 |---|---|
 | M1 | a source file outside `.jig/` in the metarepo |
-| M2 | in every repo, a `.jig/decisions.md` entry with a status in its heading, no status line (`Accepted (who, YYYY-MM-DD).`, `Open (YYYY-MM-DD).`, `Proposed (YYYY-MM-DD).`), a supersedes link to no entry, an id used twice, or an open or proposed entry outside `## Open` (Decision log) |
+| M2 | in every repo, a `.jig/decisions.md` entry with a status in its heading, no status line (`Accepted (who, YYYY-MM-DD).`, `Open (YYYY-MM-DD).`, `Proposed (YYYY-MM-DD).`), a supersedes link to no entry in the log or in trunk's history of it, an id used twice, or an open or proposed entry outside `## Open` (Decision log) |
 | M3 | an entry file changed without a line or entry in `.jig/decisions.md` (of `README.md`, only its `## Glossary` section), judged on the branch since it left trunk: a line an earlier commit on the branch added covers this one, and a commit that drops the branch's only line is refused |
 | M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted, but not `.jig/decisions.md`: a decision is reviewed work); a detached HEAD at trunk, or behind it, is trunk |
 | M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
@@ -721,8 +731,9 @@ Two rules for the metarepo's own pages:
   says it, and the metarepo points. Any restatement elsewhere becomes a pointer to the home. Only
   when the claim lives in the metarepo does the update give the new text, on the decision and the
   pages that cite it as their source; it keeps an old "Accepted (who, date)" only on what it
-  still covers. A decision row changes only when the stale claim is one: it is marked
-  `superseded by` the newer. A page update needs no new sign-off: the decision behind it is
+  still covers. A decision changes only when the stale claim is one: the newer entry supersedes
+  it, and the old entry is removed (Decision log, Released sections). A pararepo citing the
+  removed id hears of it at its next pin bump, with the successor named. A page update needs no new sign-off: the decision behind it is
   already the owner's.
 - **Every copy.** A metarepo spec that changes a claim lists every place that states it, found
   by meaning, not only by its words, and its done-when covers each one: the claim's home is

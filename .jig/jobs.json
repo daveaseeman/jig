@@ -1,20 +1,4 @@
 {
-  "decision-remove-superseded": {
-    "spec": ".jig/specs/decision-remove-superseded.md",
-    "state": "gated",
-    "after": [
-      "bug-seam-ownerless-folder"
-    ],
-    "owns": [],
-    "shares": [
-      "plugin/templates/jig/RULES.md",
-      "plugin/templates/jig/jig.py",
-      "tests/smoke.sh",
-      "plugin/skills/subnode/SKILL.md",
-      "plugin/skills/stage/SKILL.md"
-    ],
-    "reserved": {}
-  },
   "decision-touches": {
     "spec": ".jig/specs/decision-touches.md",
     "state": "claimed",
