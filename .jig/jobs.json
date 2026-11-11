@@ -15,7 +15,7 @@
   },
   "bug-root-file-contract-path": {
     "spec": ".jig/specs/bug-root-file-contract-path.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/hubnode/SKILL.md"
