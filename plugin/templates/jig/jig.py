@@ -2228,12 +2228,15 @@ def misfiled_seams(files: list[str], board: dict) -> list[dict]:
         return "/".join(page_folder(k).split("/")[:n + 1])
     tops = {k: system_of(k) for k in docmap
             if k.startswith("docs/") and k.endswith(".md") and page_folder(k).count("/") == n}
-    out = []
+    have, out = set(files), []
     for p, globs in docmap.items():
         if (not isinstance(globs, list) or not p.startswith("docs/") or page_folder(p).count("/") < n + 1
                 or any(same_page(b, p) for b in boards)):
             continue
         system = system_of(p)
+        # A folder no page owns is no system: the page is misplaced, which doc_homes reports.
+        if not folder_owner(system, have):
+            continue
         other = next((t for f in files if matches(f, globs)
                       for t, s in tops.items() if s != system and matches(f, docmap[t] or [])), "")
         if other:

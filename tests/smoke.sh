@@ -3467,6 +3467,19 @@ expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a/seam-g.md: covers files of 
 import json, subprocess
 r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 assert r['seams_misfiled'] == [{'path': 'docs/a/seam-g.md', 'other': 'docs/g.md'}], r['seams_misfiled']\"" "$out"
+mkdir -p docs/systems && printf '# Old\n\nAn old page.\n' > docs/systems/old.md
+board "b['docmap']['docs/systems/old.md'] = ['src/g/g.rs']" && git add -A && git commit -qm "old folder"
+msg="flat: a page in a folder no page owns is listed once, as misplaced, and never as a seam"
+out=$($J survey 2>&1)
+expect_pass sh -c "test \$(echo \"\$0\" | grep -c 'docs/systems/old.md') = 1 && python3 -c \"
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+h = {e['path']: e for e in r['homeless']}
+assert h['docs/systems/old.md']['to'] == 'docs/old.md', h
+assert r['seams_misfiled'] == [{'path': 'docs/a/seam-g.md', 'other': 'docs/g.md'}], r['seams_misfiled']\"" "$out"
+git mv docs/a.md docs/a/a.md && board "b['docmap']['docs/a/a.md'] = b['docmap'].pop('docs/a.md')" && git add -A && git commit -qm "a into its folder"
+msg="flat: with its system page in the folder, docs/a/a.md, the seam is still named"
+expect_pass homes "assert r['seams_misfiled'] == [{'path': 'docs/a/seam-g.md', 'other': 'docs/g.md'}], r['seams_misfiled']"
 
 # A house-format page the board names is a page wherever it sits; a jig repo never adopts again.
 HF="$T/homes-house"; pcnew "$HF" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
