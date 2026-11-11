@@ -25,8 +25,10 @@ repos list (`jig repos` prints where), which `jig staging` lists too.
 ## Staging a file
 
 Write it into the target's `.jig/staging/`, found with `jig repos` (needs only
-`~/.config/jig/` — then ask for access to exactly `<repo>/.jig/staging/`). Say `new` or
-`update`, and make `destination` as precise as you can, never an absolute path.
+`~/.config/jig/`). Request access to exactly `<repo>/.jig/staging/` with the host's
+folder-access tool (in the Claude desktop app, `request_directory`); if the host has none, ask
+the user to add that folder to the session. Never stop at "no access": the folder is the
+user's to grant. Say `new` or `update`, and make `destination` as precise as you can, never an absolute path.
 
 A user story names who wants what and why. A feature request just describes what the thing
 should do, in the owner's words ("I want it to do xyz"): free prose, no template, no Done-when.
