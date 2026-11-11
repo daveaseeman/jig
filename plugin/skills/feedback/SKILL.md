@@ -37,8 +37,10 @@ Then:
 2. Find the jig repo with `python3 .jig/jig.py repos` (it needs only `~/.config/jig/`). It is
    the entry named `jig`, or the one whose own name (`name` in its `.jig/config.json`) is
    `jig`; `jig repos` shows it is registered by not printing where tool reports wait. If it is
-   registered, write the file into `<its path>/.jig/staging/` — ask for access to exactly that
-   folder. If not, write it into the `feedback/` folder beside your repos list
+   registered, write the file into `<its path>/.jig/staging/`. Request access to exactly that folder
+   with the host's folder-access tool (in the Claude desktop app, `request_directory`); if the
+   host has none, ask the user to add that folder to the session. Never stop at "no access":
+   the folder is the user's to grant. If not registered, write it into the `feedback/` folder beside your repos list
    (`jig repos` prints where; `~/.config/jig/feedback/` by default). Never a temp folder:
    reports there were lost when it was cleared.
 3. Print the path. The report waits there until `/jig:fix` runs in the jig repo.
