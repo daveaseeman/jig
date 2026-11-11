@@ -12,7 +12,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" update
 
 That is a dry run. It changes nothing, and its exit code says what you have:
 
-- **0, "up to date".** Say so and stop.
+- **0, "up to date".** Say so. If it lists Repo files to review, show each as below and ask
+  about each; otherwise stop.
 - **0, a plan.** Show the plan: moves, files written from jig, removals, board edits, git
   state. Say each removal out loud — an old tool's script or rendered board, a merged entry,
   a review ledger's taken rows — since the diff is the only other place it shows. Ask. On a
