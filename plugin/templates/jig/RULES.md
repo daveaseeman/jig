@@ -168,11 +168,14 @@ A page may say what the product doesn't do today ("Changing the PIN isn't suppor
 says when, or in what order, that will change. References run one way: a spec, a handoff or
 the roadmap cites pages and decisions freely, and a page or a decision entry never names
 `.jig/specs/`, `.jig/handoffs/`, `.jig/roadmap.md`, `ROADMAP.md`, or a phase or scope, built or
-not. The hook refuses an added line in a page under `docs/` or in `.jig/decisions.md` naming
-one of those paths, a scope id the roadmap has (`alpha/screen`), or a phase name in code quotes,
-and names the line. Prose like "phase 3" or "spec step 6" it can't judge, since "phase" has
-product meanings too: `jig survey` lists it. The hook also refuses a `roadmap.md` under
-`docs/` or matching a metarepo's `entry_files`: the roadmap is `.jig/roadmap.md`.
+not. The hook refuses an added line in a page under `docs/`, in `.jig/decisions.md` or in a
+metarepo's entry file that names `.jig/specs/`, `.jig/handoffs/` or `.jig/roadmap.md`, or a
+scope id the roadmap has in code quotes (`` `alpha/screen` ``), and names the line; a moved
+page's old lines aren't new. What can be product text too, it can't judge: `ROADMAP.md`, a
+bare scope id ("the v1/api endpoint"), a phase name, prose like "phase 3" or "spec step 6".
+`jig survey` lists those. The hook also refuses a `roadmap.md` under `docs/` or matching a
+metarepo's `entry_files`: the roadmap is `.jig/roadmap.md`, and the root `ROADMAP.md` is
+exempt only where `.jig/roadmap.md` exists.
 
 Every page, in this order (`.jig/docs-page.md`, which `jig update` keeps
 current, is the skeleton):
@@ -334,7 +337,8 @@ of its own, answered **built**, **untouched**, or **departed: <why>**, with anyt
 answer the answerer's to add. Built means the work's description is in the page's body now. The
 roadmap changes on trunk only, so `jig merge` deletes an Up next item answered built from
 `.jig/roadmap.md` in the merge commit and rewrites `ROADMAP.md`; a scope's state comes from its
-specs, as ever. `jig gate` refuses while a line is unanswered; untouched and departed are answers.
+specs, as ever. Solo work on trunk has no merge: there `jig gate` refuses while an item the
+note answers built is still under Up next, so it is deleted on trunk in a commit of its own. `jig gate` refuses while a line is unanswered; untouched and departed are answers.
 
 Ownership comes from `docmap` in `config.json`:
 
@@ -458,6 +462,10 @@ The product is the repo, so there is one roadmap and no product level in it.
   duplicate id, by line. `jig reading-list` prints, after each page, the Up next items and the
   scopes not yet done that name it, and fold-in asks about them (Fold-in). An item answered
   built leaves the roadmap in the merge commit.
+- **A touched page exists**, in either form. `jig roadmap` reports one that doesn't; on trunk
+  the hook refuses a commit that leaves an item or a scope touching no page, so a page renamed
+  or deleted there is re-pointed in the same commit; and `jig merge` re-points each page the job
+  moved.
 - **Specs take scopes** with a `Scope:` line under `Source:`, e.g. `Scope: alpha/screen,
   alpha/battery`. Many-to-many: a spec may take several scopes, a scope may be taken by several
   specs, and a spec with no `Scope:` line takes none.

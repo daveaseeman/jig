@@ -1068,14 +1068,17 @@ def cmd_merge(root: Path, args) -> int:
     numbered = [] if p.returncode else number_placeholders(root, trunk)
     # R5 keeps the roadmap on trunk, so the Up next items the job built leave it here, in the
     # merge commit, rather than on the branch that built them.
+    # A page the job moved is re-pointed in every (touches …) naming it, for the same reason.
     built = built_up_next(git("show", f"{branch}:{notes[-1]}"))
     roadmap = main_root() / ROADMAP
-    if built and roadmap.is_file():
+    if roadmap.is_file():
         text = roadmap.read_text()
-        if (kept := remove_up_next(text, built)) != text:
+        kept = retarget_touches(remove_up_next(text, built), page_moves("HEAD"))
+        if kept != text:
             roadmap.write_text(kept)
             git("add", "--", ROADMAP, check=True)
-            print(f"removed from {ROADMAP}, built: {', '.join(sorted(built))}")
+            if built & {i["id"] for i in parse_up_next(text)}:
+                print(f"removed from {ROADMAP}, built: {', '.join(sorted(built))}")
     # States change when work lands, so the view is rewritten in the merge commit itself.
     snap = Snapshot(where="index")
     phases = None if p.returncode else roadmap_state(snap)
@@ -1343,7 +1346,8 @@ def section_items(lines: list[str]) -> list[str]:
 # The fold-in line for one roadmap item a change reached. The gate and merge parse it back,
 # so a change here changes ITEM_LINE too.
 CLIP = 60
-ITEM_LINE = re.compile(r'(Up next|Scope) `([^`]+)` \((.*?)\): "(.*?)" — (.*?)\s*$')
+ITEM_LINE = re.compile(r'^- \[[ xX]\] (Up next|Scope) `([^`]+)` \(([^()]*)\): "(.*)" — '
+                       r'((?:(?!" — ).)*?)\s*$')
 
 
 def item_answer(answer: str) -> str:
@@ -1388,7 +1392,7 @@ def built_up_next(note: str) -> set[str]:
     sec = re.search(r"^## Fold-in\n(.*?)(?=^## |\Z)", note, re.S | re.M)
     out = set()
     for l in (sec.group(1).splitlines() if sec else []):
-        m = ITEM_LINE.search(l) if l.strip().startswith("- [") else None
+        m = ITEM_LINE.match(l.strip())
         if m and m.group(1) == "Up next" and not item_answer(m.group(5)) \
                 and m.group(5).strip().lower().startswith("built"):
             out.add(m.group(2))
@@ -1515,18 +1519,21 @@ def cmd_reading_list(root: Path, args) -> int:
         p, have, named, lambda f: (root / f).read_text(errors="replace")))
     # The project work naming a page is the context a page itself never carries.
     items = roadmap_items("HEAD", ("open", "taken"))
+
+    def show(page: str, line: str) -> None:
+        """Print PAGE once, wherever it first appears, with the items that name it."""
+        if page in shown:
+            return
+        print(line)
+        shown.add(page)
+        for kind, iid, what, touches in items:
+            if any(same_page(t, page) for t in touches):
+                print(f"      {kind.lower()} `{iid}`: {what}   ({ROADMAP})")
     for page in want:
-        if page not in shown:
-            print(f"  {page}")
-            shown.add(page)
-            for kind, iid, what, touches in items:
-                if any(same_page(t, page) for t in touches):
-                    print(f"      {kind.lower()} `{iid}`: {what}   ({ROADMAP})")
+        show(page, f"  {page}")
         for up, below in pages_above(page, have, deep, flat):
-            if up not in shown:
-                # a page that covers a named file needs no reason to be listed
-                print(f"  {up}" if up in want else f"  {up}   (parent of {below})")
-                shown.add(up)
+            # a page that covers a named file needs no reason to be listed
+            show(up, f"  {up}" if up in want else f"  {up}   (parent of {below})")
     if not want:
         print("  (no documentation page covers these files)")
     if unowned:
@@ -1593,7 +1600,7 @@ def cmd_gate(root: Path, args) -> int:
                       and (l.strip().startswith("- [ ]") or "___" in l)]
         # Each item line needs one answer; anything after it is the answerer's to say.
         for l in sec.group(1).splitlines():
-            u = ITEM_LINE.search(l) if l.strip().startswith("- [") else None
+            u = ITEM_LINE.match(l.strip())
             if u and l not in open_lines and (why := item_answer(u.group(5))):
                 open_lines.append(f"{l.strip()}   <- {why}")
         for l in sec.group(1).splitlines():
@@ -1616,6 +1623,15 @@ def cmd_gate(root: Path, args) -> int:
             for l in open_lines[:10]:
                 print(f"  {l.strip()}", file=sys.stderr)
             return 1
+        # A job's built items leave the roadmap in its merge commit; solo work on trunk has no
+        # merge, so they leave in a commit of their own before the gate passes.
+        if job is None and branch == trunk:
+            left = built_up_next(body) & {i["id"] for i in parse_up_next(at_rev(trunk, ROADMAP))}
+            if left:
+                print(f"{note} answers built for {', '.join(sorted(left))}, still under "
+                      f"## {UP_NEXT} in {ROADMAP}: delete each item on {trunk} and commit, then "
+                      "gate again", file=sys.stderr)
+                return 1
     m = re.search(r"^Commit: (\w+)", body, re.M)
     commit = m.group(1) if m else branch
     unpaged = board_refusals(board.data, trunk, commit)
@@ -1813,15 +1829,17 @@ def project_sections(text: str) -> list[str]:
             for name, _ in page_sections(text)[1:] if name.lower() in heads]
 
 
-def project_prose(text: str) -> list[str]:
-    """Lines naming a phase or a spec's step, outside fenced code."""
+def project_prose(text: str, sids: list[str] = ()) -> list[str]:
+    """Lines naming the plan, outside fenced code: a phase or a spec's step in prose, a spec,
+    handoff or roadmap path, or a scope id SIDS holds, quoted or not."""
     out, fence = [], False
+    finds = [PROJECT_PROSE, PLAN_PATHS, *scope_bare(list(sids))]
     for n, line in enumerate(text.splitlines(), 1):
         if line.lstrip().startswith(("```", "~~~")):
             fence = not fence
         elif not fence:
             out += [f'line {n}: "{m.group(0)}" names the plan: say what the product does today, '
-                    f"and leave when to {ROADMAP}" for m in PROJECT_PROSE.finditer(line)]
+                    f"and leave when to {ROADMAP}" for r in finds for m in r.finditer(line)]
     return out
 
 
@@ -2619,11 +2637,11 @@ def cmd_survey(root: Path, args) -> int:
         and not matches(f, not_docs)
         and (probs := page_problems((root / f).read_text(errors="replace") if (root / f).exists() else ""))]
     meta = load_meta(Board.trunk_name(root))
-    product = [f for f in md if (f == LOG or (product_file(f) and not matches(f, not_docs))
-                                 or (meta is not None and is_entry(f, meta.get("entry_files", []))))]
+    product = [f for f in md if product_file(f, meta) and (f == LOG or not matches(f, not_docs))]
+    sids = scope_ids(read(ROADMAP))
     report["project_in_product"] = [
         {"path": f, "problems": probs} for f in product
-        if (probs := (project_sections(read(f)) if f != LOG else []) + project_prose(read(f)))]
+        if (probs := (project_sections(read(f)) if f != LOG else []) + project_prose(read(f), sids))]
     if args.json:
         print(json.dumps(report, indent=2))
         return 0
@@ -2824,14 +2842,16 @@ def cmd_survey(root: Path, args) -> int:
     on_jig = (root / CONFIG).exists()
     # A deep page is folded or approved, not edited where it sits, as update leaves it.
     in_place = [e for e in report["page_contract"] if e["path"] not in homes]
+    project = (f", and move the project listed above to {ROADMAP} on the owner's word"
+               if report["project_in_product"] else "")
     print(f"An older jig's board is at {old}: run /jig:update first, not /jig:adopt or /jig:init."
           if old else "Pages in the old Now / Rules / Checks shape: run /jig:redocument to convert them."
           if old_pages else f"Board pages in the old {OLD_BOARDS} layout: run /jig:redocument to move them."
           if report["old_boards"] else "Pages outside the docs tree: run /jig:redocument to convert them."
           if outside and on_jig else "Pages off the page contract where they sit: run /jig:update "
           "to review each in place." if in_place and on_jig
-          else "On jig already, no page to convert: give each file above its home."
-          if report["homeless"] and on_jig else "On jig already: nothing to do."
+          else "On jig already, no page to convert: give each file above its home" + project + "."
+          if report["homeless"] and on_jig else f"On jig already{project or ': nothing to do'}."
           if on_jig else "Run /jig:adopt to turn this into a migration plan.")
     return 0
 
@@ -4637,7 +4657,9 @@ def changed_rows(root: Path, meta: dict, rng: str) -> dict[str, set[str]]:
     row = re.compile(rf"^[+-]\s*\|\s*({re.escape(meta['decision_prefix'])}\d+)\s*\|")
     out: dict[str, set[str]] = {}
     f = ""
+    # Fixed prefixes, whatever diff.noprefix or diff.mnemonicPrefix say: the headers are parsed.
     for line in git("-c", "core.quotePath=false", "--literal-pathspecs", "diff", "--no-renames",
+                    "--no-ext-diff", "--no-color", "--src-prefix=a/", "--dst-prefix=b/",
                     rng, "--", *md, cwd=str(root)).splitlines():
         if line.startswith(("--- a/", "+++ b/")):
             f = line[6:]
@@ -5982,6 +6004,31 @@ def remove_up_next(text: str, ids: set[str]) -> str:
     return "".join(out)
 
 
+def page_moves(rev: str) -> dict[str, str]:
+    """The docs pages the index renames from REV, old path to new. A move between a page's two
+    forms is no move: both name the page."""
+    out = {}
+    for line in git("-c", "core.quotePath=false", "diff", "--cached", "-M", "--name-status",
+                    rev, "--", "docs/").splitlines():
+        parts = line.split("\t")
+        if parts[0].startswith("R") and len(parts) == 3 and not same_page(parts[1], parts[2]):
+            out[parts[1]] = parts[2]
+    return out
+
+
+def retarget_touches(text: str, moves: dict[str, str]) -> str:
+    """TEXT with each `(touches …)` page MOVES renames written at its new path."""
+    if not moves:
+        return text
+
+    def fix(m: re.Match) -> str:
+        pages = [p.strip() for p in m.group(1).split(",") if p.strip()]
+        new = [next((to for old, to in moves.items() if same_page(p.strip("`"), old)), p) for p in pages]
+        return m.group(0).replace(m.group(1), ", ".join(new)) if new != pages else m.group(0)
+    return "".join(TOUCHES.sub(fix, line.rstrip("\n")) + ("\n" if line.endswith("\n") else "")
+                   for line in text.splitlines(keepends=True))
+
+
 def parse_roadmap(text: str, problems: list[str] | None = None) -> list[dict]:
     """Phases in file order, each {name, exit: [(ticked, text)], scopes: [(id, what)]}.
     Anything it can't read is added to PROBLEMS by line, never dropped quietly: a scope lost
@@ -6027,7 +6074,7 @@ def parse_roadmap(text: str, problems: list[str] | None = None) -> list[dict]:
     for p in phases:
         if not p["headed"]:
             problems.append(f"line {p['line']}: phase {p['name']} has neither `Exit when:` nor "
-                            "`Scopes:` (every `## ` heading is a phase)")
+                            f"`Scopes:` (every `## ` heading but ## {UP_NEXT} is a phase)")
     return phases
 
 
@@ -6156,6 +6203,9 @@ def cmd_roadmap(root: Path, args) -> int:
     problems: list[str] = []
     parse_roadmap(snap.show(ROADMAP), problems)
     up_next = parse_up_next(snap.show(ROADMAP), problems)
+    have = set(snap.ls("docs/"))
+    problems += [f"{iid} touches {page}, which {trunk} has no page for: re-point it"
+                 for iid, page in sorted(dead_touches(snap.show(ROADMAP), have))]
     for x in problems:
         print(f"{ROADMAP} {x}")
     for p in phases:
@@ -6179,58 +6229,101 @@ def cmd_roadmap(root: Path, args) -> int:
 
 # The project's files: a page or a decision entry that names one goes stale whenever the plan
 # moves, and is released to pararepos as if it were the product (RULES.md, Documentation).
-PROJECT_PATHS = re.compile(r"\.jig/(?:specs|handoffs)/|\.jig/roadmap\.md|(?<![\w./-])ROADMAP\.md")
+# These are never product text, so the hook refuses them; ROADMAP.md may be a product's own
+# word, so only survey lists it.
+PROJECT_PATHS = re.compile(r"\.jig/(?:specs|handoffs)/|\.jig/roadmap\.md")
+PLAN_PATHS = re.compile(r"\.jig/(?:specs|handoffs)/|\.jig/roadmap\.md|(?<![\w./-])ROADMAP\.md")
 
 
-def product_file(path: str) -> bool:
-    """A file that describes the product only: a docs page, or the decision log."""
-    return path == LOG or (path.startswith("docs/") and path.endswith(".md") and not reference_file(path))
+def product_file(path: str, meta: dict | None = None) -> bool:
+    """A file that describes the product only: a docs page, the decision log, or a metarepo's
+    entry file."""
+    return (path == LOG or (path.startswith("docs/") and path.endswith(".md") and not reference_file(path))
+            or (meta is not None and path.endswith(".md") and is_entry(path, meta.get("entry_files", []))))
 
 
-def project_names(text: str) -> list[re.Pattern]:
-    """What in a roadmap's TEXT a product line can't name: each scope id, and each phase name
-    in code quotes. A bare phase name is left to survey, since it may be a product word too."""
-    phases = parse_roadmap(text)
-    out = [re.compile(rf"(?<![\w./-]){re.escape(sid)}(?![\w/-])") for p in phases for sid, _ in p["scopes"]]
-    return out + [re.compile(rf"`{re.escape(p['name'])}`") for p in phases]
+def scope_ids(text: str) -> list[str]:
+    return [sid for p in parse_roadmap(text) for sid, _ in p["scopes"]]
+
+
+def scope_quoted(sids: list[str]) -> list[re.Pattern]:
+    """A scope id in code quotes, which no product sentence writes: `alpha/screen`. Bare, the
+    words may be the product's ("the v1/api endpoint"), so survey lists those."""
+    return [re.compile(rf"`{re.escape(sid)}`") for sid in sids]
+
+
+def scope_bare(sids: list[str]) -> list[re.Pattern]:
+    return [re.compile(rf"(?<![\w./-]){re.escape(sid)}(?![\w/-])") for sid in sids]
+
+
+def added_lines(trunk: str, staged: bool, files: list[str]) -> list[tuple[str, int, str]]:
+    """(path, line number, text) for each line the change adds to FILES. Renames are followed,
+    so a moved page's old lines aren't new; the prefixes are fixed, whatever the user's diff
+    settings."""
+    # Both sides of every rename are in the pathspec, or git can't see the rename.
+    gone = [f for f in changed_paths(trunk, staged, removed=True) if f.endswith(".md") and f not in files]
+    diff = git("-c", "core.quotePath=false", "diff", "-M", "-U0", "--no-ext-diff", "--no-color",
+               "--src-prefix=a/", "--dst-prefix=b/", base(trunk), *(["--cached"] if staged else []),
+               "--", *files, *gone)
+    out, at, n, want = [], "", 0, set(files)
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            at = line[6:] if line.startswith("+++ b/") and line[6:] in want else ""
+        elif m := re.match(r"@@ -\S+ \+(\d+)", line):
+            n = int(m.group(1))
+        elif line.startswith("+") and at:
+            out.append((at, n, line[1:]))
+            n += 1
+    return out
+
+
+def dead_touches(text: str, have: set[str]) -> set[tuple[str, str]]:
+    """(item or scope id, page) for each `(touches …)` page HAVE holds in neither form."""
+    out = set()
+    for i in parse_up_next(text):
+        out |= {(i["id"], t) for t in i["touches"] if page_in(t, have) not in have}
+    for p in parse_roadmap(text):
+        for sid, what in p["scopes"]:
+            out |= {(sid, t) for t in split_touches(what)[1] if page_in(t, have) not in have}
+    return out
 
 
 def boundary_rules(trunk: str, branch: str, staged: bool, paths: list[str],
                    meta: dict | None) -> list[str]:
     """References run one way: a page or a decision entry never names a spec, a handoff, the
-    roadmap, or a phase or scope of it. And a roadmap is .jig/roadmap.md's, never a page."""
+    roadmap, or a scope of it. A roadmap is .jig/roadmap.md's, never a page, and the pages it
+    names exist."""
     out = []
+    keeps = bool(at_rev(trunk, ROADMAP)) or (branch == trunk and bool(in_index(ROADMAP, staged)))
     for f in paths:
-        if (Path(f).name.lower() == "roadmap.md" and f not in (ROADMAP, ROADMAP_VIEW)
-                and (f.startswith("docs/") or (meta and is_entry(f, meta.get("entry_files", []))))):
+        # The generated root view is jig's only where trunk keeps a roadmap, as R5 says.
+        if f == ROADMAP or (f == ROADMAP_VIEW and keeps) or Path(f).name.lower() != "roadmap.md":
+            continue
+        if f.startswith("docs/") or (meta and is_entry(f, meta.get("entry_files", []))):
             out.append(f"{f} is a roadmap among the product's pages: phases, scopes and parked work "
                        f"are the project's, and live in {ROADMAP} only")
-    files = [f for f in paths if product_file(f)]
+    moved = ROADMAP in paths or any(f.startswith("docs/") for f in changed_paths(trunk, staged, removed=True))
+    if branch == trunk and keeps and moved:
+        # A page an item names must still be there: renamed or gone, the item is re-pointed in
+        # the same commit. Only what this commit breaks is refused.
+        now = set(git("-c", "core.quotePath=false", "ls-files").splitlines())
+        before = set(git("-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", "HEAD").splitlines())
+        broke = dead_touches(in_index(ROADMAP, staged), now) - dead_touches(at_rev("HEAD", ROADMAP), before)
+        out += [f"{ROADMAP}: {iid} touches {page}, which this commit leaves with no page: re-point "
+                "its (touches …) in this commit" for iid, page in sorted(broke)]
+    files = [f for f in paths if product_file(f, meta)]
     if not files:
         return out
     # On trunk the commit's own roadmap counts too, so a scope added with its page is known.
-    names = project_names(at_rev(trunk, ROADMAP))
-    if branch == trunk:
-        names += project_names(in_index(ROADMAP, staged))
-    diff = git("-c", "core.quotePath=false", "diff", "-U0", base(trunk),
-               *(["--cached"] if staged else []), "--", *files)
-    at, n = "", 0
-    for line in diff.splitlines():
-        if line.startswith("+++ "):
-            at = line[6:] if line.startswith("+++ b/") else ""
-        elif m := re.match(r"@@ -\S+ \+(\d+)", line):
-            n = int(m.group(1))
-        elif line.startswith("+") and at:
-            text = line[1:]
-            hit = PROJECT_PATHS.search(text) or next((m for r in names if (m := r.search(text))), None)
-            if hit:
-                what = "the decision log" if at == LOG else "a page"
-                out.append(f"{at} line {n} names {hit.group(0)}, the project's: {what} describes the "
-                           f"product, and a spec, a handoff or the roadmap cites it, never the other "
-                           f"way: {clip(text.strip())}")
-            n += 1
-        elif line.startswith(" "):
-            n += 1
+    sids = scope_ids(at_rev(trunk, ROADMAP)) + (scope_ids(in_index(ROADMAP, staged)) if branch == trunk else [])
+    names = scope_quoted(sids)
+    for at, n, text in added_lines(trunk, staged, files):
+        hit = PROJECT_PATHS.search(text) or next((m for r in names if (m := r.search(text))), None)
+        if hit:
+            what = "the decision log" if at == LOG else "a page"
+            out.append(f"{at} line {n} names {hit.group(0)}, the project's: {what} describes the "
+                       f"product, and a spec, a handoff or the roadmap cites it, never the other "
+                       f"way: {clip(text.strip())}")
     return out
 
 
