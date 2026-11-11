@@ -509,19 +509,31 @@ start with the commit that adds it.
 on its own. `jig update --merge-log` shows the log they would make; on the owner's yes,
 `--apply --merge-log` writes it and removes both:
 
-- each release section keeps its lines as written, its heading in the log's form;
-- an open or proposed row becomes an entry under `## Open`;
-- an accepted row becomes an entry in the oldest release whose lines name its id, or under
-  `## Unreleased` when none does, a row superseded by another becoming the one the newer entry
-  supersedes;
-- a rejected row is dropped, since git keeps it;
-- in a metarepo, `entry_files` names the log in place of both.
+- each release section keeps its lines as written, its heading in the log's form, and an
+  `## [Unreleased]` is the log's one `## Unreleased`;
+- an open or proposed row becomes an entry under `## Open`, keeping who proposed it;
+- an accepted row becomes an entry in the oldest release whose lines name its id, ranges
+  (`D-029–D-044`) included, or under `## Unreleased` when none does, a row superseded by
+  another becoming the one the newer entry supersedes, dated when it was accepted;
+- a rejected row is left out, since git keeps it; the log's preamble names its id, so the
+  number stays taken;
+- a note that names one id joins that entry's body;
+- in a metarepo, `entry_files` names the log in place of what was merged; in the board,
+  `append_files` and a `reserve` counter over the old files count the log instead, every id
+  it names included.
 
-A row's words are kept: a decision that opens with a status word goes under a plain
-`Decision` heading, and a row with no who says `not recorded`. In a metarepo the result is
-committed on a branch and merged like any change, and the commit is judged by the log's rules
-because it adds the log. A repo with neither file gets an empty log from `jig update --apply`.
-Pararepos find their citations of the old paths named at their next pin bump.
+Nothing the owner wrote is dropped. What has no place in the log (a preamble, a note naming
+several ids, a section of its own) stays in its old file, which keeps only that, and the run
+lists each piece to move by hand. It also lists every file that still names the old ones, to
+repoint. A row's words are kept: a decision that opens with a status word goes under a plain
+`Decision` heading, and a row with no who says `not recorded`. The result is committed on
+trunk, alone: that one commit is the hubnode's bookkeeping, as the board is, so M3, M4 and the
+history check take it in a metarepo. Until it lands, trunk has no log and the old rules hold,
+whatever a branch adds. A repo with neither file gets an empty log from `jig update --apply`,
+and `jig init` writes none beside them, leaving them for the merge. Numbering, by `jig merge`
+or a counter, starts above every id the log has ever named, so a rejected one's is never given
+again. A pararepo's bump across the merge reports the register's move on one line, and only the
+decisions whose title or status changed.
 
 ## Staging
 

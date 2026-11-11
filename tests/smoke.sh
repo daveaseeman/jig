@@ -3966,12 +3966,19 @@ $J merge o1 >/dev/null 2>&1; out=$($J release 2>&1)
 expect_pass sh -c "git tag | grep -qx v0.2.0 && grep -q '^## v0.2.0 — ' CHANGELOG.md && test ! -e .jig/decisions.md && test -z \"\$(git status --porcelain)\"" "$out"
 
 # The migration: jig update lists both old files, changes nothing without a yes, and merges on one.
-git switch -q -c rows && printf '| D-002 | which wire format? | open | 2026-11-02 |\n| D-003 | use XML | rejected | 2026-11-02 |\n' >> DECISIONS.md \
-  && printf -- '- D-002, D-003\n' >> CHANGELOG.md && git add -A && git commit -qm "D-002, D-003: rows" && $J reviewed >/dev/null \
+board "b['reserve'] = {'decision': {'pattern': r'^\|\s*D-(\d+)\s*\|', 'files': ['DECISIONS.md']}}" && git add -A && git commit -qm "TOOL: decision counter"
+git switch -q -c rows && printf '| D-002 | which wire format? | proposed (Ann) | 2026-11-02 |\n| D-003 | use XML | rejected | 2026-11-02 |\n\nSource for D-002: the wire thread.\n' >> DECISIONS.md \
+  && printf -- '- D-002, D-003\n' >> CHANGELOG.md && printf '\nDecisions: DECISIONS.md.\n' >> README.md && git add -A && git commit -qm "D-002, D-003: rows" && $J reviewed >/dev/null \
   && git switch -q main && git merge -q --no-ff --no-edit rows
+msg="old shape: a branch adding a .jig/decisions.md doesn't switch the old M2 off"
+git switch -q -c sneak && printf '| D-009 | x | maybe | 2026-11-02 |\n' >> DECISIONS.md && printf -- '- D-009\n' >> CHANGELOG.md && printf '# log\n' > .jig/decisions.md && git add -A
+expect_refuse git commit -qm "D-009: x"; undo; git switch -q main && git branch -qD sneak
 git worktree remove --force .git/jig/worktrees/o1
+# A pararepo pinned before the migration, to read the bump across it.
+PA="$T/old-para"; pcnew "$PA" && mkdir -p api && printf 'x=1\n' > api/a.py && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para om --location "$OM" --contract 'api/**' >/dev/null 2>&1 && git add -A && git commit -qm "init --para"; cd "$OM"
 UP="python3 $P/jig/jig.py update"
-oldfiles() { git status --porcelain; shasum CHANGELOG.md DECISIONS.md .jig/meta.json 2>/dev/null; ls .jig; }
+oldfiles() { git status --porcelain; shasum CHANGELOG.md DECISIONS.md .jig/meta.json .jig/config.json 2>/dev/null; ls .jig; }
 before=$(oldfiles); out=$($UP 2>&1); after=$(oldfiles)
 msg="migration: update's dry run lists CHANGELOG.md and DECISIONS.md under Repo files to review, naming --merge-log, and changes nothing"
 expect_pass sh -c "echo \"\$0\" | grep -q '^  CHANGELOG.md: .*--merge-log' && echo \"\$0\" | grep -q '^  DECISIONS.md: a decision register, 3 rows' && test \"\$1\" = \"\$2\"" "$out" "$before" "$after"
@@ -3979,24 +3986,49 @@ msg="migration: --apply without --merge-log leaves both old files, and writes no
 $UP --apply >/dev/null 2>&1; expect_pass sh -c "test -f CHANGELOG.md && test -f DECISIONS.md && test ! -e .jig/decisions.md"
 git add -A && git commit -qm "TOOL: update" >/dev/null 2>&1
 before=$(oldfiles); out=$($UP --merge-log 2>&1); after=$(oldfiles)
-msg="migration: --merge-log alone shows the log it would write and changes nothing"
-expect_pass sh -c "echo \"\$0\" | grep -qx '## v0.2.0 - [0-9-]*' && echo \"\$0\" | grep -q 'D-003 is rejected: dropped' && test \"\$1\" = \"\$2\"" "$out" "$before" "$after"
-git switch -q -c migrate
-msg="migration: --apply --merge-log writes the log, removes both files and rewrites entry_files"
+msg="migration: --merge-log alone shows the log, the rejected id kept taken, and what names the old files, changing nothing"
+expect_pass sh -c "echo \"\$0\" | grep -qx '## v0.2.0 - [0-9-]*' && echo \"\$0\" | grep -q 'D-003: rejected, left out' && echo \"\$0\" | grep -q 'repoint what names the old files: README.md' && test \"\$1\" = \"\$2\"" "$out" "$before" "$after"
+msg="migration: --apply --merge-log writes the log, removes both files, and rewrites entry_files, append_files and the counter"
 out=$($UP --apply --merge-log 2>&1)
-expect_pass sh -c "test ! -e CHANGELOG.md && test ! -e DECISIONS.md && grep -q '\"entry_files\": \[' .jig/meta.json && python3 -c \"import json; e=json.load(open('.jig/meta.json'))['entry_files']; assert e[0]=='.jig/decisions.md' and 'DECISIONS.md' not in e, e\"" "$out"
-msg="migration: releases keep their lines, re-headed; an accepted row goes to the oldest release naming it, an open one to ## Open, a rejected one goes"
-expect_pass sh -c "sed -n '/^## v0.1.0 - /,\$p' .jig/decisions.md | grep -qx '### D-001 ids' && sed -n '/^## v0.1.0 - /,\$p' .jig/decisions.md | grep -qx -- '- D-001' && grep -qx '## v0.2.0 - [0-9-]*' .jig/decisions.md && sed -n '/^## Open/,/^## Unreleased/p' .jig/decisions.md | grep -qx '### D-002 which wire format?' && ! grep -q '^### D-003' .jig/decisions.md && grep -qx -- '- D-002, D-003' .jig/decisions.md && ! grep -q '^## .*—' .jig/decisions.md"
-msg="migration: its commit passes the hooks on a branch, and merges into main reviewed"
-expect_pass sh -c "git commit -qm 'TOOL: merge the log' && $J reviewed >/dev/null && git switch -q main && git merge -q --no-ff --no-edit migrate"
-msg="migration: afterwards the log's rules apply, and the next release names Unreleased in the log, old tags still counted"
+expect_pass sh -c "test ! -e CHANGELOG.md && test ! -e DECISIONS.md && python3 -c \"import json; e=json.load(open('.jig/meta.json'))['entry_files']; c=json.load(open('.jig/config.json')); assert e[0]=='.jig/decisions.md' and 'DECISIONS.md' not in e, e; assert 'CHANGELOG.md' not in c['append_files'] and '.jig/decisions.md' in c['append_files'], c; assert c['reserve']['decision']['files']==['.jig/decisions.md'], c\"" "$out"
+msg="migration: releases keep their lines, re-headed; rows land by status; a note naming one id joins its entry; the proposer is kept"
+expect_pass sh -c "sed -n '/^## v0.1.0 - /,\$p' .jig/decisions.md | grep -qx '### D-001 ids' && sed -n '/^## v0.1.0 - /,\$p' .jig/decisions.md | grep -qx -- '- D-001' && grep -qx '## v0.2.0 - [0-9-]*' .jig/decisions.md && sed -n '/^## Open/,/^## Unreleased/p' .jig/decisions.md | grep -qx '### D-002 which wire format?' && grep -qx 'Proposed (Ann, 2026-11-02).' .jig/decisions.md && sed -n '/^### D-002/,/^## Unreleased/p' .jig/decisions.md | grep -qx 'Source for D-002: the wire thread.' && ! grep -q '^### D-003' .jig/decisions.md && grep -q 'left out of it: D-003' .jig/decisions.md && grep -qx -- '- D-002, D-003' .jig/decisions.md && ! grep -q '^## .*—' .jig/decisions.md"
+msg="migration: its commit is made on main, alone, and the hooks take it"
+expect_pass git commit -qm "TOOL: merge the log"
+msg="migration: afterwards a job's entry is numbered above the rejected D-003, the counter agreeing, and the release takes the history"
 $J open o2 >/dev/null && git add -A && git commit -qm "TOOL: open o2"
 (cd .git/jig/worktrees/o2 && ulog '### D-?cache cache off
 Accepted (owner, 2026-11-03).' && git add -A && git commit -qm "D-?cache: off" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note o2")
 $J merge o2 >/dev/null 2>&1; out=$($J release 2>&1)
-expect_pass sh -c "git tag | grep -qx v0.3.0 && grep -qx '### D-003 cache off' .jig/decisions.md && grep -A2 '^## Unreleased\$' .jig/decisions.md | grep -q '^## v0.3.0 - ' && test ! -e CHANGELOG.md" "$out"
+expect_pass sh -c "git tag | grep -qx v0.3.0 && grep -qx '### D-004 cache off' .jig/decisions.md && grep -A2 '^## Unreleased\$' .jig/decisions.md | grep -q '^## v0.3.0 - ' && $J status | grep -qx 'reserve decision: next free 5'" "$out"
 msg="migration: a second --merge-log has nothing to merge"
 out=$($UP --merge-log 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'nothing to merge'" "$out"
+msg="migration: a pararepo's bump across it reports the register's move on one line and only decisions new or changed since the pin (D-002, D-004), not D-001"
+cd "$PA" && out=$($J sync 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'DECISIONS.md (now .jig/decisions.md)' && echo \"\$0\" | grep -q '^  D-004: ' && echo \"\$0\" | grep -q '^  D-002: ' && ! echo \"\$0\" | grep -q '^  D-001: '" "$out"
+
+# A plain repo's own CHANGELOG.md and register, in Keep a Changelog's spelling, with words
+# that have no place in the log.
+PX="$T/old-plain"; pcnew "$PX"
+printf '# Changelog\n\nOwner note: older history is in the wiki.\n\n## [Unreleased]\n- D-003 later\n\n## [1.0.0] - 2026-01-01\n- D-001–D-002 the first rules\n' > CHANGELOG.md
+printf '# Decisions\n\n| # | Decision | Status | Binds | Date |\n|---|---|---|---|---|\n| D-001 | a | accepted (Ann) | api | 2026-01-01 |\n| D-002 | b | accepted (Ann) | api | 2026-01-01 |\n| D-003 | c | proposed (Bo) | ui | 2026-02-01 |\n\n## Pending delivery\n\nAccepted (Dave): hold the queue.\n' > DECISIONS.md
+git add -A && git commit -qm init
+out=$($J init 2>&1)
+msg="init: beside a CHANGELOG.md and a register, it writes no log, naming --merge-log"
+expect_pass sh -c "test ! -e .jig/decisions.md && echo \"\$0\" | grep -q 'merge-log'" "$out"
+git add -A && git commit -qm board
+msg="migration: an untracked CHANGELOG.md is refused before anything is written"
+git rm -q --cached CHANGELOG.md && git commit -qm untrack && out=$($UP --apply --merge-log 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"isn't tracked\" && test ! -e .jig/decisions.md" "$out"
+git add CHANGELOG.md && git commit -qm retrack
+msg="migration: a log holding only init's seed doesn't stop the merge"
+cp "$DL/.jig/decisions.md" /dev/null && python3 -c "import sys; sys.path.insert(0, '.jig'); import importlib.util as u; s=u.spec_from_file_location('j', '.jig/jig.py'); m=u.module_from_spec(s); s.loader.exec_module(m); open('.jig/decisions.md','w').write(m.LOG_SEED)" && git add -A && git commit -qm seed
+out=$($UP --apply --merge-log 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^Written .jig/decisions.md'" "$out"
+msg="migration: a range in a release line places each id; [Unreleased] is the one Unreleased; a # column is the id and Binds stays named"
+expect_pass sh -c "sed -n '/^## v1.0.0 - 2026-01-01/,\$p' .jig/decisions.md | grep -qx '### D-001 a' && sed -n '/^## v1.0.0 - 2026-01-01/,\$p' .jig/decisions.md | grep -qx '### D-002 b' && test \$(grep -ci '^## \[*unreleased' .jig/decisions.md) = 1 && grep -qx -- '- D-003 later' .jig/decisions.md && grep -qx 'Proposed (Bo, 2026-02-01).' .jig/decisions.md && grep -qx 'Binds: api' .jig/decisions.md"
+msg="migration: what has no home stays in the old file, as written, and the run names it"
+expect_pass sh -c "echo \"\$0\" | grep -q 'no home, move by hand: DECISIONS.md' && grep -qx '## Pending delivery' DECISIONS.md && grep -qx 'Accepted (Dave): hold the queue.' DECISIONS.md && ! grep -q '^| D-' DECISIONS.md && grep -qx 'Owner note: older history is in the wiki.' CHANGELOG.md && ! grep -q '^## ' CHANGELOG.md" "$out"
 cd "$DL"
 }
 

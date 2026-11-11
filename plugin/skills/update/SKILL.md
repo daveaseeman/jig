@@ -58,10 +58,12 @@ out each finding on a yes. Never propose adding a line that restates `.jig/RULES
 A root **`CHANGELOG.md`** and a **decision register** (`DECISIONS.md`, or a metarepo's entry file
 of decision rows) merge into `.jig/decisions.md`, the one log (`.jig/RULES.md`, Decision log). Run
 `jig update --merge-log` and show what it prints: where each row lands, each rejected row it
-drops, the `entry_files` rewrite, and the log itself. Say the removal of both files out loud.
-On a yes, `--apply --merge-log`. In a metarepo, commit it on a branch and merge it reviewed, as
-any change; elsewhere commit on trunk. A refusal names rows the merged log wouldn't pass M2
-with: show them, and fix the register with the owner first.
+leaves out, each piece with no home (it stays in its old file, to move by hand), the
+`entry_files`, `append_files` and counter rewrites, the files that still name the old ones, and
+the log itself. Say each removal out loud. On a yes, `--apply --merge-log`, then commit it on
+trunk, alone, in any kind of repo: the hooks take that one commit. Then, on a yes each, move
+what had no home and repoint the files it named. A refusal names rows the merged log wouldn't
+pass M2 with: show them, and fix the register with the owner first.
 
 A root **`GLOSSARY.md`**: the glossary's home is `README.md § Glossary` now. On a yes, move each
 term into that section as a `### <term>` heading, its text below it, delete the file, replace it
