@@ -1,7 +1,7 @@
 {
   "decision-touches": {
     "spec": ".jig/specs/decision-touches.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [
       "decision-remove-superseded"
     ],
@@ -11,7 +11,8 @@
     "shares": [
       "plugin/templates/jig/jig.py",
       "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh"
+      "tests/smoke.sh",
+      "tests/redocument-fixture.sh"
     ],
     "reserved": {}
   }
