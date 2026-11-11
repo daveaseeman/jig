@@ -16,7 +16,8 @@ The release renames `## Unreleased` in `.jig/decisions.md` to `## vX.Y.Z - <date
 empty one above it. Before it runs, read Unreleased with the owner: a breaking change there
 (a `**Breaking:**` line, a superseded decision) means `--major`. A repo with no log yet, still
 on a root `CHANGELOG.md`, releases into that file as before; offer the merge first
-(`/jig:update`, `--merge-log`).
+(`/jig:update`, `--merge-log`). In a metarepo that merge is a job of its own, opened, merged
+and followed by the board's rewrite on trunk before the release.
 
 ## Before it runs
 

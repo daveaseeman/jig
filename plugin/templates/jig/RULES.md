@@ -526,10 +526,15 @@ Nothing the owner wrote is dropped. What has no place in the log (a preamble, a 
 several ids, a section of its own) stays in its old file, which keeps only that, and the run
 lists each piece to move by hand. It also lists every file that still names the old ones, to
 repoint. A row's words are kept: a decision that opens with a status word goes under a plain
-`Decision` heading, and a row with no who says `not recorded`. The result is committed on
-trunk, alone: that one commit is the hubnode's bookkeeping, as the board is, so M3, M4 and the
-history check take it in a metarepo. Until it lands, trunk has no log and the old rules hold,
-whatever a branch adds. A repo with neither file gets an empty log from `jig update --apply`,
+`Decision` heading, and a row with no who says `not recorded`. A who is any text before the
+last date, as a row's note was, so every row the old M2 took converts; one it refused is refused
+here too, before anything is written. In a metarepo the merge is a change to its files, so it is
+a job: run on trunk, `--apply --merge-log` refuses and names `jig open`; in the job's worktree it
+writes everything but the board, the job merges like any other, and `--apply --merge-log` on
+trunk then rewrites the board (R5). Elsewhere it runs on trunk, board included. The log's rules
+judge the change that merges the old files away, one that adds the log and no longer holds
+CHANGELOG.md's sections or a register's rows; one that adds a log beside them is still judged by
+the old rules, as is everything until trunk has the log. A repo with neither file gets an empty log from `jig update --apply`,
 and `jig init` writes none beside them, leaving them for the merge. Numbering, by `jig merge`
 or a counter, starts above every id the log has ever named, so a rejected one's is never given
 again. A pararepo's bump across the merge reports the register's move on one line, and only the

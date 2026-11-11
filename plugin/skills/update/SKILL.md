@@ -60,9 +60,15 @@ of decision rows) merge into `.jig/decisions.md`, the one log (`.jig/RULES.md`, 
 `jig update --merge-log` and show what it prints: where each row lands, each rejected row it
 leaves out, each piece with no home (it stays in its old file, to move by hand), the
 `entry_files`, `append_files` and counter rewrites, the files that still name the old ones, and
-the log itself. Say each removal out loud. On a yes, `--apply --merge-log`, then commit it on
-trunk, alone, in any kind of repo: the hooks take that one commit. Then, on a yes each, move
-what had no home and repoint the files it named. A refusal names rows the merged log wouldn't
+the log itself. Say each removal out loud. On a yes:
+
+- **in a metarepo**, the merge is a job, as any change to its files is: ask the hubnode to open
+  one (`jig open merge-log --shares CHANGELOG.md <register>`), run `--apply --merge-log` in its
+  worktree and commit there, and hand it off and merge it like any job. Then, on trunk,
+  `--apply --merge-log` again rewrites the board (`append_files`, the counter): commit that;
+- **elsewhere**, `--apply --merge-log` on trunk does all of it: commit it there.
+
+Then, on a yes each, move what had no home and repoint the files it named. A refusal names rows the merged log wouldn't
 pass M2 with: show them, and fix the register with the owner first.
 
 A root **`GLOSSARY.md`**: the glossary's home is `README.md § Glossary` now. On a yes, move each

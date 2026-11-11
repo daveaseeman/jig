@@ -3986,15 +3986,24 @@ msg="migration: --apply without --merge-log leaves both old files, and writes no
 $UP --apply >/dev/null 2>&1; expect_pass sh -c "test -f CHANGELOG.md && test -f DECISIONS.md && test ! -e .jig/decisions.md"
 git add -A && git commit -qm "TOOL: update" >/dev/null 2>&1
 before=$(oldfiles); out=$($UP --merge-log 2>&1); after=$(oldfiles)
-msg="migration: --merge-log alone shows the log, the rejected id kept taken, and what names the old files, changing nothing"
-expect_pass sh -c "echo \"\$0\" | grep -qx '## v0.2.0 - [0-9-]*' && echo \"\$0\" | grep -q 'D-003: rejected, left out' && echo \"\$0\" | grep -q 'repoint what names the old files: README.md' && test \"\$1\" = \"\$2\"" "$out" "$before" "$after"
-msg="migration: --apply --merge-log writes the log, removes both files, and rewrites entry_files, append_files and the counter"
+msg="migration: --merge-log alone shows the log, the rejected id kept taken, what names the old files, and on a metarepo's trunk names a job, changing nothing"
+expect_pass sh -c "echo \"\$0\" | grep -qx '## v0.2.0 - [0-9-]*' && echo \"\$0\" | grep -q 'D-003: rejected, left out' && echo \"\$0\" | grep -q 'repoint what names the old files: README.md' && echo \"\$0\" | grep -q 'jig open merge-log' && test \"\$1\" = \"\$2\"" "$out" "$before" "$after"
+msg="migration: on a metarepo's trunk --apply --merge-log is refused, naming a job, and writes nothing"
+before=$(oldfiles); out=$($UP --apply --merge-log 2>&1); rc=$?; after=$(oldfiles)
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'M4' && echo \"\$0\" | grep -q 'jig open' && test \"\$1\" = \"\$2\"" "$out" "$before" "$after"
+$J open ml --shares CHANGELOG.md DECISIONS.md README.md >/dev/null && git add -A && git commit -qm "TOOL: open ml"
+cd .git/jig/worktrees/ml
+msg="migration: in the job's worktree --apply --merge-log writes the log, removes both files and rewrites entry_files, leaving the board for trunk"
 out=$($UP --apply --merge-log 2>&1)
-expect_pass sh -c "test ! -e CHANGELOG.md && test ! -e DECISIONS.md && python3 -c \"import json; e=json.load(open('.jig/meta.json'))['entry_files']; c=json.load(open('.jig/config.json')); assert e[0]=='.jig/decisions.md' and 'DECISIONS.md' not in e, e; assert 'CHANGELOG.md' not in c['append_files'] and '.jig/decisions.md' in c['append_files'], c; assert c['reserve']['decision']['files']==['.jig/decisions.md'], c\"" "$out"
+expect_pass sh -c "test ! -e CHANGELOG.md && test ! -e DECISIONS.md && git diff --cached --quiet -- .jig/config.json && echo \"\$0\" | grep -q 'on main, after the merge' && python3 -c \"import json; e=json.load(open('.jig/meta.json'))['entry_files']; assert e[0]=='.jig/decisions.md' and 'DECISIONS.md' not in e, e\"" "$out"
 msg="migration: releases keep their lines, re-headed; rows land by status; a note naming one id joins its entry; the proposer is kept"
 expect_pass sh -c "sed -n '/^## v0.1.0 - /,\$p' .jig/decisions.md | grep -qx '### D-001 ids' && sed -n '/^## v0.1.0 - /,\$p' .jig/decisions.md | grep -qx -- '- D-001' && grep -qx '## v0.2.0 - [0-9-]*' .jig/decisions.md && sed -n '/^## Open/,/^## Unreleased/p' .jig/decisions.md | grep -qx '### D-002 which wire format?' && grep -qx 'Proposed (Ann, 2026-11-02).' .jig/decisions.md && sed -n '/^### D-002/,/^## Unreleased/p' .jig/decisions.md | grep -qx 'Source for D-002: the wire thread.' && ! grep -q '^### D-003' .jig/decisions.md && grep -q 'left out of it: D-003' .jig/decisions.md && grep -qx -- '- D-002, D-003' .jig/decisions.md && ! grep -q '^## .*—' .jig/decisions.md"
-msg="migration: its commit is made on main, alone, and the hooks take it"
+msg="migration: the job's commit of it passes, judged by the log's rules since it merges the old files away"
 expect_pass git commit -qm "TOOL: merge the log"
+$J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note ml" && cd "$OM"
+msg="migration: the job merges into main, and --apply --merge-log there then rewrites only the board: append_files and the counter"
+$J merge ml >/dev/null 2>&1; out=$($UP --apply --merge-log 2>&1)
+expect_pass sh -c "git log -1 --format=%s | grep -qx 'merge ml' && python3 -c \"import json; c=json.load(open('.jig/config.json')); assert 'CHANGELOG.md' not in c['append_files'] and '.jig/decisions.md' in c['append_files'], c; assert c['reserve']['decision']['files']==['.jig/decisions.md'], c\" && git diff --cached --name-only | grep -qx .jig/config.json && git commit -qm 'TOOL: board after the log'" "$out"
 msg="migration: afterwards a job's entry is numbered above the rejected D-003, the counter agreeing, and the release takes the history"
 $J open o2 >/dev/null && git add -A && git commit -qm "TOOL: open o2"
 (cd .git/jig/worktrees/o2 && ulog '### D-?cache cache off

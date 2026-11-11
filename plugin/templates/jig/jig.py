@@ -297,25 +297,26 @@ def has_log(trunk: str) -> bool:
     return bool(git("ls-tree", "--name-only", trunk, "--", LOG))
 
 
-def is_migration(changes: list[tuple[str, str]], entry: list[str]) -> bool:
-    """Whether CHANGES (status, path) are `jig update --merge-log`'s commit: it adds the log and
-    only removes or trims CHANGELOG.md and the registers, besides jig's own config. On trunk
-    that one commit is the hubnode's bookkeeping, as the board is."""
-    if ("A", LOG) not in changes:
-        return False
-    jig = {LOG, META, CONFIG}
-    return all(p in jig or (st in ("D", "M") and (p == CHANGELOG or p in entry
-                                                  or Path(p).name.lower() == "decisions.md"))
-               for st, p in changes)
+def holds_old_log(text: str, path: str, prefix: str | None) -> bool:
+    """Whether a file still is a log from before .jig/decisions.md: a CHANGELOG.md with its
+    sections, or a register with rows. What the merge leaves behind (a preamble, a note) isn't."""
+    if path == CHANGELOG:
+        return bool(re.search(r"^## ", text, re.M))
+    return bool(rows_in(text, prefix))
 
 
-def migrating(trunk: str, staged: bool, meta: dict | None) -> bool:
-    """This change is the merge into the log, made on a trunk that has none yet."""
-    if has_log(trunk):
+def migrated_here(trunk: str, staged: bool, meta: dict | None) -> bool:
+    """This change is the merge into the log: it adds the log and no longer holds CHANGELOG.md's
+    sections or a register's rows. A change that adds a log beside the old files is no merge,
+    and the old rules still judge it."""
+    if not in_index(LOG, staged):
         return False
-    raw = git("diff", "--name-status", "--no-renames", base(trunk), *(["--cached"] if staged else []))
-    changes = [tuple(l.split("\t", 1)) for l in raw.splitlines() if "\t" in l]
-    return is_migration([(st[0], p) for st, p in changes], (meta or {}).get("entry_files", []))
+    entry = (meta or {}).get("entry_files", [])
+    prefix = (meta or {}).get("decision_prefix")
+    olds = [f for f in git("ls-tree", "-r", "--name-only", trunk).splitlines()
+            if f == CHANGELOG or (f.endswith(".md") and not f.startswith(f"{DIR}/")
+                                  and (f in entry or Path(f).name.lower() == "decisions.md"))]
+    return not any(holds_old_log(in_index(f, staged), f, prefix) for f in olds)
 
 
 def changelog_only_grows(trunk: str, staged: bool) -> bool:
@@ -2700,9 +2701,9 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
                            f"(`jig reviewed`), then merge")
         return out
     entry = meta["entry_files"]
-    # The log's rules start once trunk has it: a branch adding one can't switch the old ones off.
-    by_log = has_log(trunk)
-    merging_log = trunk_side and migrating(trunk, staged, meta)
+    # The log's rules start once trunk has it, or with the change that merges the old files into
+    # it; a branch that only adds a log beside them can't switch the old rules off.
+    by_log = has_log(trunk) or migrated_here(trunk, staged, meta)
     # M2, before the log: a decision row carries its status and date
     rx = re.compile(rf"^\+\s*\|\s*{re.escape(meta['decision_prefix'])}\d+\s*\|(.*)$", re.M)
     md = [p for p in paths if p.endswith(".md")] if not by_log else []
@@ -2731,7 +2732,7 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
     if "README.md" in cited and glossary_text(at_rev(since, "README.md")) == glossary_text(
             in_index("README.md", staged)):
         cited.remove("README.md")
-    if cited and not merging_log and (record not in branch_paths or not in_index(record, staged)):
+    if cited and (record not in branch_paths or not in_index(record, staged)):
         out.append(f"M3 {', '.join(cited)} changed: add a line{' or an entry' if by_log else ''} "
                    f"to {record} under ## Unreleased")
     # M4 nothing lands on main except merges; jig's own bookkeeping (the board, handoffs) is
@@ -2739,8 +2740,8 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
     # a decision is reviewed work, so it comes in by a merge like the pages that cite it.
     # The roadmap's view is that bookkeeping too, where the repo keeps a roadmap.
     keeps = (ROADMAP_VIEW,) if in_index(ROADMAP, staged) or at_rev(trunk, ROADMAP) else ()
-    if trunk_side and paths and not merging_log and not all((p.startswith(f"{DIR}/") and p != LOG)
-                                                         or p in keeps for p in paths):
+    if trunk_side and paths and not all((p.startswith(f"{DIR}/") and p != LOG) or p in keeps
+                                      for p in paths):
         out.append(f"M4 {trunk} takes only merges of reviewed branches: commit on a branch")
     return out
 
@@ -2785,13 +2786,6 @@ def meta_problems(root: Path, meta: dict, trunk: str, rev: str = "") -> list[str
             continue                      # the root commit predates the gates
         files = git("diff", "--name-only", parents[0], commit).splitlines()
         if all(f.startswith(f"{DIR}/") and f != LOG for f in files):
-            continue
-        # The merge into the log is committed on trunk, by the hubnode, like the board.
-        moves = [tuple(l.split("\t", 1)) for l in git("diff", "--name-status", "--no-renames", parents[0],
-                                                       commit).splitlines() if "\t" in l]
-        before = json.loads(git("show", f"{parents[0]}:{META}") or "{}")
-        if not git("ls-tree", "--name-only", parents[0], "--", LOG) and is_migration(
-                [(st[0], p) for st, p in moves], before.get("entry_files", [])):
             continue
         if not git("show", f"{parents[0]}:{META}"):
             continue                      # init --meta's own commit: nothing was gated yet
@@ -6776,18 +6770,72 @@ def names_of(root: Path, gone: list[str]) -> list[tuple[str, int]]:
     return out
 
 
+def board_rewrite(root: Path, merged: set[str], prefix: str) -> tuple[dict, list[str]]:
+    """The board after the merge: append_files and a reserve counter over MERGED name the log
+    instead, the counter counting every number the log names, a rejected one's included."""
+    data = json.loads((root / CONFIG).read_text())
+    said = []
+    appends = list(dict.fromkeys(LOG if a in merged else a for a in data.get("append_files", [])))
+    if appends != data.get("append_files", []):
+        said.append(f"{CONFIG} append_files: {data.get('append_files')} → {appends}")
+        data["append_files"] = appends
+    for k, v in (data.get("reserve") or {}).items():
+        if isinstance(v, dict) and any(f in merged for f in v.get("files") or []):
+            data["reserve"][k] = {**v, "files": [LOG], "pattern": rf"(?<![\w-]){re.escape(prefix)}(\d+)(?!\d)"}
+            said.append(f"{CONFIG} reserve.{k}: files {v.get('files')} → [{LOG}], counting every id the log names")
+    return data, said
+
+
+def stale_board_names(root: Path) -> set[str]:
+    """Once the log exists: the old files the board still names that hold no old log any more."""
+    data = json.loads((root / CONFIG).read_text())
+    meta = root / META
+    entry = json.loads(meta.read_text() or "{}").get("entry_files", []) if meta.exists() else []
+    named = set(data.get("append_files", [])) | {f for v in (data.get("reserve") or {}).values()
+                                                 if isinstance(v, dict) for f in v.get("files") or []}
+    old = {f for f in named if f == CHANGELOG or Path(f).name.lower() == "decisions.md" or f in entry}
+    return {f for f in old if f != LOG and not ((root / f).is_file() and holds_old_log(
+        (root / f).read_text(errors="replace"), f, old_prefix(root)))}
+
+
 def cmd_merge_log(root: Path, apply: bool) -> int:
     """`jig update --merge-log`: fold a root CHANGELOG.md and the decision register into the log,
-    on the owner's yes. Their words are kept: what has no place in the log stays where it was."""
+    on the owner's yes. Their words are kept: what has no place in the log stays where it was.
+    The board is the hubnode's, on trunk: merged on a branch, it is rewritten there after."""
     if not (root / CONFIG).exists():
         die("run `jig update --apply` first: the merge runs on the current layout", 2)
+    trunk = Board.trunk_name(root)
+    on_trunk_now = git("branch", "--show-current") == trunk
     if (root / LOG).exists() and not log_is_seed(root):
-        print(f"{LOG} exists: nothing to merge")
+        stale = stale_board_names(root)
+        if not stale:
+            print(f"{LOG} exists: nothing to merge")
+            return 0
+        data, said = board_rewrite(root, stale, log_prefix_of((root / LOG).read_text()))
+        print("The board still names files the log took:")
+        for line in said:
+            print(f"  {line}")
+        if not apply:
+            print("Dry run: nothing changed. On trunk: jig update --apply --merge-log")
+            return 0
+        if not on_trunk_now:
+            die(f"the board is edited on {trunk} only (R5): run this there", 2)
+        (root / CONFIG).write_text(json.dumps(data, indent=2) + "\n")
+        git("add", "--", CONFIG, check=True)
+        print(f"\nRewritten {CONFIG}. Staged, nothing committed: commit it on {trunk}.")
         return 0
     sources = log_sources(root)
     if not sources:
         print(f"no CHANGELOG.md or decision register to merge: `jig update --apply` writes an empty {LOG}")
         return 0
+    meta = root / META
+    # In a metarepo the merge changes its own files, which trunk takes only as a reviewed merge.
+    branch_needed = meta.exists() and on_trunk_now
+    job = (f"open a job for it on {trunk} (`jig open merge-log --shares "
+           f"{' '.join(f for f, _ in sources)}`), run this in its worktree, and merge it; then run "
+           f"`jig update --apply --merge-log` on {trunk} again, for the board")
+    if apply and branch_needed:
+        die(f"in a metarepo the merge is a change to its files (M4): {job}", 2)
     have = set(tracked(root))
     untracked = [f for f, _ in sources if f not in have]
     if untracked:
@@ -6808,23 +6856,14 @@ def cmd_merge_log(root: Path, apply: bool) -> int:
         print(f"  {n}")
     for f, para in m["homeless"]:
         print(f"  no home, move by hand: {f}:{para[0][0]}–{para[-1][0]} `{para[0][1].strip()[:60]}`")
-    meta, board = root / META, root / CONFIG
     entry = json.loads(meta.read_text() or "{}").get("entry_files", []) if meta.exists() else None
     kept_entry = [LOG, *[e for e in entry if e not in gone and e != LOG]] if entry is not None else None
     if entry is not None:
         print(f"  {META} entry_files: {entry} → {kept_entry}")
-    data = json.loads(board.read_text())
     # What a kept file holds is no log any more: lines are appended to the log now.
-    merged = {f for f, _ in sources}
-    appends = list(dict.fromkeys(LOG if a in merged else a for a in data.get("append_files", [])))
-    if appends != data.get("append_files", []):
-        print(f"  {CONFIG} append_files: {data.get('append_files')} → {appends}")
-    counters = {}
-    for k, v in (data.get("reserve") or {}).items():
-        if isinstance(v, dict) and any(f in gone or f in keep for f in v.get("files") or []):
-            # The counter now counts every number the log names, a rejected one's included.
-            counters[k] = {**v, "files": [LOG], "pattern": rf"(?<![\w-]){re.escape(m['prefix'])}(\d+)(?!\d)"}
-            print(f"  {CONFIG} reserve.{k}: files {v.get('files')} → [{LOG}], counting every id the log names")
+    data, said = board_rewrite(root, {f for f, _ in sources}, m["prefix"])
+    for line in said:
+        print(f"  {line}" + ("" if on_trunk_now else f" (on {trunk}, after the merge)"))
     refs = names_of(root, [f for f, _ in sources])
     for f, n in refs:
         print(f"  repoint what names the old files: {f} ({n} line{'s' if n != 1 else ''})")
@@ -6835,7 +6874,8 @@ def cmd_merge_log(root: Path, apply: bool) -> int:
         return 2
     if not apply:
         print(f"\n--- {LOG}, as it would be written ---\n{text}")
-        print("Dry run: nothing changed. On the owner's yes: jig update --apply --merge-log")
+        print("Dry run: nothing changed. On the owner's yes: "
+              + (job if branch_needed else "jig update --apply --merge-log"))
         return 0
     (root / LOG).write_text(text)
     for f in gone:
@@ -6846,14 +6886,15 @@ def cmd_merge_log(root: Path, apply: bool) -> int:
         d = json.loads(meta.read_text())
         d["entry_files"] = kept_entry
         meta.write_text(json.dumps(d, indent=2) + "\n")
-    data["append_files"] = appends
-    for k, v in counters.items():
-        data["reserve"][k] = v
-    board.write_text(json.dumps(data, indent=2) + "\n")
-    git("add", "--", LOG, CONFIG, *keep, *([META] if entry is not None else []), check=True)
+    if on_trunk_now:
+        (root / CONFIG).write_text(json.dumps(data, indent=2) + "\n")
+    git("add", "--", LOG, *keep, *([META] if entry is not None else []),
+        *([CONFIG] if on_trunk_now else []), check=True)
     print(f"\nWritten {LOG}" + (f"; {', '.join(gone)} removed" if gone else "")
           + (f"; {', '.join(keep)} kept, holding only what has no home: move it by hand" if keep else "")
-          + ". Staged, nothing committed: commit it on trunk, alone"
+          + ". Staged, nothing committed: commit it here"
+          + ("" if on_trunk_now or not said else
+             f"; once it merges, `jig update --apply --merge-log` on {trunk} rewrites the board")
           + (", then repoint what names the old files" if refs else "") + ".")
     return 0
 
