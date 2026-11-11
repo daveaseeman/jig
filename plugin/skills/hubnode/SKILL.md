@@ -128,7 +128,8 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
    subject becomes `<ids>: merge <name>`. `: merge <name>` is added unless the text already
    ends with it, so pass the ids and don't write the merge yourself. The merge numbers each
    `D-?<slug>` the job wrote in `.jig/decisions.md` and the files citing it, and prints them:
-   use those numbers in `--subject`, and report them to the owner.
+   use those numbers in `--subject`, and report them to the owner. A merge that stops on
+   conflicts: resolve and `git add` them, then `jig merge --number`, then `git commit`.
 
 ## A roadmap change
 

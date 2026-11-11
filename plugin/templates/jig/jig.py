@@ -291,6 +291,20 @@ def in_index(path: str, staged: bool) -> str:
     return git("show", f":{path}")
 
 
+def has_log(trunk: str) -> bool:
+    """Whether trunk keeps the decision log. A repo `jig update` hasn't moved to it yet keeps
+    the rules it had: a metarepo's CHANGELOG.md and its register of rows."""
+    return bool(git("ls-tree", "--name-only", trunk, "--", LOG))
+
+
+def changelog_only_grows(trunk: str, staged: bool) -> bool:
+    """CHANGELOG.md is still there and this change deletes none of its lines."""
+    if not in_index(CHANGELOG, staged):
+        return False
+    stat = git("diff", "--numstat", base(trunk), *(["--cached"] if staged else []), "--", CHANGELOG)
+    return all(line.split("\t")[1] == "0" for line in stat.splitlines() if line)
+
+
 def existed_on_trunk(trunk: str, path: str) -> bool:
     return bool(git("ls-tree", "-r", "--name-only", trunk, "--", path))
 
@@ -310,7 +324,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     if para is not None:
         out += para_rules(root, board, para, staged)
     if LOG in guarded:
-        out += log_rules(trunk, staged)
+        out += log_rules(trunk, staged, on_trunk(trunk, branch))
 
     # R1 the trunk checkout stays on trunk (only when jobs are open: solo, one checkout
     # with a feature branch is normal and nobody else's tree is being moved)
@@ -423,6 +437,10 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
             # R3 only this job's files, or a file new to the repository. Removing a file is
             # changing it: one trunk has must be declared; one only this job added never was trunk's.
             if matches(p, owns) or matches(p, shares) or matches(p, common):
+                continue
+            # Before the log, M3 asks every metarepo job for a CHANGELOG.md line, so every one may
+            # add lines to it. Only add: a rewrite would take the released history with it.
+            if meta is not None and p == CHANGELOG and not has_log(trunk) and changelog_only_grows(trunk, staged):
                 continue
             if not existed_on_trunk(trunk, p):
                 continue
@@ -901,6 +919,17 @@ def cmd_merge(root: Path, args) -> int:
     merged job, and the merge commit is the record of it."""
     board = Board.load(root, working_tree=True)
     trunk, name = board.trunk, args.name
+    if args.number:
+        # The conflicted merge's last step before its commit: the ids it brings in get numbers.
+        if not git("rev-parse", "-q", "--verify", "MERGE_HEAD"):
+            die("no merge in progress: `jig merge <job>` numbers its ids itself")
+        if git("diff", "--name-only", "--diff-filter=U"):
+            die("resolve and `git add` the conflicted files first")
+        for line in number_placeholders(root, trunk) or ["nothing to number"]:
+            print(f"numbered {line}" if "→" in line else line)
+        return 0
+    if not name:
+        die("usage: jig merge <job> [-m msg] [--subject ids], or jig merge --number", 2)
     if git("branch", "--show-current") != trunk:
         die(f"merge from {trunk} (the hubnode's checkout)")
     if name not in board.jobs:
@@ -954,7 +983,8 @@ def cmd_merge(root: Path, args) -> int:
     if p.returncode:
         then = f", `jig roadmap --write` and `git add {ROADMAP_VIEW}`" if git("show", f":{ROADMAP}") else ""
         print(f"conflicts merging {branch}; {name}'s entry is already deleted in the index. "
-              f"Resolve these, `git add` each{then}, `git commit`, then run {DIR}/scripts/setup.sh:",
+              f"Resolve these, `git add` each{then}, `jig merge --number` (it numbers the job's "
+              f"D-?<slug> ids), `git commit`, then run {DIR}/scripts/setup.sh:",
               file=sys.stderr)
         for f in conflicted:
             print(f"  {f}", file=sys.stderr)
@@ -2348,6 +2378,10 @@ META_DEFAULTS = {
     "pararepos": [],
 }
 DECISION_STATUSES = ("open", "proposed", "accepted", "superseded", "rejected")
+# Before the log, a register row's Status cell, whole: a word alone, with a note in
+# parentheses, or "superseded by D-12". Whole-cell, because a Decision cell often starts with a
+# status word ("Open question: …").
+STATUS_CELL = re.compile(rf"(?:{'|'.join(DECISION_STATUSES)})(?:\s*\(.*\)|\s+by\s+\S+)?")
 # A commit's subject starts with the ids it touches (D-022: …, GLOSSARY: …), so git log is
 # the decision index. A branch's entry isn't numbered yet: its subject leads with D-?<slug>.
 SUBJECT_ID = r"(?:[A-Z][A-Z0-9_-]*|[A-Za-z][\w-]*\?[a-z0-9]+(?:-[a-z0-9]+)*)"
@@ -2430,8 +2464,7 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
     merging = merging_commits()
     # A detached HEAD at trunk (or behind it) is trunk all the same: `git push origin
     # HEAD:main` lands what is committed there.
-    on_trunk = branch == trunk or (not branch and subprocess.run(
-        ["git", "merge-base", "--is-ancestor", "HEAD", trunk], capture_output=True).returncode == 0)
+    trunk_side = on_trunk(trunk, branch)
     # M1 docs only: the checker and its scripts live in .jig/, like any jig repo's
     for p in paths:
         if p.endswith(SRC_EXT) and not p.startswith(f"{DIR}/"):
@@ -2439,13 +2472,26 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
     if merging:
         # M5 main takes only merges of reviewed branches. A job's sync of trunk, and the
         # gate's scratch merge, are merges into something else.
-        done = reviewed_commits() if on_trunk else set()
-        for c in (merging if on_trunk else []):
+        done = reviewed_commits() if trunk_side else set()
+        for c in (merging if trunk_side else []):
             if not counts_reviewed(c, done, board):
                 out.append(f"M5 {c[:12]} has no review on record: review it on its branch "
                            f"(`jig reviewed`), then merge")
         return out
     entry = meta["entry_files"]
+    logged = has_log(trunk)
+    # M2, before the log: a decision row carries its status and date
+    rx = re.compile(rf"^\+\s*\|\s*{re.escape(meta['decision_prefix'])}\d+\s*\|(.*)$", re.M)
+    md = [p for p in paths if p.endswith(".md")] if not logged else []
+    diff = git("diff", "-U0", base(trunk), *(["--cached"] if staged else []), "--", *md) if md else ""
+    for m in rx.finditer(diff):
+        cells = [c.lower() for c in table_cells(m.group(1))]
+        if not (any(STATUS_CELL.fullmatch(c) for c in cells)
+                and any(re.fullmatch(r"\d{4}-\d{2}-\d{2}", c) for c in cells)):
+            out.append(f"M2 a decision row needs a Status cell that is exactly a status "
+                       f"({'/'.join(DECISION_STATUSES)}), optionally `(note)` or "
+                       f"`by {meta['decision_prefix']}…`, and a date (YYYY-MM-DD): "
+                       f"{m.group(0)[1:].strip()}")
     # M3 a change to what pararepos cite is recorded where they will read it. Judged on the
     # branch since it left trunk, not this commit: a release sees whole branches, so a line
     # an earlier commit added covers this one, and a commit dropping the only line is caught.
@@ -2456,19 +2502,21 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
              or "HEAD")
     branch_paths = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", since,
                        *(["--cached"] if staged else [])).splitlines()
-    cited = [p for p in branch_paths if p and p != LOG and is_entry(p, entry)]
+    record = LOG if logged else CHANGELOG
+    cited = [p for p in branch_paths if p and p != record and is_entry(p, entry)]
     # A README's prose is the metarepo's own; pararepos cite only its Glossary section.
     if "README.md" in cited and glossary_text(at_rev(since, "README.md")) == glossary_text(
             in_index("README.md", staged)):
         cited.remove("README.md")
-    if cited and (LOG not in branch_paths or not in_index(LOG, staged)):
-        out.append(f"M3 {', '.join(cited)} changed: add a line or an entry to {LOG} under ## Unreleased")
+    if cited and (record not in branch_paths or not in_index(record, staged)):
+        out.append(f"M3 {', '.join(cited)} changed: add a line{' or an entry' if logged else ''} "
+                   f"to {record} under ## Unreleased")
     # M4 nothing lands on main except merges; jig's own bookkeeping (the board, handoffs) is
     # the exception, since the hubnode keeps it on trunk. The decision log isn't bookkeeping:
     # a decision is reviewed work, so it comes in by a merge like the pages that cite it.
     # The roadmap's view is that bookkeeping too, where the repo keeps a roadmap.
     keeps = (ROADMAP_VIEW,) if in_index(ROADMAP, staged) or at_rev(trunk, ROADMAP) else ()
-    if on_trunk and paths and not all((p.startswith(f"{DIR}/") and p != LOG) or p in keeps
+    if trunk_side and paths and not all((p.startswith(f"{DIR}/") and p != LOG) or p in keeps
                                       for p in paths):
         out.append(f"M4 {trunk} takes only merges of reviewed branches: commit on a branch")
     return out
@@ -2521,6 +2569,17 @@ def meta_problems(root: Path, meta: dict, trunk: str, rev: str = "") -> list[str
                    f"({git('log', '-1', '--format=%s', commit)}): a fast-forward, or a commit "
                    f"made with the hooks off")
     return out
+
+
+def yanked_pin(loc: Path, pin: str, name: str) -> list[str]:
+    """A warning when the pinned release was yanked, with its line saying why and what to pin."""
+    text = git("show", f"{pin}:{LOG}", cwd=str(loc))
+    head = re.search(rf"^## {re.escape(pin)} - \S+ \[YANKED\][ \t]*\n+(.*)", text, re.M)
+    if not head:
+        # A yank is added later, on the metarepo's trunk: the pin's own copy can't carry it.
+        text = git("show", f"HEAD:{LOG}", cwd=str(loc))
+        head = re.search(rf"^## {re.escape(pin)} - \S+ \[YANKED\][ \t]*\n+(.*)", text, re.M)
+    return [f"{name} {pin}, the pin, is yanked: {head.group(1).strip()}"] if head else []
 
 
 def made_by_release(tag: str, cwd: str | None = None) -> bool:
@@ -2600,6 +2659,17 @@ def log_prefix(trunk: str) -> str:
 def placeholder_re(prefix: str) -> str:
     """A branch's id for an entry not numbered yet, `D-?store-ro`: numbered by `jig merge`."""
     return rf"{re.escape(prefix)}\?[a-z0-9]+(?:-[a-z0-9]+)*"
+
+
+def released_lines(text: str) -> set[int]:
+    """The 0-based numbers of the lines inside a release section of a log, its heading included."""
+    out, inside = set(), False
+    for n, line in enumerate(text.splitlines()):
+        if line.startswith("## "):
+            inside = bool(RELEASE_HEADING.match(line))
+        if inside:
+            out.add(n)
+    return out
 
 
 def log_prefix_of(text: str) -> str:
@@ -2745,37 +2815,58 @@ def outside_open_deleted(old: str, new: str) -> bool:
                for tag, i1, i2, _, _ in ops if tag in ("replace", "delete") for i in range(i1, i2))
 
 
-def log_rules(trunk: str, staged: bool) -> list[str]:
-    """M2 and the frozen releases, in every repo, whenever a change touches the log."""
+def log_rules(trunk: str, staged: bool, trunk_side: bool = False) -> list[str]:
+    """M2 and the frozen releases, in every repo, whenever a change touches the log. On trunk
+    an id is a number: a D-?<slug> that got there would be released as one."""
     new = in_index(LOG, staged)
     old = at_rev(base(trunk), LOG)
     if not new:
         return [f"{LOG} is the repo's decision log: it is never deleted"] if old else []
-    return log_problems(new, log_prefix(trunk)) + frozen_problems(old, new)
+    prefix = log_prefix(trunk)
+    out = log_problems(new, prefix) + frozen_problems(old, new)
+    if trunk_side:
+        out += [f"M2 {LOG}:{e['line']} {e['id']} isn't numbered, and {trunk} takes numbers only: "
+                f"`jig merge --number` numbers what a merge in progress brings in"
+                for e in log_entries(new, prefix) if "?" in e["id"]]
+    return out
+
+
+def on_trunk(trunk: str, branch: str) -> bool:
+    """On trunk, or a detached HEAD at trunk or behind it: `git push origin HEAD:main` lands
+    what is committed there."""
+    return branch == trunk or (not branch and subprocess.run(
+        ["git", "merge-base", "--is-ancestor", "HEAD", trunk], capture_output=True).returncode == 0)
 
 
 def number_placeholders(root: Path, trunk: str) -> list[str]:
-    """`jig merge`: number each `D-?<slug>` the merge brings in, in every file it changes, after
-    the highest number the log has. Called with the merge staged, before its commit."""
+    """`jig merge`: number each `D-?<slug>` entry the merge brings into the log, after the
+    highest number the log has, in every file the merge changes. Only ids with an entry: the
+    same text elsewhere (a test, a rule's example) is no decision. Called with the merge
+    staged, before its commit; the merge message lists each number, so git log keeps the map."""
     prefix = log_prefix(trunk)
-    ph = re.compile(rf"(?<![\w-]){placeholder_re(prefix)}(?![\w-])")
     files = [f for f in git("-c", "core.quotePath=false", "diff", "--cached", "--name-only",
                             "--diff-filter=AMR", "HEAD").splitlines() if f]
     texts = dict(head_texts_at(":", files))
     log = texts.get(LOG) or git("show", f":{LOG}")
-    found = list(dict.fromkeys([*ph.findall(log), *(p for f, t in texts.items() for p in ph.findall(t))]))
+    had = {e["id"] for e in log_entries(git("show", f"HEAD:{LOG}"), prefix)}
+    found = [e["id"] for e in log_entries(log, prefix) if "?" in e["id"] and e["id"] not in had]
     if not found:
         return []
     nums = [m.group(1) for m in re.finditer(rf"^### {re.escape(prefix)}(\d+)", log, re.M)]
     top = max((int(n) for n in nums), default=0)
     width = max([3, *(len(n) for n in nums)])
-    given = {p: f"{prefix}{top + i:0{width}d}" for i, p in enumerate(found, 1)}
+    given = {p: f"{prefix}{top + i:0{width}d}" for i, p in enumerate(dict.fromkeys(found), 1)}
+    ph = re.compile(rf"(?<![\w-])(?:{'|'.join(map(re.escape, given))})(?![\w-])")
     for f, text in texts.items():
         new = ph.sub(lambda m: given[m.group(0)], text)
         if new != text:
             (root / f).write_text(new)
             git("add", "--", str(root / f), check=True)
-    return [f"{p} → {n}" for p, n in given.items()]
+    lines = [f"{p} → {n}" for p, n in given.items()]
+    msg = Path(git("rev-parse", "--path-format=absolute", "--git-path", "MERGE_MSG"))
+    if msg.is_file():
+        msg.write_text(msg.read_text().rstrip("\n") + "\n\nNumbered: " + ", ".join(lines) + "\n")
+    return lines
 
 
 def head_texts_at(rev: str, paths: list[str]) -> list[tuple[str, str]]:
@@ -2939,6 +3030,11 @@ def cmd_release(root: Path, args) -> int:
     left = release_waits_for()
     if not args.force:
         problems += staged_refusal("the release")
+    # Released, a D-?<slug> would be frozen under its version and never get its number.
+    log_now = (root / LOG).read_text() if (root / LOG).exists() else ""
+    problems += [f"{LOG}:{e['line']} {e['id']} isn't numbered: a merge numbers it (`jig merge "
+                 f"--number` while one is in progress); number it on a branch before releasing"
+                 for e in log_entries(log_now, log_prefix(trunk)) if "?" in e["id"]]
     if problems:
         for p in problems:
             print(f"refused: {p}", file=sys.stderr)
@@ -2994,9 +3090,21 @@ def cmd_release(root: Path, args) -> int:
     if empty:
         return undo(f"this release made no file matching {', '.join(empty)}")
     log = root / LOG
-    if log.exists() or meta:
-        log.write_text(released_log(log.read_text() if log.exists() else LOG_SEED, tag))
+    if log.exists():
+        log.write_text(released_log(log.read_text(), tag))
         git("add", "--", LOG, check=True)
+    elif meta:
+        # A metarepo `jig update` hasn't moved to the log yet releases as it did.
+        old = root / CHANGELOG
+        text = old.read_text() if old.exists() else "# Changelog\n"
+        heading = f"## {tag} — {date.today().isoformat()}"
+        if re.search(r"^## Unreleased[ \t]*$", text, re.M):
+            text = re.sub(r"^## Unreleased[ \t]*$", f"## Unreleased\n\n{heading}", text, count=1,
+                          flags=re.M)
+        else:
+            text = text.rstrip("\n") + f"\n\n## Unreleased\n\n{heading}\n"
+        old.write_text(text)
+        git("add", "--", CHANGELOG, check=True)
     git("add", "-u", check=True)
     msg = f"release {tag}"
     if proposed:
@@ -3289,7 +3397,7 @@ def para_problems(root: Path, para: dict, trunk: str) -> tuple[list[str], Path |
     # As `jig sync`: until defer_until, what moved upstream is not reported.
     if date.today().isoformat() >= (para.get("defer_until") or ""):
         uncovered_paths(root, loc, para)
-        for line in [*stale_pointers(root), *meta_citations(root, para, decision_ids(loc, pin))]:
+        for line in [*yanked_pin(loc, pin, name), *stale_pointers(root), *meta_citations(root, para, decision_ids(loc, pin))]:
             print(line)
         if version_key(tags[-1]) > version_key(pin):
             print("\n".join(newer_release(root, loc, name, pin, tags[-1])))
@@ -3522,6 +3630,28 @@ def changed_decisions(root: Path, prefix: str, rng: str) -> set[str]:
     return out | {s for i in out if i in now for s in (status_parts(now[i]["status"], prefix) or ("", "", "", []))[3]}
 
 
+def changed_rows(root: Path, meta: dict, rng: str) -> dict[str, set[str]]:
+    """Before the log: each decision id whose register row RNG adds, removes or edits, with the
+    files holding that row, read from every changed page as the old M2 read them."""
+    md = [f for f in git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", rng,
+                         cwd=str(root)).splitlines()
+          if f.endswith(".md") and f != CHANGELOG and not f.startswith(f"{DIR}/")]
+    if not md:
+        return {}
+    row = re.compile(rf"^[+-]\s*\|\s*({re.escape(meta['decision_prefix'])}\d+)\s*\|")
+    out: dict[str, set[str]] = {}
+    f = ""
+    for line in git("-c", "core.quotePath=false", "--literal-pathspecs", "diff", "--no-renames",
+                    rng, "--", *md, cwd=str(root)).splitlines():
+        if line.startswith(("--- a/", "+++ b/")):
+            f = line[6:]
+        elif line.startswith(("--- ", "+++ ")):
+            continue
+        elif m := row.match(line):
+            out.setdefault(m.group(1), set()).add(f)
+    return out
+
+
 def decision_citers(root: Path, trunk: str, rng: str) -> dict[str, list[str]]:
     """Each page whose text cites a decision whose entry RNG changed, with those ids: a
     metarepo's entry pages, or the docmap's pages anywhere else. An entry and the pages citing
@@ -3529,14 +3659,20 @@ def decision_citers(root: Path, trunk: str, rng: str) -> dict[str, list[str]]:
     "no change because" answers it. The prefix and pages are trunk's, so a branch can't narrow
     them to escape the question."""
     meta = load_meta(trunk)
-    changed = changed_decisions(root, log_prefix(trunk), rng)
+    rows: set[str] = {LOG}
+    if meta and not has_log(trunk):
+        # A metarepo `jig update` hasn't moved to the log yet: its register's rows, as before.
+        by_row = changed_rows(root, meta, rng)
+        changed, rows = set(by_row), {CHANGELOG, *(set().union(*by_row.values()) if by_row else ())}
+    else:
+        changed = changed_decisions(root, log_prefix(trunk), rng)
     if not changed:
         return {}
     head = git("-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", "HEAD", cwd=str(root))
     docmap = set((Board.load(root).data.get("docmap") or {})) if not meta else set()
     out: dict[str, list[str]] = {}
     for page in head.splitlines():
-        if page == LOG or not (is_entry(page, meta["entry_files"]) if meta else page in docmap):
+        if page in rows or not (is_entry(page, meta["entry_files"]) if meta else page in docmap):
             continue
         text = git("show", f"HEAD:{page}", cwd=str(root))
         # Whole ids only: D-7 is not D-70, nor XD-7.
@@ -3569,7 +3705,7 @@ def terms_changed(loc: Path, old: str, new: str) -> list[str]:
                 found += (status_parts((now.get(i) or {}).get("status", ""), prefix) or ("", "", "", []))[3]
     if paths:
         diff = git("--literal-pathspecs", "diff", old, new, "--", *paths, cwd=str(loc))
-        found = re.findall(rf"^[+-]\s*\|\s*({decision_ids(loc, new)})\s*\|", diff, re.M)
+        found += re.findall(rf"^[+-]\s*\|\s*({decision_ids(loc, new)})\s*\|", diff, re.M)
         found += re.findall(r"^[+-]#{2,3} (.+?)\s*$", diff, re.M)
     if readme:
         was, now = (glossary_terms(git("show", f"{r}:README.md", cwd=str(loc))) for r in (old, new))
@@ -3736,7 +3872,7 @@ def sync_meta(root: Path) -> int:
                 die(f"the commit was refused: {PARA}, AGENTS.md and {BUFFER} are staged as jig wrote them", 1)
             print(f"{subject}: committed, closing {', '.join(ids)}.")
             pin = settles
-    for line in [*stale_pointers(root), *meta_citations(root, para, decision_ids(loc, pin))]:
+    for line in [*yanked_pin(loc, pin, name), *stale_pointers(root), *meta_citations(root, para, decision_ids(loc, pin))]:
         print(line)
     if version_key(latest) <= version_key(pin):
         print(f"{name} {pin} is the latest release")
@@ -3847,8 +3983,10 @@ def meta_citations(root: Path, para: dict, ids: str) -> list[str]:
         folded = text.casefold()
         if not any(t in folded for t in named) and not (one and one.search(text)):
             continue
+        # This repo's own released log is frozen: a citation there can't be fixed, so isn't named.
+        frozen = released_lines(text) if f == LOG else set()
         for n, line in enumerate(text.splitlines(), 1):
-            if closed_row(f, line):
+            if closed_row(f, line) or n - 1 in frozen:
                 continue
             for m in POINTER.finditer(line) if any(t in line.casefold() for t in named) else ():
                 if not name_in(m.group("name"), {name}):
@@ -3950,6 +4088,9 @@ def pointers(root: Path, home: Path | None = None) -> list[tuple[str, str, str |
             gone = {s for e in entries for s in (status_parts(e["status"], prefix) or ("", "", "", []))[3]}
             dead = {n for e in entries if e["id"] in gone
                     for n in range(e["start"], e["start"] + e["block"].count("\n") + 1)}
+            # A released section's change lines are history too: a path one names was true then.
+            live = {n for e in entries for n in range(e["start"], e["start"] + e["block"].count("\n") + 1)}
+            dead |= {n for n in released_lines(text) if n not in live}
         for n, line in enumerate(text.splitlines()):
             if n in dead:
                 continue
@@ -4536,6 +4677,9 @@ def cmd_staging(root: Path, args) -> int:
     if kind in ("spec", "doc") and not bare_path(dest):
         die(f"destination {dest!r} isn't a path yet: find the page, put its path in the header, "
             "then resolve again", 1)
+    if kind == "decisions" and not (root / LOG).exists():
+        # A repo `jig update` hasn't moved to the log yet keeps its register of rows until it does.
+        return resolve_register(root, path, dest, change, body, mark, inside, done)
     if kind == "decisions" and not bare_path(dest):
         die(f"destination {dest!r} in the header isn't a path: put {LOG} in `destination:`, "
             "then resolve again", 1)
@@ -4604,6 +4748,60 @@ def cmd_staging(root: Path, args) -> int:
     else:
         out.write_text(body.rstrip("\n") + f"\n\n---\n{mark}\n")
     return done(f"written to {dest}")
+
+
+def resolve_register(root: Path, path: Path, dest: str, change: str, body: str, mark: str,
+                     inside, done) -> int:
+    """Staged decisions in a repo with no log yet: rows appended to the register, as before it."""
+    if not bare_path(dest):
+        die(f"destination {dest!r} in the header isn't a path: put only the register's "
+            "path in `destination:`, then resolve again", 1)
+    if (root / META).exists():
+        # A misspelt register (DECISION.md) would start a second one nobody cites.
+        entry = {**META_DEFAULTS, **json.loads((root / META).read_text() or "{}")}["entry_files"]
+        if not is_entry(dest, entry):
+            die(f"destination {dest} isn't a register {META}'s entry_files name "
+                f"({', '.join(entry)}): fix the header, or add it there first", 1)
+    reg = inside(dest)
+    rows = decision_rows(body, root)
+    if change == "update":
+        text = reg.read_text() if reg.exists() else ""
+        missing = [r for r in rows if r not in text]
+        if missing or mark not in text:
+            die(f"edit {reg.relative_to(root.resolve())} so it shows these rows and carries "
+                f"`{mark}`, then resolve again", 1)
+        return done(f"rows confirmed in {reg.relative_to(root)}")
+    rest = [l for l in body.splitlines() if l.strip() and l.rstrip() not in rows
+            and not l.lstrip().startswith(("|---", "| Id", "#", "<!--"))]
+    if rest:
+        die(f"{len(rest)} line{'s' if len(rest) > 1 else ''} in {path.name} aren't decision "
+            "rows: apply them with the user, delete them from the staged file, then resolve "
+            "again", 1)
+    if not rows:
+        die(f"no decision rows in {path.name}", 1)
+    text = reg.read_text() if reg.exists() else "| Id | Decision | Status | Date |\n|---|---|---|---|\n"
+    have = {decision_id(l.split("|")[1]) for l in text.splitlines() if l.startswith("|") and l.count("|") > 2}
+    dupes = [r.split("|")[1].strip() for r in rows if decision_id(r.split("|")[1]) in have]
+    if dupes:
+        die(f"{', '.join(dupes)} already in {reg.name}: stage it as `change: update`", 1)
+    reg.parent.mkdir(parents=True, exist_ok=True)
+    reg.write_text(text.rstrip("\n") + "\n" + "\n".join(rows) + "\n")
+    ids = ", ".join(r.split("|")[1].strip() for r in rows)
+    # In a metarepo, M3 refuses the commit on a branch with no line yet: that's its rule
+    # to enforce, not staging's line to write.
+    also = f"; add `- {ids}. {mark}` to {CHANGELOG} (M3)" if (root / META).exists() else ""
+    return done(f"{len(rows)} row{'s' if len(rows) > 1 else ''} appended to {reg.name}{also}")
+
+
+def decision_rows(body: str, root: Path) -> list[str]:
+    meta = root / META
+    # A metarepo's ids are its decision_prefix, defaulted like everywhere else; a plain repo's
+    # register has no configured prefix, so any uppercase one is taken.
+    known = ({**META_DEFAULTS, **json.loads(meta.read_text() or "{}")}["decision_prefix"]
+             if meta.exists() else None)
+    prefix = re.escape(known) if known else r"[A-Z][A-Z0-9]*-"
+    rx = re.compile(rf"^\s*\|\s*{prefix}\d+\s*\|")
+    return [l.rstrip() for l in body.splitlines() if rx.match(l)]
 
 
 def forward(root: Path, path: Path, head: dict) -> int:
@@ -6038,7 +6236,8 @@ def main(argv: list[str] | None = None) -> int:
     m.add_argument("name")
     m.add_argument("state")
     mg = sub.add_parser("merge", help="hubnode: merge a job and delete its entry in that commit")
-    mg.add_argument("name")
+    mg.add_argument("name", nargs="?")
+    mg.add_argument("--number", action="store_true", help="in a merge in progress, its conflicts resolved: number the D-?<slug> ids it brings in")
     mg.add_argument("-m", "--message", help="appended to the merge commit: what shared files it touched")
     mg.add_argument("--subject", help="the ids the subject leads with, e.g. `D-001, D-002`; `: merge <job>` is added unless it's already there")
     c = sub.add_parser("check", help="run the rules here")

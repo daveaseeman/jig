@@ -240,8 +240,9 @@ URL and hash to fetch it again. Notes stay committed, and so does every file the
 `jig survey` checks each Markdown file the repo tracks against this list, outside tool folders
 (`.jig/`, `.claude/`, `.github/`, …) and `not_docs`:
 
-- `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md` and `CHANGELOG.md` at the root, and
-  `ROADMAP.md` there when `.jig/roadmap.md` exists (it is generated: Roadmap, below);
+- `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` and `README.md` at the root, a `CHANGELOG.md` there
+  until `jig update` merges it into `.jig/decisions.md` (Decision log), and `ROADMAP.md` there
+  when `.jig/roadmap.md` exists (it is generated: Roadmap, below);
 - under `docs/`, a page named for its folder: `docs/<system>/<system>.md`,
   `docs/<system>/<subsystem>/<subsystem>.md`, and a deeper one only where `deep_subsystems`
   approves its folder and each level above it past the subsystem;
@@ -467,9 +468,13 @@ act on. A spec's own Decisions stay with the task, and history stays in git.
   saying why and what to pin instead.
 
 **Ids.** A branch writes `D-?<slug>` (`D-?store-ro`), so no job waits for a number, and pages
-can cite it before the merge. `jig merge` numbers each one in the merge commit, after the
-highest the log has, in every file the merge changes, with the repo's prefix (a metarepo's
-`decision_prefix`, `D-` elsewhere).
+can cite it before the merge. `jig merge` numbers each entry the merge brings into the log,
+after the highest the log has, in every file the merge changes, with the repo's prefix (a
+metarepo's `decision_prefix`, `D-` elsewhere), and lists each number in the merge commit's
+message. Only an id with an entry is numbered: the same text with no entry behind it is left
+alone. A merge that stops on conflicts numbers them with `jig merge --number`, once they are
+resolved and added, before its commit. On trunk an id is a number: M2 refuses a `D-?<slug>`
+entry there, and `jig release` refuses to release one.
 
 **Frozen releases.** A commit that changes a line in a released section is refused, except
 adding ` [YANKED]` and its line. A reversed decision is a new entry that supersedes the old;
@@ -480,6 +485,12 @@ line and date, an accepted entry's who, supersedes links that resolve, one entry
 that a release or `## Unreleased` holds accepted entries only (M2); and the frozen releases.
 `jig release` renames `## Unreleased` to the version's heading and adds an empty one above it.
 A repo that never releases just grows Unreleased.
+
+**Before the log.** A repo whose trunk has no `.jig/decisions.md` yet, a metarepo `jig update`
+hasn't moved to it, keeps the rules it had: its register's rows are M2's, M3 asks for a line in
+its `CHANGELOG.md`, which any job may add to, and the release writes the version's heading
+there (`## vX.Y.Z — YYYY-MM-DD`). Staged decisions land in the register as rows. The log's rules
+start with the commit that adds it.
 
 ## Staging
 
@@ -550,7 +561,10 @@ and emphasis marks dropped. The name folds case (`App/…` is `app/…`); the pa
 don't. A superseded or rejected decision row isn't checked.
 
 The metarepo's decisions are its `.jig/decisions.md` (Decision log), cited as
-`<meta>/.jig/decisions.md § D-012`. A question that binds the pararepos gets its entry under
+`<meta>/.jig/decisions.md § D-012`. A superseded entry, and a released section's change lines,
+are history: their paths aren't pointers, and this repo's own released lines aren't checked as
+citations. `jig sync` and the release say when the pinned release has been yanked, with its
+line. A question that binds the pararepos gets its entry under
 `## Open` when it is asked, so it can be cited before it is answered; it moves to `Proposed`,
 then is accepted (moved to `## Unreleased`) or removed. A reversed decision is a new entry that
 supersedes the old, released as a major. A pararepo's own entry that touches a contract cites
@@ -585,8 +599,8 @@ or changes a line there, so the README's other prose changes without a log line.
 
 A fast-forward runs no hook, so a metarepo's release and its pre-push re-check every
 first-parent commit since the last release, and refuse any tag `jig release` didn't make: one
-whose `.jig/decisions.md` has no heading for it, or, for a tag made before the log, whose
-`CHANGELOG.md` has none.
+whose `.jig/decisions.md` has no heading for it, unless it was made before the log and the
+`CHANGELOG.md` that tag holds has the heading the release wrote then.
 Pre-push judges the commit pushed to the remote's trunk, which may not be the local trunk's;
 a chained `pre-push.local` hook gets the same pushed refs.
 In a metarepo the release needs no `release.sh` steps, and defaults to `--minor`: minor for additions and clarifications, major
@@ -694,6 +708,7 @@ jig status                  jobs, states, distance from trunk, dirt
 jig open <name> --spec … --owns … --shares … --after … --reserve schema
 jig mark <name> <state>     claimed|building|ready|gated|parked
 jig merge <name> [-m msg] [--subject text]   merge a job, numbering its D-?<slug> ids; its entry is deleted in the merge commit
+jig merge --number          in a merge stopped on conflicts, once resolved: number the ids it brings in
 jig check [--staged]        run the rules here
 jig job                    this branch's manifest
 jig decision <id>           a decision entry and its supersedes chain
