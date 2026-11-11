@@ -143,9 +143,12 @@ repo "$T/hm" && $J init --meta --name hm >/dev/null
 python3 - <<'PY'
 from pathlib import Path
 f = Path(".jig/decisions.md")
-entry = ("### D-001 the store rule\nAccepted (owner, 2026-11-01).\n"
+entry = ("### D-001 the store rule\nAccepted (owner, 2026-11-01).\nTouches: docs/products/store.md\n"
          "The store rule (`app/docs/store/store.md § Rules`).\n")
 f.write_text(f.read_text().replace("## Unreleased\n", "## Unreleased\n\n" + entry, 1))
+# A metarepo's entry names its own page; the body still cites the pararepo's.
+Path("docs/products").mkdir(parents=True, exist_ok=True)
+Path("docs/products/store.md").write_text("# Store\n")
 PY
 git add -A && git commit -qm meta-init && $J release >/dev/null
 repo "$T/app" && old_pages

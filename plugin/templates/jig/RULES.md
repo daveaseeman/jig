@@ -333,6 +333,20 @@ with the ids on its line; an entry that supersedes another asks for the old id t
 are a metarepo's entry pages, and `docmap`'s pages in any other repo. The id matches whole:
 `D-7` is not `D-70`. The log itself is not asked.
 
+An entry the branch adds or changes also gets one line per peer (Decision log), naming both and
+the page they meet on:
+
+```
+- [ ] D-?id-lock vs <meta>/.jig/decisions.md § D-033 (<meta>/docs/features/gestures.md): ___
+```
+
+It is answered **agrees**, **narrows: <how>** (one is an exception the other allows), or
+**conflicts: <resolution>**. jig picks the pairs and never judges one; the gate refuses a line
+unanswered, reshaped, answered with another word, or answered conflicts or narrows with nothing
+after it. A peer log jig couldn't read gets a line too, answered by reading it or saying why not.
+The gate finds the pairs again on its merge of trunk, and refuses one the note doesn't answer:
+a job merged since the handoff ruled on the same page, so the job syncs and hands off again.
+
 ## Sync
 
 `jig sync` merges trunk in. A conflict in an `append_files` file where **both sides only
@@ -452,12 +466,42 @@ means here. Then three kinds of section, top to bottom:
 - `## vX.Y.Z - YYYY-MM-DD`: one per release, newest first, with a plain hyphen.
 
 **A decision entry** is a heading with the id and title, never a status, then a status line,
-then the body: what was decided, why, and what it is not.
+then a `Touches:` line, then the body: what was decided, why, and what it is not.
 
 ```
 ### D-012 Store opens graph.sqlite read-only
 Accepted (Dave, 2026-11-10). Supersedes D-007.
+Touches: docs/store/store.md
+
+When anything but the indexer opens graph.sqlite, it opens it read-only. …
 ```
+
+**Touches** names the pages the decision rules on, comma-separated, as pointers
+(`<repo>/<path>`, `<repo>:<path>`, or a path of this repo's own), each page in either form. A
+page is a docs page: under `docs/`, or a file `docmap` names; in a metarepo, a page under
+`docs/`. A pararepo names its metarepo's page for anything they share (a product, feature,
+principle or concept: `<meta>/docs/<genre>/<page>.md`, read from the cache at the pin) and its
+own pages for what is its alone; a metarepo names only its own pages; a repo with neither names
+its own docs pages. A bare `docs/…` is always this repo's page: a metarepo named `docs` is
+reached as `docs:<path>`. With no cache at the pin, a metarepo pointer is checked for its shape
+only, a docs page. Pages are the shared vocabulary, so two repos laying one feature out in
+different folders still meet on it. An entry already on trunk with no `Touches:` passes until it
+changes, and so do the entries `jig update --merge-log` converts from a register; `jig update`
+lists each one to backfill.
+
+**The rule sentence.** The body opens with what the decision rules, as *When <situation>,
+<outcome>.*, or *Always, <outcome>.* Two entries that contradict each other govern one
+situation with different outcomes, and this sentence is where a reader sees that side by side.
+No hook judges it; the review reads it.
+
+**Peers.** Two live entries are peers when their `Touches:` name one page, in either form, or
+one names a page above the other's. Peers come from this log; in a pararepo, from the
+metarepo's log at the pin; in a metarepo, from each registered pararepo's log on its trunk
+(`jig repos`). A log jig can't read (no cache, a cache at another pin than the pin, a pararepo
+not found) is named. `jig decision <id> --peers` prints an
+entry's peers with their rule sentences. In a metarepo, `jig survey` names each of its pages
+two pararepos' entries touch while none of its own does: that ruling is probably the
+metarepo's.
 
 The status is `Accepted (who, date).`, or under `## Open`, `Open (date).` or `Proposed (date).`.
 Only decision entries say who decided. A rejected entry is removed; git and its spec's
@@ -500,7 +544,8 @@ adding it removes D-007's whole block (its heading through the line before the n
 sits, a released section included. A release keeps its change lines: they are what that version
 told its readers, and a reversal still goes in the new release's group as a `**Breaking:**`
 line. Any other change to a released section is refused, except adding ` [YANKED]` and its
-line, and so is removing an entry no accepted entry supersedes: an open or proposed entry may
+line, and adding or changing an entry's `Touches:` line, which says what the entry is about,
+not what it decided (M2 checks its pages); and so is removing an entry no accepted entry supersedes: an open or proposed entry may
 name what it would supersede, and retires nothing until it is accepted. `jig decision <id>` prints an
 entry and its supersedes chain, newest last; for a removed id it reads the entry from git, with
 the commit and release it stood in, and names what holds now. `jig update` lists a superseded
@@ -508,8 +553,9 @@ entry an older log still holds, to remove.
 
 **Checked** in every repo, by the hook, whenever a commit touches the log: each entry's status
 line and date, an accepted entry's who, supersedes links that resolve (to an entry in the log,
-or in trunk's history of it; a shallow clone, which can't say, passes them), one entry per id, and that a release or `## Unreleased` holds
-accepted entries only (M2); and the released sections.
+or in trunk's history of it; a shallow clone, which can't say, passes them), one entry per id,
+that a release or `## Unreleased` holds accepted entries only, and that an entry added or
+changed has a `Touches:` line whose every page is there (M2); and the released sections.
 `jig release` renames `## Unreleased` to the version's heading and adds an empty one above it.
 A repo that never releases just grows Unreleased.
 
@@ -665,7 +711,7 @@ or changes a line there, so the README's other prose changes without a log line.
 | Gate | Refuses |
 |---|---|
 | M1 | a source file outside `.jig/` in the metarepo |
-| M2 | in every repo, a `.jig/decisions.md` entry with a status in its heading, no status line (`Accepted (who, YYYY-MM-DD).`, `Open (YYYY-MM-DD).`, `Proposed (YYYY-MM-DD).`), a supersedes link to no entry in the log or in trunk's history of it, an id used twice, or an open or proposed entry outside `## Open` (Decision log) |
+| M2 | in every repo, a `.jig/decisions.md` entry with a status in its heading, no status line (`Accepted (who, YYYY-MM-DD).`, `Open (YYYY-MM-DD).`, `Proposed (YYYY-MM-DD).`), a supersedes link to no entry in the log or in trunk's history of it, an id used twice, or an open or proposed entry outside `## Open`, or an entry added or changed with no `Touches:` line, or one naming what is no docs page there (Decision log) |
 | M3 | an entry file changed without a line or entry in `.jig/decisions.md` (of `README.md`, only its `## Glossary` section), judged on the branch since it left trunk: a line an earlier commit on the branch added covers this one, and a commit that drops the branch's only line is refused |
 | M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted, but not `.jig/decisions.md`: a decision is reviewed work); a detached HEAD at trunk, or behind it, is trunk |
 | M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
