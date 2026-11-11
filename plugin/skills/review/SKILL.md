@@ -46,6 +46,18 @@ Its job is to find the reason this change is wrong. Its questions:
    (What the metarepo holds)? A decision row and the pages citing it as their source are one
    home, not copies.
 
+8. For each decision entry the diff adds or changes, `jig decision <id> --peers` lists its
+   peers, the entries touching the same pages here and across the metarepo, with their rule
+   sentences. These are the pairs the handoff's fold-in will ask about. For each pair:
+   1. Do both govern the same situation?
+   2. Do their outcomes differ?
+   3. Is one an exception the other permits? Then the answer is narrows, saying how.
+   4. Is either in the wrong repo: a pararepo binding others, or the metarepo binding one
+      pararepo?
+
+   Two outcomes for one situation, neither an exception the other permits, is a conflict:
+   blocking until the change resolves it. Does each added entry open with its rule sentence?
+
 A file in `.jig/staging/` is not decided; a finding that rests on one says so.
 
 Don't rerun the full checks: the author ran them and showed the output, and the gate runs them

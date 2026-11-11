@@ -1396,7 +1396,8 @@ def foldin_lines(root: Path, board: Board, branch: str) -> str:
         if not owners and f.endswith(SRC_EXT) and f in at_head:
             unowned.append(f)
     cited = decision_citers(root, trunk, rng)
-    if not pages and not unowned and not cited:
+    pairs = pair_lines(root, trunk, rng)
+    if not pages and not unowned and not cited and not pairs:
         return "- [ ] no code changed — nothing to fold in"
     out = []
     for page in sorted(set(pages) | set(cited)):
@@ -1414,7 +1415,7 @@ def foldin_lines(root: Path, board: Board, branch: str) -> str:
     out += [f"- [ ] UNOWNED {f} — add to docmap (a new page starts from {DIR}/docs-page.md), "
             "or no page needed because ___"
             for f in sorted(unowned)]
-    return "\n".join(out)
+    return "\n".join(out + pairs)
 
 
 def cmd_handoff(root: Path, args) -> int:
@@ -1597,6 +1598,10 @@ def cmd_gate(root: Path, args) -> int:
                     still.append(f"{page}: still under Undefined: {undef_key(entry)}")
                 elif close:
                     still.append(f"{page}: reworded, still under Undefined: {undef_key(close[0])}")
+        for l in sec.group(1).splitlines():
+            p = PAIR_LINE.match(l.strip())
+            if p and l not in open_lines and (why := pair_answer(p.group(5))):
+                open_lines.append(f"{l.strip()}   <- {why}")
         # Code a registered board page covers runs on that board: "no page needed" is not an
         # answer for it. The note's UNOWNED line predates the board's docmap entry (trunk's,
         # read here), or was written by hand. An unregistered page has no such teeth.
@@ -2558,6 +2563,7 @@ def cmd_survey(root: Path, args) -> int:
         files, lambda f: (root / f).read_text(errors="replace") if (root / f).is_file() else "")
     report["genres"] = None if GENRES is None else list(GENRES)
     report["not_docs_hiding"] = meta_hidden(root, files, not_docs, read)
+    report["decision_placement"] = placement_hints(root, Board.trunk_name(root))
     readme = root / "README.md"
     report["glossary_unheaded"] = glossary_unheaded(readme.read_text(errors="replace")) \
         if "README.md" in files and readme.is_file() else []
@@ -2599,6 +2605,11 @@ def cmd_survey(root: Path, args) -> int:
             to = e["to"] or f"docs/<genre>/{Path(e['path']).name}"
             print(f"  {e['path']} → {to}{' (fold it in: that page exists)' if e['fold'] else ''}"
                   + (f" (a subsystem candidate: it sits in {inside}'s folder)" if inside else ""))
+    if report["decision_placement"]:
+        print("\nPages two pararepos' decisions touch, and no decision here does: the ruling is "
+              "probably the metarepo's:")
+        for line in report["decision_placement"]:
+            print(f"  {line}")
     for e in report["not_docs_hiding"]:
         print(f"\n`not_docs` glob {e['glob']} hides {len(e['pages'])} page{'s' if len(e['pages']) > 1 else ''} "
               f"of this metarepo ({', '.join(e['pages'][:3])}{' …' if len(e['pages']) > 3 else ''}): "
@@ -3256,6 +3267,7 @@ def log_rules(trunk: str, staged: bool, trunk_side: bool = False) -> list[str]:
         return [f"{LOG} is the repo's decision log: it is never deleted"] if old else []
     prefix = log_prefix(trunk)
     out = log_problems(new, prefix) + frozen_problems(old, new)
+    out += touches_problems(old, new, prefix, trunk, staged)
     if trunk_side:
         out += [f"M2 {LOG}:{e['line']} {e['id']} isn't numbered, and {trunk} takes numbers only: "
                 f"`jig merge --number` numbers what a merge in progress brings in"
@@ -3336,6 +3348,8 @@ def head_texts_at(rev: str, paths: list[str]) -> list[tuple[str, str]]:
 def cmd_decision(root: Path, args) -> int:
     """Print a decision entry and its supersedes chain: a released entry is never edited, so
     the chain is how a reader finds what holds now."""
+    if args.peers:
+        return cmd_peers(root, args)
     board = Board.load(root)
     prefix = log_prefix(board.trunk)
     path = root / LOG
@@ -3372,6 +3386,258 @@ def cmd_decision(root: Path, args) -> int:
         last = chain[-1]
         print(f"\n{want} is superseded by {later[want]}; what holds now is {last} {by_id[last]['title']}.")
     return 0
+
+
+# ------------------------------------------------------------- what a decision touches
+# Two entries that rule on one situation differently contradict each other, and only a reader
+# can tell. jig.py picks the pairs a reader must see side by side: entries whose Touches lines
+# name the same page, or a page and one below it. It never judges a pair.
+
+SELF = "."     # this repo, in a page key
+META_KEY = "meta"   # a pararepo's metarepo, in a page key
+PAIR_LINE = re.compile(r"^- \[[ xX]\] (\S+) vs (.+?) § (\S+) \((.+)\): (.*)$")
+
+
+def entry_touches(block: str) -> list[str] | None:
+    """The pointers on an entry's `Touches:` line, the line right under its status line; None
+    when it has no such line."""
+    lines = [l.strip() for l in block.splitlines()[1:] if l.strip()]
+    m = re.match(r"Touches:(.*)$", lines[1]) if len(lines) > 1 else None
+    if not m:
+        return None
+    return [p for p in (x.strip().strip("`").strip().rstrip(".") for x in m.group(1).split(",")) if p]
+
+
+def rule_sentence(block: str) -> str:
+    """An entry's first body sentence, after its status and Touches lines: what it rules."""
+    lines = [l.strip() for l in block.splitlines()[1:] if l.strip()]
+    body = lines[2:] if entry_touches(block) is not None else lines[1:]
+    text = " ".join(body)
+    m = re.match(r"(.+?[.!?])(?=\s|$)", text)
+    return (m.group(1) if m else text)[:240]
+
+
+def page_key(path: str) -> str:
+    """A page by what it stands for, so its flat and folder forms are one: docs/a/b for
+    docs/a/b.md and docs/a/b/b.md alike."""
+    if path.startswith("docs/") and path.endswith(".md") and not reference_file(path):
+        return page_folder(path)
+    return path
+
+
+def touch_key(ptr: str, writer: str, names: dict[str, str]) -> tuple[str, str]:
+    """(repo, page key) for a pointer written in WRITER's log. A first segment NAMES knows is a
+    repo, `<meta>/docs/x.md`; anything else is a page of the writer's own."""
+    head, _, rest = ptr.partition("/")
+    if rest and head.casefold() in names:
+        return names[head.casefold()], page_key(rest)
+    return writer, page_key(ptr)
+
+
+def keys_meet(a: tuple[str, str], b: tuple[str, str]) -> bool:
+    """One page, or one page above the other: a page's folder holds the pages below it, as
+    pages_above climbs."""
+    return a[0] == b[0] and (a[1] == b[1] or a[1].startswith(b[1] + "/") or b[1].startswith(a[1] + "/"))
+
+
+def live_entries(text: str, prefix: str) -> list[dict]:
+    """The log's entries no other entry in it supersedes: a superseded one rules nothing now."""
+    entries = log_entries(text, prefix)
+    gone = {s for e in entries for s in (status_parts(e["status"], prefix) or ("", "", "", []))[3]}
+    return [e for e in entries if e["id"] not in gone]
+
+
+def touch_names(root: Path, trunk: str) -> dict[str, str]:
+    """The repo names a pointer's first segment may carry, each to its key: this repo's own,
+    a pararepo's metarepo, a metarepo's registered pararepos."""
+    names = {n.casefold(): SELF for n in this_repo_names(root) - {"this"}}
+    para, meta = load_para(trunk), load_meta(trunk)
+    if para:
+        names[para["meta"].casefold()] = META_KEY
+    for p in (meta or {}).get("pararepos", []):
+        names.setdefault(p.casefold(), p)
+    return names
+
+
+def peer_logs(root: Path, trunk: str, own: str) -> tuple[list[tuple[str, str, str]], list[str]]:
+    """Every log whose entries can be peers, as (key of the repo that wrote it, how a line names
+    it, its text): this repo's (OWN), a pararepo's metarepo's at the pin, a metarepo's registered
+    pararepos' on their trunks. And one line per log that could not be read."""
+    logs, unread = [(SELF, LOG, own)], []
+    para, meta = load_para(trunk), load_meta(trunk)
+    if para:
+        cached = root / CACHE / LOG
+        if cached.is_file():
+            logs.append((META_KEY, f"{para['meta']}/{LOG}", cached.read_text(errors="replace")))
+        else:
+            unread.append(f"{para['meta']}'s log at the pin, which {CACHE}/ doesn't hold: run `jig sync`")
+    for p in (meta or {}).get("pararepos", []):
+        loc = repo_path(p)
+        if loc is None or not loc.is_dir():
+            unread.append(f"{p}, which `jig repos` doesn't list here")
+            continue
+        text = git("show", f"{Board.trunk_name(loc)}:{LOG}", cwd=str(loc))
+        if text:
+            logs.append((p, f"{p}/{LOG}", text))
+    return logs, unread
+
+
+def touching(root: Path, trunk: str, own: str) -> tuple[list[dict], list[str]]:
+    """Every live entry in every peer log, with its page keys, and the logs not read."""
+    names = touch_names(root, trunk)
+    logs, unread = peer_logs(root, trunk, own)
+    out = []
+    for writer, label, text in logs:
+        prefix = log_prefix(trunk) if writer == SELF else log_prefix_of(text)
+        for e in live_entries(text, prefix):
+            ptrs = entry_touches(e["block"]) or []
+            out.append({**e, "label": label, "writer": writer, "pointers": ptrs,
+                        "keys": [touch_key(p, writer, names) for p in ptrs]})
+    return out, unread
+
+
+def peers_of(entry: dict, every: list[dict], prefix: str) -> list[tuple[dict, str]]:
+    """ENTRY's peers, each with the pointer of ENTRY's they meet on. Not itself, nor what it
+    supersedes or what supersedes it: a chain is one decision over time."""
+    sup = set((status_parts(entry["status"], prefix) or ("", "", "", []))[3])
+    out = []
+    for o in every:
+        if o is entry or (o["writer"] == entry["writer"] and (o["id"] == entry["id"] or o["id"] in sup
+                          or entry["id"] in set((status_parts(o["status"], prefix) or ("", "", "", []))[3]))):
+            continue
+        hit = next((p for p, k in zip(entry["pointers"], entry["keys"])
+                    if any(keys_meet(k, ok) for ok in o["keys"])), None)
+        if hit:
+            out.append((o, hit))
+    return out
+
+
+def pair_lines(root: Path, trunk: str, rng: str) -> list[str]:
+    """Fold-in: one line per peer of each entry the branch adds or changes, answered agrees,
+    narrows or conflicts. Two of the branch's own entries that are peers get one line."""
+    left, _, right = rng.partition("...") if "..." in rng else rng.partition("..")
+    if "..." in rng:
+        left = git("merge-base", left, right or "HEAD", cwd=str(root)) or left
+    prefix = log_prefix(trunk)
+    own = git("show", f"{right or 'HEAD'}:{LOG}", cwd=str(root))
+    was = {e["id"]: e["block"] for e in log_entries(git("show", f"{left}:{LOG}", cwd=str(root)), prefix)}
+    every, unread = touching(root, trunk, own)
+    changed = [e for e in every if e["writer"] == SELF and was.get(e["id"]) != e["block"]]
+    if not changed:
+        return []
+    out, seen = [], set()
+    for e in changed:
+        for o, ptr in peers_of(e, every, prefix):
+            pair = frozenset([(SELF, e["id"]), (o["writer"], o["id"])])
+            if pair in seen:
+                continue
+            seen.add(pair)
+            out.append(f"- [ ] {e['id']} vs {o['label']} § {o['id']} ({ptr}): ___")
+    out += [f"- not read for peers: {u}" for u in unread]
+    return out
+
+
+def pair_answer(answer: str) -> str:
+    """Why a pair line's answer isn't one, or ''."""
+    a = answer.strip()
+    if re.match(r"agrees\b", a, re.I):
+        return ""
+    m = re.match(r"(narrows|conflicts)\b[ \t]*:?[ \t]*(.*)$", a, re.I)
+    if m:
+        word = m.group(1).lower()
+        return "" if re.search(r"\w", m.group(2)) else \
+            f"{word} needs its {'how' if word == 'narrows' else 'resolution'}: `{word}: …`"
+    return "answer agrees, narrows: <how>, or conflicts: <resolution>"
+
+
+def touches_problems(old: str, new: str, prefix: str, trunk: str, staged: bool) -> list[str]:
+    """M2: an entry added or changed names the pages it touches, and each resolves. An entry
+    as trunk has it is left alone until it changes. Numbered entries arriving in a log that
+    had none are `jig update --merge-log` converting a register: decided before Touches, they
+    are backfilled from update's list. A new decision on a branch is a D-?<slug>, so it is checked."""
+    if not old:
+        return []
+    fresh = not log_entries(old, prefix)
+    names = touch_names(Path.cwd(), trunk)
+    para = load_para(trunk)
+    cache = Path(CACHE)
+    was = {e["id"]: e["block"] for e in log_entries(old, prefix)}
+    out = []
+    for e in log_entries(new, prefix):
+        if was.get(e["id"]) == e["block"] or (fresh and "?" not in e["id"]):
+            continue
+        at = f"{LOG}:{e['line']} {e['id']}"
+        ptrs = entry_touches(e["block"])
+        if not ptrs:
+            meta_pages = f"`{para['meta']}/docs/<genre>/<page>.md` for what it shares, " if para else ""
+            out.append(f"M2 {at} names no page it touches: under its status line, `Touches: "
+                       f"{meta_pages}docs/<page>.md` (Decision log)")
+            continue
+        for p in ptrs:
+            repo, _ = touch_key(p, SELF, names)
+            path = p.partition("/")[2] if repo != SELF else p
+            if repo == META_KEY:
+                # No cache, nothing to read it against: the gate's checkout has one.
+                ok = not cache.is_dir() or any((cache / f).is_file() for f in page_forms(path))
+            else:
+                ok = path.endswith(".md") and any(body_now(f, staged) for f in page_forms(path))
+            if not ok:
+                out.append(f"M2 {at} touches {p}, which is no page "
+                           f"{'in the metarepo at the pin' if repo == META_KEY else 'here'}")
+    return out
+
+
+def cmd_peers(root: Path, args) -> int:
+    """`jig decision <id> --peers`: the entries a reader should read beside this one."""
+    board = Board.load(root)
+    prefix = log_prefix(board.trunk)
+    path = root / LOG
+    every, unread = touching(root, board.trunk, path.read_text() if path.exists() else "")
+    mine = [e for e in every if e["writer"] == SELF]
+    entry = next((e for e in mine if e["id"] == args.id), None) or \
+        next((e for e in mine if decision_id(e["id"]) == decision_id(args.id)), None)
+    if entry is None:
+        die(f"no live entry {args.id} in {LOG}", 1)
+    print(f"{entry['id']} {entry['title']}")
+    print(f"  {rule_sentence(entry['block'])}")
+    if not entry["pointers"]:
+        print(f"\n{entry['id']} has no Touches line, so no peers can be found.")
+        return 0
+    found = peers_of(entry, every, prefix)
+    print(f"\nPeers ({len(found)}):" if found else "\nNo peers.")
+    for o, ptr in found:
+        print(f"  {o['label']} § {o['id']} {o['title']} ({ptr})")
+        print(f"      {rule_sentence(o['block'])}")
+    for u in unread:
+        print(f"not read: {u}")
+    return 0
+
+
+def placement_hints(root: Path, trunk: str) -> list[str]:
+    """In a metarepo: each of its pages two pararepos' entries touch while none of its own
+    does. A ruling two repos share is probably the metarepo's."""
+    if not load_meta(trunk):
+        return []
+    path = root / LOG
+    every, _ = touching(root, trunk, path.read_text() if path.exists() else "")
+    ours = [k for e in every if e["writer"] == SELF for k in e["keys"]]
+    by_page: dict[str, set[str]] = {}
+    for e in every:
+        for k in e["keys"]:
+            if e["writer"] != SELF and k[0] == SELF:
+                by_page.setdefault(k[1], set()).add(e["writer"])
+    return [f"{page}: {', '.join(sorted(ws))} rule on it, and no entry here does"
+            for page, ws in sorted(by_page.items())
+            if len(ws) > 1 and not any(keys_meet((SELF, page), k) for k in ours)]
+
+
+def untouched_entries(root: Path, trunk: str) -> list[str]:
+    """`jig update`: each live entry with no Touches line, for the backfill."""
+    path = root / LOG
+    if not path.exists():
+        return []
+    return [f"{e['id']} {e['title']}" for e in live_entries(path.read_text(), log_prefix(trunk))
+            if entry_touches(e["block"]) is None]
 
 
 RELEASE = f"{DIR}/scripts/release.sh"
@@ -6578,6 +6844,8 @@ def cmd_update(root: Path, args) -> int:
     arriving = set(plan["after"]) | set(replace) | {SETUP for s in steps if s[2] is add_setup}
     review = files_to_review(root, plan, here.parent / "AGENTS.md", arriving)
     review += home_findings(root, plan, new_board, board_at, [f for f, _ in review])
+    review += [(LOG, f"{e} has no Touches line: add one under its status line, naming the pages "
+                f"it touches ({DIR}/RULES.md, Decision log)") for e in untouched_entries(root, trunk)]
     have_ignores = {l.strip() for l in ignore.read_text().splitlines()} if ignore.exists() else set()
     if (new_board.get("reference_files") == "ignore" and not ref_line
             and not set(REFERENCE_IGNORES) <= have_ignores):
@@ -7206,6 +7474,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("job", help="print this branch's manifest")
     dc = sub.add_parser("decision", help="print a decision entry and its supersedes chain")
     dc.add_argument("id")
+    dc.add_argument("--peers", action="store_true", help="the live entries touching the same pages, here and across the metarepo")
     sub.add_parser("sync", help="bring in the upstream: trunk on a job; the metarepo on a pararepo's trunk")
     rv = sub.add_parser("reviewed", help="record that HEAD has had its review")
     rv.add_argument("--tier", type=int, help="the model tier the review ran at")
