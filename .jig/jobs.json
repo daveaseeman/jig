@@ -1,7 +1,7 @@
 {
   "decision-remove-superseded": {
     "spec": ".jig/specs/decision-remove-superseded.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [
       "bug-seam-ownerless-folder"
     ],
