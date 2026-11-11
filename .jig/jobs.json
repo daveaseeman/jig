@@ -1,7 +1,7 @@
 {
   "bug-seam-ownerless-folder": {
     "spec": ".jig/specs/bug-seam-ownerless-folder.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [
       "plugin/templates/jig/jig.py",
