@@ -55,6 +55,14 @@ Then make every line the proposal names in one commit — the `git mv`s, the doc
 `contract_paths`, the stale lines and, in a pararepo, a `BUFFER.md` row per cached pointer. Carry
 out each finding on a yes. Never propose adding a line that restates `.jig/RULES.md`: point at it.
 
+A root **`CHANGELOG.md`** and a **decision register** (`DECISIONS.md`, or a metarepo's entry file
+of decision rows) merge into `.jig/decisions.md`, the one log (`.jig/RULES.md`, Decision log). Run
+`jig update --merge-log` and show what it prints: where each row lands, each rejected row it
+drops, the `entry_files` rewrite, and the log itself. Say the removal of both files out loud.
+On a yes, `--apply --merge-log`. In a metarepo, commit it on a branch and merge it reviewed, as
+any change; elsewhere commit on trunk. A refusal names rows the merged log wouldn't pass M2
+with: show them, and fix the register with the owner first.
+
 A root **`GLOSSARY.md`**: the glossary's home is `README.md § Glossary` now. On a yes, move each
 term into that section as a `### <term>` heading, its text below it, delete the file, replace it
 with `README.md` in a metarepo's `entry_files`, and repoint the lines that name it. In a metarepo

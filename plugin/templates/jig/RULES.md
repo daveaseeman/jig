@@ -505,6 +505,24 @@ its `CHANGELOG.md`, which any job may add to, and the release writes the version
 there (`## vX.Y.Z — YYYY-MM-DD`). Staged decisions land in the register as rows. The log's rules
 start with the commit that adds it.
 
+`jig update` lists a root `CHANGELOG.md` and the register as files to review and changes neither
+on its own. `jig update --merge-log` shows the log they would make; on the owner's yes,
+`--apply --merge-log` writes it and removes both:
+
+- each release section keeps its lines as written, its heading in the log's form;
+- an open or proposed row becomes an entry under `## Open`;
+- an accepted row becomes an entry in the oldest release whose lines name its id, or under
+  `## Unreleased` when none does, a row superseded by another becoming the one the newer entry
+  supersedes;
+- a rejected row is dropped, since git keeps it;
+- in a metarepo, `entry_files` names the log in place of both.
+
+A row's words are kept: a decision that opens with a status word goes under a plain
+`Decision` heading, and a row with no who says `not recorded`. In a metarepo the result is
+committed on a branch and merged like any change, and the commit is judged by the log's rules
+because it adds the log. A repo with neither file gets an empty log from `jig update --apply`.
+Pararepos find their citations of the old paths named at their next pin bump.
+
 ## Staging
 
 `.jig/staging/` is where a chat drops a file meant for a repo: a spec, a doc, decision entries, a
@@ -711,6 +729,7 @@ jig init --meta | --para <metarepo> --contract <globs>   ... as a metarepo / par
 jig release [--major|--minor|--patch|--version X.Y.Z] [--force]   the repo's release protocol, then tag, then publish
 jig survey [--json]         inventory the repo against the jig shape
 jig update [--apply]        bring the repo to the current jig layout (dry run without --apply)
+jig update [--apply] --merge-log   on the owner's yes: CHANGELOG.md and the register into .jig/decisions.md
 jig staging [resolve|drop <file>]   list staged files, or land / drop one
 jig repos [add repo|meta|para | rename <new>]  where your repos live (user config)
 jig open ... --reserve K    allocate scarce counter K to this job

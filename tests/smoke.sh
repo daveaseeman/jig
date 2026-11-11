@@ -455,7 +455,7 @@ for layout in "eaec973 dot" "66a044c dot" "62c8d9f jig" "eaec973 aidev" "5d955a2
   expect_pass python3 -c "
 import subprocess
 allowed = {'$board', '.jig/config.json', '.jig/jobs.json', '.aidev/aidev.py', 'jig/jig.py', '.jig/jig.py',
-           '.aidev/RULES.md', 'jig/RULES.md', '.jig/RULES.md', '.jig/docs-page.md', '.gitignore', '.jig/scripts/setup.sh', '.jig/scripts/release.sh', '.jig/scripts/publish.sh', '.jig/staging/.gitignore'}
+           '.aidev/RULES.md', 'jig/RULES.md', '.jig/RULES.md', '.jig/docs-page.md', '.gitignore', '.jig/scripts/setup.sh', '.jig/scripts/release.sh', '.jig/scripts/publish.sh', '.jig/staging/.gitignore', '.jig/decisions.md'}
 for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
     status, *paths = line.split('\t')
     assert status == 'R100' or set(paths) <= allowed, line"
@@ -466,8 +466,8 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
   msg="update $name: hooks read trunk's .jig/jig.py and none was kept as .local; .git/jig/enabled, no .git/aidev, no old ignore line"
   expect_pass sh -c "grep -q 'git show main:.jig/jig.py' .git/hooks/pre-commit && ! ls .git/hooks/*.local && test -f .git/jig/enabled && test ! -e .git/aidev && ! grep -q worktrees .gitignore"
 
-  msg="update $name: nothing tracked is left in jig/, .aidev/, specs/ or ledgers/; the config is stamped 8, with release.sh and publish.sh added"
-  expect_pass sh -c "test -z \"\$(git ls-files jig .aidev specs ledgers .jig/lanes.json)\" && ! grep -q payload .jig/config.json && grep -q '\"version\": 9' .jig/config.json && git ls-files --error-unmatch .jig/scripts/release.sh .jig/scripts/publish.sh"
+  msg="update $name: nothing tracked is left in jig/, .aidev/, specs/ or ledgers/; the config is stamped 10, with release.sh, publish.sh and an empty decision log added"
+  expect_pass sh -c "test -z \"\$(git ls-files jig .aidev specs ledgers .jig/lanes.json)\" && ! grep -q payload .jig/config.json && grep -q '\"version\": 10' .jig/config.json && git ls-files --error-unmatch .jig/scripts/release.sh .jig/scripts/publish.sh .jig/decisions.md"
 
   msg="update $name: publish.sh is added from the template, TODO line included, and staged"
   expect_pass sh -c "git diff --cached --name-status | grep -q '^A.\.jig/scripts/publish.sh$' && grep -q '^# TODO: publish steps\.' .jig/scripts/publish.sh && test -x .jig/scripts/publish.sh"
@@ -657,7 +657,7 @@ EOF
 import subprocess, sys
 removed = set(sys.argv[1].split())
 jig = {'.jig/config.json', '.jig/jobs.json', '.jig/jig.py', '.jig/RULES.md', '.jig/docs-page.md', '.jig/scripts/setup.sh', '.jig/scripts/release.sh', '.jig/scripts/publish.sh',
-       '.jig/ledgers/DEFERRED.md', '.jig/staging/.gitignore', '.gitignore'}
+       '.jig/ledgers/DEFERRED.md', '.jig/staging/.gitignore', '.gitignore', '.jig/decisions.md'}
 for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
     status, *paths = line.split('\t')
     assert status == 'R100' or (status == 'D' and paths[0] in removed) or paths[-1] in jig, line" "$removed $board"
@@ -673,7 +673,7 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
       expect_pass sh -c "python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['trunk'] == 'main' and 'lanes' not in b and 'seen' not in b and 'main' not in b and 'next' not in b['reserve']['section'], b\" && test ! -e .claude/claude-lane && git diff --cached -M --name-status | grep -q '^R100.*old-2026-01-01.md'";;
     dot-jig-v7)
       msg="update $gen: the one-file board splits: config.json without jobs or log, an empty jobs.json, no lanes.json"
-      expect_pass sh -c "python3 -c \"import json; c = json.load(open('.jig/config.json')); assert c['version'] == 9 and not {'lanes', 'log'} & set(c) and json.load(open('.jig/jobs.json')) == {}, c\" && test ! -e .jig/lanes.json && echo \"\$0\" | grep -q 'board: lanes.old (merged)' && echo \"\$0\" | grep -q 'board: log'" "$out";;
+      expect_pass sh -c "python3 -c \"import json; c = json.load(open('.jig/config.json')); assert c['version'] == 10 and not {'lanes', 'log'} & set(c) and json.load(open('.jig/jobs.json')) == {}, c\" && test ! -e .jig/lanes.json && echo \"\$0\" | grep -q 'board: lanes.old (merged)' && echo \"\$0\" | grep -q 'board: log'" "$out";;
   esac
 
   msg="update $gen: a second update is up to date"
@@ -709,7 +709,7 @@ msg="init: config.json holds the settings, no jobs and no log; jobs.json is empt
 expect_pass python3 -c "
 import json; c = json.load(open('.jig/config.json')); j = json.load(open('.jig/jobs.json'))
 assert sorted(c) == sorted(['version', 'name', 'trunk', 'common', 'append_files', 'reserve', 'docmap', 'not_docs', 'release', 'reference_files']), c
-assert c['version'] == 9 and j == {}, (c, j)"
+assert c['version'] == 10 and j == {}, (c, j)"
 python3 - <<'EOF'
 import json; c = json.load(open('.jig/config.json'))
 c['reserve'] = {'section': {'pattern': r'^## (\d+) ', 'files': ['docs/**']}, 'loose': {}}
@@ -3964,6 +3964,39 @@ $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && 
 msg="old shape: it merges, and the release writes CHANGELOG.md's heading and no log"
 $J merge o1 >/dev/null 2>&1; out=$($J release 2>&1)
 expect_pass sh -c "git tag | grep -qx v0.2.0 && grep -q '^## v0.2.0 — ' CHANGELOG.md && test ! -e .jig/decisions.md && test -z \"\$(git status --porcelain)\"" "$out"
+
+# The migration: jig update lists both old files, changes nothing without a yes, and merges on one.
+git switch -q -c rows && printf '| D-002 | which wire format? | open | 2026-11-02 |\n| D-003 | use XML | rejected | 2026-11-02 |\n' >> DECISIONS.md \
+  && printf -- '- D-002, D-003\n' >> CHANGELOG.md && git add -A && git commit -qm "D-002, D-003: rows" && $J reviewed >/dev/null \
+  && git switch -q main && git merge -q --no-ff --no-edit rows
+git worktree remove --force .git/jig/worktrees/o1
+UP="python3 $P/jig/jig.py update"
+oldfiles() { git status --porcelain; shasum CHANGELOG.md DECISIONS.md .jig/meta.json 2>/dev/null; ls .jig; }
+before=$(oldfiles); out=$($UP 2>&1); after=$(oldfiles)
+msg="migration: update's dry run lists CHANGELOG.md and DECISIONS.md under Repo files to review, naming --merge-log, and changes nothing"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  CHANGELOG.md: .*--merge-log' && echo \"\$0\" | grep -q '^  DECISIONS.md: a decision register, 3 rows' && test \"\$1\" = \"\$2\"" "$out" "$before" "$after"
+msg="migration: --apply without --merge-log leaves both old files, and writes no log"
+$UP --apply >/dev/null 2>&1; expect_pass sh -c "test -f CHANGELOG.md && test -f DECISIONS.md && test ! -e .jig/decisions.md"
+git add -A && git commit -qm "TOOL: update" >/dev/null 2>&1
+before=$(oldfiles); out=$($UP --merge-log 2>&1); after=$(oldfiles)
+msg="migration: --merge-log alone shows the log it would write and changes nothing"
+expect_pass sh -c "echo \"\$0\" | grep -qx '## v0.2.0 - [0-9-]*' && echo \"\$0\" | grep -q 'D-003 is rejected: dropped' && test \"\$1\" = \"\$2\"" "$out" "$before" "$after"
+git switch -q -c migrate
+msg="migration: --apply --merge-log writes the log, removes both files and rewrites entry_files"
+out=$($UP --apply --merge-log 2>&1)
+expect_pass sh -c "test ! -e CHANGELOG.md && test ! -e DECISIONS.md && grep -q '\"entry_files\": \[' .jig/meta.json && python3 -c \"import json; e=json.load(open('.jig/meta.json'))['entry_files']; assert e[0]=='.jig/decisions.md' and 'DECISIONS.md' not in e, e\"" "$out"
+msg="migration: releases keep their lines, re-headed; an accepted row goes to the oldest release naming it, an open one to ## Open, a rejected one goes"
+expect_pass sh -c "sed -n '/^## v0.1.0 - /,\$p' .jig/decisions.md | grep -qx '### D-001 ids' && sed -n '/^## v0.1.0 - /,\$p' .jig/decisions.md | grep -qx -- '- D-001' && grep -qx '## v0.2.0 - [0-9-]*' .jig/decisions.md && sed -n '/^## Open/,/^## Unreleased/p' .jig/decisions.md | grep -qx '### D-002 which wire format?' && ! grep -q '^### D-003' .jig/decisions.md && grep -qx -- '- D-002, D-003' .jig/decisions.md && ! grep -q '^## .*—' .jig/decisions.md"
+msg="migration: its commit passes the hooks on a branch, and merges into main reviewed"
+expect_pass sh -c "git commit -qm 'TOOL: merge the log' && $J reviewed >/dev/null && git switch -q main && git merge -q --no-ff --no-edit migrate"
+msg="migration: afterwards the log's rules apply, and the next release names Unreleased in the log, old tags still counted"
+$J open o2 >/dev/null && git add -A && git commit -qm "TOOL: open o2"
+(cd .git/jig/worktrees/o2 && ulog '### D-?cache cache off
+Accepted (owner, 2026-11-03).' && git add -A && git commit -qm "D-?cache: off" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note o2")
+$J merge o2 >/dev/null 2>&1; out=$($J release 2>&1)
+expect_pass sh -c "git tag | grep -qx v0.3.0 && grep -qx '### D-003 cache off' .jig/decisions.md && grep -A2 '^## Unreleased\$' .jig/decisions.md | grep -q '^## v0.3.0 - ' && test ! -e CHANGELOG.md" "$out"
+msg="migration: a second --merge-log has nothing to merge"
+out=$($UP --merge-log 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'nothing to merge'" "$out"
 cd "$DL"
 }
 

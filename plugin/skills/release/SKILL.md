@@ -14,7 +14,9 @@ python3 .jig/jig.py release            # --minor, --major, or --version X.Y.Z fo
 
 The release renames `## Unreleased` in `.jig/decisions.md` to `## vX.Y.Z - <date>` and adds an
 empty one above it. Before it runs, read Unreleased with the owner: a breaking change there
-(a `**Breaking:**` line, a superseded decision) means `--major`.
+(a `**Breaking:**` line, a superseded decision) means `--major`. A repo with no log yet, still
+on a root `CHANGELOG.md`, releases into that file as before; offer the merge first
+(`/jig:update`, `--merge-log`).
 
 ## Before it runs
 
