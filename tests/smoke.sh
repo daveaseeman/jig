@@ -3750,59 +3750,62 @@ answer() { python3 -c "
 import sys; f = sys.argv[1]; n = open(f).read()
 $2
 open(f, 'w').write(n)" "$1"; }
-PG="$T/page-contract"; pcnew "$PG" && mkdir -p src docs/ui && printf 'x = 1\n' > src/ui.py
-printf '# UI\n\nThe UI draws the list.\n\n## Renderer\n\nDraws rows.\n\n## Invariants\n\n- Rows are at least 44px — touch-target minimum; held by test_touch_targets.\n\n## Undefined\n\n- Offline mode — stops at the cache layer; parked 2026-11-01.\n- Dark theme — stops at the palette; parked 2026-11-02.\n' > docs/ui/ui.md
+PG="$T/page-contract"; pcnew "$PG" && mkdir -p src docs/ui .jig/specs && printf 'x = 1\n' > src/ui.py
+printf '# UI\n\nThe UI draws the list.\n\n## Renderer\n\nDraws rows.\n\n## Invariants\n\n- Rows are at least 44px — touch-target minimum; held by test_touch_targets.\n' > docs/ui/ui.md
 git add -A && git commit -qm init && $J init >/dev/null && board "b['docmap'] = {'docs/ui/ui.md': ['src/**']}" && git add -A && git commit -qm board
-$J open U1 --spec t --owns 'src/**' 'docs/ui/**' >/dev/null && git add -A && git commit -qm "open U1"
+printf '# Roadmap\n\n## alpha\nScopes:\n- `screen`: the panel (touches docs/ui/ui.md)\n- `radio`: the link (touches docs/radio.md)\n\n## Up next\n- `offline`: Offline mode; stops at the cache layer; parked 2026-11-01 (touches docs/ui/ui.md)\n- `dark`: Dark theme; stops at the palette; parked 2026-11-02 (touches docs/ui.md, docs/other.md)\n- `export`: Export; parked 2026-11-03 (touches docs/other.md)\n' > .jig/roadmap.md
+printf '# t\n\nSource: smoke\nScope: alpha/screen\n\n## Intent\nx\n' > .jig/specs/t.md
+msg="up next: a roadmap with ## Up next parses, Up next is no phase, and an item names its pages"
+git add -A && expect_pass git commit -qm roadmap
+msg="up next: jig roadmap lists Up next apart from the phases, each item with its pages"
+expect_pass sh -c "$J roadmap | grep -q '^Up next' && ! $J roadmap | grep -q '^Up next  current' && $J roadmap | grep -q 'offline.*touches docs/ui/ui.md'"
+msg="up next: ROADMAP.md shows Up next after the phases, each item with its pages"
+$J roadmap --write >/dev/null
+expect_pass python3 -c "
+t = open('ROADMAP.md').read(); u = t.split('## Up next')[1]
+assert t.index('## alpha') < t.index('## Up next'), t
+assert '**offline**: Offline mode' in u and '[docs/ui/ui.md](docs/ui/ui.md)' in u and '**export**' in u, u"
+git add -A && git commit -qm view
+msg="up next: jig reading-list prints the Up next items and open scopes naming each page"
+out=$($J reading-list src/ui.py)
+expect_pass sh -c "echo \"\$0\" | grep -q 'up next .offline.: Offline mode' && echo \"\$0\" | grep -q 'up next .dark.' && echo \"\$0\" | grep -q 'scope .alpha/screen.' && ! echo \"\$0\" | grep -q 'export\|radio'" "$out"
+rbad() { printf "$1" > .jig/roadmap.md && git add -A; out=$(git commit -qm bad 2>&1); rc=$?; git reset -q --hard; }
+msg="up next: the hook refuses an Up next item that names no page, by line"
+rbad '## Up next\n- `x`: parked work\n'
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'line 2: Up next item x names no page'" "$out"
+$J open U1 --spec .jig/specs/t.md --owns 'src/**' 'docs/ui/**' >/dev/null && git add -A && git commit -qm "open U1"
 cd .git/jig/worktrees/U1 && printf 'x = 2\n' > src/ui.py && git commit -qam change && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
 note=$(ls .jig/handoffs/U1-*.md)
-msg="page contract: the handoff writes one fold-in line per Undefined entry on a covering page"
-expect_pass sh -c "grep -qF -- '- [ ] Undefined in docs/ui/ui.md: \"Offline mode — stops at the cache layer; parked 2026-11-01.\" — built / untouched / departed: ___' $note && grep -qF -- '- [ ] Undefined in docs/ui/ui.md: \"Dark theme' $note"
+msg="up next: the handoff writes one fold-in line per Up next item or taken scope naming a covering page, in either form"
+expect_pass sh -c "grep -qF -- '- [ ] Up next \`offline\` (docs/ui/ui.md): \"Offline mode; stops at the cache layer; parked 2026-11-01\" — built / untouched / departed: ___' $note && grep -qF -- '- [ ] Up next \`dark\` (docs/ui/ui.md)' $note && grep -qF -- '- [ ] Scope \`alpha/screen\` (docs/ui/ui.md): \"the panel\"' $note && ! grep -q 'export\|radio' $note"
 answer $note "n = n.replace('- [ ] docs/ui/ui.md — updated / no change because ___', '- [x] docs/ui/ui.md — no change because the renderer still draws rows')"
 git add -A && git commit -qm "note"
-msg="page contract: the gate refuses while an Undefined line is blank"
+msg="up next: the gate refuses while an item line is blank"
 out=$(cd "$PG" && { gate_ok U1; rc=$?; echo "$out"; exit $rc; }); rc=$?
-expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'unanswered' && echo \"\$0\" | grep -q 'Undefined in docs/ui/ui.md' && ! echo \"\$0\" | grep -q 'no change because ___'" "$out"
-answer $note "import re; n = re.sub(r'- \[ \] (Undefined in .*Offline.*) — built / untouched / departed: ___', r'- [x] \1 — Untouched (not this task)', n); n = re.sub(r'- \[ \] (Undefined in .*Dark.*) — built / untouched / departed: ___', r'- [x] \1 — departed: themes moved to the OS setting', n)"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'unanswered' && echo \"\$0\" | grep -q 'Up next .offline.' && ! echo \"\$0\" | grep -q 'no change because ___'" "$out"
+answer $note "import re; n = re.sub(r'- \[ \] (Up next .offline.*) — built / untouched / departed: ___', r'- [x] \1 — Untouched (not this task)', n); n = re.sub(r'- \[ \] (Up next .dark.*) — built / untouched / departed: ___', r'- [x] \1 — departed: themes moved to the OS setting', n); n = re.sub(r'- \[ \] (Scope .*) — built / untouched / departed: ___', r'- [x] \1 — built', n)"
 git commit -qam "answer"
-msg="page contract: the gate passes untouched and departed answers, with text after them, in any case"
+msg="up next: the gate passes untouched, departed and built answers, with text after them, in any case"
 expect_pass sh -c "cd '$PG' && $(declare -f gate_ok); J='$J'; gate_ok U1"
-answer $note "n = n.replace('— Untouched (not this task)', '— built — moved into Cache')"
-git commit -qam "built, not moved"
-msg="page contract: the gate refuses built while the entry is still under Undefined"
-out=$(cd "$PG" && { gate_ok U1; rc=$?; echo "$out"; exit $rc; }); rc=$?
-expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'built means moved, not copied'" "$out"
-python3 -c "
-f = 'docs/ui/ui.md'; s = open(f).read()
-open(f, 'w').write(s.replace('- Offline mode — stops at the cache layer;', '- Offline mode (built, see Cache) — stops at the cache layer;').replace('## Renderer\n\nDraws rows.\n', '## Renderer\n\nDraws rows.\n\n## Cache\n\nWorks offline.\n'))"
-git commit -qam "offline mode: entry reworded, not deleted" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
-fold2() { answer $1 "import re; n = n.replace('- [ ] docs/ui/ui.md — updated / no change because ___', '- [x] docs/ui/ui.md — updated: Cache'); n = re.sub(r'- \[ \] (Undefined in .*Offline.*) — built / untouched / departed: ___', r'- [x] \1 — built', n); n = re.sub(r'- \[ \] (Undefined in .*Dark.*) — built / untouched / departed: ___', r'- [x] \1 — untouched', n)"; }
-fold2 $(ls .jig/handoffs/U1-*-2.md) && git add -A && git commit -qm "note 2"
-msg="page contract: the gate refuses built when the entry was reworded instead of deleted, and names it"
-out=$(cd "$PG" && { gate_ok U1; rc=$?; echo "$out"; exit $rc; }); rc=$?
-expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'a reworded entry is still the entry' && echo \"\$0\" | grep -q 'reworded, still under Undefined: Offline mode (built, see Cache)'" "$out"
-python3 -c "
-import re; f = 'docs/ui/ui.md'; s = open(f).read()
-open(f, 'w').write(re.sub(r'- Offline mode .*\n', '', s) + '- Export to CSV — stops at the file picker; parked 2026-11-06.\n')"
-git commit -qam "offline mode built; export parked" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
-note=$(ls .jig/handoffs/U1-*-3.md)
-msg="page contract: an entry the branch deleted still gets its line, from trunk's page"
-expect_pass grep -qF 'Undefined in docs/ui/ui.md: "Offline mode' $note
-fold2 $note && git add -A && git commit -qm "note 3"
-msg="page contract: the gate passes built once the entry is gone, beside an unrelated new entry"
-expect_pass sh -c "cd '$PG' && $(declare -f gate_ok); J='$J'; gate_ok U1"
-answer $note "n = n.replace('— untouched', '— built / untouched')"
+answer $note "n = n.replace('— Untouched (not this task)', '— built / untouched')"
 git commit -qam "two answers"
-msg="page contract: the gate refuses a line that keeps more than one answer, and says so"
+msg="up next: the gate refuses a line that keeps more than one answer, and says so"
 out=$(cd "$PG" && { gate_ok U1; rc=$?; echo "$out"; exit $rc; }); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'more than one answer kept'" "$out"
 answer $note "n = n.replace('— built / untouched', '— departed')"
 git commit -qam "bare departed"
-msg="page contract: the gate refuses departed with no why"
+msg="up next: the gate refuses departed with no why"
 out=$(cd "$PG" && { gate_ok U1; rc=$?; echo "$out"; exit $rc; }); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'departed needs its why'" "$out"
+answer $note "n = n.replace('(touches', '(touches').replace('parked 2026-11-01\" — departed', 'parked 2026-11-01\" — built: the cache serves offline')"
+git commit -qam "offline built"
+cd "$PG" && $J merge U1 >/dev/null 2>&1
+msg="up next: jig merge removes the item answered built from .jig/roadmap.md in the merge commit, and keeps the rest"
+expect_pass sh -c "git show --name-only --format= HEAD | grep -qx .jig/roadmap.md && ! grep -q offline .jig/roadmap.md && grep -q '\`dark\`' .jig/roadmap.md && grep -q '\`export\`' .jig/roadmap.md"
+msg="up next: and ROADMAP.md, rewritten in the same commit, no longer shows it"
+expect_pass sh -c "! git show HEAD:ROADMAP.md | grep -q offline && git show HEAD:ROADMAP.md | grep -q '\*\*dark\*\*' && test -z \"\$(git status --porcelain)\""
 
-cd "$PG" && mkdir -p docs/old docs/inv docs/after docs/nolead docs/misc
+mkdir -p docs/old docs/inv docs/after docs/nolead docs/misc
 printf '# Old\n\n## Now\nx\n\n## Rules\n### 1.1 y\n\n## Checks\n- 1.1 review\n' > docs/old/old.md
 printf '# Inv\n\nInv holds keys.\n\n## Invariants\n\n- Keys are sorted — lookups bisect; held by test_sorted.\n- Keys are short.\n- Keys are ASCII — the wire format.\n' > docs/inv/inv.md
 printf '# After\n\nAfter does things.\n\n## Undefined\n\n- Sync — parked 2026-11-01.\n\n## Notes\n\nmore\n' > docs/after/after.md
@@ -3813,9 +3816,9 @@ msg="page contract: survey flags an old-format page as old contract — convert"
 expect_pass pc "assert len(c['docs/old/old.md']) == 1 and c['docs/old/old.md'][0].startswith('old contract — convert'), c"
 msg="page contract: survey flags invariants missing a holder or a why, and passes the one with both"
 expect_pass pc "p = c['docs/inv/inv.md']; assert len(p) == 2 and any('Keys are short.' in x for x in p) and any('Keys are ASCII' in x for x in p), p"
-msg="page contract: survey flags a section after Undefined, and a page with no lead paragraph"
-expect_pass pc "assert any('after ## Undefined: Notes' in x for x in c['docs/after/after.md']), c
-assert any('no lead paragraph' in x for x in c['docs/nolead/nolead.md']), c"
+msg="page contract: survey flags a page with no lead paragraph; a page still carrying ## Undefined is in the contract otherwise"
+expect_pass pc "assert any('no lead paragraph' in x for x in c['docs/nolead/nolead.md']), c
+assert 'docs/after/after.md' not in c, c"
 msg="page contract: a page in the contract and a misplaced page are not read against it"
 expect_pass pc "assert not {'docs/ui/ui.md', 'docs/misc/x.md'} & set(c), c"
 msg="page contract: a misplaced page with an Invariants section is a page, given its home"
@@ -3833,11 +3836,12 @@ PU="$T/page-template"; pcnew "$PU" && rm .jig/docs-page.md && git add -A && git 
 msg="page contract: update installs .jig/docs-page.md in a repo that lacks it, and a rerun is up to date"
 $UP --apply >/dev/null 2>&1; git add -A && git commit -qm update
 expect_pass sh -c "cmp -s .jig/docs-page.md '$P/jig/docs-page.md' && $UP | grep -qx 'up to date'"
-msg="page contract: a solo commit on trunk that deletes an Undefined entry still gets its line"
-mkdir -p src docs/s && printf 'x = 1\n' > src/s.py && printf '# S\n\nS is.\n\n## Undefined\n\n- Sync — parked 2026-11-01.\n' > docs/s/s.md
+msg="up next: a solo commit on trunk changing a page an Up next item names gets its line"
+mkdir -p src docs/s && printf 'x = 1\n' > src/s.py && printf '# S\n\nS is.\n' > docs/s/s.md
+printf '## Up next\n- `sync`: Sync; parked 2026-11-01 (touches docs/s.md)\n' > .jig/roadmap.md
 board "b['docmap'] = {'docs/s/s.md': ['src/**']}" && git add -A && git commit -qm s
-printf 'x = 2\n' > src/s.py && printf '# S\n\nS is, and syncs.\n' > docs/s/s.md && git commit -qam "sync built" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
-expect_pass grep -qF 'Undefined in docs/s/s.md: "Sync' .jig/handoffs/main-*.md
+printf 'x = 2\n' > src/s.py && git commit -qam "sync" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
+expect_pass grep -qF 'Up next `sync` (docs/s/s.md): "Sync; parked 2026-11-01"' .jig/handoffs/main-*.md
 }
 
 # ---------------------------------------------------------------- roadmap
@@ -4022,6 +4026,63 @@ out=$(cd .git/jig/worktrees/H && printf 'job\n' >> ROADMAP.md && git add -A && g
 expect_pass sh -c "test $rc = 0 && ! echo \"\$0\" | grep -q R5" "$out"
 msg="roadmap: with no roadmap, survey lists a hand-written ROADMAP.md as a stray"
 expect_pass hrsurvey "assert 'ROADMAP.md' in [e['path'] for e in r['homeless']], r['homeless']"
+}
+
+# ---------------------------------------------------------------- project and product
+sec_boundary() {
+BD="$T/boundary"; pcnew "$BD" && mkdir -p docs src && printf 'x = 1\n' > src/a.py
+printf '# A\n\nA keeps the list.\n' > docs/a.md && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+printf '## phase-1\nScopes:\n- `screen`: the panel (touches docs/a.md)\n' > .jig/roadmap.md && git add -A && git commit -qm roadmap
+refused() { out=$(git commit -qm "$1" 2>&1); rc=$?; git reset -q --hard; }
+msg="boundary: the hook refuses a page line naming a spec, with the line named"
+printf 'Built as .jig/specs/x.md says.\n' >> docs/a.md && git add -A && refused spec
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'docs/a.md line 4 names .jig/specs/, the project' && echo \"\$0\" | grep -q 'Built as .jig/specs/x.md says.'" "$out"
+msg="boundary: the hook refuses a page line naming a scope id the roadmap has"
+printf 'The panel came in phase-1/screen.\n' >> docs/a.md && git add -A && refused scope
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'docs/a.md line 4 names phase-1/screen'" "$out"
+msg="boundary: the hook refuses a page line naming the roadmap, or a phase in code quotes"
+printf 'See ROADMAP.md, and `phase-1`.\n' >> docs/a.md && git add -A && refused roadmap
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'names ROADMAP.md'" "$out"
+printf 'See `phase-1`.\n' >> docs/a.md && git add -A && refused phase
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'names .phase-1.'" "$out"
+msg="boundary: the hook refuses a decision-log line naming a spec or a scope"
+ulog '- The panel ships, per .jig/specs/x.md.' && git add -A && refused log1
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '.jig/decisions.md line .* names .jig/specs/'" "$out"
+ulog '- Demo priorities: phase-1/screen, then the rest.' && git add -A && refused log2
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '.jig/decisions.md line .* names phase-1/screen'" "$out"
+msg="boundary: the same references in a spec pass"
+mkdir -p .jig/specs && printf '# y\n\nSource: smoke\nScope: phase-1/screen\n\nSee .jig/specs/x.md, ROADMAP.md, docs/a.md and `phase-1`.\n' > .jig/specs/y.md && git add -A
+expect_pass git commit -qm spec
+msg="boundary: a page line naming a product word that is no scope passes"
+printf 'The charge phase 1 ends at 4.2 V; screens draw in one pass.\n' >> docs/a.md && git add -A && expect_pass git commit -qm prose
+msg="boundary: survey lists plan prose (phase 3, spec step 6) on a page and in the log, and project headings"
+printf '# B\n\nB is.\n\nThe gesture lands in phase 3, after spec step 6.\n\n## Status\n\nhalf done\n\n## Undefined\n\n- sync — parked 2026-11-01.\n' > docs/b.md
+ulog '- Demo priorities: A in phase 2, then B.' && git add -A && git -c core.hooksPath=/dev/null commit -qm b
+expect_pass python3 -c "
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+p = {e['path']: e['problems'] for e in r['project_in_product']}
+b = ' | '.join(p['docs/b.md'])
+assert '\"phase 3\"' in b and '\"spec step 6\"' in b and '## Status is the project' in b and '## Undefined is the project' in b and 'Up next' in b, b
+assert '\"phase 1\"' in ' '.join(p['docs/a.md']), p
+assert '\"phase 2\"' in ' '.join(p['.jig/decisions.md']), p"
+expect_pass sh -c "$J survey | grep -q '^  docs/b.md: ## Status is the project'"
+msg="boundary: a page still carrying ## Undefined is edited and committed as before"
+printf '\nB keeps more.\n' >> docs/b.md && git add -A && expect_pass git commit -qm "b more"
+msg="boundary: the hook refuses docs/roadmap.md, naming .jig/roadmap.md"
+printf '# Plan\n' > docs/roadmap.md && git add -A && refused docroadmap
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'docs/roadmap.md is a roadmap among the product.s pages.*.jig/roadmap.md only'" "$out"
+
+BM="$T/boundary-meta"; mkdir -p "$BM" && cd "$BM" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init && $J init --meta >/dev/null 2>&1 && git add -A && git commit -qm "GLOSSARY: board"
+setentry .jig/decisions.md README.md 'products/**' && git add -A && git commit -qm "GLOSSARY: entry files"
+msg="boundary: in a metarepo, the hook refuses products/roadmap.md when entry_files match it"
+mkdir -p products && printf '# Plan\n' > products/roadmap.md && git add -A && refused "GLOSSARY: plan"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'products/roadmap.md is a roadmap.*.jig/roadmap.md only'" "$out"
+msg="boundary: in a metarepo, changing .jig/roadmap.md on trunk asks for no log line (M3)"
+printf '## Up next\n- `x`: parked; parked 2026-11-01 (touches docs/a/a.md)\n' > .jig/roadmap.md && git add -A
+out=$(git commit -qm "GLOSSARY: roadmap" 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && ! echo \"\$0\" | grep -q M3" "$out"
 }
 
 # ---------------------------------------------------------------- the decision log, in a plain repo
@@ -4536,7 +4597,7 @@ cd "$T"
 }
 
 
-UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap decisions supersede touches"
+UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap boundary decisions supersede touches"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file

@@ -1,6 +1,6 @@
 ---
 name: retro
-description: Turn a repeated fix or discovery into a reusable skill or a line in a board's page, and triage the two ledgers and the pages' Undefined sections. Use at the end of a task, or when you notice "I've done this before."
+description: Turn a repeated fix or discovery into a reusable skill or a line in a board's page, and triage the two ledgers and the roadmap's Up next items. Use at the end of a task, or when you notice "I've done this before."
 ---
 
 Ask: did anything in this task get solved that will need solving again?
@@ -19,10 +19,11 @@ Then read `.jig/ledgers/DEFERRED.md` (likewise):
 - Deferred rows for a scope that has closed → re-rank together; take, or reject with a reason.
 - Rejected with `[assumed]` → can it be converted now? A wrong assumption puts the finding back.
 
-Then read every `## Undefined` section under `docs/` (`grep -rn '^## Undefined' docs`):
-- An entry the code now does → the work was built without the move: put its content in the page's body and delete the entry.
-- An entry that has sat unclaimed for months → a delete candidate. Propose it; delete only on the owner's word, as it was written on the owner's word.
-- An entry that is really a review finding → it belongs in `.jig/ledgers/DEFERRED.md`, not both.
+Then read `## Up next` in `.jig/roadmap.md`, if the repo keeps one:
+- An item the code now does → it was built without its fold-in: put its content in the body of the pages it touches, and propose removing the item (the roadmap changes on trunk, on the owner's word).
+- An item that has sat unclaimed for months → a delete candidate. Propose it; delete only on the owner's word, as it was written on the owner's word.
+- An item that is really a review finding → it belongs in `.jig/ledgers/DEFERRED.md`, not both.
+- A page still carrying `## Undefined`, `## Status` or `## Roadmap` (`jig survey` lists them) → each entry is an Up next item or an `## Open` question to propose, and the section goes.
 
 In a pararepo: the same cross-repo confusion twice is a glossary entry, proposed to the metarepo with `jig propose`.
 

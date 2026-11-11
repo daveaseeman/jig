@@ -117,8 +117,9 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
    background, its exit notice or its pid, never a match.
 3. Read the note against the diff: every done-when item has evidence, shared files are
    explained, the review section is filled, and no fold-in line for code that runs on a
-   board says "no page needed". A miss goes back to the subnode as a note, never
-   as your own fix.
+   board says "no page needed". Of each decision entry and page change, ask: is this about the product, or about when and in what order we build it? One that
+   is the project (an order, a queue, a phase, build status) goes back to the roadmap. A
+   miss goes back to the subnode as a note, never as your own fix.
 4. **Do not re-review the diff.** The subnode's adversarial review is the review. You are
    checking that it happened and that the result matches the spec.
 5. `jig mark <name> gated` (it removes the scratch checkout), commit `jobs.json`, then on the owner's word
@@ -140,8 +141,12 @@ and commit both with the staged file's `Source: … (staged as <file>)` line in 
 A scope a spec still takes is re-pointed in that commit: the hook names the specs. Then
 `jig staging resolve <file>`, which looks for that line in a trunk commit to the roadmap.
 
-`jig merge` rewrites `ROADMAP.md` in the merge commit. After solo work on trunk, `jig roadmap`
-says when it is stale: `jig roadmap --write` and commit it.
+Parked work is an item under `## Up next` in `.jig/roadmap.md`, naming the pages it will
+touch, proposed the same way. A roadmap change asks for no decision entry and no change line.
+
+`jig merge` rewrites `ROADMAP.md` in the merge commit, and removes from `.jig/roadmap.md` each
+Up next item the note's fold-in answers built. After solo work on trunk, `jig roadmap` says
+when it is stale: `jig roadmap --write` and commit it.
 
 ## After a merge
 

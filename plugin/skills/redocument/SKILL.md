@@ -195,16 +195,18 @@ Your spec carries the job's remap rows and the Sources. You write only your page
    file a pointer names. A claim whose only record is the old page is kept as worded and
    flagged, never left off.
 2. **Write** the page from `.jig/docs-page.md`, to the contract: a lead paragraph, sections
-   named for the system's parts, optional Talks to, optional Invariants, optional Undefined
-   last. An old page's list of what it uses or serves goes under `## Talks to`, keeping only
+   named for the system's parts, optional Talks to, optional Invariants. An old page's list of what it uses or serves goes under `## Talks to`, keeping only
    what crosses the system's boundary; calls inside the system are the body's or nowhere.
    Every claim of the old page, a Rules entry or a house-format section's statement, gets
    exactly one fate:
    - **still true of the code** → described in the body;
    - **passes the admission test** (a why it must hold, and what holds it) → `## Invariants`,
      as `- <fact> — <why>; held by <holder>.`;
-   - **a parked intent** → an `## Undefined` candidate in the report, written on the page only
-     once the owner confirms it;
+   - **a parked intent, a status or a plan** (an `## Undefined`, `## Status` or `## Roadmap`
+     section, "phase 3", a priority order) → an `## Up next` candidate in the report, naming
+     this page, added to `.jig/roadmap.md` on trunk only once the owner confirms it; never on
+     the page, which says what the product does today;
+   - **an open product question** → an `## Open` entry candidate for `.jig/decisions.md`;
    - **stale or unverifiable** → deleted, and listed in the report.
 
    **A cited heading** (a pararepo's spec names it) adds one thing: say where its claim landed.
@@ -229,7 +231,8 @@ Your spec carries the job's remap rows and the Sources. You write only your page
    ### Cited (a pararepo only)
    - <old path> § <heading> → <new path> § <heading>
    ### Flagged (the owner's call)
-   - Undefined candidate: <entry> — <source>
+   - Up next candidate: `<id>`: <what is parked>; stops at <where>; parked <date> (touches <new path>) — <source>
+   - Open question: <question> — <source>
    - Failed admission: <would-be invariant> — missing <why | holder>
    - Contradiction: <page claim> vs <code path> — which wins
    - Divergence (a cited claim): <claim> vs <code path> — a BUFFER row on the owner's word
