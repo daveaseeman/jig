@@ -1,7 +1,7 @@
 {
   "staging-batches": {
     "spec": ".jig/specs/staging-batches.md",
-    "state": "ready",
+    "state": "gated",
     "after": [
       "bug-staged-rules-update"
     ],
