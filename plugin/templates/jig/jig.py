@@ -3060,8 +3060,9 @@ def cmd_meta_init(root: Path, args) -> int:
 # ---------------------------------------------------------------- decision log
 
 # Every repo keeps one log: decision entries and Keep a Changelog lines, grouped by release.
-# Open entries change in place under ## Open; a released section is history, so it is frozen
-# and a reversed decision is a new entry that supersedes the old one.
+# Open entries change in place under ## Open. An entry says what holds now, so a reversed one is
+# removed by the commit adding the entry that supersedes it, and git keeps its text. A release's
+# change lines are what that version told its readers, so they are frozen.
 LOG = f"{DIR}/decisions.md"
 LOG_SEED = (
     "# Decisions and changes\n\n"
@@ -3173,9 +3174,10 @@ def trimmed(lines: list[str]) -> list[str]:
     return lines
 
 
-def log_problems(text: str, prefix: str) -> list[str]:
+def log_problems(text: str, prefix: str, trunk: str = "") -> list[str]:
     """M2 for the log: every entry's heading, status line and supersedes links, and which
-    section may hold which status."""
+    section may hold which status. With TRUNK, a link to an entry the log removed resolves
+    through trunk's history of the log."""
     out: list[str] = []
     entries = log_entries(text, prefix)
     known = {e["id"] for e in entries}
@@ -3207,35 +3209,71 @@ def log_problems(text: str, prefix: str) -> list[str]:
             out.append(f"M2 {at} sits above ## Open: an entry belongs under ## Open, ## Unreleased "
                        f"or a release")
         for s in sup:
-            if s not in known:
-                out.append(f"M2 {at} supersedes {s}, which has no entry in {LOG}")
+            if s not in known and not (trunk and in_log_history(s, trunk)):
+                out.append(f"M2 {at} supersedes {s}, which has no entry in {LOG}"
+                           + (f" or in {trunk}'s history of it" if trunk else ""))
             elif s == e["id"]:
                 out.append(f"M2 {at} supersedes itself")
     return out
 
 
+def history_re(want: str) -> str:
+    """An ERE for git's -G: the heading of entry WANT, whole, so D-001 is not D-0010."""
+    return rf"^### {want}($|[^0-9A-Za-z_?-])"
+
+
+def in_log_history(want: str, rev: str) -> bool:
+    """Whether the log at some commit in REV's history had an entry WANT."""
+    # Merges diffed too: `jig merge` numbers a job's D-?slug in the merge commit alone.
+    return bool(git("log", "-m", "-E", f"-G{history_re(want)}", "--format=%h", "-1", rev, "--", LOG))
+
+
+def removed_entries(old: str, new: str) -> tuple[str, list[dict]]:
+    """OLD with each entry block NEW no longer has taken out, and those of them outside
+    ## Open that no entry in NEW supersedes: only a superseding entry removes one."""
+    prefix = log_prefix_of(old)
+    now = log_entries(new, prefix)
+    gone = [e for e in log_entries(old, prefix) if e["id"] not in {n["id"] for n in now}]
+    named = {s for e in now for s in (status_parts(e["status"], prefix) or ("", "", "", []))[3]}
+    lines = old.splitlines()
+    for e in reversed(gone):
+        del lines[e["start"]:e["start"] + e["block"].count("\n") + 1]
+    return "\n".join(lines), [e for e in gone if e["id"] not in named and e["section"] != "Open"]
+
+
 def frozen_problems(old: str, new: str) -> list[str]:
-    """Released sections are history: a commit may add ` [YANKED]` to a release heading and one
-    line under it saying why, and change nothing else in one."""
+    """A commit may remove a superseded entry from a released section, in the commit adding the
+    entry superseding it, and add ` [YANKED]` to a release heading with one line under it
+    saying why. Anything else in a released section, its change lines above all, is frozen."""
     out: list[str] = []
+    old, bare = removed_entries(old, new)
+    out += [f"{LOG}: {e['id']} is removed from release {e['section']}, and no entry in the log "
+            f"supersedes it: an entry is removed only by the commit adding the one that says "
+            f"`Supersedes {e['id']}.`" for e in bare if e["section"] not in ("Unreleased", "")]
     after = release_sections(new)
     for version, (day, yanked, body) in release_sections(old).items():
         if version not in after:
             out.append(f"{LOG}: release {version} is gone; a released section is never edited or removed")
             continue
         day2, yanked2, body2 = after[version]
-        was, now = trimmed(body), trimmed(body2)
+        # A removed block leaves its blank lines either side: one blank is as good as two.
+        was, now = (trimmed([l for i, l in enumerate(b) if l.strip() or i and b[i - 1].strip()])
+                    for b in (body, body2))
         if yanked2 and not yanked and now and not now[0].startswith("#"):
             now = trimmed(now[1:])
         if day2 != day or (yanked and not yanked2) or was != now:
             out.append(f"{LOG}: release {version} is frozen: add a new entry that supersedes what "
-                       f"changed (`jig decision <id>` reads the chain); only ` [YANKED]` and its "
-                       f"one line may be added to a release")
+                       f"changed and remove the old one; a release's change lines stay, and only "
+                       f"` [YANKED]` and its one line may be added to a release")
     return out
 
 
 def outside_open_deleted(old: str, new: str) -> bool:
-    """Whether NEW drops or rewrites a line of OLD outside ## Open: elsewhere the log only grows."""
+    """Whether NEW drops or rewrites a line of OLD outside ## Open: elsewhere the log only grows,
+    but for an entry NEW supersedes, which it removes."""
+    old, bare = removed_entries(old, new)
+    if bare:
+        return True
     a, b = old.splitlines(), new.splitlines()
     section, where = "", []
     for line in a:
@@ -3255,7 +3293,7 @@ def log_rules(trunk: str, staged: bool, trunk_side: bool = False) -> list[str]:
     if not new:
         return [f"{LOG} is the repo's decision log: it is never deleted"] if old else []
     prefix = log_prefix(trunk)
-    out = log_problems(new, prefix) + frozen_problems(old, new)
+    out = log_problems(new, prefix, trunk) + frozen_problems(old, new)
     if trunk_side:
         out += [f"M2 {LOG}:{e['line']} {e['id']} isn't numbered, and {trunk} takes numbers only: "
                 f"`jig merge --number` numbers what a merge in progress brings in"
@@ -3333,9 +3371,25 @@ def head_texts_at(rev: str, paths: list[str]) -> list[tuple[str, str]]:
     return out
 
 
+def removed_entry(want: str, prefix: str) -> tuple[str, dict, dict | None] | None:
+    """Entry WANT as it stood in the last commit whose log had it, that commit, and the entry
+    superseding it in the commit that removed it."""
+    # First parent, merges diffed against it: a job's D-?slug is numbered only in its merge.
+    for c in git("log", "-m", "--first-parent", "-E", f"-G{history_re(want)}", "--format=%H", "HEAD",
+                 "--", LOG).splitlines():
+        here = log_entries(at_rev(c, LOG), prefix)
+        if any(e["id"] == want for e in here):
+            return c, next(e for e in here if e["id"] == want), None
+        had = next((e for e in log_entries(at_rev(f"{c}^", LOG), prefix) if e["id"] == want), None)
+        if had:
+            by = next((e for e in here if want in (status_parts(e["status"], prefix) or ("", "", "", []))[3]), None)
+            return git("rev-parse", f"{c}^"), had, by
+    return None
+
+
 def cmd_decision(root: Path, args) -> int:
-    """Print a decision entry and its supersedes chain: a released entry is never edited, so
-    the chain is how a reader finds what holds now."""
+    """Print a decision entry and its supersedes chain. A superseded entry is removed from the
+    log, so one the log doesn't have is read from git, and its chain walked to what holds now."""
     board = Board.load(root)
     prefix = log_prefix(board.trunk)
     path = root / LOG
@@ -3346,7 +3400,22 @@ def cmd_decision(root: Path, args) -> int:
         # D-12 and D-012 are one decision, as R6 counts it.
         want = next((i for i in by_id if decision_id(i) == decision_id(want)), want)
     if want not in by_id:
-        die(f"no entry {args.id} in {LOG}", 1)
+        steps, cur = [], want
+        while cur not in by_id and (found := removed_entry(cur, prefix)) and len(steps) < 50:
+            steps.append(found)
+            cur = found[2]["id"] if found[2] else ""
+        if not steps:
+            die(f"no entry {args.id} in {LOG} or in its history", 1)
+        commit, e, by = steps[0]
+        print(e["block"])
+        where = e["section"] if e["section"] not in ("Open", "Unreleased", "") else f"## {e['section'] or 'Open'}"
+        print(f"\n{want} was removed from {LOG}; it stood last at {commit[:7]}, in {where}.")
+        for _, old, by in steps:
+            if by:
+                print(f"  {old['id']} is superseded by {by['id']} {by['title']}")
+        if cur in by_id:
+            print(f"What holds now is {cur} {by_id[cur]['title']}: `jig decision {cur}` reads it.")
+        return 0
     sups = {e["id"]: (status_parts(e["status"], prefix) or ("", "", "", []))[3] for e in entries}
     later = {old: e for e, olds in sups.items() for old in olds}
     chain, cur = [], want
@@ -3371,6 +3440,9 @@ def cmd_decision(root: Path, args) -> int:
     if want in later:
         last = chain[-1]
         print(f"\n{want} is superseded by {later[want]}; what holds now is {last} {by_id[last]['title']}.")
+    for s in sups.get(want, []):
+        if s not in by_id:
+            print(f"\n{want} supersedes {s}, which is removed from {LOG}: `jig decision {s}` reads it from git.")
     return 0
 
 
@@ -4488,7 +4560,12 @@ def meta_citations(root: Path, para: dict, ids: str) -> list[str]:
                     # A decision is a log entry's heading, or a row in a register from before the log.
                     if not re.search(rf"^(?:\s*\|\s*{re.escape(row.group(1))}\s*\||### {re.escape(row.group(1))}(?!\w))",
                                      body, re.M):
-                        out.append(f"{f}:{n} cites {name}/{path} § {row.group(1)}, which {name} {pin} has no row for")
+                        # A superseded entry is removed from the log: the citation moves to its successor.
+                        lp = log_prefix_of(body)
+                        by = next((e["id"] for e in log_entries(body, lp)
+                                   if row.group(1) in (status_parts(e["status"], lp) or ("", "", "", []))[3]), None)
+                        out.append(f"{f}:{n} cites {name}/{path} § {row.group(1)}, which {name} {pin} has no row for"
+                                   + (f": now {name}/{path} § {by}" if by else ""))
                     continue
                 level, _ = pointer_gap(path, section or None, code, body)
                 if level == NO_FILE:
@@ -6150,6 +6227,17 @@ def left_behind(root: Path, files: list[str], plan: dict, handled: list[str]) ->
     return out
 
 
+def superseded_kept(root: Path) -> list[tuple[str, str]]:
+    """Each entry the log still holds that another supersedes: a log from when released sections
+    were frozen kept it, and now the superseding commit removes it."""
+    text = (root / LOG).read_text(errors="replace") if (root / LOG).is_file() else ""
+    prefix = log_prefix_of(text)
+    entries = log_entries(text, prefix)
+    have = {e["id"] for e in entries}
+    return [(LOG, f"{s} is superseded by {e['id']}: remove it; the entry superseding it names it")
+            for e in entries for s in (status_parts(e["status"], prefix) or ("", "", "", []))[3] if s in have]
+
+
 def files_to_review(root: Path, plan: dict, template: Path | None = None,
                     arriving: set[str] = frozenset()) -> list[tuple[str, str]]:
     """The repo's own files an old convention left behind, each with the edit proposed for
@@ -6578,6 +6666,7 @@ def cmd_update(root: Path, args) -> int:
     arriving = set(plan["after"]) | set(replace) | {SETUP for s in steps if s[2] is add_setup}
     review = files_to_review(root, plan, here.parent / "AGENTS.md", arriving)
     review += home_findings(root, plan, new_board, board_at, [f for f, _ in review])
+    review += superseded_kept(root)
     have_ignores = {l.strip() for l in ignore.read_text().splitlines()} if ignore.exists() else set()
     if (new_board.get("reference_files") == "ignore" and not ref_line
             and not set(REFERENCE_IGNORES) <= have_ignores):
