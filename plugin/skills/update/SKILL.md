@@ -28,7 +28,9 @@ That is a dry run. It changes nothing, and its exit code says what you have:
   Each worktree line names its own command — `git worktree remove` for one that is there,
   `repair` then `remove` for one that moved with the repo folder, `prune` for one that is gone,
   look then delete for a folder git doesn't know. Before any `remove` or delete, show what is
-  uncommitted in it. Run each only on a yes; `update` runs none. A refusing dry run still prints
+  uncommitted in it. Run each only on a yes; `update` runs none. A gate's scratch checkout
+  (`gate-<job>`, detached) isn't a refusal: the plan lists it as gate scratch and `--apply`
+  removes it, unless it holds tracked changes or a merge, which make it a refusal like the rest. A refusing dry run still prints
   the plan below the refusal: show it too, so the user sees what follows the fix. A block means the layout is one
   jig doesn't recognize. Say why the update would fail, then show the owner the drafted
   problem: the change to jig that would recognize it — which `LAYOUT` row, board default or
