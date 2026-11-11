@@ -1,15 +1,4 @@
 {
-  "bug-seam-ownerless-folder": {
-    "spec": ".jig/specs/bug-seam-ownerless-folder.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/templates/jig/jig.py",
-      "tests/smoke.sh"
-    ],
-    "shares": [],
-    "reserved": {}
-  },
   "decision-remove-superseded": {
     "spec": ".jig/specs/decision-remove-superseded.md",
     "state": "claimed",
