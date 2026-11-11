@@ -46,7 +46,10 @@ that spec carries the mark.
 - **spec / doc, new**: `jig staging resolve <file>` writes it, with its source.
 - **spec / doc, update**: find the page — the path, else search for the filename, else ask
   from the description. Merge the content in with the user, add the line
-  `Source: <source> (staged as <file name>)` as provenance, then `resolve`.
+  `Source: <source> (staged as <file name>)` as provenance, then `resolve`. A root rules file
+  (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`) is loaded on every turn, so the line never goes in
+  it: commit the edit with the line in the message (on trunk, or in a job merged to trunk),
+  then `resolve` finds that commit. A new one is written with no line; commit it the same way.
 - **decisions**: `destination: .jig/decisions.md`, the one log; any other is refused. The
   body is entries, each `### D-?<slug> <title>` with its status line under it (`.jig/RULES.md`,
   Decision log). `resolve` adds an open or proposed one under `## Open` and an accepted one

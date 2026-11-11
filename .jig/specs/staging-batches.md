@@ -85,7 +85,7 @@ Staging works for a batch written from a chat:
   with the files it orders, and `after:` lives with the file it constrains. Reason is [assumed].
 - Leave Workflow to the resolving session. Rejected: `/jig:spec` already fills it from
   `jig workflow`, so resolve can apply the same lines with no judgment. Reason is [seen: the spec
-  skill, step 4].
+  skill, step 6].
 
 ## Decisions
 - Runs after `project-product-boundary`, which owns `jig.py`, RULES.md and `smoke.sh`.
