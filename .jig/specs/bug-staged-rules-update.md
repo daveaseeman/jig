@@ -34,6 +34,11 @@ count `AGENTS.md`'s lines the same way.
   trunk with `<mark>` in the message". A doc under `docs/`, and every other destination, behave
   as today.
 - RULES.md § Staging: one sentence beside the roadmap's, naming the root rules files.
+- Amended after review (Nov 11): the commit search sees a mark on any trunk commit that changed the
+  file, merges included (`--full-history`), since a rules file usually arrives through `jig merge`.
+  The refusal says the mark goes on the commit that edits the file, on trunk or in a job. A
+  `change: new` rules file resolves the same way, with no mark written into it. The stage skill's
+  update step names the exception.
 - **One count.** `/jig:init` says "under 40 rule lines (blank lines, headings and table rows
   don't count), as `jig survey` counts them". The limit stays 40 (see Decisions).
 
@@ -57,6 +62,7 @@ count `AGENTS.md`'s lines the same way.
 - `plugin/templates/jig/jig.py` (staging resolve's `landed` for root rules files)
 - `plugin/templates/jig/RULES.md` (§ Staging)
 - `plugin/skills/init/SKILL.md`
+- `plugin/skills/stage/SKILL.md` (its update bullet; added after review)
 - `tests/smoke.sh`
 
 ## Alternatives considered
