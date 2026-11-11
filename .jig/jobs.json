@@ -29,7 +29,7 @@
   },
   "bug-staged-rules-update": {
     "spec": ".jig/specs/bug-staged-rules-update.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [
       "plugin/skills/init/SKILL.md"
