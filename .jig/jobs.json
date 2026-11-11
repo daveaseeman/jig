@@ -1,7 +1,7 @@
 {
   "bug-redocument-any-format": {
     "spec": ".jig/specs/bug-redocument-any-format.md",
-    "state": "ready",
+    "state": "gated",
     "after": [
       "flat-pages"
     ],
