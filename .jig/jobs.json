@@ -1,7 +1,7 @@
 {
   "update-project-sweep": {
     "spec": ".jig/specs/update-project-sweep.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/update/SKILL.md"
