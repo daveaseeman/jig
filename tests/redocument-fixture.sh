@@ -140,7 +140,13 @@ start
 
 echo; echo "== pararepo: a metarepo decision cites the store page's Rules heading"
 repo "$T/hm" && $J init --meta --name hm >/dev/null
-printf '| D-001 | the store rule (`app/docs/store/store.md § Rules`) | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md
+python3 - <<'PY'
+from pathlib import Path
+f = Path(".jig/decisions.md")
+entry = ("### D-001 the store rule\nAccepted (owner, 2026-11-01).\n"
+         "The store rule (`app/docs/store/store.md § Rules`).\n")
+f.write_text(f.read_text().replace("## Unreleased\n", "## Unreleased\n\n" + entry, 1))
+PY
 git add -A && git commit -qm meta-init && $J release >/dev/null
 repo "$T/app" && old_pages
 $J init --para hm --location "$T/hm" --contract 'docs/store/**' >/dev/null && git add -A && git commit -qm 'init --para'
