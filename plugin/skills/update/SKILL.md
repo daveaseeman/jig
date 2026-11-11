@@ -40,7 +40,9 @@ one's proposed edit and ask about each; make it only on a yes. `--apply` never t
 Some of them are survey's home findings. A **rules** file off root: fold what still binds into
 `AGENTS.md` or a page's Invariants, repoint the lines named, delete it — but a package's own rules
 file in a monorepo may stay on the owner's word, so ask before proposing the delete. A **copy** of `.jig/RULES.md`:
-delete it and point what names it at `.jig/RULES.md`. A folder of **pages**: before the moves,
+delete it and point what names it at `.jig/RULES.md`. A page at home but **off the page contract** (no lead paragraph, an invariant with
+no why or holder, a section after Undefined) is fixed where it sits: show its problems and the
+edit that answers each, and make it on a yes. A folder of **pages**: before the moves,
 ask whether each page is a subsystem to nest under its system's folder rather than a system of
 its own. Nest only system/subsystem: a page **below a subsystem** (survey's `deep`) folds into
 its subsystem's page, unless the owner approves its folder for `deep_subsystems` with a rationale

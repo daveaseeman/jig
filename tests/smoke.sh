@@ -3345,6 +3345,35 @@ expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a/seam-g.md: covers files of 
 import json, subprocess
 r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 assert r['seams_misfiled'] == [{'path': 'docs/a/seam-g.md', 'other': 'docs/g.md'}], r['seams_misfiled']\"" "$out"
+
+# A house-format page the board names is a page wherever it sits; a jig repo never adopts again.
+HF="$T/homes-house"; pcnew "$HF" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p docs/crates/s src/s && printf 'x\n' > src/s/s.rs
+for n in store lib; do printf '# %s\n\n## Does\nKeeps rows.\n\n## Gotchas\nNone.\n' $n > docs/crates/s/$n.md; done
+board "b['docmap'] = {'docs/crates/s/store.md': ['src/s/s.rs'], 'docs/crates/s/lib.md': ['src/s/**']}" && git add -A && git commit -qm house
+msg="house: docmap pages in any format are pages outside the docs tree, not unread strays, and survey says /jig:redocument"
+out=$($J survey 2>&1)
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Pages outside the docs tree/,/^\$/p' | grep -q '^  docs/crates/s/store.md → docs/store.md' && echo \"\$0\" | sed -n '/^Pages outside the docs tree/,/^\$/p' | grep -q '^  docs/crates/s/lib.md → docs/lib.md' && ! echo \"\$0\" | grep -q 'never read since' && echo \"\$0\" | tail -1 | grep -q 'run /jig:redocument'" "$out"
+behind
+msg="house: update proposes moving both, with their docmap keys"
+out=$($UP 2>&1)
+expect_pass sh -c "for w in 'git mv docs/crates/s/store.md docs/store.md' 'git mv docs/crates/s/lib.md docs/lib.md' '.jig/config.json docmap: docs/crates/s/store.md' '.jig/config.json docmap: docs/crates/s/lib.md'; do echo \"\$0\" | grep -q \"^      \$w\" || { echo \"missing \$w\"; exit 1; }; done" "$out"
+
+HL="$T/homes-nolead"; pcnew "$HL" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p docs/s && printf '# S\n\n## Part\n\nText.\n' > docs/s/s.md && git add -A && git commit -qm page
+msg="house: a page at home with no lead paragraph sends a jig repo to /jig:update, not adopt or redocument"
+expect_pass sh -c "$J survey | tail -1 | grep -q 'run /jig:update to review each in place'"
+behind
+msg="house: update's dry run lists it with its problem under Repo files to review"
+out=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Repo files to review/,/^\$/p' | grep -q '^  docs/s/s.md: off the page contract .*no lead paragraph'" "$out"
+msg="house: the same page in a repo with no board still gets /jig:adopt"
+HN="$T/homes-noboard"; pcnew "$HN" && mkdir -p docs/s && printf '# S\n\n## Part\n\nText.\n' > docs/s/s.md && git add -A && git commit -qm init
+expect_pass sh -c "$J survey | tail -1 | grep -q 'Run /jig:adopt'"
+msg="house: a jig repo with only a stray gets no /jig:adopt line"
+HS="$T/homes-stray"; pcnew "$HS" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p docs && printf 'Ideas.\n' > docs/ideas.md && git add -A && git commit -qm stray
+expect_pass sh -c "! $J survey | grep -q '/jig:adopt'"
 }
 
 # ---------------------------------------------------------------- update's AGENTS.md lines
