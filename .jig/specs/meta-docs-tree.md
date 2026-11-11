@@ -75,24 +75,25 @@ than itself (spec `flat-pages`). Survey finds a metarepo's pages wherever they s
   a major; `bug-sync-moved-pages` names each move, and each stale citation, to the pararepos.
 
 ## Done when
-- [ ] Smoke `metarepo`: a metarepo with `products/hardware/x.md` (in `entry_files`) and no
+- [x] Smoke `metarepo`: a metarepo with `products/hardware/x.md` (in `entry_files`) and no
   `docs/`: `jig survey` lists it as a page outside the docs tree, `to` `docs/products/x.md`, and
   its last line names `/jig:redocument` (the reported symptom gone). The decisions register,
   `CHANGELOG.md` and `README.md` are not listed.
-- [ ] Smoke: `docs/products/x.md` with a lead paragraph passes survey; `docs/x.md` in a metarepo
+- [x] Smoke: `docs/products/x.md` with a lead paragraph passes survey; `docs/x.md` in a metarepo
   is reported as needing a genre; `docs/products/products.md` is not required.
-- [ ] Smoke: in a plain repo, `docs/products/x.md` is still read as system `products`, part `x`
+- [x] Smoke: in a plain repo, `docs/products/x.md` is still read as system `products`, part `x`
   (the code repo's rule is unchanged).
-- [ ] Smoke: `jig init --meta --genres product-ecosystem` writes `genres: [products, features,
-  principles, concepts]` and a `### product` … `### concept` heading under `README.md § Glossary`.
+- [x] Smoke: `jig init --meta --genres product-ecosystem` writes `genres: [products, features,
+  principles, concepts]` and a `### products` … `### concepts` heading under `README.md § Glossary`
+  (the genre's own name, as the kickoff put it: `### <genre>`).
   `--genres a,b` writes those two. With `genres` set, `docs/misc/x.md` is reported as in an
   undeclared genre.
-- [ ] `plugin/skills/init/SKILL.md` asks for a metarepo's genres and offers the templates.
-- [ ] RULES.md, Homes and Metarepo: the metarepo homes and the tracing paragraph;
+- [x] `plugin/skills/init/SKILL.md` asks for a metarepo's genres and offers the templates.
+- [x] RULES.md, Homes and Metarepo: the metarepo homes and the tracing paragraph;
   `grep -n "what \`entry_files\` names" plugin/templates/jig/RULES.md` no longer finds it under Homes.
-- [ ] `plugin/skills/redocument/SKILL.md`: the Cited-by column and the `entry_files` rewrite at
+- [x] `plugin/skills/redocument/SKILL.md`: the Cited-by column and the `entry_files` rewrite at
   cleanup.
-- [ ] `bash tests/smoke.sh` and `claude plugin validate ./plugin` pass, and
+- [x] `bash tests/smoke.sh` and `claude plugin validate ./plugin` pass, and
   `grep -rnE 'Maige|maige|Daisy|daisy|"E-' plugin` finds nothing.
 
 ## Out of scope

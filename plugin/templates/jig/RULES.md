@@ -262,7 +262,8 @@ URL and hash to fetch it again. Notes stay committed, and so does every file the
 - nothing under `docs/hardware/`, the layout before boards were systems: survey and update
   say where each of its files goes, and `/jig:redocument` moves them;
 - anything under a `datasheets/` folder, inside a page's folder or at `docs/datasheets/`;
-- in a metarepo, what `entry_files` names.
+- in a metarepo, its decision registers, and its pages under a genre folder (Metarepo and
+  pararepos), not the code repo's tree.
 
 Any other file has no home, and survey says which kind: an `AGENTS.md`, `CLAUDE.md` or
 `GEMINI.md` off root is a second rulebook; three or more sentences of this file word for word
@@ -587,6 +588,22 @@ points to the metarepo's id without restating it.
 Each side's gates are on only when its file is on trunk: `.jig/meta.json` or `.jig/para.json`.
 `jig init --meta` and `jig init --para <metarepo>` write them; every other command reads them and
 does what that kind of repo needs.
+
+**A metarepo's docs tree.** A metarepo's pages are under `docs/`, each in a genre folder:
+`docs/<genre>/<name>.md`, or `docs/<genre>/<name>/<name>.md` once it holds more than itself,
+with its subsystems below it. A genre is a folder directly under `docs/`, a category of the
+ecosystem the metarepo defines (products, features, principles, concepts), so the opposite of a
+code repo holds: genre folders are required here, where a code repo's tree names one product's
+parts. A genre has no page of its own and adds no depth; its term is a `### <genre>` heading in
+`README.md § Glossary`. `meta.json`'s optional `genres` lists them (`jig init --meta --genres
+a,b,c`, or `--genres product-ecosystem` for those four); without it, any folder under `docs/`
+is one. `jig survey` names a page directly in `docs/`, one in a folder `genres` doesn't declare,
+and every other Markdown file outside `docs/` that isn't a root document or a decision register
+(a file named `DECISIONS.md`, or holding decision rows), with `docs/<its top folder>/<name>.md`
+as where it goes; `/jig:redocument` moves them. `entry_files` never makes a page's home.
+There, a claim's source is a decision row or the pararepo file a pointer names; an Invariant's
+holder is an accepted decision id; Undefined holds the page's open questions. A dated state
+section is checked against the pararepo's trunk and folded into the body or dropped.
 
 `entry_files` in `meta.json` lists what pararepos cite: what a release counts, what M3 asks a
 log line for, and what a pararepo caches. Its entries are globs, matched the way `owns`

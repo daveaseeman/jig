@@ -1781,6 +1781,47 @@ def old_board_rows(files: list[str], read) -> list[dict]:
     return rows
 
 
+# A metarepo's docs tree has one level more than a code repo's: docs/<genre>/<page>, where a
+# genre categorizes the ecosystem it defines (RULES.md, Metarepo and pararepos). None in a code
+# repo; in a metarepo, the genres meta.json declares, or () when any folder under docs/ is one.
+# Set from the repo once, by doc_homes, so the tree helpers below read one layout throughout.
+GENRES: tuple[str, ...] | None = None
+# `jig init --meta --genres product-ecosystem`: the categories an ecosystem's definition takes.
+GENRE_TEMPLATES = {"product-ecosystem": ("products", "features", "principles", "concepts")}
+
+
+def load_genres(root: Path) -> None:
+    global GENRES
+    GENRES = None
+    if (root / META).exists():
+        try:
+            g = json.loads((root / META).read_text() or "{}").get("genres")
+        except (ValueError, AttributeError):
+            g = None
+        GENRES = tuple(x for x in g if isinstance(x, str)) if isinstance(g, list) else ()
+
+
+def genre_level(d: str) -> bool:
+    """docs/<x> in a metarepo: a genre's place, which holds pages but is no page's folder."""
+    return GENRES is not None and d.startswith("docs/") and d.count("/") == 1
+
+
+def genre_dir(d: str) -> bool:
+    """A metarepo's genre folder, declared, or any when meta.json declares none."""
+    return genre_level(d) and (not GENRES or d[len("docs/"):] in GENRES)
+
+
+def page_root(d: str) -> bool:
+    """Where a top-level page sits flat: docs/ in a code repo, a genre folder in a metarepo."""
+    return genre_dir(d) if GENRES is not None else d == "docs"
+
+
+def old_layout(path: str) -> bool:
+    """Under docs/hardware/, the layout before boards were systems. In a metarepo that folder
+    is a genre like any other."""
+    return GENRES is None and path.startswith(OLD_BOARDS)
+
+
 def folder_page(path: str) -> bool:
     """docs/<...>/<name>/<name>.md: a page named for its folder, the shape of a page that holds
     other files. A page with nothing else to hold is flat (flat_page)."""
@@ -1799,16 +1840,17 @@ def flat_spot(path: str, have: set[str]) -> bool:
     Nothing in the path tells such a page from a note beside it; flat_page says which."""
     parent, name = os.path.dirname(path), os.path.basename(path)
     return (path.startswith("docs/") and path.endswith(".md") and not folder_page(path)
-            and not reference_file(path) and not path.startswith(OLD_BOARDS)
+            and not reference_file(path) and not old_layout(path)
             and name not in RULES_NAMES and Path(path).stem != DATASHEETS
-            and (parent == "docs" or bool(folder_owner(parent, have))))
+            and (page_root(parent) or bool(folder_owner(parent, have))))
 
 
 def flat_page(path: str, have: set[str], docmap, read) -> bool:
     """docs/<name>.md or docs/<...>/<name>.md: a page with no folder of its own, which the
     board names (DOCMAP: named_pages) or its own sections make a page. Any other file there is
-    one of its folder page's."""
-    return flat_spot(path, have) and (path in docmap or page_shaped(read(path)))
+    one of its folder page's. A genre has no page, so a file directly in it is a page."""
+    return flat_spot(path, have) and (path in docmap or genre_dir(os.path.dirname(path))
+                                      or page_shaped(read(path)))
 
 
 def page_folder(path: str) -> str:
@@ -1821,7 +1863,7 @@ def folder_owner(d: str, have: set[str]) -> str:
     """The page that folder D stands for, in either form: d/<name>.md, or d.md still flat
     beside the folder it has started to fill (survey says to move it in). Empty for none."""
     name = os.path.basename(d)
-    if name == DATASHEETS or "/" not in d:
+    if name == DATASHEETS or "/" not in d or genre_level(d):
         return ""
     return next((p for p in (f"{d}/{name}.md", f"{d}.md") if p in have), "")
 
@@ -1888,7 +1930,9 @@ def unapproved(folder: str, deep: dict) -> list[str]:
     parts = folder.split("/")
     if parts[0] != "docs":
         return []
-    return [d for i in range(4, len(parts) + 1) if not (
+    # A genre adds no depth: its pages are systems, as docs/<system> is in a code repo.
+    first = 4 if GENRES is None else 5
+    return [d for i in range(first, len(parts) + 1) if not (
         isinstance(r := deep.get(d := "/".join(parts[:i])), str) and r.strip())]
 
 
@@ -1899,11 +1943,11 @@ def deep_fix(h: dict, deep: dict) -> str:
             f"approve {ask} in {CONFIG} deep_subsystems, with its rationale")
 
 
-def at_home(path: str, entry: list[str], deep: dict, have: set[str] = frozenset()) -> bool:
+def at_home(path: str, registers: list[str], deep: dict, have: set[str] = frozenset()) -> bool:
     """RULES.md (Documentation) lists these homes; a change there changes this. A file in a
     page's folder that isn't a page is one of that page's files, wherever it sits below it."""
     # ROADMAP.md is a home only as the view of a roadmap; a hand-written one is a stray.
-    return (path in ROOT_DOCS or (path == ROADMAP_VIEW and ROADMAP in have) or reference_file(path, have) or matches(path, entry)
+    return (path in ROOT_DOCS or (path == ROADMAP_VIEW and ROADMAP in have) or reference_file(path, have) or path in registers
             or (folder_page(path) and depth_ok(os.path.dirname(path), deep))
             or (not folder_page(path) and bool(owner_page(path, have, deep))))
 
@@ -1912,7 +1956,8 @@ def page_home(path: str, have: set[str], deep: dict) -> str:
     """Flat beside the nearest page that has a folder, as a subsystem's page sits in its
     system's folder; else a system of its own, flat in docs/. A page of that name already
     there, flat or in its folder, is where it folds. Where the page would be deeper than the
-    docs tree allows, the nearest page itself: fold it in."""
+    docs tree allows, the nearest page itself: fold it in. In a metarepo, the system of its own
+    is flat in its genre folder."""
     stem, folders = Path(path).stem, path.split("/")[:-1]
 
     def there(d: str) -> str:
@@ -1921,7 +1966,7 @@ def page_home(path: str, have: set[str], deep: dict) -> str:
         d = "/".join(folders[:i])
         if (page := folder_owner(d, have)) and depth_ok(d, deep):
             return there(d) if depth_ok(f"{d}/{stem}", deep) else page
-    return there("docs")
+    return there("/".join(folders[:2]) if GENRES is not None and len(folders) >= 2 else "docs")
 
 
 def deep_home(path: str, deep: dict, have: set[str] = frozenset()) -> str:
@@ -1934,10 +1979,30 @@ def deep_home(path: str, deep: dict, have: set[str] = frozenset()) -> str:
     return f"{d}.md" if page not in have and f"{d}.md" in have else page
 
 
+def meta_registers(root: Path, files: list[str], read) -> list[str]:
+    """A metarepo's decision registers. entry_files says what pararepos cite, not where pages
+    live; a register is no page, and stays wherever it is."""
+    return [f for f in files if GENRES is not None and f.endswith(".md")
+            and (Path(f).name == "DECISIONS.md" or bool(decision_rows(read(f), root)))]
+
+
+def meta_hidden(root: Path, files: list[str], not_docs: list[str], read) -> list[dict]:
+    """Each not_docs glob that hides a metarepo's pages from survey, as {glob, pages}: Markdown
+    outside docs/ that is no root document and no register is a page to convert, and a glob
+    left over from a code repo's reading of the tree keeps it out of sight."""
+    if GENRES is None:
+        return []
+    regs = set(meta_registers(root, files, read))
+    md = [f for f in files if f.endswith(".md") and not f.startswith(("docs/", *TOOL_DIRS))
+          and f not in ROOT_DOCS and f not in regs]
+    return [{"glob": g, "pages": hit} for g in not_docs if (hit := [f for f in md if matches(f, [g])])]
+
+
 def doc_homes(root: Path, files: list[str], not_docs: list[str],
               read=None, deep: dict | None = None, docmap=None) -> list[dict]:
     """Every tracked Markdown file with no home, as {path, kind, to, fold, naming, named_at}.
-    Kinds: `rules` an agent instruction file off root, `board` a file in the old docs/hardware/
+    Kinds: `rules` an agent instruction file off root, `genre` a metarepo page under docs/ but
+    in no genre folder, `board` a file in the old docs/hardware/
     layout (TO is where it goes), `reserved` a page named datasheets, `deep` a page named for its folder below
     a subsystem that deep_subsystems doesn't approve, flat or not, `page` a page, old shape or
     new, in the wrong place (in a folder with no page of its own), `copy` three or more
@@ -1948,19 +2013,36 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
     read = read or (lambda f: (root / f).read_text(errors="replace") if (root / f).is_file() else "")
     rules_md = Path(__file__).resolve().parent / "RULES.md"
     rules = re.sub(r"\s+", " ", rules_md.read_text()) if rules_md.exists() else ""
-    entry = []
-    if (root / META).exists():
-        try:
-            entry = {**META_DEFAULTS, **json.loads((root / META).read_text() or "{}")}["entry_files"]
-        except ValueError:
-            pass
+    load_genres(root)
+    registers = meta_registers(root, files, read)
     deep = deep if isinstance(deep, dict) else {}
     docmap = docmap or set()
     have = set(files)
-    old = {r["path"]: r["to"] for r in old_board_rows(files, read)}
+    old = {} if GENRES is not None else {r["path"]: r["to"] for r in old_board_rows(files, read)}
     out = []
     for f in files:
         if not f.endswith(".md") or f.startswith(TOOL_DIRS) or matches(f, not_docs):
+            continue
+        if f == "GLOSSARY.md":
+            named = naming(root, f, files)
+            out.append({"path": f, "kind": "stray", "to": f"README.md § {GLOSSARY_HOME[3:]}",
+                        "fold": False, "naming": sorted(named),
+                        "named_at": [f"{n}:{i}" for n in sorted(named) for i in named[n]]})
+            continue
+        # A metarepo's pages are all under docs/<genre>/, wherever entry_files finds them,
+        # and in whatever shape: outside docs/, only a root document or a register is at home.
+        if GENRES is not None and (
+                (f.startswith("docs/") and not at_home(f, registers, deep, have)
+                 and (f.count("/") == 1 or not genre_dir("/".join(f.split("/")[:2]))))
+                or (not f.startswith("docs/") and f not in registers
+                    and ("/" in f or not at_home(f, registers, deep, have)))):
+            named = naming(root, f, files)
+            top = f.split("/")[0] if "/" in f and not f.startswith("docs/") else ""
+            to = page_in(f"docs/{top}/{Path(f).stem}.md", have) if top else None
+            out.append({"path": f, "kind": "genre" if f.startswith("docs/") else "page", "to": to,
+                        "fold": bool(to and (to in have or (root / to).exists())),
+                        "naming": sorted(named),
+                        "named_at": [f"{n}:{i}" for n in sorted(named) for i in named[n]]})
             continue
         if f in old or reserved_page(f):
             named = naming(root, f, files)
@@ -1978,15 +2060,9 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
         shaped = (not flat and not folder_page(f) and not reference_file(f)
                   and f.startswith("docs/") and owner_page(f, have, deep)
                   and (f in docmap or page_shaped(read(f))))
-        if f == "GLOSSARY.md":
-            named = naming(root, f, files)
-            out.append({"path": f, "kind": "stray", "to": f"README.md § {GLOSSARY_HOME[3:]}",
-                        "fold": False, "naming": sorted(named),
-                        "named_at": [f"{n}:{i}" for n in sorted(named) for i in named[n]]})
-            continue
         if flat and depth_ok(page_folder(f), deep):
             continue
-        if not flat and at_home(f, entry, deep, have) and not shaped:
+        if not flat and at_home(f, registers, deep, have) and not shaped:
             continue
         text, to = read(f), None
         # A page first: one that quotes the rulebook is still the repo's page, not a copy.
@@ -2026,7 +2102,7 @@ def page_shapes(root: Path, files: list[str], not_docs: list[str], docmap: set[s
     for f in files:
         if f in skip or matches(f, not_docs):
             continue
-        if folder_page(f) and not f.startswith(OLD_BOARDS):
+        if folder_page(f) and not old_layout(f):
             to = f"{page_folder(f)}.md"
             if not company(f) and to not in have and flat_spot(to, have):
                 out.append({"path": f, "to": to, "into": False, "fold": False,
@@ -2044,14 +2120,19 @@ def misfiled_seams(files: list[str], board: dict) -> list[dict]:
     its globs reach, so none is listed."""
     docmap = board.get("docmap") if isinstance(board.get("docmap"), dict) else {}
     boards = board_pages(board)
-    tops = {k: page_folder(k).split("/")[1] for k in docmap
-            if k.startswith("docs/") and k.endswith(".md") and page_folder(k).count("/") == 1}
+    # A system is docs/<system> in a code repo, docs/<genre>/<page> in a metarepo.
+    n = 1 if GENRES is None else 2
+
+    def system_of(k: str) -> str:
+        return "/".join(page_folder(k).split("/")[:n + 1])
+    tops = {k: system_of(k) for k in docmap
+            if k.startswith("docs/") and k.endswith(".md") and page_folder(k).count("/") == n}
     out = []
     for p, globs in docmap.items():
-        if (not isinstance(globs, list) or not p.startswith("docs/") or page_folder(p).count("/") < 2
+        if (not isinstance(globs, list) or not p.startswith("docs/") or page_folder(p).count("/") < n + 1
                 or any(same_page(b, p) for b in boards)):
             continue
-        system = page_folder(p).split("/")[1]
+        system = system_of(p)
         other = next((t for f in files if matches(f, globs)
                       for t, s in tops.items() if s != system and matches(f, docmap[t] or [])), "")
         if other:
@@ -2371,8 +2452,10 @@ def cmd_survey(root: Path, args) -> int:
     report["datasheets_orphan"] = [f for f in files if reference_file(f) and not f.endswith(".md")
                                    and not f.startswith(OLD_BOARDS) and not matches(f, not_docs)
                                    and not reference_file(f, have)]
-    report["old_boards"] = old_board_rows(files, lambda f: (root / f).read_text(errors="replace")
-                                          if (root / f).is_file() else "")
+    report["old_boards"] = [] if GENRES is not None else old_board_rows(
+        files, lambda f: (root / f).read_text(errors="replace") if (root / f).is_file() else "")
+    report["genres"] = None if GENRES is None else list(GENRES)
+    report["not_docs_hiding"] = meta_hidden(root, files, not_docs, read)
     readme = root / "README.md"
     report["glossary_unheaded"] = glossary_unheaded(readme.read_text(errors="replace")) \
         if "README.md" in files and readme.is_file() else []
@@ -2410,8 +2493,23 @@ def cmd_survey(root: Path, args) -> int:
               "or nest it\nunder its system's folder if it is a subsystem:")
         for e in misplaced:
             inside = owner_page(e["path"], have, deep)
-            print(f"  {e['path']} → {e['to']}{' (fold it in: that page exists)' if e['fold'] else ''}"
+            # At a metarepo's root, nothing in the path says which genre: the remap picks one.
+            to = e["to"] or f"docs/<genre>/{Path(e['path']).name}"
+            print(f"  {e['path']} → {to}{' (fold it in: that page exists)' if e['fold'] else ''}"
                   + (f" (a subsystem candidate: it sits in {inside}'s folder)" if inside else ""))
+    for e in report["not_docs_hiding"]:
+        print(f"\n`not_docs` glob {e['glob']} hides {len(e['pages'])} page{'s' if len(e['pages']) > 1 else ''} "
+              f"of this metarepo ({', '.join(e['pages'][:3])}{' …' if len(e['pages']) > 3 else ''}): "
+              "drop it from not_docs so they convert")
+    ungenred = [e for e in report["homeless"] if e["kind"] == "genre"]
+    if ungenred:
+        print(f"\nPages under docs/ in no genre folder ({DIR}/RULES.md, Metarepo and pararepos): "
+              "a metarepo's\npages are docs/<genre>/<name>.md:")
+        for e in ungenred:
+            g = e["path"].split("/")[1] if e["path"].count("/") > 1 else ""
+            print(f"  {e['path']}: " + (f"{g}/ is no genre {META} declares ({', '.join(GENRES or ())}): "
+                                        f"move it under one, or add {g} to genres" if g else
+                                        f"needs a genre: move it to docs/<genre>/{Path(e['path']).name}"))
     if report["old_boards"]:
         print(f"\nBoard files in the old {OLD_BOARDS} layout ({DIR}/RULES.md, Documentation): each "
               "board is a\nsystem now. Move each file (/jig:redocument carries the moves), and list "
@@ -2533,13 +2631,21 @@ def cmd_survey(root: Path, args) -> int:
     if not any([co["found"], co["git_hooks"], co["homebrew_boards"], co["worktrees"],
                 co["open_branches"]]):
         print("  none found — a single-session repo; jobs need no setup until a second session starts")
-    print("\nDoc homes: " + "; ".join(f"{k} = {v}" for k, v in DOC_HOMES.items()))
+    homes_line = dict(DOC_HOMES)
+    if GENRES is not None:
+        homes_line["docs/"] = (
+            "the definitions this metarepo holds: docs/<genre>/<name>.md each page, in a genre folder "
+            f"({', '.join(GENRES) if GENRES else f'any folder under docs/, until {META} declares genres'}); "
+            "a genre has no page, its term is a ### heading in README.md § Glossary; a page holding "
+            "other files moves into docs/<genre>/<name>/<name>.md; decision registers stay where they are")
+    print("\nDoc homes: " + "; ".join(f"{k} = {v}" for k, v in homes_line.items()))
     old = old_board(root)
     # A repo already on jig with old pages has a migration of its own; adopt would replan the repo.
     old_pages = any(p.startswith("old contract") for e in report["page_contract"] for p in e["problems"]) \
         or any(h["kind"] in ("page", "deep") and old_contract((root / h["path"]).read_text(errors="replace"))
                for h in report["homeless"] if (root / h["path"]).is_file())
-    outside = any(h["kind"] == "page" for h in report["homeless"])
+    outside = (any(h["kind"] in ("page", "genre") for h in report["homeless"])
+               or bool(report["not_docs_hiding"]))
     # A repo on jig never adopts again: redocument converts pages, update fixes them in place.
     on_jig = (root / CONFIG).exists()
     # A deep page is folded or approved, not edited where it sits, as update leaves it.
@@ -2567,6 +2673,8 @@ META_DEFAULTS = {
     "decision_prefix": "D-",
     "pararepos": [],
 }
+# A metarepo's pages, in any genre, at any depth: entry_files' glob for them.
+META_GENRE_ENTRY = "docs/**/*.md"
 DECISION_STATUSES = ("open", "proposed", "accepted", "superseded", "rejected")
 # Before the log, a register row's Status cell, whole: a word alone, with a note in
 # parentheses, or "superseded by D-12". Whole-cell, because a Decision cell often starts with a
@@ -2802,6 +2910,20 @@ def cmd_meta_init(root: Path, args) -> int:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2) + "\n")
         print(f"wrote {META}")
+    genres = None
+    if getattr(args, "genres", None):
+        genres = list(GENRE_TEMPLATES.get(args.genres) or
+                      dict.fromkeys(g.strip() for g in args.genres.split(",") if g.strip()))
+        if not genres or any("/" in g for g in genres):
+            die(f"--genres: a template ({', '.join(GENRE_TEMPLATES)}) or folder names, a,b,c", 2)
+        data = json.loads(path.read_text())
+        data["genres"] = genres
+        # The pages in the genre folders are what pararepos cite, and what M3 asks a line for.
+        entry = data.setdefault("entry_files", list(META_DEFAULTS["entry_files"]))
+        if not matches("docs/a/b.md", entry):
+            entry.append(META_GENRE_ENTRY)
+        path.write_text(json.dumps(data, indent=2) + "\n")
+        print(f"genres in {META}: {', '.join(genres)}")
     meta = {**META_DEFAULTS, **json.loads(path.read_text())}
     # The decision log is every repo's, written by init before this.
     if "README.md" in meta["entry_files"] and not (root / "README.md").exists():
@@ -2812,6 +2934,19 @@ def cmd_meta_init(root: Path, args) -> int:
         text = readme.read_text()
         readme.write_text(text.rstrip("\n") + "\n\n" + GLOSSARY_SEED)
         print(f"added {GLOSSARY_HOME} to README.md")
+    # Each genre is a term of the ecosystem's definition, defined once there: it has no page.
+    if genres and readme.exists() and glossary_section(readme.read_text()) is not None:
+        lines = readme.read_text().splitlines()
+        start = lines.index(GLOSSARY_HOME)
+        end = next((j for j in range(start + 1, len(lines)) if re.match(r"#{1,2}\s", lines[j])), len(lines))
+        have = set(glossary_terms(readme.read_text()))
+        new = [f"### {g}\n\nTODO: what its pages define, and what they are not.\n"
+               for g in genres if g not in have]
+        if new:
+            body = "\n".join(lines[:end]).rstrip("\n") + "\n\n" + "\n".join(new)
+            rest = "\n".join(lines[end:])
+            readme.write_text(body + ("\n" + rest + "\n" if rest else ""))
+            print(f"added a ### heading per genre to README.md {GLOSSARY_HOME}")
     release_script(root, meta=True)
     print(f"Commit these on {Board.trunk_name(root)}. From then on {Board.trunk_name(root)} "
           "takes only reviewed merges, and only `jig release` tags.")
@@ -5956,7 +6091,21 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
                          board.get("deep_subsystems"), docmap)
     homes = [h for h in homeless if h["path"] not in reviewed]
     out = [(h["path"], home_fix(h)) for h in homes if h["kind"] in ("rules", "copy", "reserved")]
-    pages = [h for h in homes if h["kind"] == "page"]
+    # A metarepo page with no genre in its path has no move to propose: the remap places it.
+    pages = [h for h in homes if h["kind"] == "page" and h["to"]]
+    out += [(h["path"], f"a metarepo page in no genre folder ({DIR}/RULES.md, Metarepo and "
+             "pararepos): /jig:redocument places it under docs/<genre>/")
+            for h in homes if h["kind"] == "genre" or (h["kind"] == "page" and not h["to"])]
+    found = sorted({f.split("/")[1] for f in after if f.startswith("docs/") and f.count("/") > 1})
+    if GENRES == () and found:
+        try:
+            entry = {**META_DEFAULTS, **json.loads((root / META).read_text() or "{}")}["entry_files"]
+        except ValueError:
+            entry = []
+        out.append((META, f"declare its genres, the folders under docs/ it has: "
+                    f'"genres": {json.dumps(found)}'
+                    + ("" if matches("docs/a/b.md", entry) else
+                       f', and add "{META_GENRE_ENTRY}" to entry_files, so pararepos cite its pages')))
     deep = board.get("deep_subsystems") if isinstance(board.get("deep_subsystems"), dict) else {}
     try:
         para = json.loads((root / PARA).read_text()) if (root / PARA).exists() else {}
@@ -6430,6 +6579,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="make this repo a metarepo: docs only, released by tag")
     i.add_argument("--name", help="with --meta: the metarepo's name (default: the folder)")
     i.add_argument("--prefix", help="with --meta: decision id prefix (default D-)")
+    i.add_argument("--genres", help="with --meta: the folders under docs/ its pages sit in, a,b,c, "
+                   f"or a template: {', '.join(GENRE_TEMPLATES)}")
     i.add_argument("--para", metavar="METAREPO", nargs="?", const="",
                    help="cite this metarepo at a released tag; alone, regenerate from para.json")
     i.add_argument("--location", help="with --para: the metarepo's checkout, recorded in repos.json")
@@ -6517,6 +6668,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "repos":
         return cmd_repos(Path.cwd(), args)   # user config only: works outside any repo
     root = repo_root()
+    # Every command that reads the docs tree reads it in the repo's own layout.
+    load_genres(root)
     fn = {
         "init": cmd_init, "install-hooks": cmd_install_hooks, "status": cmd_status,
         "open": cmd_open, "reserve": cmd_reserve, "mark": cmd_mark, "merge": cmd_merge, "check": cmd_check, "decision": cmd_decision,

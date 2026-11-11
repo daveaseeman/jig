@@ -1,22 +1,4 @@
 {
-  "meta-docs-tree": {
-    "spec": ".jig/specs/meta-docs-tree.md",
-    "state": "gated",
-    "after": [
-      "flat-pages",
-      "bug-redocument-any-format"
-    ],
-    "owns": [
-      "plugin/skills/init/SKILL.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh",
-      "plugin/skills/redocument/SKILL.md"
-    ],
-    "reserved": {}
-  },
   "decision-log-migration": {
     "spec": ".jig/specs/decision-log.md",
     "state": "gated",
