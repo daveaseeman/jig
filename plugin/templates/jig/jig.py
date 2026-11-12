@@ -4322,7 +4322,29 @@ def repo_path(name: str) -> Path | None:
     for e in repos.values():
         if name in repo_identity(Path(e["path"])):
             return Path(e["path"])
+    # A human types the name, so `App` finds `app`, as a staged header's target does.
+    for n, e in repos.items():
+        if name_in(name, {n} | repo_identity(Path(e["path"]))):
+            return Path(e["path"])
     return None
+
+
+def near_duplicates(repos: dict) -> list[tuple[str, str]]:
+    """Pairs of names a person reads as one (`NorthStar`, `north-star`): a file staged for one
+    can land in the other."""
+    def key(n: str) -> str:
+        return re.sub(r"[\W_]", "", n.casefold())
+    names = sorted(repos)
+    return [(a, b) for i, a in enumerate(names) for b in names[i + 1:] if key(a) == key(b)]
+
+
+def warn_near_duplicates(repos: dict, only: str | None = None) -> None:
+    for a, b in near_duplicates(repos):
+        if only and only not in (a, b):
+            continue
+        print(f"warning: {a} and {b} differ only in case or punctuation, and are two repos:\n"
+              f"  {a:<24} {repos[a]['path']}\n  {b:<24} {repos[b]['path']}\n"
+              f"  rename one (`jig repos rename {b} <new>`) if both are meant")
 
 
 def cmd_repos(root: Path, args) -> int:
@@ -4349,6 +4371,7 @@ def cmd_repos(root: Path, args) -> int:
         repos[name] = {"path": str(path), "kind": kind}
         save_repos(repos)
         print(f"{name} ({kind}) → {path}")
+        warn_near_duplicates(repos, name)
         old = old_board(path) if kind in ("meta", "para") else None
         if old:
             print(f"  {old} is an older jig's board: run `jig update` there, commit, then "
@@ -4371,12 +4394,14 @@ def cmd_repos(root: Path, args) -> int:
         repos[new] = repos.pop(old)
         save_repos(repos)
         print(f"{old} is now {new} → {repos[new]['path']}")
+        warn_near_duplicates(repos, new)
         return 0
     for name, e in sorted(repos.items()):
         missing = "" if Path(e["path"]).is_dir() else "   (missing)"
         print(f"  {name:<24} {e['kind']:<5} {e['path']}{missing}{'   ← here' if name in mine else ''}")
     if not repos:
         print(f"no repos in {repos_file()}: jig repos add repo|meta|para")
+    warn_near_duplicates(repos)
     # The same lookup staging and forwarding use, so an alias for the jig repo counts too.
     if repo_path("jig") is None:
         print(f"tool reports wait in {feedback_dir()} while the jig repo isn't registered")
@@ -5679,9 +5704,126 @@ def decision_id(cell: str) -> str:
     return re.sub(r"\d+", lambda m: str(int(m.group())), cell.strip())
 
 
+def after_names(head: dict) -> list[str]:
+    """The staged files this one waits for: names, comma- or space-separated, a YAML list's
+    brackets and quotes tolerated, `a` read as `a.md` since staged files are Markdown."""
+    names = [Path(n).name for n in re.split(r"[,\s\[\]'\"]+", head.get("after", "")) if n]
+    return [n if n.endswith(".md") else f"{n}.md" for n in names]
+
+
+def batch_order(files: list[Path]) -> tuple[list[Path], dict[str, set[str]], set[str]]:
+    """Files in an order where each comes after those its `after:` names, name order within a
+    level; then, last since no order gets them through, each file in an `after` cycle with the
+    cycle's members, and the files that only wait on one."""
+    names = {f.name: f for f in files}
+    edges = {f.name: {n for n in after_names(read_staged(f)[0]) if n in names and n != f.name}
+             for f in files}
+    waits = {n: set(w) for n, w in edges.items()}
+    out: list[Path] = []
+    while waits:
+        ready = sorted(n for n, w in waits.items() if not w)
+        if not ready:
+            break
+        for n in ready:
+            out.append(names[n])
+            del waits[n]
+        for w in waits.values():
+            w.difference_update(ready)
+
+    def reach(n: str) -> set[str]:
+        seen, todo = set(), list(waits.get(n, ()))
+        while todo:
+            m = todo.pop()
+            if m not in seen:
+                seen.add(m)
+                todo += waits.get(m, ())
+        return seen
+    reaches = {n: reach(n) for n in waits}
+    cycles = {n: {m for m in r if n in reaches[m]} for n, r in reaches.items() if n in r}
+    return out + [names[n] for n in sorted(waits)], cycles, set(waits) - set(cycles)
+
+
+def stuck_note(name: str, cycles: dict[str, set[str]], blocked: set[str]) -> str:
+    if name in cycles:
+        return f"after: in a cycle with {', '.join(sorted(cycles[name] - {name}))}"
+    return "after: waits on a cycle" if name in blocked else ""
+
+
+def escapes(dest: str) -> bool:
+    """A destination is relative to the target's root and stays under it: no absolute path,
+    no home folder, no drive, no `..` climbing out. `resolve` and `check` judge it alike."""
+    return (dest.startswith(("/", "~", "\\")) or bool(re.match(r"[A-Za-z]:", dest))
+            or os.path.normpath(dest).split(os.sep)[0] == "..")
+
+
+def fill_workflow(root: Path, text: str) -> tuple[str, str]:
+    """A spec staged from a chat can't run `jig workflow` against this repo's config, so its
+    `## Workflow` arrives empty: resolve writes the lines /jig:spec would, or refuses as it
+    does. A section that holds anything but comments is the author's, and stays."""
+    head = re.search(r"^##[ \t]+workflow\b.*$", text, re.I | re.M)
+    nxt = re.search(r"^## ", text[head.end():], re.M) if head else None
+    body = text[head.end():head.end() + nxt.start()] if nxt else text[head.end():] if head else ""
+    if head and re.sub(r"<!--.*?-->", "", body, flags=re.S).strip():
+        return text, ""
+    steps, bad = workflow_steps(Board.load(root, working_tree=True).data)
+    if bad:
+        die("\n  ".join(["the spec's ## Workflow is empty, and `jig workflow` refuses:", *bad,
+                         f"fix {CONFIG}, then resolve again"]), 1)
+    lines = "\n".join(f"{k}: tier {v['tier']}, effort {v['effort']}" for k, v in steps.items())
+    if not head:
+        return text.rstrip("\n") + f"\n\n## Workflow\n{lines}\n", "; ## Workflow added"
+    kept = body.strip("\n")
+    rest = text[head.end() + nxt.start():] if nxt else ""
+    return (text[:head.end()] + "\n" + (f"{kept}\n" if kept else "") + f"{lines}\n"
+            + (f"\n{rest}" if rest else "")), "; ## Workflow filled"
+
+
+def cmd_staging_check(args) -> int:
+    """Headers only, from the plugin's copy outside any repo: a chat writes a batch from
+    outside the target and can't run `jig staging` there."""
+    files = [Path(f).expanduser() for f in args.file]
+    if not files:
+        die("which files? jig staging check <file>…", 2)
+    batch = {f.name for f in files}
+    _, cycles, blocked = batch_order([f for f in files if f.is_file()])
+    bad = False
+    for f in files:
+        if not f.is_file():
+            print(f"{f}: no such file")
+            bad = True
+            continue
+        head, _, problems = read_staged(f)
+        notes = []
+        dest = head.get("destination", "")
+        if dest and escapes(dest):
+            problems.append(f"destination {dest!r} is outside the target: give a path relative "
+                            "to its root")
+        target = head.get("target", "")
+        there = repo_path(target) if target and target != "this" else None
+        if target and target != "this" and not there:
+            problems.append(f"target {target!r} isn't in {repos_file()} (`jig repos` lists them)")
+        # A warning only: the owner may keep both names on purpose.
+        for a, b in near_duplicates(load_repos()):
+            if name_in(target, {a, b}):
+                notes.append(f"target {target!r}: {a} and {b} are both in the repos list; "
+                             "make sure it is the one you mean")
+        have = batch | ({p.name for p in staged_files(there)} if there else set())
+        problems += [f"after {n}: not in this batch or the target's staging"
+                     for n in after_names(head) if n not in have]
+        if stuck := stuck_note(f.name, cycles, blocked):
+            problems.append(f"{stuck}: no order resolves it; fix one header's after:")
+        print(f"{f.name}: {'ok' if not problems else ''}".rstrip())
+        for p in problems:
+            print(f"    {p}")
+        for n in notes:
+            print(f"    warning: {n}")
+        bad |= bool(problems)
+    return 1 if bad else 0
+
+
 def cmd_staging(root: Path, args) -> int:
     if args.action not in ("resolve", "drop"):
-        files = staged_files(root)
+        files, cycles, blocked = batch_order(staged_files(root))
         waiting = fallback_files()
         if not files and not waiting:
             print(f"nothing staged in {STAGING}")
@@ -5695,10 +5837,16 @@ def cmd_staging(root: Path, args) -> int:
         for f in files + waiting:
             head, _, problems = read_staged(f)
             origin = f", from {head['from']}" if head.get("from") else ""
+            waits = f", after {', '.join(after_names(head))}" if after_names(head) else ""
             print(f"  {f.name}: {head.get('change', '?')} {head.get('kind', '?')} for "
-                  f"{head.get('target', '?')} → {head.get('destination', '?')}{origin}")
+                  f"{head.get('target', '?')} → {head.get('destination', '?')}{origin}{waits}")
             for p in problems:
                 print(f"      {p}")
+                bad = True
+            # A waited-for file that isn't staged is gone: resolved, dropped or forwarded.
+            # `check`, which sees the batch before it is staged, catches a misspelt name.
+            if stuck := stuck_note(f.name, cycles, blocked):
+                print(f"      {stuck}")
                 bad = True
         return 1 if bad else 0
 
@@ -5720,6 +5868,14 @@ def cmd_staging(root: Path, args) -> int:
     head, body, problems = read_staged(path)
     if problems:
         die(f"{path.name}: {'; '.join(problems)}", 2)
+    still = [n for n in after_names(head)
+             if n != path.name and ((main_root() / STAGING / n).exists() or (feedback_dir() / n).exists())]
+    if still:
+        _, cycles, blocked = batch_order(staged_files(main_root()) + fallback_files())
+        stuck = stuck_note(path.name, cycles, blocked)
+        die(f"{path.name} waits for {', '.join(still)}, still staged: "
+            + (f"{stuck}, so no order resolves it; fix one header's after:" if stuck else
+               f"resolve or drop {'it' if len(still) == 1 else 'them'} first"), 1)
     kind, change, dest = (head.get(k, "") for k in ("kind", "change", "destination"))
     mark = provenance(head, path)
 
@@ -5735,7 +5891,7 @@ def cmd_staging(root: Path, args) -> int:
     def inside(rel: str) -> Path:
         """A destination stays inside the repo: no absolute path, no climbing out with .."""
         out = (root / rel).resolve()
-        if Path(rel).is_absolute() or not out.is_relative_to(root.resolve()):
+        if escapes(rel) or not out.is_relative_to(root.resolve()):
             die(f"destination {rel!r} is outside this repo: give a path relative to its root", 2)
         return out
 
@@ -5849,13 +6005,15 @@ def cmd_staging(root: Path, args) -> int:
     if out.exists():
         die(f"{dest} exists: stage it as `change: update`, or pick another path", 1)
     out.parent.mkdir(parents=True, exist_ok=True)
+    filled = ""
     if kind == "spec":
         first, _, rest = body.lstrip("\n").partition("\n")
-        out.write_text(f"{first}\n\n{mark}\n{rest}" if first.startswith("#")
-                       else f"{mark}\n\n{body}")
+        text, filled = fill_workflow(root, f"{first}\n\n{mark}\n{rest}" if first.startswith("#")
+                                     else f"{mark}\n\n{body}")
+        out.write_text(text)
     else:
         out.write_text(body.rstrip("\n") + f"\n\n---\n{mark}\n")
-    return done(f"written to {dest}")
+    return done(f"written to {dest}{filled}")
 
 
 def resolve_register(root: Path, path: Path, dest: str, change: str, body: str, mark: str,
@@ -8343,9 +8501,9 @@ def main(argv: list[str] | None = None) -> int:
     pp.add_argument("--buffer", action="store_true", help="every Open row of the sync buffer, in one proposal")
     pp.add_argument("--pointers", action="store_true",
                     help="record it as pointer rewrites worked ahead of, not a proposal to wait for")
-    st = sub.add_parser("staging", help="list staged files, or resolve or drop one")
-    st.add_argument("action", nargs="?", choices=["resolve", "drop"])
-    st.add_argument("file", nargs="?")
+    st = sub.add_parser("staging", help="list staged files, resolve or drop one, or check headers")
+    st.add_argument("action", nargs="?", choices=["resolve", "drop", "check"])
+    st.add_argument("file", nargs="*")
     rp = sub.add_parser("repos", help="list, or add to, where your repos live (user config)")
     rp.add_argument("action", nargs="?", choices=["add", "rename"])
     rp.add_argument("kind", nargs="?", help="add: repo, meta or para; rename: the new name")
@@ -8362,6 +8520,12 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     if args.cmd == "repos":
         return cmd_repos(Path.cwd(), args)   # user config only: works outside any repo
+    if args.cmd == "staging" and args.action == "check":
+        return cmd_staging_check(args)       # headers only: runs outside any repo
+    if args.cmd == "staging":
+        if len(args.file) > 1:
+            die(f"one file at a time: jig staging {args.action} <file>", 2)
+        args.file = args.file[0] if args.file else None
     root = repo_root()
     # Every command that reads the docs tree reads it in the repo's own layout.
     load_genres(root)

@@ -4669,6 +4669,110 @@ cd "$T"
 }
 
 
+# ---------------------------------------------------------------- a staged batch: after:, check, Workflow, near names
+sbafter() { sed -i.bak "s/^status: staged\$/after: $2\nstatus: staged/" ".jig/staging/$1" && rm ".jig/staging/$1.bak"; }
+sec_staging_batches() {
+export JIG_CONFIG="$T/sb-repos.json" XDG_CONFIG_HOME="$T/sb-config"
+SB="$T/sb"; mkdir -p "$SB" && cd "$SB" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+# named so that name order and after: order disagree
+stage z.md this doc new docs/z.md; stage b.md this doc new docs/b.md; stage c.md this doc new docs/c.md
+sbafter b.md z.md; sbafter c.md b.md
+msg="staging: the list puts each file after the one its after: names (z, b, c), not in name order"
+expect_pass test "$($J staging | sed -n 's/^  \([a-z]\.md\):.*/\1/p' | tr '\n' ' ')" = "z.md b.md c.md "
+msg="staging: resolve refuses c.md while b.md, which it waits for, is staged, and names b.md"
+out=$($J staging resolve c.md 2>&1); rc=$?
+expect_pass sh -c "test $rc -ne 0 && echo \"\$0\" | grep -q 'waits for b.md' && test -f .jig/staging/c.md" "$out"
+msg="staging: once the file it waits for is resolved, a file resolves, and the list doesn't flag the gone file"
+$J staging resolve z.md >/dev/null
+expect_pass sh -c "$J staging && ! $J staging | grep -q 'z.md:' && $J staging resolve b.md"
+$J staging drop c.md >/dev/null
+msg="staging: after: takes a YAML list and names without .md"
+stage p.md this doc new docs/p.md; stage q.md this doc new docs/q.md; stage r.md this doc new docs/r.md
+sbafter p.md '[q, "r.md"]'
+expect_refuse $J staging resolve p.md
+$J staging drop q.md >/dev/null; $J staging drop r.md >/dev/null
+expect_pass $J staging resolve p.md
+msg="staging: in a cycle, only its members are named as in it; a file waiting on it is told so"
+stage a.md this doc new docs/a.md; stage b.md this doc new docs/b2.md; stage c.md this doc new docs/c2.md
+sbafter a.md b.md; sbafter b.md a.md; sbafter c.md a.md
+out=$($J staging 2>&1); rc=$?
+expect_pass sh -c "test $rc -ne 0 && echo \"\$0\" | grep -q 'in a cycle with b.md' && echo \"\$0\" | grep -q 'in a cycle with a.md' && echo \"\$0\" | grep -q 'waits on a cycle' && test \$(echo \"\$0\" | grep -c 'in a cycle') = 2" "$out"
+msg="staging: resolve's refusal of a file in a cycle names the cycle"
+expect_pass sh -c "$J staging resolve a.md 2>&1 | grep -q 'in a cycle with b.md'"
+for f in a b c; do $J staging drop $f.md >/dev/null; done
+
+$J workflow > "$T/wf"
+msg="staging: a spec with an empty ## Workflow resolves with jig workflow's lines in it"
+stage w.md this spec new w.md '# W\n\n## Intent\nx\n\n## Workflow\n<!-- fill -->\n\n## After\ny\n'
+$J staging resolve w.md >/dev/null
+expect_pass sh -c "sed -n '/^## Workflow/,/^## After/p' .jig/specs/w.md | grep -vE '^(## |<!--|\$)' | diff - '$T/wf' && grep -q '^## After' .jig/specs/w.md"
+msg="staging: a spec with no ## Workflow gets one"
+stage v.md this spec new v.md '# V\n\n## Intent\nx\n'
+$J staging resolve v.md >/dev/null
+expect_pass sh -c "sed -n '/^## Workflow/,\$p' .jig/specs/v.md | tail -n +2 | diff - '$T/wf'"
+msg="staging: a spec whose ## Workflow holds lines keeps them"
+stage u.md this spec new u.md '# U\n\n## Workflow\nspec: tier 1, effort 1\n'
+$J staging resolve u.md >/dev/null
+expect_pass test "$(sed -n '/^## Workflow/,$p' .jig/specs/u.md | tail -n +2)" = "spec: tier 1, effort 1"
+msg="staging: a Workflow heading with text after it, lower case or at the end with no newline is filled once"
+stage t1.md this spec new t1.md '# T\n\n## Workflow (from the repo)\n\n## After\ny\n'
+stage t2.md this spec new t2.md '# T\n\n## workflow\n'
+stage t3.md this spec new t3.md '# T\n\n## Workflow'
+for f in t1 t2 t3; do $J staging resolve $f.md >/dev/null; done
+expect_pass sh -c "for f in t1 t2 t3; do test \$(grep -ci '^## workflow' .jig/specs/\$f.md) = 1 && grep -q '^review: tier [0-9], effort [0-9]$' .jig/specs/\$f.md || exit 1; done; grep -q '^## After' .jig/specs/t1.md"
+msg="staging: a spec to fill while jig workflow refuses is refused, and stays staged"
+setwf '{"execute": {"effort": 2}}'
+stage x.md this spec new x.md '# X\n\n## Workflow\n'
+expect_pass sh -c "! $J staging resolve x.md 2>/dev/null && $J staging resolve x.md 2>&1 | grep -q 'jig workflow. refuses' && test -f .jig/staging/x.md && test ! -e .jig/specs/x.md"
+git checkout -q -- .jig/config.json; $J staging drop x.md >/dev/null
+
+$J repos add north-star "$SB" >/dev/null
+OUT="$T/sb-out"; mkdir -p "$OUT"
+hdr() { printf -- '---\nstaged: true\ntarget: %s\n%bchange: new\ndestination: %s\nsource: chat\n%bstatus: staged\n---\nx\n' "$2" "$3" "$4" "${5:-}" > "$OUT/$1"; }
+hdr nokind.md north-star '' docs/x.md
+hdr good.md north-star 'kind: doc\n' docs/x.md
+msg="staging check: run outside any repo, a file with no kind: is named, and it exits non-zero"
+out=$(cd "$OUT" && python3 "$P/jig/jig.py" staging check nokind.md good.md 2>&1); rc=$?
+expect_pass sh -c "test $rc -ne 0 && echo \"\$0\" | grep -q 'no kind' && echo \"\$0\" | grep -q '^good.md: ok'" "$out"
+msg="staging check: a good file passes"
+expect_pass sh -c "cd '$OUT' && python3 '$P/jig/jig.py' staging check good.md"
+msg="staging check: an absolute destination, an after: outside the batch and an unlisted target are each named"
+hdr worse.md nowhere 'kind: doc\n' /tmp/x.md 'after: missing.md\n'
+out=$(cd "$OUT" && python3 "$P/jig/jig.py" staging check worse.md 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'outside the target' && echo \"\$0\" | grep -q 'after missing.md' && echo \"\$0\" | grep -q \"target 'nowhere'\"" "$out"
+msg="staging check: a destination climbing out with .. is refused, as resolve refuses it"
+hdr up.md north-star 'kind: doc\n' ../../etc/x.md
+expect_refuse sh -c "cd '$OUT' && python3 '$P/jig/jig.py' staging check up.md"
+msg="staging check: the target matches whatever its case, as resolve matches it"
+hdr case.md NORTH-STAR 'kind: doc\n' docs/x.md
+expect_pass sh -c "cd '$OUT' && python3 '$P/jig/jig.py' staging check case.md"
+msg="staging check: an after: naming a file already in the target's staging passes"
+stage y.md this doc new docs/y.md
+hdr next.md north-star 'kind: doc\n' docs/n.md 'after: y.md\n'
+expect_pass sh -c "cd '$OUT' && python3 '$P/jig/jig.py' staging check next.md"
+msg="staging check: a cycle in the batch fails, naming it"
+hdr c1.md north-star 'kind: doc\n' docs/c1.md 'after: c2.md\n'
+hdr c2.md north-star 'kind: doc\n' docs/c2.md 'after: c1.md\n'
+out=$(cd "$OUT" && python3 "$P/jig/jig.py" staging check c1.md c2.md 2>&1); rc=$?
+expect_pass sh -c "test $rc -ne 0 && echo \"\$0\" | grep -q 'in a cycle with c2.md'" "$out"
+
+msg="repos: NorthStar and north-star are flagged on the list, with both paths"
+NS="$T/NorthStarDir"; mkdir -p "$NS"
+$J repos add NorthStar "$NS" >/dev/null
+out=$($J repos 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'NorthStar and north-star' && echo \"\$0\" | grep -q 'NorthStarDir\$' && echo \"\$0\" | grep -q '/sb\$'" "$out"
+msg="staging check: a target with a near-duplicate in the list is warned about, and still passes"
+out=$(cd "$OUT" && python3 "$P/jig/jig.py" staging check good.md 2>&1); rc=$?
+expect_pass sh -c "test $rc -eq 0 && echo \"\$0\" | grep -q 'warning: .*both in the repos list'" "$out"
+msg="repos add: adding a near-duplicate name warns"
+expect_pass sh -c "$J repos add North_Star '$T' | grep -q 'warning: North_Star'"
+msg="repos rename: renaming to a near-duplicate name warns"
+$J repos rename North_Star other >/dev/null
+expect_pass sh -c "$J repos rename other north.star | grep -q 'warning: .*north.star'"
+}
+
+
 # ---------------------------------------------------------------- update's project sweep
 sec_sweep() {
 SW="$T/sweep"; pcnew "$SW" && mkdir -p docs && printf "# Q\n\nQ is.\n" > docs/q.md && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
@@ -4813,7 +4917,7 @@ expect_pass sh -c "grep -qx '### D-003 ids are numbers' .jig/decisions.md && ! g
 }
 
 
-UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep"
+UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file
