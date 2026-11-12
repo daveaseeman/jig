@@ -835,8 +835,11 @@ that release and marks `Closed` the rows the proposal carried that are unchanged
 commit `meta: <name> v0.3.0 → v0.4.0` (or, when the pin already holds the release, `meta:
 <name> v0.4.0: close B1`). Rows added or edited after the proposal stay `Open` for the next one.
 `jig sync` also names each file here that a decision at the pin cites and `contract_paths`
-doesn't cover; adding it is the hubnode's call. A decision may cite this repo by name in any
-case (`App/docs/ui.md`); the path after it is exact.
+doesn't cover. A path under a folder counts bare or after this repo's name; a root file every
+repo has (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `CHANGELOG.md`) counts only after
+this repo's name, since named bare it is about every repo. A decision may cite this repo by name in any case (`App/docs/ui.md`); the path
+after it is exact. The line asks: the hubnode puts it to the owner with what the decision says,
+and adds the path only if the decision describes something this repo can change there.
 
 **Citing the metarepo.** A pararepo cites the metarepo the way the metarepo points to it:
 `<meta>/<path>` (or `<meta>:<path>`), with `§ <section>` for a heading, matched as above. On
