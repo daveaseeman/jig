@@ -33,9 +33,14 @@ without Claude Code.
   `## Glossary` section of the README, one heading per term, so anything can point at one.
 - **Every repo keeps one log of what changed and why.** `.jig/decisions.md` holds decision
   entries (who decided, when, what it replaced) and plain change lines in Keep a Changelog's
-  groups, under one heading per release. A released section is frozen, so you change your mind
-  by writing a new entry that supersedes the old one, and `jig update` folds an old
+  groups, under one heading per release. You change your mind by writing a new entry that
+  supersedes the old one, which comes out of the log in the same commit, so the log shows what
+  holds now and git keeps the rest. Each entry names the pages it touches, and when two entries
+  touch the same page the handoff has to say whether they agree. `jig update` folds an old
   `CHANGELOG.md` and decisions file into it when you say yes.
+- **Pages describe the product, and the roadmap holds the project.** A docs page or decision says
+  what the product is today and never points at a spec, a handoff or a phase. Work you parked
+  goes under `## Up next` in `.jig/roadmap.md`, naming the pages it will touch.
 - **The roadmap is worked out from the work.** Phases and scopes live in `.jig/roadmap.md`,
   specs say which scopes they take, and a scope is done when the specs taking it have landed.
   Nobody ticks a box to show progress. Each merge rewrites a `ROADMAP.md` kanban at the root
@@ -74,7 +79,7 @@ person prototyping actually needs. Then I added the things none of them enforce.
 | Scarce numbers (migrations, sections) | | | | | | handed out by the board, refused by the hook |
 | Rules enforced from trunk's copy | | | | | | ✅ |
 | Docs must move with code | | | | | | the gate refuses an unanswered page |
-| Decisions and releases | | | | | | one log per repo, frozen at each release |
+| Decisions and releases | | | | | | one log per repo, conflicting decisions asked at handoff |
 | Roadmap progress | | | | | | worked out from landed work, never ticked by hand |
 | Workarounds | a comment, maybe | | | | | labeled and ledgered, or the hook refuses |
 | A fixed shape for bug investigation | | | | | | five steps before any fix |
