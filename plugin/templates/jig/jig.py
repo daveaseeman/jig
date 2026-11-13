@@ -747,33 +747,52 @@ def unstaged(root: Path) -> set[str]:
     return {f for f in out.split("\0") if f}
 
 
-def run_derive(root: Path, before: set[str]) -> tuple[int, list[str]]:
+def stats(root: Path, files: set[str]) -> dict:
+    def one(f: str):
+        try:
+            st = (root / f).lstat()
+        except OSError:
+            return None
+        return st.st_mtime_ns, st.st_size, st.st_ino
+    return {f: one(f) for f in files}
+
+
+def run_derive(root: Path) -> tuple[int, list[str]]:
     """Run the repo's derive.sh on the merged tree and stage what it wrote, so the merge commit
     carries the files derived from the whole tree: a branch's copy is derived from its own
-    sources, and two branches' copies merge into a wrong file. `before` is what was unstaged
-    before setup.sh ran. A tracked file setup.sh changed is staged too: a generator still in
-    setup.sh writes the same file, and leaving it out would leave trunk dirty. What setup.sh
-    made untracked (an install) is left alone. Returns its exit code and the files it staged."""
+    sources, and two branches' copies merge into a wrong file. What it wrote is judged by what
+    it touched, not by name: a derived file already unstaged when it starts (a failed run's
+    write, a hand run before `--number`) is rewritten and must be staged too. Returns its exit
+    code and the files it staged."""
     script = root / DERIVE
     if not script.exists():
         return 0, []
-    mid = unstaged(root)
-    by_setup = (mid - before) & set(filter(None, git("diff", "--name-only", "-z", cwd=str(root)).split("\0")))
+    before = stats(root, unstaged(root))
     rc = run_repo_script(root, script)
     if rc:
         return rc, []
-    wrote = sorted((unstaged(root) - mid) | by_setup)
+    after = stats(root, unstaged(root) | set(before))
+    wrote = sorted(f for f, st in after.items()
+                   if (f not in before and st is not None) or (f in before and st != before[f]))
     if wrote:
-        git("add", "-A", "--", *wrote, cwd=str(root), check=True)
+        # Literal, so a name like `[slug].md` or `:x` is a path, not a pattern.
+        git("--literal-pathspecs", "add", "-A", "--", *wrote, cwd=str(root), check=True)
     return 0, wrote
 
 
 def setup_and_derive(root: Path, name: str) -> bool:
     """The merge's last writes before its commit: setup.sh, so derive.sh runs in an environment
     built from the merged manifests, then derive.sh. False when derive.sh failed."""
-    before = unstaged(root)
+    def changed() -> set[str]:
+        return set(filter(None, git("diff", "--name-only", "-z", cwd=str(root)).split("\0")))
+    before = changed()
     run_setup(root)
-    rc, wrote = run_derive(root, before)
+    # Not committed: a tracked file setup.sh rewrote (a lockfile) is a change nobody reviewed.
+    by_setup = sorted(changed() - before)
+    if by_setup:
+        print(f"jig: {DIR}/scripts/setup.sh changed tracked files ({', '.join(by_setup)}): it "
+              f"must leave them alone. A generated file belongs in {DERIVE}.", file=sys.stderr)
+    rc, wrote = run_derive(root)
     if rc:
         print(f"jig: {DERIVE} exited {rc}; the merge isn't committed. Fix it, then "
               f"`jig merge --number` and `git commit`; or `git merge --abort`, which puts "

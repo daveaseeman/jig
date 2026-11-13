@@ -95,7 +95,9 @@ around jig's commands.
 - **`jig merge`**. After its own writes (the entry, the numbers, the roadmap), it runs
   `setup.sh`, which used to run after the commit, and then `derive.sh` (environment as
   `run_setup`'s). It stages the tracked files `derive.sh` changed or deleted and the files it
-  made, prints `derived: <files>`, and commits. If `derive.sh` exits non-zero, nothing is
+  made, judged by what it touched (each file's stat), not by name, prints `derived: <files>`,
+  and commits. A tracked file `setup.sh` changed is not committed: jig warns that `setup.sh`
+  must leave tracked files alone. If `derive.sh` exits non-zero, nothing is
   committed. jig prints the exit code and how to finish: fix it, then `jig merge --number` and
   `git commit`, or `git merge --abort`, which puts the entry back. Exit 1.
 - **`jig merge --number`**, the conflict path's last step before the commit, runs `setup.sh` and

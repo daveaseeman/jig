@@ -5007,6 +5007,27 @@ mdjob V q.py
 msg="derive: when setup.sh writes the derived file too, the merge still commits it and leaves trunk clean"
 out=$($J merge V 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q '^derived: INDEX.md' && test -z \"\$(git status --porcelain)\" && grep -qx q.py INDEX.md" "$out"
+
+printf '{}\n' > lock.json && printf '#!/bin/sh\n[ "$(git branch --show-current)" = main ] || exit 0\necho $$ > lock.json\n' > .jig/scripts/setup.sh
+git add -A && git commit -qm "setup rewrites a tracked lockfile on trunk"
+mdjob W r.py
+msg="derive: a tracked file setup.sh rewrote is warned about and left out of the merge commit"
+out=$($J merge W 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'setup.sh changed tracked files (lock.json): it must leave them alone' && ! echo \"\$0\" | grep '^derived:' | grep -q lock.json && ! git diff --name-only HEAD^1 HEAD | grep -qx lock.json" "$out"
+git checkout -q -- lock.json && printf '#!/bin/sh\nexit 0\n' > .jig/scripts/setup.sh && git commit -qam "setup quiet"
+
+cat > .jig/scripts/derive.sh <<DER
+#!/bin/sh
+set -eu
+cd "\$(dirname "\$0")/../.."
+{ echo "count: \$(ls src | wc -l | tr -d ' ')"; ls src; } > INDEX.md
+[ ! -e "$FLAG" ] || exit 3
+DER
+git commit -qam "derive writes, then may fail"
+mdjob X s.py; touch "$FLAG"; $J merge X >/dev/null 2>&1; rm "$FLAG"
+msg="derive: a derived file a failed run already wrote is staged by --number's run, and the commit leaves it current and the tree clean"
+out=$($J merge --number 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -qx 'derived: INDEX.md' && git commit -q --no-edit && test -z \"\$(git status --porcelain)\" && git show HEAD:INDEX.md | grep -qx s.py && $(declare -f fresh); fresh" "$out"
 }
 
 
