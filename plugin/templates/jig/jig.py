@@ -56,6 +56,7 @@ BOARD_OPTIONAL = (
     "workflow",            # overrides WORKFLOW_DEFAULTS
     "deep_subsystems",     # {"docs/<system>/<subsystem>/<folder>": rationale}: owner-approved deeper pages
     "boards",              # ["docs/<board>/<board>.md", "docs/<system>/<board>/<board>.md"]: the pages that are boards, never inferred from a path
+    "findings",            # {"<kind>:<path>": "approved" | "deferred: <where>" | "exception: <reason>"}: the owner's answer to each finding
 )
 # Who runs each step, as numbers the tool maps to its own models and efforts. Tier 1 is the
 # tool's best model, a higher number a lesser one; effort 0 is its highest, each number up one
@@ -373,6 +374,20 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
             out += workflow_steps(json.loads(raw))[1]
         except ValueError as e:
             out.append(f"{CONFIG} is not JSON: {e}")
+    # A remap that keeps a page where survey moves it overrides jig's rule: the owner's
+    # exception must be on record first, or one line of prose approves it unseen.
+    if REMAP in paths and (raw := in_index(REMAP, staged)):
+        cfg = board.data
+        if CONFIG in paths and branch == trunk:
+            try:
+                cfg = json.loads(in_index(CONFIG, staged))
+            except ValueError:
+                pass
+        def read(f: str) -> str:
+            return (root / f).read_text(errors="replace") if (root / f).is_file() else ""
+        found = file_findings(root, tracked(root), cfg, read)
+        out += [f"the remap contradicts survey: {contradiction_fix(c, trunk)}"
+                for c in remap_contradictions(raw, found, findings_record(cfg))]
 
     # R7 a workaround needs its ledger row — job or not; code only, prose may quote it. Only
     # the marker right after a comment opener is the comment the rule names: a string or regex
@@ -2272,11 +2287,11 @@ def page_shapes(root: Path, files: list[str], not_docs: list[str], docmap: set[s
         if folder_page(f) and not old_layout(f):
             to = f"{page_folder(f)}.md"
             if not company(f) and to not in have and flat_spot(to, have):
-                out.append({"path": f, "to": to, "into": False, "fold": False,
+                out.append({"path": f, "kind": "shape", "to": to, "into": False, "fold": False,
                             "named": f in docmap or page_shaped(read(f))})
         elif flat_page(f, have, docmap, read) and company(f):
             to = f"{page_folder(f)}/{Path(f).stem}.md"
-            out.append({"path": f, "to": to, "into": True, "fold": to in have, "named": True})
+            out.append({"path": f, "kind": "shape", "to": to, "into": True, "fold": to in have, "named": True})
     return out
 
 
@@ -2317,6 +2332,150 @@ def shape_fix(e: dict) -> str:
                 f"{'fold it into' if e['fold'] else 'move it to'} {e['to']}")
     return (f"flat at {e['to']}: its folder holds nothing else"
             + ("" if e["named"] else "; name it in docmap, or it reads as a note there"))
+
+
+# RULES.md (Documentation, The findings record): the owner's answer to each file finding, kept
+# on trunk so a yes outlives the chat it was given in. An id is `<kind>:<path>`, the kind as
+# survey's --json gives it, so a new kind of finding needs no new record.
+REMAP = f"{DIR}/redocument.md"
+FINDING_KINDS = ("rules", "copy", "reserved", "page", "genre", "board", "deep", "stray", "shape", "contract")
+# The findings jig carries out itself on a recorded yes: a rename, never an edit.
+MOVE_KINDS = ("shape", "page")
+
+
+def finding_id(e: dict) -> str:
+    return f"{e['kind']}:{e['path']}"
+
+
+def answer_counts(v) -> bool:
+    """Whether an entry is an answer: an exception or a deferral with nothing after its colon
+    says nothing the owner decided."""
+    if not isinstance(v, str):
+        return False
+    v = v.strip()
+    return v == "approved" or any(v.startswith(p) and v[len(p):].strip()
+                                  for p in ("deferred:", "exception:"))
+
+
+def findings_record(board: dict) -> dict[str, str]:
+    """The board's findings entries that count as answers."""
+    rec = board.get("findings")
+    return {k: v.strip() for k, v in rec.items() if answer_counts(v)} if isinstance(rec, dict) else {}
+
+
+def outcome_label(outcome: str | None) -> str:
+    return "not answered" if outcome is None else "approved, not done" if outcome == "approved" else outcome
+
+
+def tagged(e: dict, rec: dict) -> dict:
+    """E with its id and its recorded outcome, as survey's --json carries them."""
+    i = finding_id(e)
+    return {**e, "id": i, "outcome": rec.get(i)}
+
+
+def state_tag(e: dict, rec: dict) -> str:
+    return f"  [{finding_id(e)}: {outcome_label(rec.get(finding_id(e)))}]" if e.get("kind") else ""
+
+
+def file_findings(root: Path, files: list[str], board: dict, read) -> dict[str, dict]:
+    """Every file finding survey prints with an id, by id: the homes, the shapes and the page
+    contract, judged on FILES as READ gives them."""
+    not_docs = board.get("not_docs") or []
+    deep = board.get("deep_subsystems") if isinstance(board.get("deep_subsystems"), dict) else {}
+    docmap = named_pages(board)
+    homes = doc_homes(root, files, not_docs, read, deep, docmap)
+    out = {finding_id(h): h for h in homes}
+    out.update({finding_id(e): e for e in page_shapes(root, files, not_docs, docmap,
+                                                      {h["path"] for h in homes}, read)})
+    at, have = {h["path"]: h for h in homes}, set(files)
+    for f in files:
+        if (f.endswith(".md") and (folder_page(f) or flat_page(f, have, docmap, read))
+                and (f not in at or at[f]["kind"] == "deep") and not matches(f, not_docs)
+                and page_problems(read(f))):
+            out[f"contract:{f}"] = {"path": f, "kind": "contract"}
+    return out
+
+
+def remap_rows(text: str) -> list[tuple[list[str], list[str]]]:
+    """The remap table's rows as (old paths, new paths), read by its `Old path(s)` and `New
+    path` columns: `same` keeps each old path where it is."""
+    cols, out = None, []
+    for line in text.splitlines():
+        if not line.lstrip().startswith("|"):
+            cols = None
+            continue
+        cells = table_cells(line)
+        if cols is None:
+            low = [c.lower() for c in cells]
+            o = next((i for i, c in enumerate(low) if c.startswith("old path")), None)
+            n = next((i for i, c in enumerate(low) if c.startswith("new path")), None)
+            cols = (o, n) if o is not None and n is not None else False
+            continue
+        if not cols or SEPARATOR.match(line.strip()) or len(cells) <= max(cols):
+            continue
+        olds = re.findall(r"`([^`]+)`", cells[cols[0]])
+        new = cells[cols[1]]
+        out.append((olds, olds if new.strip().lower() == "same" else re.findall(r"`([^`]+)`", new)))
+    return out
+
+
+def remap_contradictions(text: str, found: dict[str, dict], rec: dict) -> list[dict]:
+    """Each page the remap keeps at a path survey moves it from, with no exception recorded."""
+    out = []
+    for _, news in remap_rows(text):
+        for p in news:
+            for kind in MOVE_KINDS:
+                e = found.get(f"{kind}:{p}")
+                if e and e.get("to") and not rec.get(f"{kind}:{p}", "").startswith("exception:"):
+                    out.append({"id": f"{kind}:{p}", "path": p, "to": e["to"]})
+    return out
+
+
+def contradiction_fix(c: dict, trunk: str) -> str:
+    return (f"{REMAP} keeps {c['path']} where it is, and survey moves it to {c['to']}: move it "
+            f"in the remap, or record the owner's exception on {trunk} in {CONFIG} findings, "
+            f"\"{c['id']}\": \"exception: <the owner's reason>\"")
+
+
+def approved_moves(root: Path, files: list[str], board: dict, read) -> tuple[list[dict], list[str]]:
+    """The approved moves jig can carry out now, and the entries whose finding no longer
+    fires. A kind this jig doesn't compute is never dropped: another jig may."""
+    raw = board.get("findings") if isinstance(board.get("findings"), dict) else {}
+    if not raw:
+        return [], []
+    rec, found = findings_record(board), file_findings(root, files, board, read)
+    moves = [e for i, e in found.items() if rec.get(i) == "approved" and e["kind"] in MOVE_KINDS
+             and e.get("to") and not e.get("fold") and not (root / e["to"]).exists()]
+    gone = [i for i in raw if i.split(":", 1)[0] in FINDING_KINDS and i not in found]
+    return moves, gone
+
+
+def carry_out(root: Path, board: dict, moves: list[dict], gone: list[str]) -> list[str]:
+    """Make each approved move with git mv, rename the board keys naming it, and drop its entry
+    and every gone one from BOARD. Returns what is left for the session: the files that name a
+    moved page."""
+    files, left = tracked(root), []
+    for e in moves:
+        (root / e["to"]).parent.mkdir(parents=True, exist_ok=True)
+        git("mv", e["path"], e["to"], check=True)
+        for d in (root / e["path"]).parents:
+            if d == root or any(d.iterdir()):
+                break
+            d.rmdir()
+        if isinstance(board.get("docmap"), dict) and e["path"] in board["docmap"]:
+            board["docmap"] = {(e["to"] if k == e["path"] else k): v for k, v in board["docmap"].items()}
+        if isinstance(board.get("boards"), list):
+            board["boards"] = [e["to"] if b == e["path"] else b for b in board["boards"]]
+        left += [f"{f}:{i}: names {e['path']}: repoint it at {e['to']}"
+                 for f, lines in naming(root, e["path"], files).items() if f != CONFIG for i in lines]
+    rec = board.get("findings") or {}
+    for i in [finding_id(e) for e in moves] + gone:
+        rec.pop(i, None)
+    if rec:
+        board["findings"] = rec
+    else:
+        board.pop("findings", None)
+    return left
 
 
 # RULES.md (Documentation): a repo's terms are a section of its README, one heading per term,
@@ -2641,6 +2800,13 @@ def cmd_survey(root: Path, args) -> int:
     report["project_in_product"] = [
         {"path": f, "problems": probs} for f in product
         if (probs := (project_sections(read(f)) if f != LOG else []) + project_prose(read(f), sids))]
+    rec = findings_record(board)
+    report["homeless"] = [tagged(e, rec) for e in report["homeless"]]
+    report["page_shapes"] = [tagged(e, rec) for e in report["page_shapes"]]
+    report["page_contract"] = [tagged({**e, "kind": "contract"}, rec) for e in report["page_contract"]]
+    finds = {e["id"]: e for e in report["homeless"] + report["page_shapes"] + report["page_contract"]}
+    report["remap_contradictions"] = remap_contradictions(
+        at_rev(Board.trunk_name(root), REMAP), finds, rec)
     if args.json:
         print(json.dumps(report, indent=2))
         return 0
@@ -2662,7 +2828,7 @@ def cmd_survey(root: Path, args) -> int:
         if found:
             print(f"\n{title}:")
             for e in found:
-                print(f"  {e['path']}: {home_fix(e)}")
+                print(f"  {e['path']}: {home_fix(e)}{state_tag(e, rec)}")
     misplaced = [e for e in report["homeless"] if e["kind"] == "page"]
     if misplaced:
         have = set(files)
@@ -2675,7 +2841,8 @@ def cmd_survey(root: Path, args) -> int:
             # At a metarepo's root, nothing in the path says which genre: the remap picks one.
             to = e["to"] or f"docs/<genre>/{Path(e['path']).name}"
             print(f"  {e['path']} → {to}{' (fold it in: that page exists)' if e['fold'] else ''}"
-                  + (f" (a subsystem candidate: it sits in {inside}'s folder)" if inside else ""))
+                  + (f" (a subsystem candidate: it sits in {inside}'s folder)" if inside else "")
+                  + state_tag(e, rec))
     if report["decision_placement"]:
         print("\nPages two pararepos' decisions touch, and no decision here does: the ruling is "
               "probably the metarepo's:")
@@ -2706,7 +2873,7 @@ def cmd_survey(root: Path, args) -> int:
               "flat in its\nparent's folder, until it holds another; then it moves into a folder "
               "named for it:")
         for e in report["page_shapes"]:
-            print(f"  {e['path']}: {shape_fix(e)}")
+            print(f"  {e['path']}: {shape_fix(e)}{state_tag(e, rec)}")
     if report["seams_misfiled"]:
         print(f"\nPages in one system's folder that cover another's files ({DIR}/RULES.md, "
               "Documentation):")
@@ -2718,7 +2885,7 @@ def cmd_survey(root: Path, args) -> int:
         print(f"\nPages below a subsystem ({DIR}/RULES.md, Documentation); fold each into its "
               f"subsystem's page,\nor propose it to the owner with its rationale for {CONFIG} deep_subsystems:")
         for e in below:
-            print(f"  {e['path']}: {deep_fix(e, deep)}")
+            print(f"  {e['path']}: {deep_fix(e, deep)}{state_tag(e, rec)}")
     strays = [e for e in report["homeless"] if e["kind"] == "stray" and not e["to"]]
     for e in (e for e in report["homeless"] if e["kind"] == "stray" and e["to"]):
         print(f"\n{e['path']} → {e['to']}: a repo's terms are a section of its README, one "
@@ -2775,7 +2942,7 @@ def cmd_survey(root: Path, args) -> int:
         print(f"\nPages off the page contract ({DIR}/RULES.md, Documentation):")
         for e in report["page_contract"]:
             for p in e["problems"]:
-                print(f"  {e['path']}: {p}")
+                print(f"  {e['path']}: {p}{state_tag(e, rec)}")
     if report["project_in_product"]:
         print(f"\nThe project in the product's pages and entries ({DIR}/RULES.md, Documentation): a "
               f"page or an entry says\nwhat the product does today; phases, order and parked work "
@@ -2804,6 +2971,12 @@ def cmd_survey(root: Path, args) -> int:
               "use lives in\nthe nearest folder both share. Move it there, and relink both pages:")
         for page, target, home in report["datasheets_misplaced"]:
             print(f"  {page} -> {target}: move it to {home}")
+    if report["remap_contradictions"]:
+        print(f"\nRemap rows that keep a page where survey moves it, with no exception recorded "
+              f"({DIR}/RULES.md, Documentation):")
+        for c in report["remap_contradictions"]:
+            print(f"  {c['path']}: survey moves it to {c['to']}; move it in the remap, or record "
+                  f"\"{c['id']}\": \"exception: <the owner's reason>\" in findings")
     co = report["coordination"]
     print("\nHow parallel work is coordinated today (and what each maps to in jig):")
     for f in co["found"]:
@@ -2843,7 +3016,15 @@ def cmd_survey(root: Path, args) -> int:
     in_place = [e for e in report["page_contract"] if e["path"] not in homes]
     project = (f", and move the project listed above to {ROADMAP} on the owner's word"
                if report["project_in_product"] else "")
-    print(f"An older jig's board is at {old}: run /jig:update first, not /jig:adopt or /jig:init."
+    # A finding unanswered, or approved and not yet carried out, still stands: the last line
+    # never says there is nothing to do while one does.
+    unanswered = len([e for e in finds.values() if e["outcome"] is None])
+    approved = len([e for e in finds.values() if e["outcome"] == "approved"])
+    counts = [f"{n} finding{'s' if n != 1 else ''} {what}"
+              for n, what in ((unanswered, "not answered"), (approved, "approved and not done")) if n]
+    standing = (", ".join(counts) + ": run /jig:update to record an answer to each, and carry "
+                "out the approved moves" if counts and on_jig else "")
+    verdict = (f"An older jig's board is at {old}: run /jig:update first, not /jig:adopt or /jig:init."
           if old else "Pages in the old Now / Rules / Checks shape: run /jig:redocument to convert them."
           if old_pages else f"Board pages in the old {OLD_BOARDS} layout: run /jig:redocument to move them."
           if report["old_boards"] else "Pages outside the docs tree: run /jig:redocument to convert them."
@@ -2852,6 +3033,10 @@ def cmd_survey(root: Path, args) -> int:
           else "On jig already, no page to convert: give each file above its home" + project + "."
           if report["homeless"] and on_jig else f"On jig already{project or ': nothing to do'}."
           if on_jig else "Run /jig:adopt to turn this into a migration plan.")
+    if standing:
+        verdict = (f"On jig already: {standing}." if verdict.endswith(": nothing to do.")
+                   else f"{verdict} {standing[0].upper()}{standing[1:]}.")
+    print(verdict)
     return 0
 
 # ------------------------------------------------------------------- metarepo
@@ -7259,7 +7444,8 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
     homeless = doc_homes(root, after, board.get("not_docs") or [], read,
                          board.get("deep_subsystems"), docmap)
     homes = [h for h in homeless if h["path"] not in reviewed]
-    out = [(h["path"], home_fix(h)) for h in homes if h["kind"] in ("rules", "copy", "reserved")]
+    rec = findings_record(board)
+    out = [(h["path"], home_fix(h) + state_tag(h, rec)) for h in homes if h["kind"] in ("rules", "copy", "reserved")]
     # A metarepo page with no genre in its path has no move to propose: the remap places it.
     pages = [h for h in homes if h["kind"] == "page" and h["to"]]
     out += [(h["path"], f"a metarepo page in no genre folder ({DIR}/RULES.md, Metarepo and "
@@ -7289,7 +7475,7 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
         left = [moves.get(f, f) for f in after if f not in folded]
         emptied = [] if any(f.startswith(folder) for f in left) else [folder]
         lines = [f"{'fold' if h['fold'] else 'git mv'} {h['path']} {'into ' if h['fold'] else ''}{h['to']}"
-                 for h in group]
+                 + state_tag(h, rec) for h in group]
         lines += [f"{CONFIG} docmap: {o}" for o in moves if o in (board.get("docmap") or {})]
         lines += [f"{PARA} contract_paths: {g}" for g in para.get("contract_paths", [])
                   if any(matches(o, [g]) and not matches(n, [g]) for o, n in moves.items())]
@@ -7345,7 +7531,8 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
             probs = [p for p in page_problems(read(f)) if not p.startswith("old contract")]
             if probs:
                 out.append((f, f"off the page contract ({DIR}/RULES.md, Documentation): "
-                            + "; ".join(probs) + ". On the owner's yes, edit it where it sits"))
+                            + "; ".join(probs) + ". On the owner's yes, edit it where it sits"
+                            + state_tag({"kind": "contract", "path": f}, rec)))
     strays = len([h for h in homes if h["kind"] == "stray"])
     if strays:
         out.append((f"{strays} document{'s have' if strays > 1 else ' has'} no home", "`/jig:survey`"))
@@ -7597,6 +7784,22 @@ def cmd_update(root: Path, args) -> int:
                        "PDFs under datasheets/ folders: add " + ", ".join(f"`{g}`" for g in REFERENCE_IGNORES)
                        + ", or keep the repo's own line if it covers them"))
 
+    # The owner's recorded yeses, judged on the repo as the layout moves will leave it.
+    back = {n: o for o, n in plan["moves"].items()}
+
+    def read_after(f: str) -> str:
+        p = root / back.get(f, f)
+        return p.read_text(errors="replace") if p.is_file() else ""
+    carried, gone_ids = approved_moves(root, plan["after"], new_board, read_after)
+
+    def carried_report(done: bool) -> None:
+        if carried or gone_ids:
+            print(f"\nApproved in {CONFIG} findings, {'carried out' if done else 'carried out by --apply'}:")
+            for e in carried:
+                print(f"  git mv {e['path']} {e['to']}  [{finding_id(e)}]")
+            for i in gone_ids:
+                print(f"  {i}: the finding no longer fires; its entry is dropped")
+
     moved_board = board_at != CONFIG or not (root / JOBS).exists()
     actions = bool(plan["moves"] or replace or edits or moved_board or steps or ignore_lines
                    or stale_hooks or aidev_state or untracked or cache_line or ref_line or removed
@@ -7607,12 +7810,36 @@ def cmd_update(root: Path, args) -> int:
             print(f"warning: {w}")
         # The repo's own files are no layout action, but they are still the plan survey sent here.
         if review:
-            print("\nRepo files to review (update never applies these):")
+            print(f"\nRepo files to review (update applies none of these but the moves {CONFIG} "
+                  "findings approves):")
             for f, what in review:
                 print(f"  {f}: {what}")
         if board_at == CONFIG and (root / PARA).exists():
             for line in removal_blocks(root, trunk, always=False):
                 print(line)
+        if not (carried or gone_ids):
+            return 0
+        # A recorded yes is carried out whether or not the layout is current.
+        if args.apply and (refused or dirty):
+            print("refused: " + ("; ".join(refused) or
+                                 "commit or stash tracked changes first; update moves files by name"),
+                  file=sys.stderr)
+            return 2
+        if not args.apply:
+            carried_report(False)
+            print("\nDry run: nothing changed. Run again with --apply to carry these out; it stages "
+                  "and commits nothing.")
+            return 0
+        left = carry_out(root, data, carried, gone_ids)
+        (root / CONFIG).write_text(json.dumps(data, indent=2) + "\n")
+        git("add", "--", CONFIG, check=True)
+        carried_report(True)
+        if left:
+            print("\nLeft for the session (references to a moved page):")
+            for line in left:
+                print(f"  {line}")
+        print("\nApplied and staged; nothing is committed. Repoint what names a moved page, "
+              "then commit on trunk.")
         return 0
     if refused:
         print(f"refused: the repo is behind this jig's layout ({board_at}, version "
@@ -7684,7 +7911,8 @@ def cmd_update(root: Path, args) -> int:
                     for i, line in hits:
                         print(f"      {i}: {line}")
         if review:
-            print("\nRepo files to review (update never applies these):")
+            print(f"\nRepo files to review (update applies none of these but the moves {CONFIG} "
+                  "findings approves):")
             for f, what in review:
                 print(f"  {f}: {what}")
         if board_at == CONFIG and (root / PARA).exists():
@@ -7692,6 +7920,7 @@ def cmd_update(root: Path, args) -> int:
 
     if not args.apply:
         report()
+        carried_report(False)
         if refused:
             print("\nDry run: nothing changed, and --apply refuses until the above is fixed.")
             return 2
@@ -7702,6 +7931,7 @@ def cmd_update(root: Path, args) -> int:
     for o, n in sorted(plan["moves"].items(), key=lambda m: m[0] == board_at):
         (root / n).parent.mkdir(parents=True, exist_ok=True)
         git("mv", o, n, check=True)
+    left = carry_out(root, new_board, carried, gone_ids)
     (root / CONFIG).parent.mkdir(parents=True, exist_ok=True)
     (root / CONFIG).write_text(json.dumps(new_board, indent=2) + "\n")
     if not (root / JOBS).exists():
@@ -7744,6 +7974,11 @@ def cmd_update(root: Path, args) -> int:
                             f"`git worktree remove --force {os.path.relpath(w, root)}`")
     cmd_install_hooks(root, argparse.Namespace(replace=False))
     report()
+    carried_report(True)
+    if left:
+        print("\nLeft for the session (references to a moved page):")
+        for line in left:
+            print(f"  {line}")
     check = root / DIR / "scripts" / "check.sh"
     passed = True
     if check.exists():

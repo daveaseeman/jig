@@ -25,8 +25,8 @@ identical; only the coordination disappears.
 
 Two files on trunk, written only by the hubnode. `.jig/config.json` holds what rarely
 changes: `name`, `trunk`, `common`, `append_files`, `reserve`, `docmap`, `not_docs`,
-`release`, `reference_files`, `workflow` (optional; see Workflow), `deep_subsystems` and
-`boards` (both optional; see Documentation) and the layout's `version`.
+`release`, `reference_files`, `workflow` (optional; see Workflow), `deep_subsystems`,
+`boards` and `findings` (all optional; see Documentation) and the layout's `version`.
 `.jig/jobs.json` holds the open jobs, nothing else. Per job:
 
 | Key | Meaning |
@@ -134,9 +134,10 @@ One page per system, `docs/<system>.md`. A subsystem's page sits in its system's
 `docs/<system>/<subsystem>.md`. A page is a single file, flat in its parent's folder, until it
 holds more than itself — subsystem pages, files it links, a `datasheets/` folder; then it moves
 into a folder named for it, `docs/<system>/<system>.md`, with that company beside it, in the
-change that adds the first of them. Both forms are one page: a `docmap` key or `boards` entry
-written in either names it in either, so a branch grows the folder with a `git mv` alone, and
-the key on trunk may be rewritten later or never. The tree names the product's own parts, not its files, so a rule that touches several
+change that adds the first of them. Both forms are one page, and that is about naming only: a
+`docmap` key or `boards` entry written in either names it in either, so a branch grows the
+folder with a `git mv` alone, and the key on trunk may be rewritten later or never. A key that
+names a page in the wrong form doesn't make that form right: the page still moves. The tree names the product's own parts, not its files, so a rule that touches several
 files lives once.
 
 In a folder that has a page, another `.md` is a flat page when `docmap` or `boards` names it, or it
@@ -336,6 +337,38 @@ them. `jig update --apply --sweep` writes the Up next items to `.jig/roadmap.md`
 absent, on trunk (R5), and removes each emptied Undefined section where the pages may change:
 on trunk, or in a metarepo a job's worktree (M4), where it removes only the sections whose
 entries trunk's roadmap holds.
+
+### The findings record
+
+Each file finding `jig survey` prints, and `jig update` lists under Repo files to review, has
+an id, `<kind>:<path>`, the kind as survey's `--json` gives it (`shape`, `page`, `deep`,
+`contract`, …): `shape:docs/a/b/b.md`. The owner's answer to each is recorded on trunk in
+`config.json`'s `findings`, one entry per id, no globs, trunk-only like the rest of the board
+(R5):
+
+- `"approved"`: do it;
+- `"deferred: <where>"`: later, and where it will be answered (`deferred: redocument`);
+- `"exception: <the owner's reason>"`: the repo differs from this file on purpose. An exception
+  or a deferral with nothing after its colon doesn't count.
+
+jig acts on the recorded entry, never on an answer in chat, so the answers are one commit on
+trunk before anything acts on them. Survey and update print each finding's outcome beside it —
+not answered, approved and not done, the deferral, the exception — and survey's `--json` gives
+`id` and `outcome`. Survey's last line counts the findings not answered and those approved and
+not done, so it never says there is nothing to do while one stands.
+
+`jig update --apply` carries out each approved move, whether or not the layout is current: a
+`shape` finding, or a `page` outside the tree that isn't a fold. It makes the `git mv`, renames
+the `docmap` key and `boards` entry naming the old path, and drops the entry; it drops any entry
+whose finding no longer fires. What it can't do — a reference in another file, an edit — it
+prints for the session, and an approved finding it can't carry out stays recorded. The usual
+refusals apply (open jobs, tracked changes), and it commits nothing.
+
+`/jig:redocument`'s remap, `.jig/redocument.md`, is read by its table's `Old path(s)` and `New
+path` columns, `same` keeping each old path. The hook refuses a commit that adds or changes it
+while a row keeps a page at a path survey moves it from (a `shape` or `page` finding), unless
+`findings` records the owner's exception for that page; the refusal names the page, survey's
+destination and the entry to record. Survey names such rows in a remap already on trunk.
 
 ## Fold-in
 
@@ -901,7 +934,7 @@ jig init [--trunk main]     config.json, jobs.json, git hooks
 jig init --meta | --para <metarepo> --contract <globs>   ... as a metarepo / pararepo
 jig release [--major|--minor|--patch|--version X.Y.Z] [--force]   the repo's release protocol, then tag, then publish
 jig survey [--json]         inventory the repo against the jig shape
-jig update [--apply]        bring the repo to the current jig layout (dry run without --apply)
+jig update [--apply]        bring the repo to the current jig layout, and carry out the moves findings approves (dry run without --apply)
 jig update [--apply] --merge-log   on the owner's yes: CHANGELOG.md and the register into .jig/decisions.md
 jig update [--apply] --sweep   on the owner's yes: pages' ## Undefined entries to ## Up next in .jig/roadmap.md
 jig staging [resolve|drop <file>]   list staged files, or land / drop one

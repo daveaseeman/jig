@@ -23,10 +23,12 @@ half: open the pointers branch before any job. The run's own open jobs are not "
 
 Otherwise:
 
-1. **Bring the layout current.** Run `/jig:update` first and land what it proposes, except
-   its page moves: decline them all, because the remap places every page (and
-   in a pararepo `update` would add a BUFFER row per cached pointer, which this run's
-   pointers branch replaces). Starting from a current layout means the two never propose
+1. **Bring the layout current.** Run `/jig:update` first and land what it proposes. Each page
+   move it lists that this run takes is recorded in `findings` as `"deferred: redocument"`,
+   one entry per id, in the commit before `--apply`, because the remap places every page it
+   takes (and in a pararepo `update` would add a BUFFER row per cached pointer, which this
+   run's pointers branch replaces). A move this run doesn't take gets its own answer, as
+   update asks. Starting from a current layout means the two never propose
    different moves for the same files.
 2. **Refuse unless there is a page to convert.** Run `jig survey`. Go on only if its last
    line names `/jig:redocument`: a page in the old Now / Rules / Checks shape, a page outside
@@ -103,6 +105,13 @@ Otherwise:
    (Documentation) says, and lands as a `deep_subsystems` entry in `.jig/config.json` on trunk
    on a yes. Name the cleanup route in
    the pointers branch (step 6).
+
+   A row that keeps a page where survey would move it (`same` on a page survey lists as
+   `flat at …` or outside the tree) is an exception to jig's rule, not a row like the rest.
+   Show it as one, with survey's line beside it, and ask the owner for the reason. Record it
+   in `findings` on trunk, `"<id>": "exception: <the owner's reason>"`, before the remap is
+   committed: the hook refuses the remap until it is. A brief or a note that says jig accepts
+   the form is checked against survey, which is what jig enforces.
 3. **Write the approved remap to `.jig/redocument.md`** on trunk and commit it. It is the
    hubnode's working file, frozen once approved; a change goes back through the owner. It
    opens with:
@@ -179,7 +188,7 @@ Otherwise:
      `git grep -n -F <old path>`, one old path at a time.
 
    Then check the end state. `jig survey` names no page off the contract and no page outside
-   the docs tree; no `docmap` key names a file that doesn't exist; `git grep -n -F <old path>`
+   the docs tree, and no finding not answered or deferred to redocument; no `docmap` key names a file that doesn't exist; `git grep -n -F <old path>`
    finds nothing for any old path. Anything left is fixed before the run is called done.
 
 ## Subnode: three phases per page

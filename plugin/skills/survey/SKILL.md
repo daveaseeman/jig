@@ -41,6 +41,13 @@ Report the output, then say what it means in a few lines:
   `## Current state`, `## Roadmap` or `## Undefined` heading on a page or an entry file, and
   prose like "phase 3" or "spec step 6" on a page or in the log, each with where it goes. Ask
   of each: is this about the product, or about when and in what order we build it?
+- **Each finding's state.** A file finding carries its id, `<kind>:<path>`, and the owner's
+  recorded answer from `findings` in `.jig/config.json`: not answered, approved and not done,
+  deferred and where, or an exception with the owner's reason. An answer given in chat and not
+  recorded there is not answered. The last line counts the unanswered and the approved-not-done.
+- **Remap rows that keep a page where survey moves it.** `.jig/redocument.md` on trunk keeps a
+  page in a form jig's rule moves it from, and no exception is recorded. Say so plainly: an
+  approval left it, silently. The owner moves it in the remap or records the reason.
 - **No docmap.** Handoff can't tell which page a change touches until pages are mapped to globs.
 - **Missing pieces.** What `/jig:init` would add.
 - **How parallel work is coordinated today.** What the repo already has, under its standard
