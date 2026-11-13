@@ -20,7 +20,7 @@
   },
   "docs-structure-evidence": {
     "spec": ".jig/specs/docs-structure-evidence.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
