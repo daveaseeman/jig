@@ -4780,9 +4780,12 @@ def terms_changed(loc: Path, old: str, new: str) -> list[str]:
         prefix = decision_prefix_at(loc, new)
         def shape(title: str, status: str) -> tuple[str, str]:
             return title.strip(), re.sub(r" Supersedes .*$", "", status.strip())
-        was = {decision_id(e["id"]): shape(e["title"], e["status"]) for r in regs
-               for e in parse_register(git("show", f"{old}:{r}", cwd=str(loc)), decision_prefix_at(loc, old))[0]
-               if e["word"] != "rejected"}
+        was = {}
+        for r in regs:
+            # Dated from history as the merge dated them, or every superseded row reads as news.
+            rows = parse_register(git("show", f"{old}:{r}", cwd=str(loc)), decision_prefix_at(loc, old))[0]
+            date_superseded(loc, r, rows, decision_prefix_at(loc, old), old)
+            was |= {decision_id(e["id"]): shape(e["title"], e["status"]) for e in rows if e["word"] != "rejected"}
         entries = log_entries(git("show", f"{new}:{LOG}", cwd=str(loc)), prefix)
         now = {decision_id(e["id"]): (e["id"], shape(e["title"], e["status"]), e["status"]) for e in entries}
         for i, (shown, sh, status) in now.items():
@@ -7914,20 +7917,41 @@ def as_written(paras: list[list[tuple[int, str]]]) -> str:
     return "\n\n".join(out) + "\n"
 
 
-def accepted_before(root: Path, f: str, ids: set[str], prefix: str | None) -> dict[str, dict]:
-    """For each superseded row in IDS, the row as F's newest revision in git had it before it
-    was superseded. Superseding overwrote the row's status and date cells, so only history still
-    says who accepted it and when. F's own path only: a moved register is left to the owner."""
+def accepted_before(root: Path, f: str, ids: set[str], prefix: str | None,
+                    rev: str = "HEAD") -> dict[str, dict]:
+    """For each superseded row in IDS, the row as F's newest revision in git up to REV had it
+    while accepted. Superseding overwrote the row's status and date cells, so only history still
+    says who accepted it and when. Accepted only: a proposed or open row's note says who asked,
+    not who accepted. F's own path only: a moved register is left to the owner."""
     out: dict[str, dict] = {}
-    for c in git("log", "--format=%H", "--", f, cwd=str(root)).splitlines():
+    for c in git("log", "--format=%H", rev, "--", f, cwd=str(root)).splitlines():
         if len(out) == len(ids):
             break
         old = parse_register(git("show", f"{c}:{f}", cwd=str(root)), prefix)[0]
         for e in old:
             k = decision_id(e["id"])
-            if k in ids and k not in out and e["word"] not in ("superseded", "rejected", "struck") and e["day"]:
+            if k in ids and k not in out and e["word"] == "accepted" and e["day"]:
                 out[k] = e
     return out
+
+
+def date_superseded(root: Path, f: str, found: list[dict], prefix: str | None,
+                    rev: str = "HEAD") -> list[str]:
+    """FOUND's superseded rows given the status line F's history says they had, in place, and
+    a line for each one history couldn't date or name the accepter of."""
+    gone = {decision_id(e["id"]) for e in found if e["word"] == "superseded"}
+    then = accepted_before(root, f, gone, prefix, rev) if gone else {}
+    said = []
+    for e in found:
+        if e["word"] != "superseded":
+            continue
+        was = then.get(decision_id(e["id"]))
+        if was:
+            e["status"] = f"Accepted ({was['who'] or 'not recorded'}, {was['day']})."
+        if not was or not was["who"]:
+            said.append(f"{e['id']}: superseded, and {f}'s history in git doesn't say who accepted it"
+                        + ("" if was else " or when") + f": check `{e['status']}` before committing")
+    return said
 
 
 def grouped(lines: list[str]) -> list[str]:
@@ -7947,10 +7971,14 @@ def parse_register(text: str, prefix: str | None) -> tuple[list[dict], list[list
     header = register_header(lines)
     rows = set(rows_in(text, prefix))
     entries = [row_entry(table_cells(l), header) for l in lines if l.rstrip() in rows]
+    # The decision table's header row and the separator under it: another table in a note
+    # keeps its own.
+    rule = lambda l: l.lstrip().startswith("|") and all(re.fullmatch(r":?-+:?", c) for c in table_cells(l))
+    table = {n for i, l in enumerate(lines)
+             if header and l.lstrip().startswith("|") and table_cells(l) == header
+             and i + 1 < len(lines) and rule(lines[i + 1]) for n in (i + 1, i + 2)}
     left = [(n, l) for n, l in enumerate(lines, 1)
-            if l.strip() and l.rstrip() not in rows and not OLD_SEED.match(l)
-            and not (l.lstrip().startswith("|") and (table_cells(l) == header
-                                                     or all(re.fullmatch(r":?-+:?", c) for c in table_cells(l))))]
+            if l.strip() and l.rstrip() not in rows and not OLD_SEED.match(l) and n not in table]
     return entries, paragraphs(left)
 
 
@@ -7991,17 +8019,7 @@ def merged_log(root: Path) -> dict:
     for f in old_registers(root):
         found, notes = parse_register((root / f).read_text(errors="replace"), prefix)
         p = prefix or (re.match(r"[A-Z][A-Z0-9]*-", found[0]["id"]).group(0) if found else "D-")
-        gone_by = {decision_id(e["id"]) for e in found if e["word"] == "superseded"}
-        then = accepted_before(root, f, gone_by, prefix) if gone_by else {}
-        for e in found:
-            if e["word"] != "superseded":
-                continue
-            was = then.get(decision_id(e["id"]))
-            if was:
-                e["status"] = f"Accepted ({was['who'] or 'not recorded'}, {was['day']})."
-            if not was or not was["who"]:
-                undated.append(f"{e['id']}: superseded, and {f}'s history in git doesn't say who accepted it"
-                               + ("" if was else " or when") + f": check `{e['status']}` before committing")
+        undated += date_superseded(root, f, found, prefix)
         by_num = {}
         for e in found:
             if e["word"] in ("rejected", "struck"):
@@ -8053,8 +8071,9 @@ def merged_log(root: Path) -> dict:
                  "(git keeps their rows).\n\n")
     text = head + "## Open\n\n" + "\n".join(blocks("Open")) + "\n## Unreleased\n\n"
     text += "\n".join(blocks("Unreleased") + grouped(unreleased[1:])) + "\n"
-    for heading, body, _ in sections:
-        text += f"\n{heading}\n\n" + "\n".join(blocks(heading) + grouped(body)) + "\n"
+    for heading, body, release in sections:
+        lines = grouped(body) if release else trimmed(body)
+        text += f"\n{heading}\n\n" + "\n".join(blocks(heading) + lines) + "\n"
     text = re.sub(r"\n{3,}", "\n\n", text)
     placed: dict[str, list[str]] = {}
     for e in entries:
