@@ -380,6 +380,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
             out.append(f"R5 the roadmap is the owner's: {f} is edited on {trunk} only")
     out += roadmap_rules(board, branch, staged, paths, guarded)
     out += boundary_rules(trunk, branch, staged, paths, meta)
+    out += page_form_rules(root, board, trunk, staged, guarded)
     if CONFIG in paths and (raw := in_index(CONFIG, staged)):
         try:
             out += workflow_steps(json.loads(raw))[1]
@@ -1225,8 +1226,12 @@ def cmd_merge(root: Path, args) -> int:
     commit = ["git", "commit", "-q", "--no-edit"] if merging else \
         ["git", "commit", "-q", "-m", f"{msg}: already in {trunk}, entry deleted"]
     if subprocess.run(commit).returncode:
-        print(f"the merge isn't committed. Fix what the hook refused, then `git commit`; or "
-              f"`git merge --abort`, which puts {name}'s entry back", file=sys.stderr)
+        # A refusal of the job's own change (a page's form, say) is the job's to fix: amended
+        # on trunk, the fix would never be gated.
+        print(f"the merge isn't committed. If the hook refused {name}'s own change, `git merge "
+              f"--abort`, which puts {name}'s entry back, fix it on {branch}, and hand "
+              f"off and gate again; if it refused the merge alone, fix that, then `git commit`",
+              file=sys.stderr)
         return 1
     print(f"merged {name}; its entry is gone from {JOBS} in the same commit. Sync the clean jobs.")
     return 0
@@ -2284,15 +2289,17 @@ def page_home(path: str, have: set[str], deep: dict) -> str:
     there, flat or in its folder, is where it folds. Where the page would be deeper than the
     docs tree allows, the nearest page itself: fold it in. In a metarepo, the system of its own
     is flat in its genre folder. A page in its own folder moves with that folder, so it climbs
-    from the folder above and lands in its folder unless the flat form is there to fold into."""
+    from the folder above and lands in its folder unless the flat form is there to fold into,
+    or the folder holds nothing else: a lone page lands flat, the form the hook lets in."""
     stem, folders = Path(path).stem, path.split("/")[:-1]
     own = folder_page(path)
     if own:
         folders = folders[:-1]
+    lone = own and not any(f.startswith(f"{page_folder(path)}/") and f != path for f in have)
 
     def there(d: str) -> str:
         flat, inner = f"{d}/{stem}.md", f"{d}/{stem}/{stem}.md"
-        return flat if (own and flat in have) or (not own and inner not in have) else inner
+        return flat if (own and (flat in have or lone)) or (not own and inner not in have) else inner
     for i in range(len(folders), 1, -1):
         d = "/".join(folders[:i])
         if (page := folder_owner(d, have)) and depth_ok(d, deep):
@@ -2335,7 +2342,8 @@ RETIRED_RULES = ("The tree names the product's own parts, not its files, so a ru
 
 
 def doc_homes(root: Path, files: list[str], not_docs: list[str],
-              read=None, deep: dict | None = None, docmap=None) -> list[dict]:
+              read=None, deep: dict | None = None, docmap=None,
+              only: set[str] | None = None, names: bool = True) -> list[dict]:
     """Every tracked Markdown file with no home, as {path, kind, to, fold, naming, named_at}.
     Kinds: `rules` an agent instruction file off root, `genre` a metarepo page under docs/ but
     in no genre folder, `board` a file in the old docs/hardware/
@@ -2345,7 +2353,10 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
     sentences of RULES.md word for word, `stray` anything else.
     DEEP is the board's deep_subsystems, DOCMAP the pages it names (named_pages): a flat
     file there is a page.
-    READ maps a path to its text, for update, which judges the files where they will be."""
+    READ maps a path to its text, for update, which judges the files where they will be.
+    ONLY limits the files judged, and NAMES false leaves naming empty: the hook asks only
+    whether the few pages a change touches have a home, and reading every file that might name
+    each would cost it the whole repo."""
     read = read or (lambda f: (root / f).read_text(errors="replace") if (root / f).is_file() else "")
     rules_md = Path(__file__).resolve().parent / "RULES.md"
     rules = " ".join([re.sub(r"\s+", " ", rules_md.read_text()), *RETIRED_RULES]) if rules_md.exists() else ""
@@ -2356,11 +2367,15 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
     have = set(files)
     old = {} if GENRES is not None else {r["path"]: r["to"] for r in old_board_rows(files, read)}
     out = []
+
+    def naming_of(f: str) -> dict[str, list[int]]:
+        return naming(root, f, files) if names else {}
     for f in files:
-        if not f.endswith(".md") or f.startswith(TOOL_DIRS) or matches(f, not_docs):
+        if (not f.endswith(".md") or f.startswith(TOOL_DIRS) or matches(f, not_docs)
+                or (only is not None and f not in only)):
             continue
         if f == "GLOSSARY.md":
-            named = naming(root, f, files)
+            named = naming_of(f)
             out.append({"path": f, "kind": "stray", "to": f"README.md § {GLOSSARY_HOME[3:]}",
                         "fold": False, "naming": sorted(named),
                         "named_at": [f"{n}:{i}" for n in sorted(named) for i in named[n]]})
@@ -2372,7 +2387,7 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
                  and (f.count("/") == 1 or not genre_dir("/".join(f.split("/")[:2]))))
                 or (not f.startswith("docs/") and f not in registers
                     and ("/" in f or not at_home(f, registers, deep, have)))):
-            named = naming(root, f, files)
+            named = naming_of(f)
             top = f.split("/")[0] if "/" in f and not f.startswith("docs/") else ""
             to = page_in(f"docs/{top}/{Path(f).stem}.md", have) if top else None
             out.append({"path": f, "kind": "genre" if f.startswith("docs/") else "page", "to": to,
@@ -2381,7 +2396,7 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
                         "named_at": [f"{n}:{i}" for n in sorted(named) for i in named[n]]})
             continue
         if f in old or reserved_page(f):
-            named = naming(root, f, files)
+            named = naming_of(f)
             out.append({"path": f, "kind": "board" if f in old else "reserved", "to": old.get(f),
                         "fold": False, "naming": sorted(named),
                         "named_at": [f"{n}:{i}" for n in sorted(named) for i in named[n]]})
@@ -2416,7 +2431,7 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
             kind = "copy"
         else:
             kind = "stray"
-        named = naming(root, f, files)
+        named = naming_of(f)
         out.append({"path": f, "kind": kind, "to": to,
                     "fold": bool(to and (to in have or (root / to).exists())),
                     "naming": sorted(named),
@@ -2425,14 +2440,15 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
 
 
 def page_shapes(root: Path, files: list[str], not_docs: list[str], docmap: set[str],
-                skip: set[str], read, sections: frozenset[str] = frozenset()) -> list[dict]:
+                skip: set[str], read, sections: frozenset[str] = frozenset(),
+                only: set[str] | None = None) -> list[dict]:
     """Pages in the wrong one of their two shapes, as {path, to, into, fold, named}: a page
     named for its folder with nothing else there to hold, which goes flat beside its parent's
     page (INTO false), and a flat page with a folder of its own name, which goes into it (INTO
     true). SKIP are the files with no home, reported already. NAMED is false where the flat
     page would be neither in DOCMAP nor page-shaped, so read as a note. SECTIONS are pages that
     cover no file (page_levels): each folds into the page above it, so its form is moot, unless
-    its other form is there too."""
+    its other form is there too. ONLY limits the pages judged; company is still the whole tree's."""
     have, out = set(files), []
     def company(f: str) -> bool:
         # An ignored datasheet isn't tracked, but the folder on disk or the page's link says it's there.
@@ -2440,7 +2456,7 @@ def page_shapes(root: Path, files: list[str], not_docs: list[str], docmap: set[s
         return (any(g.startswith(f"{d}/") and g != f for g in have) or (root / d / DATASHEETS).is_dir()
                 or any(t.startswith(f"{d}/") for t in link_targets(f, read(f))))
     for f in files:
-        if f in skip or matches(f, not_docs):
+        if f in skip or matches(f, not_docs) or (only is not None and f not in only):
             continue
         if folder_page(f) and not old_layout(f):
             to = f"{page_folder(f)}.md"
@@ -2606,9 +2622,15 @@ def level_pages(files: list[str], board: dict, read) -> list[str]:
 
 def page_cover(files: list[str], docmap: dict, pages: list[str]) -> dict[str, set[str]]:
     """The tracked files each page's docmap globs cover, in either of its forms."""
+    # Each key's globs under both forms of its page, once: page_globs per page is every key
+    # against every page, which a docs tree of hundreds of pages pays for in seconds.
+    forms: dict[str, list] = {}
+    for k, gs in docmap.items():
+        for f in page_forms(k) if isinstance(gs, list) else ():
+            forms.setdefault(f, []).extend(gs)
     out = {}
     for p in pages:
-        rxs = [glob_re(g) for g in page_globs(docmap, p) if isinstance(g, str)]
+        rxs = [glob_re(g) for g in forms.get(p, []) if isinstance(g, str)]
         out[p] = {f for f in files if any(r.match(f) for r in rxs)}
     return out
 
@@ -2746,7 +2768,7 @@ def import_edges(files: list[str], read) -> dict[str, set[str]]:
 
 
 def page_levels(root: Path, files: list[str], board: dict, read, imports: bool = False,
-                maps: list[dict] | None = None) -> list[dict]:
+                maps: list[dict] | None = None, only: set[str] | None = None) -> list[dict]:
     """Each page below a system with its level (RULES.md, Documentation: a subsystem has files
     of its own), as {path, level, into, own, covered, shared_with, evidence}. Own files are
     the files its docmap globs cover that no page but those above it covers. Levels:
@@ -2755,28 +2777,34 @@ def page_levels(root: Path, files: list[str], board: dict, read, imports: bool =
     covered by another page, a sibling (INTO, the same subsystem) or another system's (a seam,
     which misfiled_seams names); `subsystem`, with own files. Evidence is read-only: structure
     maps, CODEOWNERS and build manifests always, imports with IMPORTS. A metarepo has no code,
-    and a system whose pages cover no file has no docmap to read."""
+    and a system whose pages cover no file has no docmap to read. ONLY limits the pages judged,
+    with no evidence and sharing weighed within their own systems: the hook asks whether a
+    touched page is a section, which nothing outside its system decides."""
     if GENRES is not None:
         return []
     have = set(files)
     docmap = board.get("docmap") if isinstance(board.get("docmap"), dict) else {}
     deep = board.get("deep_subsystems") if isinstance(board.get("deep_subsystems"), dict) else {}
     pages = level_pages(files, board, read)
-    flats = frozenset(p for p in pages if not folder_page(p))
-    cover = page_cover(files, docmap, pages)
-    maps = structure_maps(root, files, pages, cover, read) if maps is None else maps
-    owners = code_owners(files, read)
-    units = {os.path.dirname(f) for f in files if Path(f).name in MANIFESTS and "/" in f}
-    edges = import_edges(files, read) if imports else {}
 
     def system_of(p: str) -> str:
         return "/".join(page_folder(p).split("/")[:2])
+    if only is not None:
+        maps, imports = [], False
+        systems = {system_of(p) for p in only}
+        pages = [p for p in pages if system_of(p) in systems]
+    flats = frozenset(p for p in pages if not folder_page(p))
+    cover = page_cover(files, docmap, pages)
+    maps = structure_maps(root, files, pages, cover, read) if maps is None else maps
+    owners = code_owners(files, read) if only is None else []
+    units = {os.path.dirname(f) for f in files if Path(f).name in MANIFESTS and "/" in f}
+    edges = import_edges(files, read) if imports else {}
     # A system the docmap maps nothing in gives no files to compare: its pages are not judged.
     mapped = {system_of(p) for p in pages if cover[p]}
     out = []
     for p in pages:
         # A folder no page owns is no system: the page is misplaced, which doc_homes reports.
-        if page_folder(p).count("/") < 2 or system_of(p) not in mapped or not folder_owner(system_of(p), have):
+        if (only is not None and p not in only) or page_folder(p).count("/") < 2 or system_of(p) not in mapped or not folder_owner(system_of(p), have):
             continue
         above = [u for u, _ in pages_above(p, have, deep, flats)]
         # Both forms of one page, flat and in its folder, are one page, not each other's sharer.
@@ -7486,6 +7514,90 @@ def boundary_rules(trunk: str, branch: str, staged: bool, paths: list[str],
     return out
 
 
+def form_entries(root: Path, files: list[str], board: dict, read, only: set[str]) -> list[dict]:
+    """page_shapes as survey judges FILES, for the pages in ONLY: pages with no home, sections,
+    and a shape the owner made an exception of left out."""
+    not_docs = board.get("not_docs") or []
+    deep = board.get("deep_subsystems") if isinstance(board.get("deep_subsystems"), dict) else {}
+    docmap = named_pages(board)
+    homeless = {h["path"] for h in doc_homes(root, files, not_docs, read, deep, docmap, only, names=False)}
+    sections = frozenset(e["path"] for e in page_levels(root, files, board, read, only=only)
+                         if e["level"] == "section")
+    rec = findings_record(board)
+    return [e for e in page_shapes(root, files, not_docs, docmap, homeless, read, sections, only)
+            if not rec.get(finding_id(e), "").startswith("exception:")]
+
+
+def form_candidates(paths: list[str], files: list[str] = (), born: set[str] = frozenset()) -> set[str]:
+    """The pages whose form PATHS can change: each page among them, and both forms of the page
+    of each folder above each, whose company it is. A page BORN or gone gives the pages in FILES
+    under its folder a home or takes it, which decides whether their form is judged at all."""
+    out = {f for p in born for f in files
+           if f.startswith(f"{page_folder(p)}/") and f.endswith(".md")}
+    for p in paths:
+        if not p.startswith("docs/"):
+            continue
+        if p.endswith(".md"):
+            out.add(p)
+        parts = p.split("/")
+        for i in range(2, len(parts)):
+            out |= set(page_forms("/".join(parts[:i]) + ".md"))
+    return out
+
+
+def cat_files(specs: list[str]) -> dict[str, str]:
+    """The text of each `<rev>:<path>` in SPECS, in one git call: empty where it is missing."""
+    if not specs:
+        return {}
+    data = subprocess.run(["git", "cat-file", "--batch"], input="\n".join(specs).encode() + b"\n",
+                          capture_output=True).stdout
+    out, at = {}, 0
+    for spec in specs:
+        nl = data.index(b"\n", at)
+        head, at = data[at:nl].split(), nl + 1
+        if len(head) < 3 or head[-1] == b"missing":
+            out[spec] = ""
+            continue
+        n = int(head[2])
+        out[spec], at = data[at:at + n].decode(errors="replace"), at + n + 1
+    return out
+
+
+def page_form_rules(root: Path, board: "Board", trunk: str, staged: bool, guarded: list[str]) -> list[str]:
+    """A page this change puts in the wrong form, as survey words it. Form's fix is a `git mv`
+    any branch can make, unlike depth's, so it is refused. Only what this change does is: an
+    entry the base already has is survey's, as an old line in a touched page is never refused.
+    Only the pages the change can reform are judged, so a commit costs what it touches."""
+    if not any(f.startswith("docs/") for f in guarded):
+        return []
+    b = base(trunk)
+    q = ("-c", "core.quotePath=false")
+    # From the root: run in a subfolder, both list only what is under it.
+    before = [f for f in git(*q, "ls-tree", "-r", "--name-only", b, cwd=str(root)).splitlines() if f]
+    after = [f for f in git(*q, "ls-files", cwd=str(root)).splitlines()
+             if f and (staged or (root / f).exists())]
+    was, now = set(before), set(after)
+    only = form_candidates(guarded, before + after,
+                           {p for p in guarded if p.endswith(".md") and (p in was) != (p in now)})
+
+    def reader(files: list[str], rev: str | None):
+        # Every docs page's text in one git call: a page outside ONLY is still read for its
+        # level, and a call per page would cost a large tree minutes.
+        md = [f for f in files if f.startswith("docs/") and f.endswith(".md")]
+        if rev is None:
+            texts = {f: (root / f).read_text(errors="replace") for f in md if (root / f).is_file()}
+        else:
+            got = cat_files([f"{rev}:{f}" for f in md])
+            texts = {f: got[f"{rev}:{f}"] for f in md}
+        return lambda f: texts[f] if f in texts else (at_rev(rev, f) if rev else in_index(f, staged))
+    old = {e["path"] for e in form_entries(root, before, board.data, reader(before, b), only)}
+    # An unnamed page's fix is a docmap key, trunk's (R5), not a move: survey's alone.
+    return [f"{e['path']}: {shape_fix(e)} ({DIR}/RULES.md, Documentation: this change puts the "
+            "page in the wrong form; make the move in it)"
+            for e in form_entries(root, after, board.data, reader(after, "" if staged else None), only)
+            if e["named"] and e["path"] not in old]
+
+
 def roadmap_rules(board: "Board", branch: str, staged: bool, paths: list[str],
                   guarded: list[str]) -> list[str]:
     """Scopes a spec cites must be the roadmap's. On trunk the commit's own roadmap counts, so
@@ -8212,6 +8324,29 @@ def para_pointers(root: Path) -> tuple[dict, list]:
     return para, pointers(root) if para else []
 
 
+def reforms(was: list[str], files: list[str], touched: list[str]) -> list[tuple[str, str]]:
+    """The moves that put each page whose folder TOUCHED fills or empties back in its form, on
+    the tree FILES from the tree WAS: a folder page left alone goes flat, a flat page given
+    company goes in. A move or a fold that leaves them is refused by the hook, so its lines
+    carry them. A page whose company the moves don't change is no part of them: its form is
+    its own finding, with its own answer."""
+    have, before, out = set(files), set(was), []
+
+    def company(p: str, tree: set[str]) -> bool:
+        return any(f.startswith(f"{page_folder(p)}/") and f != p for f in tree)
+    for p in sorted(form_candidates(touched) & have & before):
+        d = page_folder(p)
+        if company(p, have) == company(p, before):
+            continue
+        company_now = company(p, have)
+        if folder_page(p) and not old_layout(p) and not company_now and flat_spot(f"{d}.md", have) \
+                and f"{d}.md" not in have:
+            out.append((p, f"{d}.md"))
+        elif not folder_page(p) and flat_spot(p, have) and company_now and f"{d}/{Path(p).stem}.md" not in have:
+            out.append((p, f"{d}/{Path(p).stem}.md"))
+    return out
+
+
 def move_lines(root: Path, board: dict, board_at: str, after: list[str], para: dict, cached: list,
                folder: str, group: list[dict], rec: dict) -> list[str]:
     """Every line moving GROUP out of FOLDER touches, for one commit, judged on AFTER."""
@@ -8221,6 +8356,7 @@ def move_lines(root: Path, board: dict, board_at: str, after: list[str], para: d
     emptied = [] if any(f.startswith(folder) for f in left) else [folder]
     lines = [f"{'fold' if h['fold'] else 'git mv'} {h['path']} {'into ' if h['fold'] else ''}{h['to']}"
              + state_tag(h, rec) for h in group]
+    lines += [f"git mv {p} {to}" for p, to in reforms(after, left, [x for h in group for x in (h["path"], h["to"])])]
     lines += [f"{CONFIG} docmap: {o}" for o in moves if o in (board.get("docmap") or {})]
     lines += [f"{PARA} contract_paths: {g}" for g in para.get("contract_paths", [])
               if any(matches(o, [g]) and not matches(n, [g]) for o, n in moves.items())]
