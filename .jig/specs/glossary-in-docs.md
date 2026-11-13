@@ -3,6 +3,10 @@
 Source: Maige hubnode work, Dave, 2026-11-12: "I dont want README's being pointed to in docs, docs
 should only point to other docs. That means at least that glossary has to go into docs, maybe
 more."
+Source: Daisy hubnode, for Dave, 2026-11-13: "make sure update moves glossary from readme's to
+docs and moves any pointers and whatnot to follow." Amended on Dave's word, 2026-11-13 ("Amend
+glossary-in-docs with both changes and open it"): the table form, and pointers rewritten on the
+same yes.
 
 ## Intent
 Docs point only at docs. A repo's glossary is a docs file, `docs/glossary.md`, one `## <term>`
@@ -36,8 +40,13 @@ point into `docs/`, never the reverse.
 
 ## Design
 - **The glossary file.** `docs/glossary.md`: a `# Glossary` title, an optional lead line, then
-  one `## <term>` heading per term, saying what it means and what it is not.
-  `docs/glossary.md § <term>` names one.
+  the terms in one of two forms, saying what each means and what it is not:
+  - **headings:** one `## <term>` heading per term;
+  - **a table:** one Markdown table whose first column is the term, one row per term, any other
+    columns the repo's own (an owner, what the screen calls it).
+  
+  `docs/glossary.md § <term>` names one in either form. jig's glossary readers take a term from
+  a `##` heading or from a first-column cell, skipping the header and separator rows.
   - It is not a system page: it is not in `docmap`, covers no files, and is exempt from the
     page-contract checks (part sections, Invariants, a lead paragraph).
   - In a metarepo it sits directly in `docs/`, the one file the genre-folder rule allows there.
@@ -52,14 +61,23 @@ point into `docs/`, never the reverse.
 - **Moving an existing glossary.** `jig update` lists a README `## Glossary` section, or a root
   `GLOSSARY.md`, under Repo files to review, with `docs/glossary.md` as where it goes.
   `--apply --glossary` moves it on a yes:
-  - each term, its text unchanged, from `### <term>` to `## <term>` (a bold-paragraph term
-    becomes a heading, as the existing fold-in does);
+  - each term, its text unchanged, in the form the source has: `### <term>` becomes
+    `## <term>`, a bold-paragraph term becomes a heading (as the existing fold-in does), and a
+    table moves as a table;
   - the section, or the file, is removed. The README may keep a one-line link to
     `docs/glossary.md`;
-  - every tracked `README.md § <term>` and `GLOSSARY.md` reference is listed to repoint.
-    Pages and entries must be repointed before the hook allows their next change.
+  - every tracked pointer to the old home is rewritten in the same change: `README.md § <term>`
+    and `README.md § Glossary` become `docs/glossary.md § <term>` and `docs/glossary.md`, and a
+    link or path naming `GLOSSARY.md` becomes `docs/glossary.md`, keeping any `§ <term>`. The dry
+    run lists each file and line it will rewrite. A pointer it can't rewrite mechanically (a
+    term no longer in the glossary, prose that names the README without a path) is listed and
+    left for the session.
   
-  In a metarepo the move runs on a job branch, as `--sweep` does (M4).
+  In a metarepo the move runs on a job branch, as `--sweep` does (M4), and `entry_files` is
+  rewritten in the same change. The pararepos' citations of `<meta>/README.md § <term>` are
+  named, not rewritten: each pararepo changes its own files at its pin bump.
+- **A repo already there.** A repo with `docs/glossary.md` in either form, and no README
+  glossary or root `GLOSSARY.md`, gets no glossary finding from survey or update.
 - **A metarepo.**
   - `jig init --meta` seeds `docs/glossary.md`, not a README section.
   - `entry_files` drops `README.md` once the move lands. `docs/**/*.md` already covers the
@@ -80,6 +98,14 @@ point into `docs/`, never the reverse.
       writes `docs/glossary.md` with every term as a `##` heading, text byte-for-byte the same,
       and removes the README section.
 - [ ] Smoke: a root `GLOSSARY.md` folds into `docs/glossary.md` the same way.
+- [ ] Smoke: a README glossary written as a table moves as the same table, rows byte-for-byte.
+- [ ] Smoke: the same `--apply --glossary` rewrites a page's `README.md § term` to
+      `docs/glossary.md § term` and a link to `GLOSSARY.md` to `docs/glossary.md`, and the dry
+      run lists both lines first. A `README.md § gone` naming no glossary term is listed, not
+      rewritten. In a metarepo `entry_files` is rewritten in the same change.
+- [ ] Smoke: a repo whose `docs/glossary.md` is a table, with no README glossary, gets no
+      glossary finding from survey or update, and `jig.py`'s glossary readers list its
+      first-column terms.
 - [ ] Smoke: the hook refuses an added page line naming `README.md § x`, and one naming
       `AGENTS.md`, and passes a line naming `docs/glossary.md § x`.
 - [ ] Smoke: survey doesn't hold `docs/glossary.md` to the page contract, doesn't list it as a
@@ -119,15 +145,22 @@ point into `docs/`, never the reverse.
 - Keep `###` term headings. Rejected: in a file of its own the terms are the top level under its
   title, so `##`. Pointers name the heading text, not its level, so nothing that cites a term
   breaks. Reason is [assumed].
+- Headings only, converting a table. Rejected: a repo's table carries columns of its own (an
+  owner, what the screen shows), which headings would flatten into prose. Reason is [seen]:
+  Daisy's `docs/glossary.md`, a 59-row table with four columns.
+- List pointers for the session to repoint, as first specced. Rejected by the owner: "moves any
+  pointers and whatnot to follow". Reason is [seen: owner, Nov 13].
 
 ## Decisions
 - Interpreted: "docs" covers decision entries as well as pages, since the boundary rule already
   treats both as the product side. The owner may narrow it to pages.
 - Interpreted: the root documents named are `README.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`
   and `CHANGELOG.md` (`ROOT_DOCS` plus the rules files).
-- Runs after the Maige run's releases, so no repo's glossary moves mid-redocument. Shares
-  jig.py, RULES.md and smoke.sh with bug-r3-log-merge and the renames; order it with them at
-  open.
+- Runs after the Maige run's releases, so no repo's glossary moves mid-redocument. The metarepo
+  released v2.0.0 on 2026-11-13, and no other job is open, so it opens first. Shares jig.py,
+  RULES.md and smoke.sh with bug-r3-log-merge and the renames, which wait for it.
+- Interpreted: a table's term is its first column's text with backticks and surrounding
+  emphasis stripped, as a heading's is. The owner may narrow it.
 
 ## Workflow
 spec: tier 2, effort 2
