@@ -138,7 +138,7 @@ Stopped at 3, the root: a rule that names its change and has no holder in that c
   remap row that contradicts survey. That is issue 2 of the same report, another group's. This
   spec stops new ones only.
 - Depth. A deep page stays report-only, because a branch can't add `deep_subsystems` (R5).
-- A count threshold other than "more than itself". See the open question.
+- A count threshold other than "more than itself". See Decisions.
 - A repo's own docs test that enforces the folder form (issue 1, another group's). Until that
   test converts, a new lone page in such a repo can't satisfy both: jig refuses the folder form,
   and the repo's test fails the flat one. The conflict shows at the first such commit instead of
@@ -171,12 +171,13 @@ Stopped at 3, the root: a rule that names its change and has no holder in that c
   R5].
 
 ## Decisions
+- Owner, 2026-11-13 ("Do 2 & 3", asked whether "more than 1 file", the rule as RULES.md states it, is what gets built): build the rule as RULES.md states it. A page gets a folder once it holds one other file.
 - The refusal reuses `page_shapes()` and `shape_fix()`, so the hook, survey and update never
   disagree on a page's form.
 - Base and change are compared by entry path. A page moved from one wrong form to another is a
   new entry, so it is refused.
 
-## Open question (owner)
+## Open question (owner), answered 2026-11-13: see Decisions
 - The owner described the folder logic as "by complexity (count)". RULES.md's line is binary: a
   page gets a folder once it holds one other file. In `.jig/specs/flat-pages.md` the owner gave
   that line as a count on Nov 10: "the line is at containing the contents that necessitate a

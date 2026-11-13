@@ -169,7 +169,7 @@ No new dependency. No contract path.
   the check rewrites a disposition no one saw — this reason is [assumed].
 
 ### Decisions
-- Pending the owner: A revisits "Owner, Nov 2: agreed with both calls. Item 6 refuses and names
+- Owner, 2026-11-13 ("Do 2 & 3", asked to decide on reversing the Nov 2 refusal): approved. A revisits "Owner, Nov 2: agreed with both calls. Item 6 refuses and names
   `jig sync`; `jig merge` doesn't sync a job itself." (report-fixes-followup.md). The refusal
   goes for a conflict where both sides only added; "doesn't sync a job itself" still holds,
   since the job's branch is untouched. What is new: the batch cost and the hand resolutions on
