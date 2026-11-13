@@ -4976,13 +4976,26 @@ expect_pass sh -c "grep -qx 'Accepted (not recorded, 2026-02-01).' .jig/decision
 
 msg="merge-log: a second decision table with its own header, and one headed No., leave no header or separator behind"
 ML3="$T/ml-tables"; pcnew "$ML3" && mlchangelog
-printf '# Register\n\nKept.\n\n## Current\n\n| Id | Decision | Status | Date |\n|---|---|---|---|\n| D-001 | a | accepted (Ann) | 2026-01-01 |\n\n## Retired\n\n| Id | Decision | Status | Date | Why |\n|---|---|---|---|---|\n| D-002 | b | rejected | 2026-01-01 | too slow |\n| D-005 | e | accepted (Ed) | 2026-01-01 | cheap |\n\n## Moved\n\n| Id | Status | Date | Decision | Why |\n|---|---|---|---|---|\n| D-004 | accepted (Bo) | 2026-02-01 | b wins | speed |\n' > DECISIONS.md
+printf '# Register\n\nKept.\n\n## Current\n\n| Id | Decision | Status | Date |\n|---|---|---|---|\n| D-001 | a | accepted (Ann) | 2026-01-01 |\n\n## Retired\n\n| Id | Decision | Status | Date | Why |\n|---|---|---|---|---|\n| D-002 | b | rejected | 2026-01-01 | too slow |\n| D-005 | e | accepted (Ed) | 2026-01-01 | cheap |\n\n## Moved\n\n| Id | Status | Date | Decision | Why |\n|---|---|---|---|---|\n| D-004 | accepted (Bo) | 2026-02-01 | b wins | speed |\n\n## Later\n\n| Id | Status | Date | Decision |\n|---|---|---|---|\n| TBD | placeholder | | |\n| D-006 | accepted (Fy) | 2026-03-01 | f wins |\n' > DECISIONS.md
+mkdir -p bare && printf '# Bare register\n\nKept as well.\n\n| D-007 | g | accepted (Gu) | 2026-03-02 |\n|---|---|---|---|\n| D-008 | h | accepted (Gu) | 2026-03-03 |\n' > bare/DECISIONS.md
 mkdir -p sub && printf '# Sub register\n\nKept too.\n\n| No. | Decision | Status | Date |\n|---|---|---|---|\n| D-003 | c | accepted (Cy) | 2026-02-01 |\n' > sub/DECISIONS.md
 git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
 $UP --apply --merge-log >/dev/null 2>&1
-expect_pass sh -c "grep -qx 'Kept.' DECISIONS.md && grep -qx '## Retired' DECISIONS.md && grep -qx 'Kept too.' sub/DECISIONS.md && ! grep -q '^|' DECISIONS.md sub/DECISIONS.md"
+expect_pass sh -c "grep -qx 'Kept.' DECISIONS.md && grep -qx '## Retired' DECISIONS.md && grep -qx 'Kept too.' sub/DECISIONS.md && ! grep -q '^|' sub/DECISIONS.md && ! grep -qE '^\| (D-0|Id \| Decision)|^\|---\|---\|---\|---\|---\|' DECISIONS.md && test \$(grep -cxF '|---|---|---|---|' DECISIONS.md) = 1"
 msg="merge-log: each row is read against its own table's header: columns in another order, and an extra column's name"
 expect_pass sh -c "grep -qx '### D-004 b wins' .jig/decisions.md && grep -qx 'Accepted (Bo, 2026-02-01).' .jig/decisions.md && grep -qx 'Why: speed' .jig/decisions.md && grep -qx 'Why: cheap' .jig/decisions.md && ! grep -q '^Note: ' .jig/decisions.md"
+msg="merge-log: a table whose first row is no decision reads its rows by its own header, and keeps that row with its header"
+expect_pass sh -c "grep -qx '### D-006 f wins' .jig/decisions.md && grep -qx 'Accepted (Fy, 2026-03-01).' .jig/decisions.md && grep -qxF '| TBD | placeholder | | |' DECISIONS.md && grep -qxF '| Id | Status | Date | Decision |' DECISIONS.md"
+msg="merge-log: a register with no header row keeps every row, the first included, and leaves no separator"
+expect_pass sh -c "grep -qx '### D-007 g' .jig/decisions.md && grep -qx '### D-008 h' .jig/decisions.md && grep -qx 'Kept as well.' bare/DECISIONS.md && ! grep -q '^|' bare/DECISIONS.md"
+msg="merge-log: a row that comes out as no entry, whatever the cause, refuses the run, naming it, and writes nothing"
+git reset -q --hard && git clean -fdq && out=$(python3 -c "
+import sys, pathlib, importlib.util as u
+s = u.spec_from_file_location('j', '$P/jig/jig.py'); m = u.module_from_spec(s); s.loader.exec_module(m)
+orig = m.parse_register
+m.parse_register = lambda t, p: (lambda r: ([e for e in r[0] if e['id'] != 'D-001'], r[1]))(orig(t, p))
+sys.exit(m.cmd_merge_log(pathlib.Path('.').resolve(), True))" 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'DECISIONS.md: row D-001 came out as no entry' && test ! -e .jig/decisions.md && test -z \"\$(git status --porcelain)\"" "$out"
 
 # A metarepo job: the run's output commits unedited, with no M3 and no M2 asking for Touches.
 MM="$T/ml-meta"; mkdir -p "$MM/.t" && git -C "$JR" archive v0.9.0 plugin/templates | tar -x -C "$MM/.t"

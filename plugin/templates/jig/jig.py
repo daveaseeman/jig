@@ -7971,19 +7971,24 @@ def parse_register(text: str, prefix: str | None) -> tuple[list[dict], list[list
     rows = set(rows_in(text, prefix))
     rule = lambda l: l.lstrip().startswith("|") and all(re.fullmatch(r":?-+:?", c) for c in table_cells(l))
     # Each row is read against its own table's header, since two tables may order or name their
-    # columns differently; the file's first Id header stands in for a table that has none.
-    # A decision table's header row and separator are known by the decision row under them,
-    # whatever the header says: a note's own table keeps its lines.
+    # columns differently. A table with none takes the nearest decision table's header above,
+    # then the file's first Id header. A decision table's header row and separator are known by
+    # the decision row under them, whatever the header says: a note's own table keeps its lines.
     fallback = register_header(lines)
-    entries, table, header = [], set(), None
+    entries, table, header, near = [], set(), None, None
     for i, l in enumerate(lines):
+        under = i + 1 < len(lines) and rule(lines[i + 1])
         if not l.lstrip().startswith("|"):
             header = None
-        elif i + 2 < len(lines) and rule(lines[i + 1]) and lines[i + 2].rstrip() in rows:
-            header = table_cells(l)
-            table |= {i + 1, i + 2}
         elif l.rstrip() in rows:
-            entries.append(row_entry(table_cells(l), header or fallback))
+            entries.append(row_entry(table_cells(l), header or near or fallback))
+            near = header or near
+            if under:
+                table.add(i + 2)
+        elif under:
+            header = table_cells(l)
+            if i + 2 < len(lines) and lines[i + 2].rstrip() in rows:
+                table |= {i + 1, i + 2}
     left = [(n, l) for n, l in enumerate(lines, 1)
             if l.strip() and l.rstrip() not in rows and not OLD_SEED.match(l) and n not in table]
     return entries, paragraphs(left)
@@ -8046,6 +8051,13 @@ def merged_log(root: Path) -> dict:
     if preamble:
         keep[CHANGELOG] = as_written(paragraphs(preamble))
     p = prefix or (re.match(r"[A-Z][A-Z0-9]*-", entries[0]["id"]).group(0) if entries else "D-")
+    # Every row the register holds must come out as an entry or be named as left out, whatever
+    # its table's shape: a row read wrong is lost with its register file.
+    taken = {decision_id(e["id"]) for e in entries} | {decision_id(x) for x in rejected + struck}
+    lost = [f"{f}: row {table_cells(r)[0].strip()} came out as no entry: jig couldn't read its table; "
+            "give the table an Id header and a separator"
+            for f in old_registers(root) for r in rows_in((root / f).read_text(errors="replace"), prefix)
+            if decision_id(table_cells(r)[0]) not in taken]
     # A row a struck row superseded would come back accepted, since nothing in the log retires it.
     gone_live = [f"{e['id']} is superseded by {e['by']}, which is struck: strike {e['id']} too "
                  f"(Status `struck`), or un-strike {e['by']}"
@@ -8089,7 +8101,7 @@ def merged_log(root: Path) -> dict:
     notes += [f"{', '.join(rejected)}: rejected, left out (their numbers stay taken)"] if rejected else []
     notes += [f"{', '.join(struck)}: struck as project scope, left out (their numbers stay taken)"] if struck else []
     return {"text": text, "notes": notes, "homeless": homeless, "keep": keep, "prefix": p,
-            "struck_live": gone_live, "undated": undated}
+            "struck_live": gone_live, "undated": undated, "lost": lost}
 
 
 def names_of(root: Path, gone: list[str]) -> list[tuple[str, int]]:
@@ -8186,7 +8198,7 @@ def cmd_merge_log(root: Path, apply: bool) -> int:
     problems = [f"M2 {f}: row {e['id']} has no status cell or no date, as the old M2 asked"
                 for f in old_registers(root)
                 for e in parse_register((root / f).read_text(errors="replace"), old_prefix(root))[0] if e["bad"]]
-    problems += log_problems(text, m["prefix"]) + m["struck_live"]
+    problems += m["lost"] + log_problems(text, m["prefix"]) + m["struck_live"]
     print("Merging into " + LOG + ":")
     for f, what in sources:
         print(f"  {f} ({what}), " + ("kept for what has no home" if f in keep else "removed after"))
