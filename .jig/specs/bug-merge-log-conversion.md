@@ -49,7 +49,7 @@ report's did. Examples below say `D-`.
 ## Workaround or correction
 All three are corrections to what produces the output.
 1. `as_written()` writes each paragraph's own lines, with one blank line wherever the old file had a gap between two of them.
-2. A superseded row's who and date come from the newest revision of the register in git whose status for that row was not superseded.
+2. A superseded row's who and date come from the newest revision of the register in git whose status for that row was accepted.
    - Where git can't say (a shallow clone, the row never anything but superseded, a moved register), the line is written from the row as it stands. The run prints a line naming the id as needing its who and date checked before the commit.
 3. Lines that sat under no group heading in the old section get `### Changed` above them. Lines already under a group keep that group's heading.
 
