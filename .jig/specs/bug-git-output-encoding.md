@@ -70,8 +70,9 @@ newer-release report names such a file like any other.
 ## Alternatives considered
 - Fix only `used_in`, as the report's minimum — rejected because the same `git()` crash refuses a
   commit of a Latin-1 code file in any jig repo, pararepo or not — reason is [seen]
-- `errors="surrogateescape"`, which keeps the bytes — rejected because `fill_cache` and the merge
-  resolution write git output with `write_text`, which raises on a surrogate — reason is [seen]
+- `errors="surrogateescape"` everywhere — rejected for text jig only reads, which `replace`
+  handles; kept for text jig writes back, written with `errors="surrogateescape"` so the bytes
+  survive (Decisions, amended after review) — reason is [seen: review of 11dafae]
 - Skip files that aren't UTF-8 (`-I` already skips binaries) — rejected because the report wants
   the file named: it is a real use of the term — reason is [seen: the report's Done when]
 - Keep `splitlines()` and drop short records, the report's second correction alone — rejected
