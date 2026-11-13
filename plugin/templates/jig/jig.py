@@ -4941,18 +4941,47 @@ def touches_problems(old: str, new: str, prefix: str, trunk: str, staged: bool) 
     return out
 
 
+def start_entry(want: str, every: list[dict], names: dict[str, str], unread: list[str]) -> dict:
+    """The entry `--peers` starts from: `<repo>/<id>` in that repo's log; a plain id in this
+    log first, since review asks about the diff's own entries, then in the one other log that
+    holds it. Two other logs holding it is a refusal naming each `<repo>/<id>`."""
+    searched = list(dict.fromkeys([LOG] + [e["label"] for e in every]))
+    head, _, rest = want.rpartition("/")
+    if head:
+        if head.casefold() not in names:
+            die(f"no repo {head} here: a `<repo>/<id>` names this repo, its metarepo or a pararepo `jig repos` lists", 1)
+        key = names[head.casefold()]
+        every, want = [e for e in every if e["writer"] == key], rest
+        searched = [LOG if key == SELF else f"{head}/{LOG}"]
+
+    def held(entries: list[dict]) -> dict | None:
+        return next((e for e in entries if e["id"] == want), None) or \
+            next((e for e in entries if decision_id(e["id"]) == decision_id(want)), None)
+
+    if found := held([e for e in every if e["writer"] == SELF]):
+        return found
+    others = {}
+    for e in every:
+        others.setdefault(e["writer"], []).append(e)
+    hits = [h for w, es in others.items() if w != SELF and (h := held(es))]
+    if len(hits) == 1:
+        return hits[0]
+    if hits:
+        die(f"{want} is in more than one log; name one: "
+            + ", ".join(f"{h['label'].removesuffix('/' + LOG)}/{h['id']}" for h in hits), 1)
+    die(f"no live entry {want} in " + ", ".join(searched)
+        + "".join(f"\nnot read: {u}" for u in unread), 1)
+
+
 def cmd_peers(root: Path, args) -> int:
     """`jig decision <id> --peers`: the entries a reader should read beside this one."""
     board = Board.load(root)
     prefix = log_prefix(board.trunk)
     path = root / LOG
     every, unread = touching(root, board.trunk, path.read_text() if path.exists() else "")
-    mine = [e for e in every if e["writer"] == SELF]
-    entry = next((e for e in mine if e["id"] == args.id), None) or \
-        next((e for e in mine if decision_id(e["id"]) == decision_id(args.id)), None)
-    if entry is None:
-        die(f"no live entry {args.id} in {LOG}", 1)
-    print(f"{entry['id']} {entry['title']}")
+    entry = start_entry(args.id, every, touch_names(root, board.trunk), unread)
+    print(f"{entry['id']} {entry['title']}" if entry["writer"] == SELF
+          else f"{entry['label']} § {entry['id']} {entry['title']}")
     print(f"  {rule_sentence(entry['block'])}")
     if not entry["pointers"]:
         print(f"\n{entry['id']} has no Touches line, so no peers can be found.")
@@ -10188,7 +10217,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("job", help="print this branch's manifest")
     dc = sub.add_parser("decision", help="print a decision entry and its supersedes chain")
     dc.add_argument("id")
-    dc.add_argument("--peers", action="store_true", help="the live entries touching the same pages, here and across the metarepo")
+    dc.add_argument("--peers", action="store_true", help="an entry's peers, from this log or one read for peers (`<repo>/<id>` picks the log)")
     sub.add_parser("sync", help="bring in the upstream: trunk on a job; the metarepo on a pararepo's trunk")
     rv = sub.add_parser("reviewed", help="record that HEAD has had its review")
     rv.add_argument("--tier", type=int, help="the model tier the review ran at")

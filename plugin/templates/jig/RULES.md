@@ -666,7 +666,8 @@ one names a page above the other's. Peers come from this log; in a pararepo, fro
 metarepo's log at the pin; in a metarepo, from each registered pararepo's log on its trunk
 (`jig repos`). A log jig can't read (no cache, a cache at another pin than the pin, a pararepo
 not found) is named. `jig decision <id> --peers` prints an
-entry's peers with their rule sentences. In a metarepo, `jig survey` names each of its pages
+entry's peers with their rule sentences. The entry may be in any log read for peers, this one
+first; `<repo>/<id>` picks the log when the id is in more than one. In a metarepo, `jig survey` names each of its pages
 two pararepos' entries touch while none of its own does: that ruling is probably the
 metarepo's.
 
