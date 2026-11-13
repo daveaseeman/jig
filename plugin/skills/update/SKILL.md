@@ -187,7 +187,8 @@ with nothing answering them. Each offers one `BUFFER.md` row: add it only on a y
    it by the test in `.jig/RULES.md` (Keeping merges mechanical): built from several sources
    that separate jobs change, and rebuildable at every merge. Show each file with its verdict
    and the reason, such as "one source each: regenerated in its job" or "rendered by hand: the
-   merge can't rebuild it". For the files that pass, propose filling `derive.sh`, listing
+   merge can't rebuild it", or "a lockfile: the branch's own build needs it, so its job
+   commits it". For the files that pass, propose filling `derive.sh`, listing
    them in `derived_files` in `.jig/config.json`, and removing the hand-run step it replaces;
    a file `check.sh` compares with its sources loses that comparison when it moves. Make it on
    a yes. If no file passes, say so in one line, leave the template, and ask nothing. A

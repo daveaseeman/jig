@@ -105,7 +105,8 @@ Conventions so two jobs rarely meet in one hunk:
   branches' copies merge into a wrong file, or conflict. Not such a file: one built from a
   single source, regenerated in the job that changes that source (`check.sh` may compare it);
   one the merge can't rebuild (made by hand, on special hardware, or too slow for every merge);
-  and jig's own `ROADMAP.md`.
+  a lockfile, which a branch's own build needs, so its job commits it; and jig's own
+  `ROADMAP.md`.
 
 ## Reserved numbers
 

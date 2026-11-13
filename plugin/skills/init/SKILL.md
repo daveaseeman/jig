@@ -73,9 +73,11 @@ Then:
    with jig's defaults. Leave `.jig/scripts/publish.sh` as the template too: until its TODO line
    goes, a release skips it, and `/jig:release` asks what a release publishes on the next release.
    Leave `.jig/scripts/derive.sh` as the template unless a tracked file passes the test in
-   `.jig/RULES.md` (Keeping merges mechanical): find the generated files and judge each as
-   `/jig:update` does (After `--apply`, step 2), and propose `derive.sh` only for those that
-   pass; if none does, ask nothing. The generator goes there, never in `setup.sh`, which must leave tracked files alone,
+   `.jig/RULES.md` (Keeping merges mechanical). Find the tracked files that are generated: a
+   "generated" or "do not edit" header, a `linguist-generated` line in `.gitattributes`, an
+   output path in a tracked script or build file, a file `check.sh` rebuilds and compares. Read
+   each one's generator, judge it by that test, and show each with its verdict and reason.
+   Propose `derive.sh` only for those that pass; if none does, ask nothing. The generator goes there, never in `setup.sh`, which must leave tracked files alone,
    and every file it writes is listed in `derived_files` in `.jig/config.json`.
 4. Write one sentence for the Project line in `AGENTS.md` from the README or the code. Mark it `(inferred)` so the user corrects it.
 5. If the repo already has a `CLAUDE.md` with content, don't replace it; append `@AGENTS.md` and say so.
