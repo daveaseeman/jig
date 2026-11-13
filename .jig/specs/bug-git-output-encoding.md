@@ -79,8 +79,11 @@ newer-release report names such a file like any other.
   reason is [seen]
 
 ## Decisions
-- `replace`, not `surrogateescape`: jig only matches ASCII ids, paths and headings, and some
-  callers write what they read.
+- `replace` for text jig only reads and matches; `surrogateescape` on both sides for text jig
+  writes back into a tracked file (the append-file resolution in `jig merge` and `jig sync`,
+  the roadmap rewrite). Amended after review, 2026-11-13: `replace` alone turned a crash into a
+  silent `\ufffd` in a merged append file, and `write_text(..., errors="surrogateescape")`
+  removes the reason `surrogateescape` was first rejected. Reason is [seen: review of 11dafae].
 - `grep_hits` reads bytes rather than relying on `git()`: `text=True`'s newline translation is
   what turns a lone CR into a record break.
 
