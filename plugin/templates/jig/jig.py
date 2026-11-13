@@ -7968,15 +7968,22 @@ def grouped(lines: list[str]) -> list[str]:
 def parse_register(text: str, prefix: str | None) -> tuple[list[dict], list[list[tuple[int, str]]]]:
     """A register's entries, and its other lines as notes: nothing the owner wrote is dropped."""
     lines = text.splitlines()
-    header = register_header(lines)
     rows = set(rows_in(text, prefix))
-    entries = [row_entry(table_cells(l), header) for l in lines if l.rstrip() in rows]
-    # A decision table's header row and the separator under it, known by the decision row
-    # under them, whatever its header says: a note's own table keeps its lines.
     rule = lambda l: l.lstrip().startswith("|") and all(re.fullmatch(r":?-+:?", c) for c in table_cells(l))
-    table = {n for i, l in enumerate(lines)
-             if l.lstrip().startswith("|") and i + 2 < len(lines) and rule(lines[i + 1])
-             and lines[i + 2].rstrip() in rows for n in (i + 1, i + 2)}
+    # Each row is read against its own table's header, since two tables may order or name their
+    # columns differently; the file's first Id header stands in for a table that has none.
+    # A decision table's header row and separator are known by the decision row under them,
+    # whatever the header says: a note's own table keeps its lines.
+    fallback = register_header(lines)
+    entries, table, header = [], set(), None
+    for i, l in enumerate(lines):
+        if not l.lstrip().startswith("|"):
+            header = None
+        elif i + 2 < len(lines) and rule(lines[i + 1]) and lines[i + 2].rstrip() in rows:
+            header = table_cells(l)
+            table |= {i + 1, i + 2}
+        elif l.rstrip() in rows:
+            entries.append(row_entry(table_cells(l), header or fallback))
     left = [(n, l) for n, l in enumerate(lines, 1)
             if l.strip() and l.rstrip() not in rows and not OLD_SEED.match(l) and n not in table]
     return entries, paragraphs(left)

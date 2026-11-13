@@ -4976,11 +4976,13 @@ expect_pass sh -c "grep -qx 'Accepted (not recorded, 2026-02-01).' .jig/decision
 
 msg="merge-log: a second decision table with its own header, and one headed No., leave no header or separator behind"
 ML3="$T/ml-tables"; pcnew "$ML3" && mlchangelog
-printf '# Register\n\nKept.\n\n## Current\n\n| Id | Decision | Status | Date |\n|---|---|---|---|\n| D-001 | a | accepted (Ann) | 2026-01-01 |\n\n## Retired\n\n| Id | Decision | Status | Date | Why |\n|---|---|---|---|---|\n| D-002 | b | rejected | 2026-01-01 | too slow |\n' > DECISIONS.md
+printf '# Register\n\nKept.\n\n## Current\n\n| Id | Decision | Status | Date |\n|---|---|---|---|\n| D-001 | a | accepted (Ann) | 2026-01-01 |\n\n## Retired\n\n| Id | Decision | Status | Date | Why |\n|---|---|---|---|---|\n| D-002 | b | rejected | 2026-01-01 | too slow |\n| D-005 | e | accepted (Ed) | 2026-01-01 | cheap |\n\n## Moved\n\n| Id | Status | Date | Decision | Why |\n|---|---|---|---|---|\n| D-004 | accepted (Bo) | 2026-02-01 | b wins | speed |\n' > DECISIONS.md
 mkdir -p sub && printf '# Sub register\n\nKept too.\n\n| No. | Decision | Status | Date |\n|---|---|---|---|\n| D-003 | c | accepted (Cy) | 2026-02-01 |\n' > sub/DECISIONS.md
 git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
 $UP --apply --merge-log >/dev/null 2>&1
 expect_pass sh -c "grep -qx 'Kept.' DECISIONS.md && grep -qx '## Retired' DECISIONS.md && grep -qx 'Kept too.' sub/DECISIONS.md && ! grep -q '^|' DECISIONS.md sub/DECISIONS.md"
+msg="merge-log: each row is read against its own table's header: columns in another order, and an extra column's name"
+expect_pass sh -c "grep -qx '### D-004 b wins' .jig/decisions.md && grep -qx 'Accepted (Bo, 2026-02-01).' .jig/decisions.md && grep -qx 'Why: speed' .jig/decisions.md && grep -qx 'Why: cheap' .jig/decisions.md && ! grep -q '^Note: ' .jig/decisions.md"
 
 # A metarepo job: the run's output commits unedited, with no M3 and no M2 asking for Touches.
 MM="$T/ml-meta"; mkdir -p "$MM/.t" && git -C "$JR" archive v0.9.0 plugin/templates | tar -x -C "$MM/.t"
