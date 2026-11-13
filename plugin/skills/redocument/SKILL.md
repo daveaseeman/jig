@@ -40,7 +40,10 @@ Otherwise:
 
 ## Hubnode: the remap
 
-1. **Seed it from survey.** Every page to convert is a first row: its old-contract pages, and
+1. **Seed it from survey.** First, one row per old-contract holder survey lists (a check, a
+   counter, an always-loaded line), verb `convert`: they are the run's first job, before any
+   page job, so the checks pass on converted pages. The job makes each check accept both shapes;
+   the cleanup (step 6) removes the old one. Then every page to convert is a row: its old-contract pages, and
    its pages outside the docs tree, in whatever format (with where survey says each goes).
    Its strays under `docs/` are rows too. A page at home but off the contract is update's,
    not the remap's. Every
@@ -84,20 +87,25 @@ Otherwise:
    `jig sync` names each move and each stale citation to the pararepos.
 2. **Propose it as a table** and iterate with the owner until approved:
 
-   | Old path(s) | New path | Verb | Notes | Cited |
-   |---|---|---|---|---|
-   | `docs/store/store.md` | `docs/store/store.md` | rewrite | path kept: rewritten in place | § Rules |
-   | `docs/notes/sync.md` | `docs/store/sync/sync.md` | move | a subsystem of store | |
-   | `docs/a/a.md`, `docs/b/b.md` | `docs/ab/ab.md` | merge | one system, two pages | |
-   | `docs/big/big.md` | `docs/big/x/x.md`, `docs/big/y/y.md` | split | | |
-   | — | `docs/gap/gap.md` | new | code with no page | |
-   | `docs/old/old.md` | — | drop | describes code that is gone | |
+   | Old path(s) | New path | Verb | Level | Notes | Cited |
+   |---|---|---|---|---|---|
+   | `tests/test_docs.py:12` | `tests/test_docs.py` | convert | | checks the old headings: accept both shapes | |
+   | `docs/store/store.md` | `docs/store/store.md` | rewrite | system | path kept: rewritten in place | § Rules |
+   | `docs/notes/sync.md` | `docs/store/sync/sync.md` | move | subsystem | 3 own files | |
+   | `docs/store/cache.md` | `docs/store/store.md` | merge | section | covers no file | |
+   | `docs/a/a.md`, `docs/b/b.md` | `docs/ab/ab.md` | merge | system | one system, two pages | |
+   | `docs/big/big.md` | `docs/big/x/x.md`, `docs/big/y/y.md` | split | system | | |
+   | — | `docs/gap/gap.md` | new | system | code with no page | |
+   | `docs/old/old.md` | — | drop | | describes code that is gone | |
 
-   Cited is only for a pararepo, Cited-by only for a metarepo.
+   Cited is only for a pararepo, Cited-by only for a metarepo. Level comes from
+   `jig survey --levels`: a page below a system is a `subsystem`, a `section` (covers no file)
+   or `shared` (another page covers every file it does). A row whose level differs from
+   survey's shows survey's evidence beside it, for the owner.
 
-   Verbs are `rewrite`, `merge`, `split`, `move`, `new`, `drop`. A new path is
+   Verbs are `rewrite`, `merge`, `split`, `move`, `new`, `drop`, and `convert` for a holder. A new path is
    `docs/<system>.md` or `docs/<system>/<subsystem>.md`, no deeper, flat until the page holds
-   other files; one that does (part pages, files it links, `datasheets/`) is
+   other files; one that does (subsystem pages, files it links, `datasheets/`) is
    `docs/<system>/<system>.md` or `docs/<system>/<subsystem>/<subsystem>.md`. A
    subsystem inside a subsystem is asked of the owner with its rationale, as `.jig/RULES.md`
    (Documentation) says, and lands as a `deep_subsystems` entry in `.jig/config.json` on trunk
@@ -174,6 +182,8 @@ Otherwise:
    - in a metarepo, rewrites `meta.json`'s `entry_files` to the new paths (`docs/<genre>/**/*.md`
      for a genre whose pages pararepos cite), in the same final job, so what pararepos cite
      moves with the pages;
+   - removes the old shape's acceptance from each holder's check, the counter over numbered
+     headings from `reserve` (on trunk, as the docmap keys), and the always-loaded lines that held the old contract;
    - repoints every tracked reference to an old path — README, `AGENTS.md`, other pages,
      comments — at its new path, or removes it for a `drop`. Find them with
      `git grep -n -F <old path>`, one old path at a time.
@@ -195,7 +205,7 @@ Your spec carries the job's remap rows and the Sources. You write only your page
    file a pointer names. A claim whose only record is the old page is kept as worded and
    flagged, never left off.
 2. **Write** the page from `.jig/docs-page.md`, to the contract: a lead paragraph, sections
-   named for the system's parts, optional Talks to, optional Invariants. An old page's list of what it uses or serves goes under `## Talks to`, keeping only
+   named for what its code has, optional Talks to, optional Invariants. An old page's list of what it uses or serves goes under `## Talks to`, keeping only
    what crosses the system's boundary; calls inside the system are the body's or nowhere.
    Every claim of the old page, a Rules entry or a house-format section's statement, gets
    exactly one fate:

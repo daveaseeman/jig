@@ -53,6 +53,12 @@ as `.jig/RULES.md` (Documentation) says; that entry lands on trunk on a yes. A p
 **wrong shape**: a folder page with nothing else in its folder goes flat beside its parent's
 page, and a flat page with a folder of its own name moves into it, each with its docmap key
 and `boards` entry; ask before each.
+A **holder of the old page contract** (a check of the Now / Rules / Checks headings, a counter
+over numbered headings, an always-loaded line that makes page rules bind or cites a page by
+number) is listed with its fix and never proposed for deletion: it converts with the pages,
+accepting both shapes while `/jig:redocument` runs and the new one after its cleanup. A page
+that **covers no file** is a section of the page above it: propose the fold, with every line it
+touches, on a yes.
 Then make every line the proposal names in one commit — the `git mv`s, the docmap keys,
 `contract_paths`, the stale lines and, in a pararepo, a `BUFFER.md` row per cached pointer. Carry
 out each finding on a yes. Never propose adding a line that restates `.jig/RULES.md`: point at it.

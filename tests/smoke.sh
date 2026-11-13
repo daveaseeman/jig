@@ -3276,6 +3276,61 @@ expect_pass sh -c "$J repos | grep -q 'tool reports wait in .*/fb/feedback while
 # order: staging releases metarepo's $M; R6 as ints works in R6 takes' repo $R.
 # The slowest start first, so the run isn't waiting on one that started last.
 # ---------------------------------------------------------------- doc homes
+sec_structure() {
+# The repo's own files that hold its docs structure: old-contract holders, levels, maps.
+SR="$T/structure"; pcnew "$SR" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p docs/a src/a/c tests scripts
+printf '# A\n\nThe a system.\n\n## Thing\n\nx\n' > docs/a/a.md
+printf '# B\n\n## Now\nx\n\n## Rules\n### 1.1 y\n\n## Checks\n- 1.1 review\n' > docs/a/b.md
+printf '# C\n\nThe c subsystem.\n\n## Index\n\nx\n' > docs/a/c.md
+printf '# F\n\nThe f page.\n\n## Impl\n\nx\n' > docs/a/f.md
+printf 'X = 1\n' > src/a/c/index.py && printf 'Y = 2\n' > src/a/c/impl.py
+printf 'from src.a.c import index\n' > src/a/main.py
+# Written with %s, so this file holds no list of the three headings itself.
+printf 'HEADS = ["Now", "Rules", "%s"]\n' Checks > tests/test_docs.py
+printf '#!/bin/sh\nprintf "# x\\n\\n## Now\\nx\\n\\n## Rules\\nx\\n\\n## Checks\\nx\\n" > p.md\n' > tests/fixture.sh
+printf -- '- Rules written in a documentation page bind as if they stood in this file.\n- Keep %s and Rules current.\n' Now >> AGENTS.md
+printf '{"systems": {"a": {"files": ["src/a/**"], "parts": {"b": {"files": []}, "c": {"files": ["src/a/c/**"]}}}}}\n' > docs/owners.json
+printf 'import json\nprint(json.load(open("docs/owners.json")))\n' > scripts/gen.py
+board "b['docmap'] = {'docs/a/a.md': ['src/a/**'], 'docs/a/b.md': [], 'docs/a/c.md': ['src/a/c/**'], 'docs/a/f.md': ['src/a/c/impl.py']}; b['reserve'] = {'section': {'next': 1, 'pattern': r'^### (\d+)\.\d+', 'files': ['docs/**/*.md']}}"
+git add -A && git commit -qm fixture
+n=$(grep -n 'bind as if' AGENTS.md | cut -d: -f1); m=$((n + 1))
+msg="structure: survey names the check, the counter and both AGENTS.md lines as holders, not the fixture, and its last line names /jig:redocument"
+out=$($J survey 2>&1)
+expect_pass sh -c "h=\$(echo \"\$0\" | sed -n '/^Checks, counters and lines that hold the old page contract/,/^\$/p')
+for w in 'tests/test_docs.py:1: ' '.jig/config.json reserve.section: ' \"AGENTS.md:$n: \" \"AGENTS.md:$m: \"; do echo \"\$h\" | grep -qF \"  \$w\" || { echo \"missing \$w\"; exit 1; }; done
+! echo \"\$h\" | grep -q fixture.sh && echo \"\$0\" | tail -1 | grep -q '/jig:redocument'" "$out"
+# --apply's own layout step drops the counter's `next`; the holder is its pattern and files.
+msg="structure: the update dry run lists the same four under Repo files to review; --apply leaves them unchanged"
+printf '# behind\n' >> .jig/jig.py && git commit -qam behind
+before=$(shasum tests/test_docs.py AGENTS.md; python3 -c "import json; c = json.load(open('.jig/config.json'))['reserve']['section']; print(c['pattern'], c['files'])")
+out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+after=$(shasum tests/test_docs.py AGENTS.md; python3 -c "import json; c = json.load(open('.jig/config.json'))['reserve']['section']; print(c['pattern'], c['files'])")
+expect_pass sh -c "r=\$(echo \"\$0\" | sed -n '/^Repo files to review/,/^\$/p')
+for w in 'tests/test_docs.py:1: ' '.jig/config.json reserve.section: ' \"AGENTS.md:$n: \" \"AGENTS.md:$m: \"; do echo \"\$r\" | grep -qF \"  \$w\" || { echo \"missing \$w\"; exit 1; }; done
+test \"\$1\" = \"\$2\"" "$out" "$before" "$after"
+git add -A && git commit -qm update >/dev/null
+msg="structure: b covers no file, a section of docs/a/a.md with no form move; f shares every file with c; c is not named"
+out=$($J survey 2>&1)
+expect_pass sh -c "h=\$(echo \"\$0\" | sed -n '/^Pages below a system that own no files/,/^\$/p')
+echo \"\$h\" | grep -q '^  docs/a/b.md: section: covers no file: a section of docs/a/a.md' \
+&& echo \"\$h\" | grep -q '^  docs/a/f.md: shared: every file it covers is docs/a/c.md.s too: the same subsystem, fold one into the other' \
+&& ! echo \"\$h\" | grep -q '^  docs/a/c.md' && ! echo \"\$0\" | sed -n '/^Pages in the wrong shape/,/^\$/p' | grep -q 'docs/a/b.md'" "$out"
+msg="structure: --levels gives c its own file, the file it shares with f, and the file the rest of a reaches it through"
+expect_pass sh -c "$J survey --levels | grep -qF '  docs/a/c.md: subsystem: 1 own file, 1 shared with docs/a/f.md; reached through src/a/c/index.py, from 1 file'"
+msg="structure: survey lists docs/owners.json as declaring a, b and c with the docmap's files, named by scripts/gen.py"
+expect_pass sh -c "echo \"\$0\" | grep -qF '  docs/owners.json: declares docs/a/a.md, docs/a/b.md, docs/a/c.md; the same files as the docmap; named by scripts/gen.py'" "$out"
+msg="structure: with c's docmap globs changed, the map's line says it differs for c"
+board "b['docmap']['docs/a/c.md'] = ['src/a/c/index.py']" && git commit -qam "c narrower"
+expect_pass sh -c "$J survey | grep -qF '  docs/owners.json: declares docs/a/a.md, docs/a/b.md, docs/a/c.md; differs from the docmap for docs/a/c.md'"
+msg="structure: docs/a/c/d.md, covering no file, gets only the fold into docs/a/c.md, no deep_subsystems choice"
+mkdir -p docs/a/c && printf '# D\n\nThe d page.\n\n## X\n\nx\n' > docs/a/c/d.md
+board "b['docmap']['docs/a/c/d.md'] = []" && git add -A && git commit -qm d
+out=$($J survey 2>&1)
+expect_pass sh -c "l=\$(echo \"\$0\" | sed -n '/^Pages below a subsystem/,/^\$/p' | grep '^  docs/a/c/d.md: ')
+echo \"\$l\" | grep -q 'fold it into docs/a/c.md' && ! echo \"\$l\" | grep -q deep_subsystems" "$out"
+}
+
 sec_homes() {
 page() { mkdir -p "$(dirname "$1")" && printf '# %s\n\n## Now\nx\n\n## Rules\n### 1.1 y\n\n## Checks\n- 1.1 review\n' "$1" > "$1"; }
 homes() { python3 -c "
@@ -3323,6 +3378,8 @@ sed -i.bak 's|`docs/systems/`|`docs/`|' AGENTS.md && rm AGENTS.md.bak
 board "b['docmap'] = {'docs/a.md': ['src/**']}" && git add -A && git commit -qm "docs: pages flat in docs/"
 msg="homes: once the moves are carried out, survey lists none of them"
 expect_pass homes "assert not h, h"
+msg="homes: survey prints no holder, no page that owns no files and no structure map"
+expect_pass sh -c "! $J survey | grep -qE '^(Checks, counters and lines|Pages below a system that own no files|Files that declare the docs structure)'"
 page docs/systems/c.md && git add -A && git commit -qm "c again" && behind
 msg="homes: a page whose destination exists is proposed as a fold, not a move"
 out=$($UP 2>&1)
@@ -3467,7 +3524,8 @@ msg="flat: docs/a/b.md (docmap names it) and docs/a/c.md (Invariants) are flat p
 expect_pass homes "assert not h and r['page_shapes'] == [] and r['datasheets_unlinked'] == [], (h, r['page_shapes'], r['datasheets_unlinked'])"
 msg="flat: reading-list for a flat part page's file prints it, then its system's page marked as the parent"
 expect_pass test "$(rl src/c/c.rs)" = "$(printf '  docs/a/c.md\n  docs/a/a.md   (parent of docs/a/c.md)')"
-mkdir -p docs/a/d && printf '# D\n\nThe d part.\n' > docs/a/d/d.md && git add -A && git commit -qm "d alone"
+mkdir -p docs/a/d src/d && printf '# D\n\nThe d part.\n' > docs/a/d/d.md && printf 'x\n' > src/d/d.rs
+board "b['docmap']['docs/a/d/d.md'] = ['src/d/**']" && git add -A && git commit -qm "d alone"
 msg="flat: a folder page alone in its folder is reported flat at docs/a/d.md, in --json and in print"
 out=$($J survey 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a/d/d.md: flat at docs/a/d.md' && python3 -c \"
@@ -3495,7 +3553,7 @@ msg="flat: with docs/a/b/e approved, it is at home"
 expect_pass homes "assert not h, h"
 msg="flat: an approved deep folder page alone goes flat, and its approval still names a tracked page"
 expect_pass homes "assert r['deep_unmatched'] == [], r['deep_unmatched']"
-mkdir -p docs/a/b/f && printf '# F\n\nThe f part.\n' > docs/a/b/f.md && printf '# F2\n\nThe f part again.\n' > docs/a/b/f/f.md
+mkdir -p docs/a/b/f src/f && printf '# F\n\nThe f part.\n' > docs/a/b/f.md && printf '# F2\n\nThe f part again.\n' > docs/a/b/f/f.md && printf 'x\n' > src/f/f.rs
 board "b['docmap']['docs/a/b/f.md'] = ['src/f/**']; b['deep_subsystems']['docs/a/b/f'] = 'own module'" && git add -A && git commit -qm "f twice"
 msg="flat: docs/a/b/f.md and docs/a/b/f/f.md together: the flat one folds into the folder page"
 expect_pass homes "assert [(e['path'], e['to'], e['into'], e['fold']) for e in r['page_shapes']] == [('docs/a/b/f.md', 'docs/a/b/f/f.md', True, True)], r['page_shapes']"
@@ -4917,7 +4975,7 @@ expect_pass sh -c "grep -qx '### D-003 ids are numbers' .jig/decisions.md && ! g
 }
 
 
-UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches"
+UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file
