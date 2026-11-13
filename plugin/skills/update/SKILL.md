@@ -94,7 +94,8 @@ headings; you and the owner judge what is product.
 A root **`CHANGELOG.md`** and a **decision register** (`DECISIONS.md`, or a metarepo's entry file
 of decision rows) merge into `.jig/decisions.md`, the one log (`.jig/RULES.md`, Decision log). Run
 `jig update --merge-log` and show what it prints: where each row lands, each rejected row it
-leaves out, each piece with no home (it stays in its old file, to move by hand), the
+leaves out, each superseded row git couldn't say who accepted or when (check its status line
+before the commit), each piece with no home (it stays in its old file, to move by hand), the
 `entry_files`, `append_files` and counter rewrites, the files that still name the old ones, and
 the log itself. Say each removal out loud. On a yes:
 
