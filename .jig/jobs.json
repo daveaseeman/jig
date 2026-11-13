@@ -13,7 +13,7 @@
   },
   "branch-log-old-side": {
     "spec": ".jig/specs/bug-branch-log-old-side.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
