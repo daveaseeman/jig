@@ -33,7 +33,7 @@ Each one gets exactly one job and one home:
 | `AGENTS.md` | rules an agent needs on every task — and nothing else |
 | `CLAUDE.md` | one line importing AGENTS.md |
 | `README.md` | for people outside the repo |
-| `docs/<system>.md` | what the code is now, one page per system; a subsystem stays a section until it has something to say that its system's page doesn't, then gets `docs/<system>/<subsystem>.md`, no deeper without the owner's `deep_subsystems` entry; a page is flat until it holds other files (part pages, files it links, `datasheets/`), then moves into a folder named for it, `docs/<system>/<system>.md`, with them beside it |
+| `docs/<system>.md` | what the code is now, one page per system; a subsystem stays a section until it has something to say that its system's page doesn't, then gets `docs/<system>/<subsystem>.md`, no deeper without the owner's `deep_subsystems` entry; a page is flat until it holds other files (subsystem pages, files it links, `datasheets/`), then moves into a folder named for it, `docs/<system>/<system>.md`, with them beside it |
 | `.jig/specs/` | a task in flight |
 | `.jig/ledgers/WORKAROUNDS.md` | patches that are in the code |
 | `.jig/ledgers/DEFERRED.md` | review findings that are not |
@@ -263,6 +263,6 @@ if any, go with it.
   rebase such a job before adopting it.
 - **Intake of a branch that predates any board.** Adopt it by hand with `open --branch`.
 - **A rendered human-readable board.** `jig status` is the view.
-- **Repo-specific docs tests.** They stay the repo's, reading whatever file they read.
+- **Repo-specific docs tests.** They stay the repo's; where they check a page shape or number rules, they convert with the pages.
 - **CODEOWNERS itself.** GitHub keeps reading it for review assignment; jig's `owns` is
   exclusive write during an open job, a stronger claim. Keep both; derive `owns` from it.

@@ -2,13 +2,13 @@
 
 <One paragraph, no heading: what this system is and why it exists.>
 
-## <Part>
+## <Section>
 
-<What this part is and does on trunk today, in present tense: never when or in what order it
-will change, and no spec, phase or scope, which are .jig/roadmap.md's. Name each section for a part
-the code has (Schema, Renderer, Sync), never Overview, Notes or Changes. A part with files of
+<What this section's code is and does on trunk today, in present tense: never when or in what order it
+will change, and no spec, phase or scope, which are .jig/roadmap.md's. Name each section for what
+the code has (Schema, Renderer, Sync), never Overview, Notes or Changes. A section whose code has files of
 its own, which the rest of the system reaches only through its interfaces, is a subsystem. It
-gets a folder and a page of its own once it has something to say that whoever works on it
+gets a page of its own once it has something to say that whoever works on it
 needs and this page doesn't; this section then shrinks to a paragraph and a link. Until then it
 stays a section here. A subsystem's page holds sections, not subsystems, unless the owner approved a deeper
 level.>

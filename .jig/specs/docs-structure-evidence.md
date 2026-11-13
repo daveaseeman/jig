@@ -170,8 +170,12 @@ pages. It finds three kinds of holder, each with its fix:
   their counters aren't holders.
 - **A line:** in root `AGENTS.md`, `CLAUDE.md` or `GEMINI.md`, a line that has any of:
   - "bind as if they stood" (the template sentence and its rewordings);
-  - two of Now, Rules, Checks joined (`Now and Rules`, `Rules/Checks`);
-  - a numbered page citation (`§N.M`, `§87`, `### N.M`).
+  - Now joined to Rules or Checks (`Now and Rules`), or Rules and Checks joined right after a
+    page's name or a system's or page's possessive (`each system's Rules and Checks`);
+  - the placeholder `§N.M` or `### N.M`, or a numbered citation right after a page's name
+    (`core §2`, `docs/core/core.md §2`). Another name before a § is another document's
+    (`RFC 9111 §5.2`, `CLA §4`). Narrowed at review round 3, where wider scans flagged a repo's
+    ordinary lines.
 
   Fix: the template's Documentation line, and cite a page by its heading.
 
@@ -214,8 +218,11 @@ system, in a code repo; a metarepo has no code to read. Its evidence is read-onl
    evidence for .<ext>".
 
 Levels:
-- **A section of `<page above>`:** it covers no tracked file (no docmap key, or globs matching
-  nothing). RULES.md's definition settles this one, so no `deep_subsystems` rationale can hold
+- **Unmapped:** it has no docmap key, so its files are unknown. RULES.md has a subsystem name
+  its files in docmap, so it is offered that first, then the fold: "name its files in docmap,
+  or fold it into `<page above>`". Its form advice stands, and update drafts no fold for it.
+- **A section of `<page above>`:** it has a docmap key whose globs match no tracked file.
+  RULES.md's definition settles this one, so no `deep_subsystems` rationale can hold
   either. It is still a fold on the owner's yes, never a move jig makes.
 - **Shared:** it covers files, but another page, not one above it, covers every one of them.
   - With a sibling, it is the same subsystem as that sibling: fold one into the other.
@@ -225,9 +232,10 @@ Levels:
 - Board pages are exempt: `boards` makes them what they are, and survey already lists an
   unmapped one.
 
-Survey always prints the sections and shared pages under "Pages below a system that own no
-files (RULES.md, Documentation: a subsystem has files of its own)", with the page each folds
-into. It also lists
+Survey always prints the unmapped, section and shared pages under "Pages below a system that
+own no files, or that docmap doesn't map (RULES.md, Documentation: a subsystem has files of its
+own)", with the page each folds into, except a deep page or a misfiled seam, which its own
+heading answers with the same words. It also lists
 each JSON structure map under "Files that declare the docs structure":
 - what the map declares;
 - how it compares with the docmap: the same files, or the pages where they differ;
@@ -239,10 +247,11 @@ page, with its level and evidence, and `--json` carries `levels`.
 
 **One answer.**
 - `page_shapes` proposes no form move for a page whose level is a section.
-- For a deep page that owns no files, `deep_fix` offers only the fold. For one with own files it
-  offers both choices, and names those files as the rationale's evidence.
+- For a deep page that is a section, `deep_fix` offers only the fold; for one that is shared or
+  unmapped, the same answer as its level line. For one with own files it offers both choices,
+  and names those files as the rationale's evidence.
 - Update lists each section under Repo files to review, with its fold and the `commit_lines` it
-  touches.
+  touches, and each unmapped page with its level line and no fold drafted.
 - Redocument's remap table gains a Level column, seeded from `survey --levels`. A row whose level
   differs from survey's shows survey's evidence beside it, for the owner.
 
@@ -292,7 +301,9 @@ page, with its level and evidence, and `--json` carries `levels`.
 - [ ] The symptom, on Daisy. A scratch clone at `df641b1d` runs this `jig.py`.
   - `jig survey` names `daisy/tests/test_docs.py`, `reserve.section`, and `AGENTS.md` lines 9
     and 50.
-  - `--levels` names as sections the 13 pages that the approved remap folds by hand (rows 5–15).
+  - Of the 13 pages that the approved remap folds by hand (rows 5–15), `--levels` names the 3
+    with empty keys (prompt, cloud, local) as sections and the 10 keyless deep pages as
+    unmapped, and default survey gives all 13 a fold answer and no deep_subsystems choice.
     It gives each of the 22 row-4 pages a level and its evidence, so none is judged by depth.
   - It lists `docs/owners.json` as declaring the docmap's files, and names `gen_reference.py`,
     `reading_list.py` and `test_docs.py`.
@@ -387,6 +398,10 @@ page, with its level and evidence, and `--json` carries `levels`.
   cut them without touching the rest.
 - Each finding here has a kind for `findings-record`'s ids if that spec lands: `holder`, `level`,
   `map`. Neither spec waits for the other.
+- Amended at review (round 2): a section is a docmap key whose globs match nothing, and a page
+  with no key is `unmapped`, its own level. No key says nothing about a page's files, and in a
+  repo with no map behind its docmap, calling a real subsystem a section told the owner to fold
+  it. Every hand-folded page is still told to fold, with naming its files offered first.
 - This makes the call that `docs-subsystems` deferred, and widens `docs-page-contract`'s
   Migration. Pages are still not rewritten by update; their other holders are now listed.
 
