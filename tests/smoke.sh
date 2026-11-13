@@ -3742,6 +3742,20 @@ ipage docs/w/k/k.md && board "b['docmap']['docs/w/k/k.md'] = []" && git add -A &
 board "b['findings']['page:docs/w/k/k.md'] = 'approved'" && git commit -qam "k approved" && behind
 $UP --apply >/dev/null 2>&1
 expect_pass sh -c "git diff --cached --name-status | grep -q '^R.*docs/w/k/k.md	docs/k.md' && git commit -qm apply"
+msg="form: a fold carries no move for a page whose company it leaves as it was: that move is its own finding"
+ipage docs/u.md && ipage docs/u/c.md && ipage docs/u/e/e.md && mkf src/u/u.py src/u/c/c.py
+board "b['docmap'].update({'docs/u.md': ['src/u/*.py'], 'docs/u/c.md': ['src/u/c/**'], 'docs/u/e/e.md': ['src/u/none/**']})"
+git add -A && git -c core.hooksPath=/dev/null commit -qm "u, already wrong" && behind
+out=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^      fold docs/u/e/e.md into ' && ! echo \"\$0\" | grep -q '^      git mv docs/u.md docs/u/u.md\$'" "$out"
+msg="form: adding a system page above a lone page gives it a home, and the hook refuses its form"
+ipage docs/v/b/b.md && board "b['docmap']['docs/v/b/b.md'] = []" && git add -A && git -c core.hooksPath=/dev/null commit -qm "lone v/b"
+ipage docs/v/v.md && git add -A && frefused "v page"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'docs/v/b/b.md: flat at docs/v/b.md'" "$out"
+msg="form: jig check run from a subfolder judges the whole tree"
+board "b['docmap']['docs/z/z.md'] = []" && git commit -qam "z named" && ipage docs/z/z.md && git add -A
+out=$(cd docs && python3 ../.jig/jig.py check --staged 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^docs/z/z.md: flat at docs/z.md'" "$out"
 msg="form: a one-page edit in a tree of hundreds of pages is judged in seconds, not minutes"
 # 30 systems of 10 pages, each mapped to code of its own with a README beside it: a stray .md apiece.
 python3 -c "
@@ -3758,8 +3772,8 @@ for i in range(30):
         b['docmap'][page] = [f'src/t{i}/p{j}/**']
 json.dump(b, open('.jig/config.json', 'w'), indent=2)"
 git add -A && git -c core.hooksPath=/dev/null commit -qm many && printf -- '- e\n' >> docs/t1/p1.md && git add -A
-start=$(date +%s); $J check --staged >/dev/null 2>&1; took=$(( $(date +%s) - start ))
-expect_pass test "$took" -lt 20
+start=$(date +%s); out=$($J check --staged 2>&1); took=$(( $(date +%s) - start ))
+expect_pass sh -c "test $took -lt 20 && test \"\$0\" = ok" "$out"
 git reset -q --hard
 msg="form: jig merge of a job that slipped a lone page in stops with the refusal and commits no merge"
 $J open pf --branch b-pf --owns 'docs/**' >/dev/null && git add -A && git commit -qm "TOOL: open pf"

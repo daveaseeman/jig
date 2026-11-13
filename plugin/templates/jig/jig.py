@@ -7481,10 +7481,12 @@ def form_entries(root: Path, files: list[str], board: dict, read, only: set[str]
             if not rec.get(finding_id(e), "").startswith("exception:")]
 
 
-def form_candidates(paths: list[str]) -> set[str]:
+def form_candidates(paths: list[str], files: list[str] = (), born: set[str] = frozenset()) -> set[str]:
     """The pages whose form PATHS can change: each page among them, and both forms of the page
-    of each folder above each, whose company it is."""
-    out = set()
+    of each folder above each, whose company it is. A page BORN or gone gives the pages in FILES
+    under its folder a home or takes it, which decides whether their form is judged at all."""
+    out = {f for p in born for f in files
+           if f.startswith(f"{page_folder(p)}/") and f.endswith(".md")}
     for p in paths:
         if not p.startswith("docs/"):
             continue
@@ -7519,13 +7521,17 @@ def page_form_rules(root: Path, board: "Board", trunk: str, staged: bool, guarde
     any branch can make, unlike depth's, so it is refused. Only what this change does is: an
     entry the base already has is survey's, as an old line in a touched page is never refused.
     Only the pages the change can reform are judged, so a commit costs what it touches."""
-    only = form_candidates(guarded)
-    if not only:
+    if not any(f.startswith("docs/") for f in guarded):
         return []
     b = base(trunk)
     q = ("-c", "core.quotePath=false")
-    before = [f for f in git(*q, "ls-tree", "-r", "--name-only", b).splitlines() if f]
-    after = [f for f in git(*q, "ls-files").splitlines() if f and (staged or Path(f).exists())]
+    # From the root: run in a subfolder, both list only what is under it.
+    before = [f for f in git(*q, "ls-tree", "-r", "--name-only", b, cwd=str(root)).splitlines() if f]
+    after = [f for f in git(*q, "ls-files", cwd=str(root)).splitlines()
+             if f and (staged or (root / f).exists())]
+    was, now = set(before), set(after)
+    only = form_candidates(guarded, before + after,
+                           {p for p in guarded if p.endswith(".md") and (p in was) != (p in now)})
 
     def reader(files: list[str], rev: str | None):
         # Every docs page's text in one git call: a page outside ONLY is still read for its
@@ -8271,18 +8277,25 @@ def para_pointers(root: Path) -> tuple[dict, list]:
     return para, pointers(root) if para else []
 
 
-def reforms(files: list[str], touched: list[str]) -> list[tuple[str, str]]:
+def reforms(was: list[str], files: list[str], touched: list[str]) -> list[tuple[str, str]]:
     """The moves that put each page whose folder TOUCHED fills or empties back in its form, on
-    the tree FILES: a folder page left alone goes flat, a flat page given company goes in.
-    A move or a fold that leaves them is refused by the hook, so its lines carry them."""
-    have, out = set(files), []
-    for p in sorted(form_candidates(touched) & have):
+    the tree FILES from the tree WAS: a folder page left alone goes flat, a flat page given
+    company goes in. A move or a fold that leaves them is refused by the hook, so its lines
+    carry them. A page whose company the moves don't change is no part of them: its form is
+    its own finding, with its own answer."""
+    have, before, out = set(files), set(was), []
+
+    def company(p: str, tree: set[str]) -> bool:
+        return any(f.startswith(f"{page_folder(p)}/") and f != p for f in tree)
+    for p in sorted(form_candidates(touched) & have & before):
         d = page_folder(p)
-        company = any(f.startswith(f"{d}/") and f != p for f in have)
-        if folder_page(p) and not old_layout(p) and not company and flat_spot(f"{d}.md", have) \
+        if company(p, have) == company(p, before):
+            continue
+        company_now = company(p, have)
+        if folder_page(p) and not old_layout(p) and not company_now and flat_spot(f"{d}.md", have) \
                 and f"{d}.md" not in have:
             out.append((p, f"{d}.md"))
-        elif not folder_page(p) and flat_spot(p, have) and company and f"{d}/{Path(p).stem}.md" not in have:
+        elif not folder_page(p) and flat_spot(p, have) and company_now and f"{d}/{Path(p).stem}.md" not in have:
             out.append((p, f"{d}/{Path(p).stem}.md"))
     return out
 
@@ -8296,7 +8309,7 @@ def move_lines(root: Path, board: dict, board_at: str, after: list[str], para: d
     emptied = [] if any(f.startswith(folder) for f in left) else [folder]
     lines = [f"{'fold' if h['fold'] else 'git mv'} {h['path']} {'into ' if h['fold'] else ''}{h['to']}"
              + state_tag(h, rec) for h in group]
-    lines += [f"git mv {p} {to}" for p, to in reforms(left, [x for h in group for x in (h["path"], h["to"])])]
+    lines += [f"git mv {p} {to}" for p, to in reforms(after, left, [x for h in group for x in (h["path"], h["to"])])]
     lines += [f"{CONFIG} docmap: {o}" for o in moves if o in (board.get("docmap") or {})]
     lines += [f"{PARA} contract_paths: {g}" for g in para.get("contract_paths", [])
               if any(matches(o, [g]) and not matches(n, [g]) for o, n in moves.items())]
