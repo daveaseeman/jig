@@ -1,7 +1,7 @@
 {
   "merge-derived-files": {
     "spec": ".jig/specs/merge-derived-files.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/templates/jig/scripts/derive.sh"
