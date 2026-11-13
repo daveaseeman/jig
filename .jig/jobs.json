@@ -1,23 +1,4 @@
 {
-  "merge-derived-files": {
-    "spec": ".jig/specs/merge-derived-files.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/templates/jig/scripts/derive.sh"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "plugin/templates/AGENTS.md",
-      "plugin/skills/hubnode/SKILL.md",
-      "plugin/skills/update/SKILL.md",
-      "plugin/skills/init/SKILL.md",
-      "plugin/skills/adopt/SKILL.md",
-      "tests/smoke.sh"
-    ],
-    "reserved": {}
-  },
   "findings-record": {
     "spec": ".jig/specs/findings-record.md",
     "state": "gated",

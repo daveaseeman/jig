@@ -26,7 +26,8 @@ identical; only the coordination disappears.
 Two files on trunk, written only by the hubnode. `.jig/config.json` holds what rarely
 changes: `name`, `trunk`, `common`, `append_files`, `reserve`, `docmap`, `not_docs`,
 `release`, `reference_files`, `workflow` (optional; see Workflow), `deep_subsystems` and
-`boards` (both optional; see Documentation) and the layout's `version`.
+`boards` (both optional; see Documentation), `derived_files` (optional; globs naming every
+file `.jig/scripts/derive.sh` writes, which `jig merge` commits) and the layout's `version`.
 `.jig/jobs.json` holds the open jobs, nothing else. Per job:
 
 | Key | Meaning |
@@ -97,6 +98,9 @@ Conventions so two jobs rarely meet in one hunk:
   your own module; new tests in your own file; a new fixture as a new file.
 - Scarce numbers come from the board (`--reserve`, `jig reserve`), never from looking at what seems free.
   Two branches that both take migration 17 corrupt the first database that runs both.
+- A file generated from the whole tree (a reference, an index) is written on trunk by
+  `.jig/scripts/derive.sh` at each merge and listed in `derived_files`, never on a branch: two branches' copies merge into a
+  wrong file, or conflict.
 
 ## Reserved numbers
 
@@ -421,7 +425,8 @@ else stops with the files named, and a person resolves it.
    after its merge of trunk, so the checks run in an environment built from the job's own
    manifests.
    That means a merge runs the merged-in `setup.sh`: review a change to it like any other
-   code, because the next merge executes it.
+   code, because the next merge executes it. The same goes for `derive.sh`, whose output the
+   merge commits.
 3. **The hubnode merges** with `jig merge <job>`, which deletes the job's entry and numbers its
    `D-?<slug>` ids (Decision log) in the merge commit itself, then syncs the clean jobs. A job synced since its note still merges: only
    the job's own commits count as changes since the check, and what a sync's resolution
@@ -433,6 +438,15 @@ else stops with the files named, and a person resolves it.
    `--subject <ids>` is the ids the subject leads with, e.g. `D-001, D-002`, for a repo whose
    subjects lead with ids: the subject becomes `<ids>: merge <job>`. `: merge <job>` is added
    unless the text already ends with it, so pass the ids and don't write the merge yourself.
+   Before its commit the merge runs `.jig/scripts/setup.sh`, then `.jig/scripts/derive.sh`,
+   and commits what the board's `derived_files` globs match in the merge commit, and nothing
+   else it wrote: a tracked file left changed outside them is named and not committed. A failing
+   derive stops the merge before its commit, as a conflict does: fix it, `jig merge --number`,
+   `git commit`.
+   A hand `git merge` on trunk runs `setup.sh` but not `derive.sh`: run it and commit what it
+   wrote, or the derived files stay stale until the next `jig merge`. In a metarepo, don't run
+   `derive.sh` on trunk after a hand merge: M4 refuses the commit, and what it writes blocks the
+   next `jig merge`, which writes them.
 
 ## Workflow
 
@@ -926,7 +940,7 @@ jig status                  jobs, states, distance from trunk, dirt
 jig open <name> --spec … --owns … --shares … --after … --reserve schema
 jig mark <name> <state>     claimed|building|ready|gated|parked
 jig merge <name> [-m msg] [--subject text]   merge a job, numbering its D-?<slug> ids; its entry is deleted in the merge commit
-jig merge --number          in a merge stopped on conflicts, once resolved: number the ids it brings in
+jig merge --number          in a merge stopped on conflicts, once resolved: number the ids it brings in, then setup.sh and derive.sh
 jig check [--staged]        run the rules here
 jig job                    this branch's manifest
 jig decision <id>           a decision entry and its supersedes chain
