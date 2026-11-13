@@ -3339,19 +3339,24 @@ expect_pass sh -c "echo \"\$0\" | grep -qF '  docs/a/g.md: unmapped: no docmap k
 && ! echo \"\$1\" | grep -q 'fold docs/a/g.md'" "$out" "$up"
 msg="structure: a deep page with no docmap key gets the one unmapped answer, with no deep_subsystems choice"
 expect_pass sh -c "l=\$(echo \"\$0\" | sed -n '/^Pages below a subsystem/,/^\$/p' | grep '^  docs/a/c/e.md: ')
-echo \"\$l\" | grep -q 'unmapped: no docmap key: name its files in docmap, or fold it into docs/a/c.md' && ! echo \"\$l\" | grep -q deep_subsystems" "$out"
+echo \"\$l\" | grep -q 'unmapped: no docmap key: name its files in docmap, or fold it into docs/a/c.md' && ! echo \"\$l\" | grep -q deep_subsystems \
+&& ! echo \"\$1\" | grep -q 'fold docs/a/c/e.md'" "$out" "$up"
 git checkout -q HEAD~1 -- .jig/jig.py && git commit -qam back
 msg="structure: locale files keyed by page names, a JSON file nested 2000 deep, a register's counter and the repo's own words hold nothing"
 mkdir -p locales docs/adr && printf '{"a": {"title": "A"}, "c": {"title": "C"}}\n' > locales/en.json && cp locales/en.json locales/fr.json
 python3 -c "print('{\"a\": {\"c\": ' * 1000 + '1' + '}}' * 1000)" > deep.json
 printf '# ADRs\n\n## 1. Use SQLite\n\nAccepted.\n' > docs/adr/log.md
 board "b['reserve']['adr'] = {'pattern': r'^## (\d+)\. ', 'files': ['docs/adr/*.md']}"
+# docs/core.md makes `core` a page's name: a word beside it, or a § after another name, cites nothing.
+printf '# Core\n\nThe core system.\n\n## Invariants\n- core is core — it is; held by review.\n' > docs/core.md
 printf -- '## 1.1 Setup\n- Caching follows RFC 9111 §5.2.\n- Lint Rules and Checks run in CI.\n' >> AGENTS.md
+printf -- '- Our lint rules follow the Google style guide §3.2.\n- Keep the docs current with each change (§ 2 of CONTRIBUTING).\n' >> AGENTS.md
+printf -- '- Do not change core without a review; see CONTRIBUTING §2.\n- The core loop runs its Rules and Checks in CI.\n' >> AGENTS.md
 git add -A && git commit -qm noise
 out=$($J survey 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && ! echo \"\$0\" | grep -q 'locales/\|deep.json\|reserve.adr' \
 && test \$(echo \"\$0\" | sed -n '/^Checks, counters and lines/,/^\$/p' | grep -c '^  AGENTS.md:') = 2" "$out"
-msg="structure: a § placeholder, a § beside rules, and a system's Rules and Checks are holders"
+msg="structure: a § placeholder, a § after a page's name, and a system's Rules and Checks are holders"
 printf -- '- Cite a rule by its number, §N.M, in commits.\n- Follow core §2 for hard rules.\n- Keep each system%ss Rules and Checks current.\n' "'" >> AGENTS.md && git commit -qam "old lines"
 expect_pass sh -c "test \$($J survey | sed -n '/^Checks, counters and lines/,/^\$/p' | grep -c '^  AGENTS.md:') = 5"
 }

@@ -170,8 +170,12 @@ pages. It finds three kinds of holder, each with its fix:
   their counters aren't holders.
 - **A line:** in root `AGENTS.md`, `CLAUDE.md` or `GEMINI.md`, a line that has any of:
   - "bind as if they stood" (the template sentence and its rewordings);
-  - two of Now, Rules, Checks joined (`Now and Rules`, `Rules/Checks`);
-  - a numbered page citation (`§N.M`, `§87`, `### N.M`).
+  - Now joined to Rules or Checks (`Now and Rules`), or Rules and Checks joined right after a
+    page's name or a system's or page's possessive (`each system's Rules and Checks`);
+  - the placeholder `§N.M` or `### N.M`, or a numbered citation right after a page's name
+    (`core §2`, `docs/core/core.md §2`). Another name before a § is another document's
+    (`RFC 9111 §5.2`, `CLA §4`). Narrowed at review round 3, where wider scans flagged a repo's
+    ordinary lines.
 
   Fix: the template's Documentation line, and cite a page by its heading.
 
@@ -299,7 +303,7 @@ page, with its level and evidence, and `--json` carries `levels`.
     and 50.
   - Of the 13 pages that the approved remap folds by hand (rows 5–15), `--levels` names the 3
     with empty keys (prompt, cloud, local) as sections and the 10 keyless deep pages as
-    unmapped, and default survey gives all 13 a fold-first answer. It gives each of the 22
+    unmapped, and default survey gives all 13 a fold answer and no deep_subsystems choice. It gives each of the 22
     row-4 pages a level and its evidence, so none is judged by depth.
   - It lists `docs/owners.json` as declaring the docmap's files, and names `gen_reference.py`,
     `reading_list.py` and `test_docs.py`.

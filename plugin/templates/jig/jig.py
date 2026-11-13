@@ -2340,13 +2340,18 @@ OLD_HEADS_RUN = re.compile(r"\b(?:Now|Rules|Checks)\b(?:[\"'`,|\[\]() \t]+(?:Now
 OLD_PAIR = re.compile(r"\b(Now|Rules|Checks)\s*(?:and|or|/|,|&)\s*(Now|Rules|Checks)\b")
 # The template's sentence and its rewordings.
 OLD_BIND = re.compile(r"(?i:bind as if they stood)")
-# A page cited by rule number: `§2`, `§87`, `### 1.1`, on a line that speaks of pages or rules,
-# and not after a standard's number, so "RFC 9111 §5.2" or the file's own `## 1.1` heading is no
-# citation. The template's placeholder, `§N.M` or `### N.M`, is the old contract wherever it is.
-OLD_CITE = re.compile(r"(?<!\d )(?<!\d)§\s*\d+(?:\.\d+)*\b|#{2,6}[ \t]+\d+\.\d+")
+# A page cited by rule number: a page's name right before `§2`, `§87` or `### 1.1`, as in
+# "core §2" or "docs/core/core.md §2". Any other name before a § is another document's: "RFC
+# 9111 §5.2", "CLA §4". The template's placeholder, `§N.M` or `### N.M`, is the old contract
+# wherever it is.
+CITE_AFTER = r"\s*(?:§\s*\d+(?:\.\d+)*\b|#{2,6}[ \t]+\d+\.\d+)"
 OLD_CITE_PLACEHOLDER = re.compile(r"§\s*N\.M\b|#{2,6}[ \t]+N\.M\b")
-# What a line names when its Rules or its § is a page's: a page, a system, a doc, docs/.
-NAMES_PAGE = r"\bdocs/|(?i:\b(?:pages?|systems?|docs?)\b)"
+# A page's Rules and Checks: the words right after a page's name or a system's or page's
+# possessive, as in "each system's Rules and Checks"; "the billing system gained Rules and
+# Checks" is the repo's own words.
+HEADS_AFTER = r"\s+(?:Now|Rules|Checks)\b"
+# Page names that are no system's: what a repo calls its changelog or its index.
+NOT_SYSTEM_NAMES = ("readme", "index", "changelog", "glossary", "contributing")
 HEADING_SAMPLES = ("# 1 x", "## 1 x", "## 1. x", "### 1.1 x", "### 12.3 x", "#### 1.1.1 x")
 
 
@@ -2359,14 +2364,17 @@ def contract_holders(root: Path, files: list[str], board: dict) -> list[dict]:
     tool = tuple({os.path.dirname(f) + "/" for f in files
                   if Path(f).name in ("jig.py", "aidev.py") and "/" in f} | {f"{DIR}/"})
     have, named = set(files), named_pages(board)
-    # A docs page's own name names it too: "core §2" for docs/core.md. A name of one or two
-    # letters is a word in any sentence.
-    stems = sorted({Path(f).stem for f in files if f.startswith("docs/") and f.endswith(".md")
-                    and len(Path(f).stem) > 2 and Path(f).stem.lower() not in ("readme", "index")})
-    names_page = re.compile(NAMES_PAGE + "".join(f"|\\b{re.escape(t)}\\b" for t in stems))
 
     def read(f: str) -> str:
         return (root / f).read_text(errors="replace") if (root / f).is_file() else ""
+    # A docs page's own name names it too: "core §2" for docs/core.md. Only a page's, in any
+    # case; a name of one or two letters is a word in any sentence.
+    stems = sorted({Path(f).stem for f in files if f.startswith("docs/") and f.endswith(".md")
+                    and len(Path(f).stem) > 2 and Path(f).stem.lower() not in NOT_SYSTEM_NAMES
+                    and (folder_page(f) or flat_page(f, have, named, read))})
+    page_name = r"(?i:docs/[\w./-]+" + "".join(f"|\\b{re.escape(t)}\\b" for t in stems) + ")"
+    cites_page = re.compile(page_name + CITE_AFTER)
+    pages_heads = re.compile(rf"(?:{page_name}|\b(?:system|page)'s){HEADS_AFTER}")
 
     def theirs(f: str) -> bool:
         return f in have and not f.startswith(tool) and not matches(f, not_docs)
@@ -2409,11 +2417,9 @@ def contract_holders(root: Path, files: list[str], board: dict) -> list[dict]:
             # The line's own heading marks are its heading, not a citation: `## 1.1 Setup`.
             body = re.sub(r"^\s*#{1,6}\s+", "", text)
             pair = [(x, y) for x, y in OLD_PAIR.findall(body) if x != y]
-            # "Rules and Checks run in CI" is the repo's own words; Now in the pair, or a page
-            # named beside it, makes it the old contract's. "Hard rules" beside a § cite pages.
+            # Now in the pair is the old contract's alone; Rules and Checks are only a page's.
             if (OLD_BIND.search(body) or OLD_CITE_PLACEHOLDER.search(body) or any("Now" in q for q in pair)
-                    or (names_page.search(body) and (OLD_CITE.search(body) or pair))
-                    or (re.search(r"\brules?\b", body) and OLD_CITE.search(body))):
+                    or cites_page.search(body) or (pair and pages_heads.search(body))):
                 out.append({"path": f, "line": i, "kind": "line", "label": f"{f}:{i}",
                             "fix": "holds the old page contract: replace it with the template's "
                                    f"Documentation line (`{DIR}/RULES.md` (Documentation)), and cite "
@@ -3094,8 +3100,8 @@ def cmd_survey(root: Path, args) -> int:
                   "lives in their nearest shared folder")
     below = [e for e in report["homeless"] if e["kind"] == "deep"]
     if below:
-        print(f"\nPages below a subsystem ({DIR}/RULES.md, Documentation); fold each into its "
-              f"subsystem's page,\nor propose it to the owner with its rationale for {CONFIG} deep_subsystems:")
+        print(f"\nPages below a subsystem ({DIR}/RULES.md, Documentation). Each line says what to do; "
+              f"only a page\nwith files of its own may be proposed to the owner for {CONFIG} deep_subsystems:")
         levels = {e["path"]: e for e in report["levels"]}
         for e in below:
             print(f"  {e['path']}: {deep_fix(e, deep, levels.get(e['path']))}")
@@ -7734,10 +7740,15 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
     levels = page_levels(root, after, board, read)
     by_page = {e["path"]: e for e in levels}
     for h in (h for h in homes if h["kind"] == "deep"):
+        lv = by_page.get(h["path"])
+        fix = f"below a subsystem ({DIR}/RULES.md, Documentation): {deep_fix(h, deep, lv)}"
+        # An unmapped page names its files first, and a shared one's answer is another page:
+        # neither is the fold into the subsystem's page, so none is drafted.
+        if lv and lv["level"] in ("unmapped", "shared"):
+            out.append((h["path"], fix))
+            continue
         lines = commit_lines(os.path.dirname(h["path"]) + "/", [h])
-        out.append((h["path"], f"below a subsystem ({DIR}/RULES.md, Documentation): "
-                    f"{deep_fix(h, deep, by_page.get(h['path']))}. "
-                    "To fold it, in one commit:" + "".join(f"\n      {l}" for l in lines)))
+        out.append((h["path"], f"{fix}. To fold it, in one commit:" + "".join(f"\n      {l}" for l in lines)))
     homeless_at = {h["path"] for h in homeless}
     for e in levels:
         if e["level"] != "section" or not e["into"] or e["path"] in homeless_at or e["path"] in reviewed:
