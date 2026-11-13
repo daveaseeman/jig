@@ -5,7 +5,8 @@
     "after": [],
     "owns": [],
     "shares": [
-      "plugin/templates/jig/jig.py tests/smoke.sh "
+      "plugin/templates/jig/jig.py",
+      "tests/smoke.sh"
     ],
     "reserved": {}
   },
@@ -15,7 +16,9 @@
     "after": [],
     "owns": [],
     "shares": [
-      "plugin/templates/jig/RULES.md plugin/templates/jig/jig.py tests/smoke.sh "
+      "plugin/templates/jig/RULES.md",
+      "plugin/templates/jig/jig.py",
+      "tests/smoke.sh"
     ],
     "reserved": {}
   },
@@ -25,7 +28,11 @@
     "after": [],
     "owns": [],
     "shares": [
-      "plugin/skills/hubnode/SKILL.md plugin/templates/jig/RULES.md plugin/templates/jig/jig.py plugin/templates/ledgers/BUFFER.md tests/smoke.sh "
+      "plugin/skills/hubnode/SKILL.md",
+      "plugin/templates/jig/RULES.md",
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/ledgers/BUFFER.md",
+      "tests/smoke.sh"
     ],
     "reserved": {}
   },
@@ -35,7 +42,12 @@
     "after": [],
     "owns": [],
     "shares": [
-      "plugin/skills/review/SKILL.md plugin/skills/survey/SKILL.md plugin/skills/update/SKILL.md plugin/templates/jig/RULES.md plugin/templates/jig/jig.py tests/smoke.sh "
+      "plugin/skills/review/SKILL.md",
+      "plugin/skills/survey/SKILL.md",
+      "plugin/skills/update/SKILL.md",
+      "plugin/templates/jig/RULES.md",
+      "plugin/templates/jig/jig.py",
+      "tests/smoke.sh"
     ],
     "reserved": {}
   },
@@ -45,7 +57,10 @@
     "after": [],
     "owns": [],
     "shares": [
-      "plugin/skills/init/SKILL.md plugin/skills/update/SKILL.md plugin/templates/jig/RULES.md plugin/templates/jig/scripts/derive.sh "
+      "plugin/skills/init/SKILL.md",
+      "plugin/skills/update/SKILL.md",
+      "plugin/templates/jig/RULES.md",
+      "plugin/templates/jig/scripts/derive.sh"
     ],
     "reserved": {}
   },
@@ -55,7 +70,9 @@
     "after": [],
     "owns": [],
     "shares": [
-      "plugin/templates/jig/jig.py plugin/templates/jig/RULES.md tests/smoke.sh"
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh"
     ],
     "reserved": {}
   },
@@ -65,7 +82,10 @@
     "after": [],
     "owns": [],
     "shares": [
-      "plugin/skills/hubnode/SKILL.md plugin/templates/jig/RULES.md plugin/templates/jig/jig.py tests/smoke.sh "
+      "plugin/skills/hubnode/SKILL.md",
+      "plugin/templates/jig/RULES.md",
+      "plugin/templates/jig/jig.py",
+      "tests/smoke.sh"
     ],
     "reserved": {}
   },
@@ -75,7 +95,9 @@
     "after": [],
     "owns": [],
     "shares": [
-      "plugin/templates/jig/RULES.md plugin/templates/jig/jig.py tests/smoke.sh "
+      "plugin/templates/jig/RULES.md",
+      "plugin/templates/jig/jig.py",
+      "tests/smoke.sh"
     ],
     "reserved": {}
   }
