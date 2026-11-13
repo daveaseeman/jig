@@ -3566,7 +3566,8 @@ msg="house: on a current repo, update is up to date, exits 0, and still lists th
 out=$($UP 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | head -1 | grep -qx 'up to date' && echo \"\$0\" | sed -n '/^Repo files to review/,/^\$/p' | grep -q '^  docs/s/s.md: off the page contract .*no lead paragraph'" "$out"
 msg="house: a clean jig repo's survey says nothing to do"
-printf '# S\n\nS keeps rows.\n\n## Part\n\nText.\n' > docs/s/s.md && git commit -qam lead
+# Flat too: a page alone in its folder is a finding, and survey counts it.
+printf '# S\n\nS keeps rows.\n\n## Part\n\nText.\n' > docs/s/s.md && git mv docs/s/s.md docs/s.md && board "b['docmap'] = {'docs/s.md': ['src/**']}" && git commit -qam lead
 expect_pass sh -c "$J survey | tail -1 | grep -qx 'On jig already: nothing to do.'"
 msg="house: a docmap key at the root moves to docs/ alone, with only its own references"
 mkdir -p src && printf 'x\n' > src/x.py && printf '# Architecture\n\n## Layers\nTwo.\n' > ARCHITECTURE.md
