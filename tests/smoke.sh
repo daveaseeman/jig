@@ -2748,10 +2748,10 @@ git checkout -q main
 # other conflict beside an append is sent to jig sync.
 FS="$T/fu-sync"; pcnew "$FS" && printf '# Changelog\n' > CHANGELOG.md && printf 'base\n' > common.txt && git add -A && git commit -qm init \
   && $J init >/dev/null && board "b['append_files'].append('CHANGELOG.md')" && git add -A && git commit -qm board
-for j in K L M N; do $J open $j --shares CHANGELOG.md common.txt >/dev/null; done; git add -A && git commit -qm "open K L M N"
-for j in K L M N; do
-  ( cd "$FS/.git/jig/worktrees/$j" && printf -- '- %s\n' "$j" >> CHANGELOG.md && printf 'x=1\n' > "$j.py" \
-    && { [ $j = L ] || [ $j = N ] || printf '%s\n' "$j" > common.txt; } && git add -A \
+for j in K L M N O; do $J open $j --shares CHANGELOG.md common.txt >/dev/null; done; git add -A && git commit -qm "open K L M N O"
+for j in K L M N O; do
+  ( cd "$FS/.git/jig/worktrees/$j" && { [ $j = O ] && git rm -q CHANGELOG.md || printf -- '- %s\n' "$j" >> CHANGELOG.md; } \
+    && printf 'x=1\n' > "$j.py" && { [ $j = L ] || [ $j = N ] || [ $j = O ] || printf '%s\n' "$j" > common.txt; } && git add -A \
     && git commit -qm "$j" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $j" )
 done
 msg="gate: an executable check.sh is printed as ./.jig/scripts/check.sh, and marking gated is the cleanup, not a hand-run remove"
@@ -2776,6 +2776,9 @@ out=$($J merge L 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && ! grep -q '\"L\"' .jig/jobs.json && test \"\$(grep '^- ' CHANGELOG.md | tr '\n' ' ')\" = '- K - L ' && ! grep -q '^[<|=>]\\{7\\}' CHANGELOG.md && test \"\$(git rev-parse L)\" = $ltip" "$out"
 msg="merge: it says it resolved CHANGELOG.md as jig sync would, and the commit is 'merge L' with no Conflicts lines"
 expect_pass sh -c "echo \"\$0\" | grep -q 'resolved CHANGELOG.md as .jig sync. would' && test \"\$(git log -1 --format=%B | sed '/^\$/d')\" = 'merge L'" "$out"
+msg="merge: O deleted CHANGELOG.md, which trunk appended to: refused, naming jig sync, trunk clean and the file kept"
+out=$($J merge O 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'append files (CHANGELOG.md): .jig sync.' && ! echo \"\$0\" | grep -q resolved && ! git rev-parse -q --verify MERGE_HEAD && test -z \"\$(git status --porcelain --untracked-files=no)\" && test -f CHANGELOG.md" "$out"
 msg="merge: M conflicts in CHANGELOG.md and common.txt: refused, naming jig sync and only the append file"
 out=$($J merge M 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'append files (CHANGELOG.md): .jig sync.' && ! git rev-parse -q --verify MERGE_HEAD && grep -q '\"M\"' .jig/jobs.json" "$out"
@@ -2813,6 +2816,10 @@ btip=$(git rev-parse B)
 msg="merge: then B merges with no sync and no new note: the base row, A's, then B's, B's branch untouched"
 out=$($J merge B 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && test \"\$(grep -o '| \\(base\\|A\\|B\\) |' .jig/ledgers/DEFERRED.md | tr -d '| ' | tr '\n' ' ')\" = 'base A B ' && ! grep -q '^[<|=>]\\{7\\}' .jig/ledgers/DEFERRED.md && test \"\$(git rev-parse B)\" = $btip && echo \"\$0\" | grep -q 'resolved .jig/ledgers/DEFERRED.md as .jig sync. would'" "$out"
+msg="merge: B's merge tree is the one jig sync, then jig merge, writes"
+git ls-tree -r HEAD > "$T/fu-defer.fix" && git reset -q --hard HEAD^ && (cd "$FD/.git/jig/worktrees/B" && $J sync >/dev/null 2>&1) \
+  && $J merge B >/dev/null 2>&1 && git ls-tree -r HEAD > "$T/fu-defer.sync"
+expect_pass cmp "$T/fu-defer.fix" "$T/fu-defer.sync"
 msg="merge: E, whose edit of the base row meets A's append, is refused, naming jig sync, trunk clean"
 out=$($J merge E 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig sync. the job, then merge' && ! git rev-parse -q --verify MERGE_HEAD && test -z \"\$(git status --porcelain --untracked-files=no)\" && grep -q '\"E\"' .jig/jobs.json" "$out"

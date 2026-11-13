@@ -1359,15 +1359,17 @@ def replay_sync(job: str, trunk: str) -> tuple[str, list[str]] | None:
 
 def sync_resolutions(job: str, files: list[str]) -> dict[str, str] | None:
     """FILES as `jig sync` would leave them after merging trunk (HEAD) into JOB, or None if
-    the sync would stop on any of them."""
+    the sync would stop on any of them, or any isn't a conflict where both sides only added: a
+    file one side deleted is conflicted with no markers, and resolving it would keep the file."""
     replay = replay_sync(job, "HEAD")
     if not replay:
         return None
     tree, conflicted = replay
     out = {}
     for f in files:
-        text, ok = resolved_appends(blob(tree, f))
-        if f not in conflicted or not ok:
+        raw = blob(tree, f)
+        text, ok = resolved_appends(raw)
+        if f not in conflicted or not CONFLICT.search(raw) or not ok:
             return None
         out[f] = text
     return out
@@ -1378,7 +1380,8 @@ def changed_since(commit: str, branch: str, board: "Board") -> list[str]:
     and what a merge of trunk carries beyond what `jig sync` makes of that merge. Trunk's
     changes aren't the job's, a hand edit hidden in a resolution is. Handoff notes, and the
     DEFERRED.md rows the review's untaken findings get beside them, are bookkeeping made after
-    the check by design; an edit of a row is a disposition no one checked, so it counts."""
+    the check by design: a DEFERRED.md change that deletes no line doesn't count. One that
+    deletes a line rewrites a disposition no one checked, so it does."""
     trunk, appends = board.trunk, append_globs(board)
     out: list[str] = []
 

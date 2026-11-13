@@ -468,8 +468,9 @@ else stops with the files named, and a person resolves it.
    `Spec:` is `--spec`, as a path from the repo root, else the job's spec on the board:
    working alone, pass `--spec`. A chunk that doesn't finish its spec hands off with
    `--partial`. Fill every heading, commit the note with the work, tell the hubnode the job
-   and the commit. The note and the review's `.jig/ledgers/DEFERRED.md` rows may be one commit
-   after the reviewed one: rows that only add don't count as a change since the check. A job may hand off several times.
+   and the commit. The note and the review's `.jig/ledgers/DEFERRED.md` rows may be one
+   commit after the reviewed one: a change there that deletes no line doesn't count as a
+   change since the check. A job may hand off several times.
 2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it sets
    up a **detached scratch checkout of the commit the note names**, with trunk merged in the
    way `jig sync` merges it, and prints the check to run there. It never runs
