@@ -1,7 +1,7 @@
 {
   "page-form-enforced": {
     "spec": ".jig/specs/page-form-enforced.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       ".jig/specs/page-form-enforced.md"
