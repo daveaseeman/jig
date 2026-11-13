@@ -48,7 +48,8 @@ is done.
    with `--partial`, so the roadmap doesn't count the spec complete. The review is already recorded: by the hubnode
    when it ran it, by `/jig:review` when you did. Never run a bare `jig reviewed` after the
    hubnode's review — it overwrites the tier and effort the hubnode recorded.
-4. Fill every heading in the note. Commit it with the work.
+4. Fill every heading in the note. Commit it with the work, and with the DEFERRED.md rows
+   for the review's untaken findings: rows added there after the review don't count as a change.
 5. Message the hubnode: the job, the commit, the note's path. Then keep building, or wait.
 
 Do not push. Every push and merge happens in the hubnode's session.

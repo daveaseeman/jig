@@ -2746,13 +2746,14 @@ expect_refuse git push -q origin HEAD:main
 rm .git/hooks/pre-push.local
 git checkout -q main
 
-# jig merge: an unsynced job with a conflict in an append file is sent to jig sync.
+# jig merge: an unsynced job whose only conflicts are appends is resolved as sync would; any
+# other conflict beside an append is sent to jig sync.
 FS="$T/fu-sync"; pcnew "$FS" && printf '# Changelog\n' > CHANGELOG.md && printf 'base\n' > common.txt && git add -A && git commit -qm init \
   && $J init >/dev/null && board "b['append_files'].append('CHANGELOG.md')" && git add -A && git commit -qm board
-for j in K L M; do $J open $j --shares CHANGELOG.md common.txt >/dev/null; done; git add -A && git commit -qm "open K L M"
-for j in K L M; do
-  ( cd "$FS/.git/jig/worktrees/$j" && printf -- '- %s\n' "$j" >> CHANGELOG.md && printf 'x=1\n' > "$j.py" \
-    && { [ $j = L ] || printf '%s\n' "$j" > common.txt; } && git add -A \
+for j in K L M N O; do $J open $j --shares CHANGELOG.md common.txt >/dev/null; done; git add -A && git commit -qm "open K L M N O"
+for j in K L M N O; do
+  ( cd "$FS/.git/jig/worktrees/$j" && { [ $j = O ] && git rm -q CHANGELOG.md || printf -- '- %s\n' "$j" >> CHANGELOG.md; } \
+    && printf 'x=1\n' > "$j.py" && { [ $j = L ] || [ $j = N ] || [ $j = O ] || printf '%s\n' "$j" > common.txt; } && git add -A \
     && git commit -qm "$j" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $j" )
 done
 msg="gate: an executable check.sh is printed as ./.jig/scripts/check.sh, and marking gated is the cleanup, not a hand-run remove"
@@ -2766,9 +2767,20 @@ $J merge K >/dev/null 2>&1
 msg="gate: M conflicts with trunk in common.txt: the gate stops, naming it, and removes its own checkout"
 out=$($J gate M 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'needs a hand in common.txt' && echo \"\$0\" | grep -q 'The checkout is removed' && test ! -e .git/jig/worktrees/gate-M && ! git worktree list | grep -q gate-M" "$out"
-msg="merge: L, unsynced, conflicts only in CHANGELOG.md: refused, naming jig sync, with trunk left clean"
-out=$($J merge L 2>&1); rc=$?
+SHIM="$T/fu-shim"; mkdir -p "$SHIM" && realgit=$(command -v git)
+printf '#!/bin/sh\n[ "$1" = version ] && { echo "git version 2.30.0"; exit 0; }\nfor a in "$@"; do [ "$a" = --write-tree ] && exit 129; done\nexec %s "$@"\n' "$realgit" > "$SHIM/git" && chmod +x "$SHIM/git"
+msg="merge: with a git older than 2.38, L, unsynced, conflicting only in CHANGELOG.md, is refused, naming jig sync, with trunk left clean"
+out=$(PATH="$SHIM:$PATH" $J merge L 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig sync. the job, then merge' && ! git rev-parse -q --verify MERGE_HEAD && test -z \"\$(git status --porcelain --untracked-files=no)\" && grep -q '\"L\"' .jig/jobs.json" "$out"
+ltip=$(git rev-parse L)
+msg="merge: L, unsynced, conflicts only in CHANGELOG.md: merged with no sync, K's line then L's, L's branch untouched"
+out=$($J merge L 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && ! grep -q '\"L\"' .jig/jobs.json && test \"\$(grep '^- ' CHANGELOG.md | tr '\n' ' ')\" = '- K - L ' && ! grep -q '^[<|=>]\\{7\\}' CHANGELOG.md && test \"\$(git rev-parse L)\" = $ltip" "$out"
+msg="merge: it says it resolved CHANGELOG.md as jig sync would, and the commit is 'merge L' with no Conflicts lines"
+expect_pass sh -c "echo \"\$0\" | grep -q 'resolved CHANGELOG.md as .jig sync. would' && test \"\$(git log -1 --format=%B | sed '/^\$/d')\" = 'merge L'" "$out"
+msg="merge: O deleted CHANGELOG.md, which trunk appended to: refused, naming jig sync, trunk clean and the file kept"
+out=$($J merge O 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'append files (CHANGELOG.md): .jig sync.' && ! echo \"\$0\" | grep -q resolved && ! git rev-parse -q --verify MERGE_HEAD && test -z \"\$(git status --porcelain --untracked-files=no)\" && test -f CHANGELOG.md" "$out"
 msg="merge: M conflicts in CHANGELOG.md and common.txt: refused, naming jig sync and only the append file"
 out=$($J merge M 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'append files (CHANGELOG.md): .jig sync.' && ! git rev-parse -q --verify MERGE_HEAD && grep -q '\"M\"' .jig/jobs.json" "$out"
@@ -2776,14 +2788,51 @@ msg="merge: M's sync resolves CHANGELOG.md and stops on common.txt"
 out=$(cd "$FS/.git/jig/worktrees/M" && $J sync 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^  common.txt' && ! echo \"\$0\" | grep -q '^  CHANGELOG.md'" "$out"
 (cd "$FS/.git/jig/worktrees/M" && git merge --abort)
-(cd "$FS/.git/jig/worktrees/L" && $J sync >/dev/null 2>&1)
-SHIM="$T/fu-shim"; mkdir -p "$SHIM" && realgit=$(command -v git)
-printf '#!/bin/sh\n[ "$1" = version ] && { echo "git version 2.30.0"; exit 0; }\nfor a in "$@"; do [ "$a" = --write-tree ] && exit 129; done\nexec %s "$@"\n' "$realgit" > "$SHIM/git" && chmod +x "$SHIM/git"
+(cd "$FS/.git/jig/worktrees/N" && $J sync >/dev/null 2>&1)
 msg="merge: with a git older than 2.38, a synced job is refused, saying 2.38 is needed"
-out=$(PATH="$SHIM:$PATH" $J merge L 2>&1); rc=$?
+out=$(PATH="$SHIM:$PATH" $J merge N 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'needs git 2.38'" "$out"
-msg="merge: once synced, L merges with no new handoff"
-expect_pass sh -c "$J merge L && ! grep -q '\"L\"' .jig/jobs.json && grep -q '^- K' CHANGELOG.md && grep -q '^- L' CHANGELOG.md"
+msg="merge: once synced, N merges with no new handoff"
+expect_pass sh -c "$J merge N && ! grep -q '\"N\"' .jig/jobs.json && grep -q '^- K' CHANGELOG.md && grep -q '^- N' CHANGELOG.md"
+
+# DEFERRED.md rows: two jobs' rows merge back to back; rows added beside the note don't count.
+FD="$T/fu-defer"; pcnew "$FD" && git add -A && git commit -qm init && $J init >/dev/null \
+  && mkdir -p .jig/ledgers && cp "$P/ledgers/DEFERRED.md" .jig/ledgers/ && printf '| 2026-11-01 | base | f0 | should-fix | deferred | r |\n' >> .jig/ledgers/DEFERRED.md && git add -A && git commit -qm board
+DROW='| 2026-11-13 | %s | f | optional | deferred | r |\n'
+for j in A B E C C2 X; do $J open $j >/dev/null; done; git add -A && git commit -qm "open jobs"
+for j in A B E C C2 X; do
+  ( cd "$FD/.git/jig/worktrees/$j" && printf 'x=1\n' > "$j.py" \
+    && { case $j in A|B) printf "$DROW" "$j" >> .jig/ledgers/DEFERRED.md;; E) sed -i.bak 's/| f0 |/| f0 edited |/' .jig/ledgers/DEFERRED.md && rm .jig/ledgers/DEFERRED.md.bak;; esac; } \
+    && git add -A && git commit -qm "$j" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
+    && { case $j in C|C2) printf "$DROW" "$j" >> .jig/ledgers/DEFERRED.md;; esac; } \
+    && { [ $j = C2 ] && sed -i.bak 's/| f0 |/| f0 reworded |/' .jig/ledgers/DEFERRED.md && rm .jig/ledgers/DEFERRED.md.bak || true; } \
+    && git add -A && git commit -qm "note $j" \
+    && { [ $j = X ] && printf 'more\n' >> AGENTS.md && git commit -qam "after the note" || true; } )
+done
+msg="merge: A's DEFERRED.md row merges"
+expect_pass $J merge A
+msg="merge: with a git older than 2.38, B, whose row meets A's, is refused, naming jig sync, trunk clean"
+out=$(PATH="$SHIM:$PATH" $J merge B 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig sync. the job, then merge' && ! git rev-parse -q --verify MERGE_HEAD && test -z \"\$(git status --porcelain --untracked-files=no)\"" "$out"
+btip=$(git rev-parse B)
+msg="merge: then B merges with no sync and no new note: the base row, A's, then B's, B's branch untouched"
+out=$($J merge B 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && test \"\$(grep -o '| \\(base\\|A\\|B\\) |' .jig/ledgers/DEFERRED.md | tr -d '| ' | tr '\n' ' ')\" = 'base A B ' && ! grep -q '^[<|=>]\\{7\\}' .jig/ledgers/DEFERRED.md && test \"\$(git rev-parse B)\" = $btip && echo \"\$0\" | grep -q 'resolved .jig/ledgers/DEFERRED.md as .jig sync. would'" "$out"
+msg="merge: B's merge tree is the one jig sync, then jig merge, writes"
+git ls-tree -r HEAD > "$T/fu-defer.fix" && git reset -q --hard HEAD^ && (cd "$FD/.git/jig/worktrees/B" && $J sync >/dev/null 2>&1) \
+  && $J merge B >/dev/null 2>&1 && git ls-tree -r HEAD > "$T/fu-defer.sync"
+expect_pass cmp "$T/fu-defer.fix" "$T/fu-defer.sync"
+msg="merge: E, whose edit of the base row meets A's append, is refused, naming jig sync, trunk clean"
+out=$($J merge E 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig sync. the job, then merge' && ! git rev-parse -q --verify MERGE_HEAD && test -z \"\$(git status --porcelain --untracked-files=no)\" && grep -q '\"E\"' .jig/jobs.json" "$out"
+msg="merge: C, its note and a DEFERRED.md row in one commit after the review, merges with no second record"
+expect_pass $J merge C
+msg="merge: C2, whose note commit also rewords the base row, is refused, naming DEFERRED.md"
+out=$($J merge C2 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'changed since.*DEFERRED.md'" "$out"
+msg="merge: X, with a line added to AGENTS.md after its note, is refused, naming AGENTS.md"
+out=$($J merge X 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'changed since.*AGENTS.md'" "$out"
 
 # The plugin's hooks: a repo's check.sh may be in another language.
 FH="$T/fu-hook"; pcnew "$FH" && git add -A && git commit -qm init && $J init >/dev/null
@@ -4245,6 +4294,18 @@ cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git c
 printf '## a\nScopes:\n- `x`: y\n' > .jig/roadmap.md && git add -A && git commit -qm "GLOSSARY: roadmap"
 msg="roadmap: in a metarepo, M4 lets ROADMAP.md be committed on trunk where a roadmap exists"
 $J roadmap --write >/dev/null && git add -A; expect_pass git commit -qm "GLOSSARY: roadmap view"
+git init -q --bare "$T/rm-meta-remote.git" && git remote add origin "$T/rm-meta-remote.git"
+msg="roadmap: in a metarepo, pre-push passes that trunk commit of ROADMAP.md as M4 did"
+expect_pass git push -q origin main
+msg="roadmap: and release accepts it, and tags"
+out=$(mrel); expect_pass sh -c "echo \"\$0\" | grep -q 'released v0.1.0' && git tag | grep -qx v0.1.0" "$out"
+msg="roadmap: in a metarepo, dropping the roadmap and its view in one commit passes the hook and release"
+git rm -q .jig/roadmap.md ROADMAP.md && expect_pass git commit -qm "GLOSSARY: drop roadmap"
+out=$(mrel); expect_pass sh -c "! echo \"\$0\" | grep -q 'without a reviewed merge'" "$out"
+msg="roadmap: in a metarepo with no roadmap at that commit, a ROADMAP.md commit made with hooks off is still refused by release"
+printf 'hand\n' > ROADMAP.md && git add -A \
+  && git -c core.hooksPath=/dev/null commit -qm "GLOSSARY: hand view" && c=$(git rev-parse --short=12 HEAD)
+out=$(mrel); expect_pass sh -c "echo \"\$0\" | grep -q \"$c is on main without a reviewed merge\"" "$out"
 
 NR="$T/no-roadmap"; pcnew "$NR" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 msg="roadmap: with no .jig/roadmap.md, jig roadmap says there is none"

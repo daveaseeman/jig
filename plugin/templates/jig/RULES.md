@@ -472,7 +472,9 @@ else stops with the files named, and a person resolves it.
    `Spec:` is `--spec`, as a path from the repo root, else the job's spec on the board:
    working alone, pass `--spec`. A chunk that doesn't finish its spec hands off with
    `--partial`. Fill every heading, commit the note with the work, tell the hubnode the job
-   and the commit. A job may hand off several times.
+   and the commit. The note and the review's `.jig/ledgers/DEFERRED.md` rows may be one
+   commit after the reviewed one: a change there that deletes no line doesn't count as a
+   change since the check. A job may hand off several times.
 2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it sets
    up a **detached scratch checkout of the commit the note names**, with trunk merged in the
    way `jig sync` merges it, and prints the check to run there. It never runs
@@ -492,8 +494,11 @@ else stops with the files named, and a person resolves it.
    the job's own commits count as changes since the check, and what a sync's resolution
    carries beyond what `jig sync` would make of it (this replay needs git 2.38 or later).
    Either refuses until it is handed off again. A job that wasn't synced and conflicts with
-   trunk in an `append_files` file is refused with "`jig sync` the job, then merge": the sync
-   resolves the appends as the gate did and stops on anything else. A job whose only
+   trunk only in `append_files` files where both sides only added is resolved in the merge as
+   `jig sync` would resolve it (a replay of that sync, so trunk's lines, then the job's; git
+   2.38 or later), and the job's branch is left as it was. Any other conflict in an append
+   file, or one beside a conflict elsewhere, is refused with "`jig sync` the job, then merge":
+   the sync resolves the appends as the gate did and stops on anything else. A job whose only
    conflicts were appends needs no new handoff after it. What the merge touched in shared files goes in that commit's message (`-m`).
    `--subject <ids>` is the ids the subject leads with, e.g. `D-001, D-002`, for a repo whose
    subjects lead with ids: the subject becomes `<ids>: merge <job>`. `: merge <job>` is added
@@ -876,7 +881,7 @@ or changes a line there, so the README's other prose changes without a log line.
 | M2 | in every repo, a `.jig/decisions.md` entry with a status in its heading, no status line (`Accepted (who, YYYY-MM-DD).`, `Open (YYYY-MM-DD).`, `Proposed (YYYY-MM-DD).`), a supersedes link to no entry in the log or in trunk's history of it, an id used twice, or an open or proposed entry outside `## Open`, or an entry added or changed with no `Touches:` line, or one naming what is no docs page there (Decision log) |
 | M3 | an entry file changed without a line or entry in `.jig/decisions.md` (of `README.md`, only its `## Glossary` section), judged on the branch since it left trunk: a line an earlier commit on the branch added covers this one, and a commit that drops the branch's only line is refused |
 | M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted, but not `.jig/decisions.md`: a decision is reviewed work); a detached HEAD at trunk, or behind it, is trunk |
-| M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
+| M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes and the rows they add to `.jig/ledgers/DEFERRED.md` (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`; on a branch, `D-?store-ro: …`) |
 | P1 | an `AGENTS.md` header that differs from what `.jig/para.json` generates |
 | P2 | a contract-path change (an edit, a delete, or a rename from one) with none of: a row added or changed in `.jig/ledgers/BUFFER.md` in the same commit, or a spec saying `meta: buffered <row id>`, `meta: <name> proposal <branch>`, `meta: <name> pointers <branch>` or `meta: none — <reason>` (a spec the change touches, or the job's own: the board's `spec`, read as trunk has it, a one-line spec being its own text; in a merge, the one job whose branch tip is what is merged in, or whose own first-parent line holds it, and none for an octopus); the same for a change that deletes or renames a file a cached metarepo pointer names, or the heading its `§` names; a lost file counts even when its heading was already missing. Also, in `BUFFER.md`: a state other than `Open` or `Closed`, a repeated id, an `Open` row deleted, or one closed by any commit but `jig sync`'s |
