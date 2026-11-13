@@ -3472,16 +3472,18 @@ def log_rules(trunk: str, staged: bool, trunk_side: bool = False) -> list[str]:
     since = since_trunk(trunk)
     old = at_rev(since, LOG)
     # A branch can hold trunk commits its local trunk lacks (made from origin's, or pulled):
-    # what HEAD has beyond the merge base is trunk's too, unless this branch converted it.
+    # a release HEAD has beyond the merge base is trunk's too. Only the releases `--merge-log`
+    # writes from the merge base's CHANGELOG.md, before the base had a log, are the branch's.
     head = at_rev("HEAD", LOG) if since != "HEAD" else old
+    converted = set() if old else converted_versions(since)
+    beyond = set(release_sections(head)) - set(release_sections(old)) - converted
     if not new:
-        if old or (head and not old_log_in_index(trunk, staged)):
+        if old or (head and (beyond or not unconverting(trunk, since, staged))):
             return [f"{LOG} is the repo's decision log: it is never deleted"]
         return []
     prefix = log_prefix(trunk)
     out = log_problems(new, prefix, trunk) + frozen_problems(old, new, trunk)
-    beyond = set(release_sections(head)) - set(release_sections(old))
-    if beyond and not migrating_log(trunk, staged):
+    if beyond:
         out += frozen_problems(head, new, trunk, only=beyond)
     out += touches_problems(old, new, prefix, trunk, staged)
     if trunk_side:
@@ -3889,20 +3891,29 @@ def migrating_log(trunk: str, staged: bool) -> bool:
     were there before it, and are gone after it."""
     meta = load_meta(trunk)
     prefix = (meta or {}).get("decision_prefix")
-    was = since_trunk(trunk)
-    olds = [f for f in git("ls-tree", "-r", "--name-only", was).splitlines()
-            if f == CHANGELOG or (f.endswith(".md") and not f.startswith(f"{DIR}/"))]
-    return (any(holds_old_log(at_rev(was, f), f, prefix) for f in olds)
-            and not any(holds_old_log(in_index(f, staged), f, prefix) for f in olds))
+    return bool(olds := merged_files_at(since_trunk(trunk), meta)) and not any(
+        holds_old_log(in_index(f, staged), f, prefix) for f in olds)
 
 
-def old_log_in_index(trunk: str, staged: bool) -> bool:
-    """The change holds a register's rows or CHANGELOG.md's sections: removing the log with
-    them back undoes `--merge-log`."""
-    prefix = (load_meta(trunk) or {}).get("decision_prefix")
-    files = git("ls-files", *([] if staged else ["--cached", "--others", "--exclude-standard"])).splitlines()
-    return any(holds_old_log(in_index(f, staged), f, prefix) for f in files
-               if f == CHANGELOG or (f.endswith(".md") and not f.startswith(f"{DIR}/")))
+def merged_files_at(at: str, meta: dict | None) -> list[str]:
+    """The files at AT `--merge-log` merges: CHANGELOG.md with its sections, and a register with
+    rows (an entry file, or one named decisions.md). Not every table in a page is a register."""
+    entry, prefix = (meta or {}).get("entry_files", []), (meta or {}).get("decision_prefix")
+    return [f for f in git("ls-tree", "-r", "--name-only", at).splitlines()
+            if (f == CHANGELOG or (f.endswith(".md") and not f.startswith(f"{DIR}/")
+                                   and (f in entry or Path(f).name.lower() == "decisions.md")))
+            and holds_old_log(at_rev(at, f), f, prefix)]
+
+
+def converted_versions(at: str) -> set[str]:
+    """The releases `--merge-log` writes from AT's CHANGELOG.md, in the log's spelling."""
+    return {f"v{m.group(1)}" for l in at_rev(at, CHANGELOG).splitlines() if (m := OLD_RELEASE.match(l))}
+
+
+def unconverting(trunk: str, since: str, staged: bool) -> bool:
+    """Removing the log undoes the branch's `--merge-log`: every file it merged is back as it was."""
+    olds = merged_files_at(since, load_meta(trunk))
+    return bool(olds) and all(in_index(f, staged) == at_rev(since, f) for f in olds)
 
 
 def migrated_ids(trunk: str, prefix: str | None) -> set[str]:
@@ -3910,8 +3921,7 @@ def migrated_ids(trunk: str, prefix: str | None) -> set[str]:
     writes from them, which may lack Touches."""
     was = since_trunk(trunk)
     rx = re.compile(r"^\s*\|\s*([A-Z][A-Z0-9]*-\d+)\s*\|")
-    return {m.group(1) for f in git("ls-tree", "-r", "--name-only", was).splitlines()
-            if f.endswith(".md") and not f.startswith(f"{DIR}/")
+    return {m.group(1) for f in merged_files_at(was, load_meta(trunk))
             for row in rows_in(at_rev(was, f), prefix) if (m := rx.match(row))}
 
 

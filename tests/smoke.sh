@@ -4529,7 +4529,8 @@ Accepted (owner, 2026-11-03).' && git add -A; out=$(git commit -qm x 2>&1); undo
 expect_pass sh -c "echo \"\$0\" | grep -q 'D-?x names no page it touches'" "$out"
 # A branch can hold a release its local trunk lacks: made from origin's trunk, or pulled. That
 # release is trunk's, and frozen, though the merge base doesn't have it.
-cd "$SU" && $J open sv >/dev/null && git add -A && git commit -qm "open sv"; was=$(git rev-parse HEAD)
+cd "$SU" && printf '# Reqs\n\n| Id | What |\n|---|---|\n| REQ-1 | boot in 2s |\n' > docs/reqs.md && git add -A && git commit -qm "docs: reqs"
+$J open sv >/dev/null && git add -A && git commit -qm "open sv"; was=$(git rev-parse HEAD)
 ulog '### Added
 - PORTS: Open on request.' && git add -A && git commit -qm "PORTS: open on request"; $J release --minor >/dev/null 2>&1
 cd .git/jig/worktrees/sv && git merge -q --ff-only main && git update-ref refs/heads/main "$was"
@@ -4537,6 +4538,41 @@ msg="branch log: a branch holding a release its stale local trunk lacks finds it
 sed -i.bak 's/^- PORTS: Open on request\.$/- PORTS: Open./' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
 out=$(git commit -qm "PORTS: open" 2>&1); undo
 expect_pass sh -c "grep -qx '## v0.2.0 - [0-9-]*' .jig/decisions.md && echo \"\$0\" | grep -q 'release v0.2.0 is frozen on main'" "$out"
+# A table in an ordinary page is no register: changing it doesn't make a commit a conversion.
+msg="branch log: with a stale trunk, rewording a table row beside an edit to trunk's later release doesn't unfreeze it"
+sed -i.bak 's/^- PORTS: Open on request\.$/- PORTS: Open./' .jig/decisions.md && sed -i.bak 's/^| REQ-1 | boot in 2s |$/- REQ-1: boot in 2s/' docs/reqs.md && rm .jig/decisions.md.bak docs/reqs.md.bak && git add -A
+out=$(git commit -qm "PORTS: open" 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.2.0 is frozen on main'" "$out"
+# The stale merge base can predate the log: only the releases its CHANGELOG.md held are ones a
+# conversion on this branch wrote. What trunk released after converting stays frozen.
+SV="$T/sv"; pcnew "$SV" && git add -A && git commit -qm init && $J init >/dev/null
+sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
+printf 'mkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/release.sh && printf 'dist/\n' > .gitignore
+board "b['release']['artifacts'] = ['dist/*.zip']" && git add -A && git commit -qm board
+$J open feat >/dev/null && git add -A && git commit -qm "open feat"; cp .jig/decisions.md "$T/sv-log"
+nohook() { git -c core.hooksPath=/dev/null commit -qm "$1"; }
+git rm -q .jig/decisions.md && printf '# Changelog\n\n## v0.0.1 - 2026-11-01\n\n### Added\n- IDS: Number them.\n' > CHANGELOG.md && git add -A && nohook "pre-log"; was=$(git rev-parse HEAD)
+git rm -q CHANGELOG.md && cp "$T/sv-log" .jig/decisions.md && ulog '## v0.0.1 - 2026-11-01
+
+### Added
+- IDS: Number them.' && git add -A && nohook "TOOL: merge the log"
+ulog '### D-002 ports stay shut
+Accepted (owner, 2026-11-05).
+Touches: docs/shared.md' && ulog '### Added
+- PORTS: Closed.' && git add -A && git commit -qm "D-002: ports" && $J release --minor >/dev/null 2>&1
+cd .git/jig/worktrees/feat && git merge -q --ff-only main && git update-ref refs/heads/main "$was"
+msg="branch log: with a stale trunk from before the log, the set-up holds v0.1.0 beyond it"
+expect_pass sh -c "grep -qx '## v0.1.0 - [0-9-]*' .jig/decisions.md && test \$(git merge-base main HEAD) = $was"
+msg="branch log: with a stale trunk from before the log, a status in trunk's later release is frozen"
+sed -i.bak 's/^Accepted (owner, 2026-11-05)\.$/Accepted (owner, 2026-11-06)./' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
+out=$(git commit -qm "D-002: restated" 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is frozen on main'" "$out"
+msg="branch log: with a stale trunk from before the log, dropping trunk's later release is refused"
+python3 -c "import re; f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(re.sub(r'(?s)## v0\.1\.0 .*?(?=## v0\.0\.1)', '', s))" && git add -A
+out=$(git commit -qm "drop v0.1.0" 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is gone'" "$out"
+msg="branch log: with a stale trunk from before the log, deleting the log is refused, alone or beside an old CHANGELOG.md or a table"
+r1=$(git rm -q .jig/decisions.md; git commit -qm gone 2>&1); undo
+r2=$(git rm -q .jig/decisions.md; printf '# Changelog\n\n## v0.0.1 - 2026-11-01\n\n### Added\n- IDS: Number them.\n' > CHANGELOG.md; git add -A; git commit -qm gone 2>&1); undo
+r3=$(git rm -q .jig/decisions.md; printf '# Notes\n\n| REQ-1 | x |\n' > notes.md; git add -A; git commit -qm gone 2>&1); undo
+expect_pass sh -c "for r in \"\$0\" \"\$1\" \"\$2\"; do echo \"\$r\" | grep -q 'it is never deleted' || exit 1; done" "$r1" "$r2" "$r3"
 cd "$SR"
 }
 
