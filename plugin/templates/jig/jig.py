@@ -3940,7 +3940,11 @@ def meta_problems(root: Path, meta: dict, trunk: str, rev: str = "") -> list[str
         if not parents:
             continue                      # the root commit predates the gates
         files = git("diff", "--name-only", parents[0], commit).splitlines()
-        if all(f.startswith(f"{DIR}/") and f != LOG for f in files):
+        # M4's bookkeeping, judged as M4 judged it then: the roadmap's view counts where the
+        # commit or trunk before it kept a roadmap, so dropping both passes too. Keep in step.
+        keeps = (ROADMAP_VIEW,) if any(git("show", f"{c}:{ROADMAP}")
+                                       for c in (commit, parents[0])) else ()
+        if all((f.startswith(f"{DIR}/") and f != LOG) or f in keeps for f in files):
             continue
         if not git("show", f"{parents[0]}:{META}"):
             continue                      # init --meta's own commit: nothing was gated yet
