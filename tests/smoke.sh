@@ -4520,9 +4520,29 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'line 7: No phase ite
 msg="no phase: a line that isn't an item is refused by line"
 rbad '## a\nScopes:\n- `x`: y\n\n## No phase\nsome prose\n'
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'line 6: not a No phase item'" "$out"
-msg="no phase: a spec can't take a No phase item: it is no scope"
-rspec s9 'No phase/pay' && git add -A; expect_refuse git commit -qm s9
+msg="no phase: a spec can't take a No phase item: it is no scope, and the refusal says so"
+rspec s9 'No phase/pay' && git add -A; out=$(git commit -qm s9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"takes No phase/pay, which .jig/roadmap.md on main doesn't have\"" "$out"
 undo
+msg="no phase: a phase already named No phase is refused by line, saying the name is reserved"
+rbad '## a\nScopes:\n- `x`: y\n\n## No phase\nExit when:\n- [ ] z\n'
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'line 6: ## No phase is a reserved section, not a phase'" "$out"
+msg="no phase: a note ends at the first box, so a box before Exit when never shows under a done phase"
+printf '## a\nA note.\n- [ ] early\nExit when:\n- [x] boots\n' > .jig/roadmap.md && $J roadmap --write >/dev/null && git add -A && git commit -qm early
+expect_pass sh -c "grep -qx '## a (done)' ROADMAP.md && grep -qx 'A note.' ROADMAP.md && ! grep -q early ROADMAP.md"
+msg="no phase: a code fence inside a note is kept"
+printf '## a\nA note.\n```\nquoted\n```\nExit when:\n- [ ] boots\n' > .jig/roadmap.md && $J roadmap --write >/dev/null && git add -A && git commit -qm fence
+expect_pass python3 -c "
+l = open('ROADMAP.md').read().splitlines(); i = l.index('## a (current)')
+assert l[i + 2:i + 7] == ['A note.', '\`\`\`', 'quoted', '\`\`\`', ''], l"
+msg="no phase: with Up next and No phase both present, the view prints Up next, then No phase"
+mkdir -p docs && printf '# A\n\nA is.\n' > docs/a.md && printf '## a\nExit when:\n- [ ] boots\n\n## No phase\n- `pay`: payments\n\n## Up next\n- `off`: offline; stops at cache; parked 2026-11-13 (touches docs/a.md)\n' > .jig/roadmap.md
+$J roadmap --write >/dev/null && git add -A && git commit -qm both
+expect_pass python3 -c "
+l = open('ROADMAP.md').read().splitlines()
+assert l.index('## a (current)') < l.index('## Up next') < l.index('## No phase'), l"
+msg="no phase: the review, spec and RULES texts send work with no phase to ## No phase, and parked work to Up next"
+expect_pass sh -c "for f in '$P/../skills/review/SKILL.md' '$P/../skills/spec/SKILL.md' '$P/jig/RULES.md'; do grep -q 'No phase' \"\$f\" || exit 1; done"
 }
 
 # ---------------------------------------------------------------- project and product

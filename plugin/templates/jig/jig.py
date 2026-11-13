@@ -7287,6 +7287,11 @@ def parse_section(text: str, section: str, problems: list[str] | None = None) ->
         if not inside or not line.strip() or line[0] in " \t":
             continue
         m = SCOPE_LINE.fullmatch(line)
+        if not m and re.fullmatch(r"(?i)(exit when|scopes):", line.strip()):
+            # A phase already called this reads as the reserved section, so say why it changed.
+            problems.append(f"line {n}: ## {section} is a reserved section, not a phase: rename "
+                            f"the phase to keep its {line.strip()}")
+            continue
         if not m:
             problems.append(f"line {n}: not a {section} item (- `<id>`: {shape}, "
                             f"unindented): {line.strip()}")
@@ -7348,16 +7353,22 @@ def parse_roadmap(text: str, problems: list[str] | None = None) -> list[dict]:
     Anything it can't read is added to PROBLEMS by line, never dropped quietly: a scope lost
     to a typo would read as a phase with less work in it. Fenced code is skipped, so a roadmap
     that quotes an example doesn't grow phases. `## Up next` and `## No phase` are no phases:
-    parse_section reads them. A phase's note is the prose before its first list."""
+    parse_section reads them. A phase's note is the prose before its first list or box, fences
+    kept: a box there stays unparsed, as before notes, so it never shows under a done phase."""
     problems = [] if problems is None else problems
     phases: list[dict] = []
     part, fence, ids, skip = "", False, set(), False
     for n, raw in enumerate(text.splitlines(), 1):
         line = raw.rstrip()
+        in_note = phases and not skip and not part and phases[-1]["noting"]
         if line.lstrip().startswith("```"):
             fence = not fence
+            if in_note:
+                phases[-1]["note"].append(line)
             continue
         if fence:
+            if in_note:
+                phases[-1]["note"].append(line)
             continue
         if m := re.match(r"##\s+(.+?)$", line):
             skip = m.group(1).strip().lower() in RESERVED
@@ -7366,11 +7377,13 @@ def parse_roadmap(text: str, problems: list[str] | None = None) -> list[dict]:
             if any(p["name"] == m.group(1) for p in phases):
                 problems.append(f"line {n}: phase {m.group(1)} appears twice")
             phases.append({"name": m.group(1), "exit": [], "scopes": [], "line": n, "headed": False,
-                           "note": []})
+                           "note": [], "noting": True})
             part = ""
         elif skip or not phases:
             continue
-        elif not part and not re.fullmatch(r"(?i)(exit when|scopes):", line.strip()):
+        elif not part and re.match(r"\s*[-*+] ", line):
+            phases[-1]["noting"] = False
+        elif not part and phases[-1]["noting"] and not re.fullmatch(r"(?i)(exit when|scopes):", line.strip()):
             phases[-1]["note"].append(line)
         elif re.fullmatch(r"(?i)exit when:", line.strip()):
             part, phases[-1]["headed"] = "exit", True
@@ -7390,6 +7403,7 @@ def parse_roadmap(text: str, problems: list[str] | None = None) -> list[dict]:
             ids.add(sid)
             phases[-1]["scopes"].append((sid, (m.group(2) or "").strip()))
     for p in phases:
+        del p["noting"]
         p["note"] = "\n".join(p["note"]).strip("\n").splitlines()
         if not p["headed"]:
             problems.append(f"line {p['line']}: phase {p['name']} has neither `Exit when:` nor "

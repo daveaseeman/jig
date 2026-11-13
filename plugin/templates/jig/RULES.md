@@ -223,7 +223,8 @@ current, is the skeleton):
 
 A page has no `## Undefined`, `## Status`, `## Current state` or `## Roadmap` section: each holds
 the project. Work parked mid-build is an item under `## Up next` in `.jig/roadmap.md`, naming
-the pages it will touch (Roadmap), written only on the owner's word. An open product question
+the pages it will touch, and named work with no phase yet an item under `## No phase` (Roadmap),
+each written only on the owner's word. An open product question
 is an `## Open` entry in `.jig/decisions.md`, which the page may cite. Review findings not taken
 go in `.jig/ledgers/DEFERRED.md`. `jig survey` lists each such heading with where its content
 goes; a page that still carries one works as before until it is moved.
