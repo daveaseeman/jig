@@ -1,7 +1,7 @@
 {
   "merge-log-conversion": {
     "spec": ".jig/specs/bug-merge-log-conversion.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
