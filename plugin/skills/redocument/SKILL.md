@@ -99,8 +99,9 @@ Otherwise:
    | `docs/old/old.md` | — | drop | | describes code that is gone | |
 
    Cited is only for a pararepo, Cited-by only for a metarepo. Level comes from
-   `jig survey --levels`: a page below a system is a `subsystem`, a `section` (covers no file)
-   or `shared` (another page covers every file it does). A row whose level differs from
+   `jig survey --levels`: a page below a system is a `subsystem`, a `section` (its docmap
+   globs cover no file), `shared` (another page covers every file it does) or `unmapped` (no
+   docmap key, so its files are unknown: name them, or fold it). A row whose level differs from
    survey's shows survey's evidence beside it, for the owner.
 
    Verbs are `rewrite`, `merge`, `split`, `move`, `new`, `drop`, and `convert` for a holder. A new path is

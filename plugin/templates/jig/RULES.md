@@ -158,8 +158,8 @@ its subsystem's page or to propose.
 
 `jig survey` works out each page's level from evidence, never its path: the files it owns
 (its docmap globs' files that no page but those above it covers), the repo's structure maps
-and manifests, and with `--levels` its imports. A page below a system that covers no file is
-a section of the page above it; one whose every file another page covers is that page's
+and manifests, and with `--levels` its imports. A page below a system whose docmap globs cover no file
+is a section of the page above it; one whose every file another page covers is that page's
 subsystem, or a seam; each folds on the owner's yes. It also lists the repo's own files that
 still hold the old page shape — a check of the Now / Rules / Checks headings, a counter over
 numbered page headings, an always-loaded line that makes page rules bind or cites a page by

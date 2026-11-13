@@ -3329,6 +3329,23 @@ board "b['docmap']['docs/a/c/d.md'] = []" && git add -A && git commit -qm d
 out=$($J survey 2>&1)
 expect_pass sh -c "l=\$(echo \"\$0\" | sed -n '/^Pages below a subsystem/,/^\$/p' | grep '^  docs/a/c/d.md: ')
 echo \"\$l\" | grep -q 'fold it into docs/a/c.md' && ! echo \"\$l\" | grep -q deep_subsystems" "$out"
+msg="structure: a page with no docmap key is unmapped, not a section, and update proposes no fold for it"
+printf '# G\n\nThe g page.\n\n## Invariants\n- g is g — it is; held by review.\n' > docs/a/g.md && printf 'x\n' > src/a/g.py && git add -A && git commit -qm g
+printf '# behind\n' >> .jig/jig.py && git commit -qam behind
+out=$($J survey 2>&1); up=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -qF '  docs/a/g.md: unmapped: no docmap key: name its files in docmap, or fold it into docs/a/a.md' \
+&& ! echo \"\$1\" | grep -q 'fold docs/a/g.md'" "$out" "$up"
+git checkout -q HEAD~1 -- .jig/jig.py && git commit -qam back
+msg="structure: locale files keyed by page names, a JSON file nested 2000 deep, a register's counter and the repo's own words hold nothing"
+mkdir -p locales docs/adr && printf '{"a": {"title": "A"}, "c": {"title": "C"}}\n' > locales/en.json && cp locales/en.json locales/fr.json
+python3 -c "print('{\"a\": ' * 2000 + '1' + '}' * 2000)" > deep.json
+printf '# ADRs\n\n## 1. Use SQLite\n\nAccepted.\n' > docs/adr/log.md
+board "b['reserve']['adr'] = {'pattern': r'^## (\d+)\. ', 'files': ['docs/adr/*.md']}"
+printf -- '## 1.1 Setup\n- Caching follows RFC 9111 §5.2.\n- Lint Rules and Checks run in CI.\n' >> AGENTS.md
+git add -A && git commit -qm noise
+out=$($J survey 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && ! echo \"\$0\" | grep -q 'locales/\|deep.json\|reserve.adr' \
+&& test \$(echo \"\$0\" | sed -n '/^Checks, counters and lines/,/^\$/p' | grep -c '^  AGENTS.md:') = 2" "$out"
 }
 
 sec_homes() {
@@ -3524,8 +3541,7 @@ msg="flat: docs/a/b.md (docmap names it) and docs/a/c.md (Invariants) are flat p
 expect_pass homes "assert not h and r['page_shapes'] == [] and r['datasheets_unlinked'] == [], (h, r['page_shapes'], r['datasheets_unlinked'])"
 msg="flat: reading-list for a flat part page's file prints it, then its system's page marked as the parent"
 expect_pass test "$(rl src/c/c.rs)" = "$(printf '  docs/a/c.md\n  docs/a/a.md   (parent of docs/a/c.md)')"
-mkdir -p docs/a/d src/d && printf '# D\n\nThe d part.\n' > docs/a/d/d.md && printf 'x\n' > src/d/d.rs
-board "b['docmap']['docs/a/d/d.md'] = ['src/d/**']" && git add -A && git commit -qm "d alone"
+mkdir -p docs/a/d && printf '# D\n\nThe d part.\n' > docs/a/d/d.md && git add -A && git commit -qm "d alone"
 msg="flat: a folder page alone in its folder is reported flat at docs/a/d.md, in --json and in print"
 out=$($J survey 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a/d/d.md: flat at docs/a/d.md' && python3 -c \"
@@ -3553,7 +3569,7 @@ msg="flat: with docs/a/b/e approved, it is at home"
 expect_pass homes "assert not h, h"
 msg="flat: an approved deep folder page alone goes flat, and its approval still names a tracked page"
 expect_pass homes "assert r['deep_unmatched'] == [], r['deep_unmatched']"
-mkdir -p docs/a/b/f src/f && printf '# F\n\nThe f part.\n' > docs/a/b/f.md && printf '# F2\n\nThe f part again.\n' > docs/a/b/f/f.md && printf 'x\n' > src/f/f.rs
+mkdir -p docs/a/b/f && printf '# F\n\nThe f part.\n' > docs/a/b/f.md && printf '# F2\n\nThe f part again.\n' > docs/a/b/f/f.md
 board "b['docmap']['docs/a/b/f.md'] = ['src/f/**']; b['deep_subsystems']['docs/a/b/f'] = 'own module'" && git add -A && git commit -qm "f twice"
 msg="flat: docs/a/b/f.md and docs/a/b/f/f.md together: the flat one folds into the folder page"
 expect_pass homes "assert [(e['path'], e['to'], e['into'], e['fold']) for e in r['page_shapes']] == [('docs/a/b/f.md', 'docs/a/b/f/f.md', True, True)], r['page_shapes']"

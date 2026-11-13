@@ -41,8 +41,9 @@ Report the output, then say what it means in a few lines:
   cites a page by number. Each converts with the pages: `/jig:redocument` makes them its first
   job, or `/jig:update` lists them once no old page is left. Never propose deleting one; such a
   file holds more than the contract.
-- **Pages that own no files, and structure maps.** A page below a system that covers no file
-  is a section of the page above it; one whose every file another page covers is the same
+- **Pages that own no files, and structure maps.** A page below a system whose docmap globs
+  cover no file is a section of the page above it; one with no docmap key is unmapped, its files
+  unknown until they are named; one whose every file another page covers is the same
   subsystem as that page, or a seam. Each folds on the owner's yes. A JSON file that declares
   the docs structure beside the docmap must change with it: keep one, or derive one from the
   other. `--levels` prints every page's level with its evidence (own files, maps, CODEOWNERS,
