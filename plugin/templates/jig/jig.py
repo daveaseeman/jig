@@ -380,6 +380,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
             out.append(f"R5 the roadmap is the owner's: {f} is edited on {trunk} only")
     out += roadmap_rules(board, branch, staged, paths, guarded)
     out += boundary_rules(trunk, branch, staged, paths, meta)
+    out += page_form_rules(root, board, trunk, staged)
     if CONFIG in paths and (raw := in_index(CONFIG, staged)):
         try:
             out += workflow_steps(json.loads(raw))[1]
@@ -7437,6 +7438,42 @@ def boundary_rules(trunk: str, branch: str, staged: bool, paths: list[str],
                        f"product, and a spec, a handoff or the roadmap cites it, never the other "
                        f"way: {clip(text.strip())}")
     return out
+
+
+def form_entries(root: Path, files: list[str], board: dict, read) -> list[dict]:
+    """page_shapes as survey judges FILES: pages with no home and sections left out."""
+    not_docs = board.get("not_docs") or []
+    deep = board.get("deep_subsystems") if isinstance(board.get("deep_subsystems"), dict) else {}
+    docmap = named_pages(board)
+    homeless = {h["path"] for h in doc_homes(root, files, not_docs, read, deep, docmap)}
+    sections = frozenset(e["path"] for e in page_levels(root, files, board, read) if e["level"] == "section")
+    return page_shapes(root, files, not_docs, docmap, homeless, read, sections)
+
+
+def page_form_rules(root: Path, board: "Board", trunk: str, staged: bool) -> list[str]:
+    """A page this change puts in the wrong form, as survey words it. Form's fix is a `git mv`
+    any branch can make, unlike depth's, so it is refused. Only what this change does is: an
+    entry the base already has is survey's, as an old line in a touched page is never refused."""
+    if not any(f.startswith("docs/") for f in changed_paths(trunk, staged, removed=True)):
+        return []
+    b = base(trunk)
+    texts: dict[tuple[bool, str], str] = {}
+
+    def reader(after: bool):
+        def read(f: str) -> str:
+            if (after, f) not in texts:
+                texts[(after, f)] = in_index(f, staged) if after else at_rev(b, f)
+            return texts[(after, f)]
+        return read
+    q = ("-c", "core.quotePath=false")
+    before = [f for f in git(*q, "ls-tree", "-r", "--name-only", b).splitlines() if f]
+    after = [f for f in git(*q, "ls-files").splitlines() if f and (staged or Path(f).exists())]
+    old = {e["path"] for e in form_entries(root, before, board.data, reader(False))}
+    # An unnamed page's fix is a docmap key, trunk's (R5), not a move: survey's alone.
+    return [f"{e['path']}: {shape_fix(e)} ({DIR}/RULES.md, Documentation: this change puts the "
+            "page in the wrong form; make the move in it)"
+            for e in form_entries(root, after, board.data, reader(True))
+            if e["named"] and e["path"] not in old]
 
 
 def roadmap_rules(board: "Board", branch: str, staged: bool, paths: list[str],

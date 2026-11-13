@@ -2177,7 +2177,8 @@ expect_pass sh -c "$J survey | grep -q '^  sdkconfig: write the board.s page wit
 $J open G1 --spec t --owns platformio.ini 'docs/**' >/dev/null 2>&1 && $J open G2 --spec t --owns 'sdkconfig' >/dev/null 2>&1 \
   && $J open GA --spec t --owns 'src/**' >/dev/null 2>&1 && git add -A && git commit -qm "open G1 G2 GA"
 (cd .git/jig/worktrees/G1 && mkdir -p docs/prod/devkit && printf '[env:dev]\n' > platformio.ini && printf '# Prod\n\nThe product.\n' > docs/prod/prod.md \
-  && printf '# Devkit\n\nThe dev board.\n' > docs/prod/devkit/devkit.md && git add -A && git commit -qm "pio and its page") && hwnote G1
+  && printf '# Devkit\n\nThe dev board. [schematic](schematic.pdf)\n' > docs/prod/devkit/devkit.md && printf 'pdf\n' > docs/prod/devkit/schematic.pdf \
+  && git add -A && git commit -qm "pio and its page") && hwnote G1
 (cd .git/jig/worktrees/G2 && printf 'CONFIG_A=n\n' > sdkconfig && git add -A && git commit -qm cfg) && hwnote G2
 (cd .git/jig/worktrees/GA && printf 'int y;\n' > src/x.c && git add -A && git commit -qm src) && hwnote GA
 msg="board gate: a branch adding platformio.ini that no board page covers is refused, naming the file and the way out"
@@ -3328,7 +3329,8 @@ board "b['docmap']['docs/a/c.md'] = ['src/a/c/index.py']" && git commit -qam "c 
 expect_pass sh -c "$J survey | grep -qF '  docs/owners.json: declares docs/a/a.md, docs/a/b.md, docs/a/c.md; differs from the docmap for docs/a/c.md'"
 msg="structure: docs/a/c/d.md, covering no file, gets only the fold into docs/a/c.md, no deep_subsystems choice"
 mkdir -p docs/a/c && printf '# D\n\nThe d page.\n\n## X\n\nx\n' > docs/a/c/d.md
-board "b['docmap']['docs/a/c/d.md'] = []" && git add -A && git commit -qm d
+# Planted: d is c's company while c stays flat, which the hook refuses.
+board "b['docmap']['docs/a/c/d.md'] = []" && git add -A && git -c core.hooksPath=/dev/null commit -qm d
 out=$($J survey 2>&1)
 expect_pass sh -c "l=\$(echo \"\$0\" | sed -n '/^Pages below a subsystem/,/^\$/p' | grep '^  docs/a/c/d.md: ')
 echo \"\$l\" | grep -q 'fold it into docs/a/c.md' && ! echo \"\$l\" | grep -q deep_subsystems" "$out"
@@ -3421,7 +3423,8 @@ expect_pass sh -c "echo \"\$0\" | grep -q '^      fold docs/systems/c.md into do
 # The docs tree is two levels deep; a third only on the owner's deep_subsystems entry.
 HD="$T/homes-deep"; pcnew "$HD" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 page docs/a/a.md && page docs/a/b/b.md && page docs/a/b/c/c.md && page docs/c/c.md && page docs/c/d/d.md && page docs/a/b/x.md
-git add -A && git commit -qm deep
+# Planted: docs/c/d/d.md is alone in its folder, which the hook refuses.
+git add -A && git -c core.hooksPath=/dev/null commit -qm deep
 msg="homes: a page below a subsystem is deep, folding into its subsystem's page; docs/c/d/d.md passes; a flat page beside a subsystem's is deep too"
 expect_pass homes "assert (h['docs/a/b/c/c.md']['kind'], h['docs/a/b/c/c.md']['to']) == ('deep', 'docs/a/b/b.md'), h
 assert 'docs/c/d/d.md' not in h and 'docs/a/b/b.md' not in h, h
@@ -3597,7 +3600,7 @@ printf '# A\n\nThe a system.\n\n## Invariants\n- a — x; held by review.\n' > d
 printf '# B\n\nThe b part.\n\n## Invariants\n- b — x; held by review.\n' > docs/a/b.md
 printf '# B board\n\nThe b board. [x](b/datasheets/x.pdf)\n' > docs/b.md && printf 'pdf\n' > docs/b/datasheets/x.pdf
 printf 'x\n' > src/a/a.rs && printf 'x\n' > src/b/b.rs
-board "b['docmap'] = {'docs/a.md': ['src/a/**'], 'docs/a/b.md': ['src/a/b/**'], 'docs/b.md': ['src/b/**']}" && git add -A && git commit -qm owners
+board "b['docmap'] = {'docs/a.md': ['src/a/**'], 'docs/a/b.md': ['src/a/b/**'], 'docs/b.md': ['src/b/**']}" && git add -A && git -c core.hooksPath=/dev/null commit -qm owners  # planted: both flat pages hold files
 msg="flat: a flat docs/a.md owns docs/a/, so docs/a/b.md stays its part and only a.md is told to move in"
 expect_pass homes "assert not h, h
 assert sorted((e['path'], e['to'], e['into']) for e in r['page_shapes']) == [('docs/a.md', 'docs/a/a.md', True), ('docs/b.md', 'docs/b/b.md', True)], r['page_shapes']"
@@ -3680,6 +3683,55 @@ msg="house: a jig repo with only a stray gets no /jig:adopt line"
 HS="$T/homes-stray"; pcnew "$HS" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 mkdir -p docs && printf 'Ideas.\n' > docs/ideas.md && git add -A && git commit -qm stray
 expect_pass sh -c "! $J survey | grep -q '/jig:adopt'"
+
+# A page's form is refused when a change puts it wrong; one already wrong is survey's.
+ipage() { mkdir -p "$(dirname "$1")" && printf '# P\n\nP keeps rows.\n\n## Invariants\n- rows stay sorted\n' > "$1"; }
+frefused() { out=$(git commit -qm "$1" 2>&1); rc=$?; git reset -q --hard; git clean -fdq; }
+HF="$T/homes-form"; pcnew "$HF" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+ipage docs/a/a.md && ipage docs/a/c.md && ipage docs/a/d/d.md && mkf docs/a/d/wiring.pdf src/x.py
+git add -A && git -c core.hooksPath=/dev/null commit -qm pages
+msg="form: a lone docs/a/b/b.md is refused by jig check --staged and the hook, naming docs/a/b.md"
+ipage docs/a/b/b.md && git add -A && chk=$($J check --staged 2>&1); crc=$?; frefused lone
+expect_pass sh -c "test $crc != 0 && test $rc != 0 && echo \"\$0\" | grep -q '^docs/a/b/b.md: flat at docs/a/b.md: its folder holds nothing else' && echo \"\$1\" | grep -q 'docs/a/b/b.md: flat at docs/a/b.md'" "$chk" "$out"
+msg="form: the refusal holds survey's line for the same page"
+ipage docs/a/b/b.md && git add -A
+expect_pass python3 -c "
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+e = [e for e in r['page_shapes'] if e['path'] == 'docs/a/b/b.md'][0]
+fix = 'flat at %s: its folder holds nothing else' % e['to']
+out = subprocess.run(['python3', '.jig/jig.py', 'check', '--staged'], capture_output=True, text=True).stdout
+assert 'docs/a/b/b.md: ' + fix + ' (' in out, out
+assert '  docs/a/b/b.md: ' + fix in subprocess.check_output(['python3', '.jig/jig.py', 'survey'], text=True)"
+undo
+msg="form: the same page added flat at docs/a/b.md commits"
+ipage docs/a/b.md && git add -A && expect_pass git commit -qm flat
+msg="form: a first file in flat docs/a/c.md's folder is refused, naming docs/a/c/c.md"
+mkf docs/a/c/x.png && git add -A && frefused png
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'docs/a/c.md: has a folder of its own name, docs/a/c/: move it to docs/a/c/c.md'" "$out"
+msg="form: the same file with the git mv into its folder commits"
+mkf docs/a/c/x.png && git add -A && git mv docs/a/c.md docs/a/c/c.md && expect_pass git commit -qm into
+msg="form: removing docs/a/d/'s last other file is refused, naming docs/a/d.md"
+git rm -q docs/a/d/wiring.pdf && frefused rmpdf
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'docs/a/d/d.md: flat at docs/a/d.md'" "$out"
+msg="form: the same removal with the page moved flat commits"
+git rm -q docs/a/d/wiring.pdf && git mv docs/a/d/d.md docs/a/d.md && expect_pass git commit -qm flatten
+msg="form: a lone page already on trunk commits when its text or src/ changes, and survey still lists it"
+ipage docs/a/e/e.md && git add -A && git -c core.hooksPath=/dev/null commit -qm planted
+printf -- '- one more\n' >> docs/a/e/e.md && git add -A && expect_pass git commit -qm edit
+printf 'y\n' > src/x.py && git add -A && expect_pass git commit -qm src
+expect_pass sh -c "$J survey | grep -q '^  docs/a/e/e.md: flat at docs/a/e.md'"
+msg="form: a lone unnamed folder page isn't refused; survey says name it in docmap"
+mkdir -p docs/g && printf '# G\n\nNotes.\n' > docs/g/g.md && git add -A && expect_pass git commit -qm unnamed
+expect_pass sh -c "$J survey | grep -q '^  docs/g/g.md: flat at docs/g.md: .*name it in docmap'"
+msg="form: jig merge of a job that slipped a lone page in stops with the refusal and commits no merge"
+$J open pf --branch b-pf --owns 'docs/**' >/dev/null && git add -A && git commit -qm "TOOL: open pf"
+tip=$(git rev-parse HEAD)
+(cd .git/jig/worktrees/b-pf && ipage docs/h/h.md && git add -A && git -c core.hooksPath=/dev/null commit -qm "h: page" \
+  && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note pf")
+out=$($J merge pf 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'docs/h/h.md: flat at docs/h.md' && test \"\$(git rev-parse HEAD)\" = $tip" "$out"
+git merge --abort 2>/dev/null
 }
 
 # ---------------------------------------------------------------- update's AGENTS.md lines
@@ -5425,7 +5477,7 @@ printf '# B\n\n## Part\n\nB, with no lead.\n' > docs/a/b/b.md
 board "b['docmap'] = {'docs/a/x/x.md': ['src/x/**'], 'docs/a/b/b.md': ['src/b/**']}; b['findings'] = {'shape:docs/a/x/x.md': 'approved', 'contract:docs/a/b/b.md': 'exception: table lead'}"
 git add -A && git commit -qm pages
 git mv docs/a/x/x.md docs/a/x.md && mkdir -p docs/a/x && printf 'n\n' > docs/a/x/notes.md && printf 'f\n' > docs/a/x/fig.txt
-printf '[notes](x/notes.md) [fig](x/fig.txt)\n' >> docs/a/x.md && git add -A && git commit -qm "x flat by hand, then company"
+printf '[notes](x/notes.md) [fig](x/fig.txt)\n' >> docs/a/x.md && git add -A && git -c core.hooksPath=/dev/null commit -qm "x flat by hand, then company"
 msg="findings: a move's answer doesn't follow a page that changed form, so --apply never makes the opposite move"
 $UP --apply >/dev/null 2>&1 && git commit -qm "update" >/dev/null 2>&1; $UP --apply >/dev/null 2>&1
 expect_pass sh -c "test -f docs/a/x.md && ! git diff --cached --name-status | grep -q '^R' && python3 -c \"
