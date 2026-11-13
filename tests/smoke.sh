@@ -3329,16 +3329,21 @@ board "b['docmap']['docs/a/c/d.md'] = []" && git add -A && git commit -qm d
 out=$($J survey 2>&1)
 expect_pass sh -c "l=\$(echo \"\$0\" | sed -n '/^Pages below a subsystem/,/^\$/p' | grep '^  docs/a/c/d.md: ')
 echo \"\$l\" | grep -q 'fold it into docs/a/c.md' && ! echo \"\$l\" | grep -q deep_subsystems" "$out"
-msg="structure: a page with no docmap key is unmapped, not a section, and update proposes no fold for it"
-printf '# G\n\nThe g page.\n\n## Invariants\n- g is g — it is; held by review.\n' > docs/a/g.md && printf 'x\n' > src/a/g.py && git add -A && git commit -qm g
+msg="structure: a page with no docmap key is unmapped, not a section; update lists it the same, with no fold drafted"
+printf '# G\n\nThe g page.\n\n## Invariants\n- g is g — it is; held by review.\n' > docs/a/g.md && printf 'x\n' > src/a/g.py
+printf '# E\n\nThe e page.\n\n## Invariants\n- e is e — it is; held by review.\n' > docs/a/c/e.md && git add -A && git commit -qm "g, and e below c"
 printf '# behind\n' >> .jig/jig.py && git commit -qam behind
 out=$($J survey 2>&1); up=$($UP 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -qF '  docs/a/g.md: unmapped: no docmap key: name its files in docmap, or fold it into docs/a/a.md' \
+&& echo \"\$1\" | grep -qF '  docs/a/g.md: unmapped: no docmap key: name its files in docmap, or fold it into docs/a/a.md' \
 && ! echo \"\$1\" | grep -q 'fold docs/a/g.md'" "$out" "$up"
+msg="structure: a deep page with no docmap key gets the one unmapped answer, with no deep_subsystems choice"
+expect_pass sh -c "l=\$(echo \"\$0\" | sed -n '/^Pages below a subsystem/,/^\$/p' | grep '^  docs/a/c/e.md: ')
+echo \"\$l\" | grep -q 'unmapped: no docmap key: name its files in docmap, or fold it into docs/a/c.md' && ! echo \"\$l\" | grep -q deep_subsystems" "$out"
 git checkout -q HEAD~1 -- .jig/jig.py && git commit -qam back
 msg="structure: locale files keyed by page names, a JSON file nested 2000 deep, a register's counter and the repo's own words hold nothing"
 mkdir -p locales docs/adr && printf '{"a": {"title": "A"}, "c": {"title": "C"}}\n' > locales/en.json && cp locales/en.json locales/fr.json
-python3 -c "print('{\"a\": ' * 2000 + '1' + '}' * 2000)" > deep.json
+python3 -c "print('{\"a\": {\"c\": ' * 1000 + '1' + '}}' * 1000)" > deep.json
 printf '# ADRs\n\n## 1. Use SQLite\n\nAccepted.\n' > docs/adr/log.md
 board "b['reserve']['adr'] = {'pattern': r'^## (\d+)\. ', 'files': ['docs/adr/*.md']}"
 printf -- '## 1.1 Setup\n- Caching follows RFC 9111 §5.2.\n- Lint Rules and Checks run in CI.\n' >> AGENTS.md
@@ -3346,6 +3351,9 @@ git add -A && git commit -qm noise
 out=$($J survey 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && ! echo \"\$0\" | grep -q 'locales/\|deep.json\|reserve.adr' \
 && test \$(echo \"\$0\" | sed -n '/^Checks, counters and lines/,/^\$/p' | grep -c '^  AGENTS.md:') = 2" "$out"
+msg="structure: a § placeholder, a § beside rules, and a system's Rules and Checks are holders"
+printf -- '- Cite a rule by its number, §N.M, in commits.\n- Follow core §2 for hard rules.\n- Keep each system%ss Rules and Checks current.\n' "'" >> AGENTS.md && git commit -qam "old lines"
+expect_pass sh -c "test \$($J survey | sed -n '/^Checks, counters and lines/,/^\$/p' | grep -c '^  AGENTS.md:') = 5"
 }
 
 sec_homes() {
