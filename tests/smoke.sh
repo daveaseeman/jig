@@ -5167,7 +5167,16 @@ $UP --apply >/dev/null 2>&1 && git commit -qm update >/dev/null 2>&1
 expect_pass recis '{"contract:docs/a/b/b.md": "exception: table lead"}'
 msg="findings: survey lists the exception as answering no finding, counts it, and shows q's contract finding not answered"
 out=$($J survey 2>&1)
-expect_pass sh -c "echo \"\$0\" | sed -n '/exceptions that answer no finding/,/^\$/p' | grep -q '^  contract:docs/a/b/b.md: exception: table lead' && echo \"\$0\" | grep -q '\[contract:docs/a/q.md: not answered\]' && echo \"\$0\" | tail -1 | grep -q '1 exception answering no finding'" "$out"
+expect_pass sh -c "echo \"\$0\" | sed -n '/exceptions that answer no finding/,/^\$/p' | grep -q '^  contract:docs/a/b/b.md: exception: table lead' && echo \"\$0\" | grep -q '\[contract:docs/a/q.md: not answered\]' && echo \"\$0\" | tail -1 | grep -q '1 exception answering no finding: drop each on trunk, or record it at the page.s new path' && echo \"\$0\" | tail -1 | grep -q '1 finding not answered: run /jig:update'" "$out"
+msg="findings: an entry whose kind has no id, or a typo, is listed as no answer"
+board "b['findings']['stray:docs/x.md'] = 'exception: kept'; b['findings']['shapes:docs/a/q.md'] = 'approved'" && git add -A && git commit -qm "findings: odd keys"
+out=$($J survey 2>&1)
+expect_pass sh -c "echo \"\$0\" | sed -n '/findings entries that count as no answer/,/^\$/p' | grep -q '^  stray:docs/x.md: no finding has the kind stray' && echo \"\$0\" | grep -q '^  shapes:docs/a/q.md: no finding has the kind shapes'" "$out"
+fpages "$T/findings-taken"
+board "b['findings'] = {'shape:docs/a/b/b.md': 'approved', 'contract:docs/a/b/b.md': 'exception: NEW', 'contract:docs/a/b.md': 'exception: OLD'}" && git add -A && git commit -qm "two exceptions for b"
+msg="findings: a carried-out move never renames an entry onto an id already recorded, and says so"
+out=$($UP --apply 2>&1)
+expect_pass sh -c "python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['findings'] == {'contract:docs/a/b/b.md': 'exception: NEW', 'contract:docs/a/b.md': 'exception: OLD'}, b['findings']\" && echo \"\$0\" | grep -q 'contract:docs/a/b/b.md: left at its old id, since contract:docs/a/b.md is already recorded'" "$out"
 fpages "$T/findings-merge"
 printf 'n\n' > docs/a/notes.md && printf '[notes](notes.md)\n' >> docs/a/a.md && git add -A && git commit -qm "a has notes"
 printf "$H| 1 | \`docs/a/a.md\` | same | rewrite | |\n| 2 | \`docs/a/b/b.md\` | \`docs/a/a.md\` | merge | into a |\n" > .jig/redocument.md && git add -A && git commit -qm remap
@@ -5203,6 +5212,8 @@ msg="findings: in a metarepo, update --apply lists an approved move as a job's a
 board "b['findings'] = {'shape:docs/g/p/p.md': 'approved'}" && git add -A && git commit -qm "findings: p"
 out=$($UP --apply 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'a job.s in a metarepo (M4)' && echo \"\$0\" | grep -q '^  git mv docs/g/p/p.md docs/g/p.md' && test -f docs/g/p/p.md && ! git diff --cached --name-status | grep -q docs/g" "$out"
+msg="findings: in a metarepo, survey's last line routes an approved move to a job"
+expect_pass sh -c "$J survey 2>&1 | tail -1 | grep -q '1 finding approved and not done: move each in a job (M4)'"
 nohook() { git -c core.hooksPath=/dev/null commit -qm "$1"; }
 git add -A && nohook update
 msg="findings: in a metarepo, after the job's move merged, --apply drops the approval and keeps the exception where it was"

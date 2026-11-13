@@ -360,7 +360,9 @@ trunk before anything acts on them. Survey and update print each finding's outco
 not answered, approved and not done, the deferral, the exception — and survey's `--json` gives
 `id` and `outcome`. Survey's last line counts the findings not answered, those approved and
 not done, the exceptions that answer no finding, and the remap rows that contradict it (below),
-so it never says there is nothing to do while one stands.
+each with who acts on it, so it never says there is nothing to do while one stands. A carried-out
+move never renames an entry onto an id already recorded: it leaves that entry at its old id and
+says so.
 
 An answer stays where the owner put it: it answers the finding with its id, at its path, and
 nothing reads it anywhere else. An entry moves only with jig's own move, below, and jig never

@@ -184,8 +184,8 @@ Otherwise:
      in a pararepo; git history keeps them, and the pointers branch is the live record until
      the pin holds it;
    - removes every old path's `docmap` key from `.jig/config.json`, `drop` rows included, and
-     every `findings` entry naming an old path, its exceptions recorded again at the new page in
-     step 2 (on trunk, by the hubnode, either route);
+     every `findings` entry naming a path the remap moved or removed, its exceptions recorded
+     again at the new page in step 2 (on trunk, by the hubnode, either route);
    - in a metarepo, rewrites `meta.json`'s `entry_files` to the new paths (`docs/<genre>/**/*.md`
      for a genre whose pages pararepos cite), in the same final job, so what pararepos cite
      moves with the pages;

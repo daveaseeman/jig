@@ -2376,6 +2376,12 @@ def entry_problem(i: str, v) -> str:
     """Why a findings entry is no answer, or "" when it is one."""
     if not isinstance(v, str):
         return "not a string"
+    kind, colon, path = i.partition(":")
+    if i != i.strip() or path != path.strip() or not colon:
+        return "the id has stray space or no kind: write it as survey prints it, <kind>:<path>"
+    if kind not in FINDING_KINDS:
+        return (f"no finding has the kind {kind}: survey gives ids only to "
+                + ", ".join(FINDING_KINDS))
     v = v.strip()
     if i.startswith("deep:") and v.startswith("exception:"):
         # One exception record per finding: the homes check reads deep_subsystems.
@@ -2514,11 +2520,13 @@ def approved_moves(root: Path, files: list[str], board: dict, read) -> tuple[lis
     return moves, gone
 
 
-def carry_out(root: Path, board: dict, moves: list[dict], gone: list[str]) -> None:
+def carry_out(root: Path, board: dict, moves: list[dict], gone: list[str]) -> list[str]:
     """Make each approved move with git mv, rename the board keys naming it, drop its entry and
     every gone one from BOARD, and move the other entries on its old path to its new one, so an
-    exception recorded for the page goes with it."""
+    exception recorded for the page goes with it. Returns the entries it left at their old id
+    because the new one was taken: one answer never overwrites another."""
     rec = board.get("findings") if isinstance(board.get("findings"), dict) else {}
+    kept: list[str] = []
     for i in [finding_id(e) for e in moves] + gone:
         rec.pop(i, None)
     for e in moves:
@@ -2532,12 +2540,18 @@ def carry_out(root: Path, board: dict, moves: list[dict], gone: list[str]) -> No
             board["docmap"] = {(e["to"] if k == e["path"] else k): v for k, v in board["docmap"].items()}
         if isinstance(board.get("boards"), list):
             board["boards"] = [e["to"] if b == e["path"] else b for b in board["boards"]]
-        rec = {(f"{k.split(':', 1)[0]}:{e['to']}" if k.split(":", 1)[-1] == e["path"] else k): v
-               for k, v in rec.items()}
+        moved = {k: f"{k.partition(':')[0]}:{e['to']}" for k in rec if k.partition(":")[2] == e["path"]}
+        for k, n in moved.items():
+            if n in rec:
+                kept.append(f"{k}: left at its old id, since {n} is already recorded; drop one "
+                            "on trunk")
+            else:
+                rec[n] = rec.pop(k)
     if rec:
         board["findings"] = rec
     else:
         board.pop("findings", None)
+    return kept
 
 
 # RULES.md (Documentation): a repo's terms are a section of its README, one heading per term,
@@ -3100,14 +3114,20 @@ def cmd_survey(root: Path, args) -> int:
     # never says there is nothing to do while one does.
     unanswered = len([e for e in finds.values() if e["outcome"] is None])
     approved = len([e for e in finds.values() if e["outcome"] == "approved"])
-    remapped = len(report["remap_contradictions"])
-    counts = [f"{n} finding{'s' if n != 1 else ''} {what}"
-              for n, what in ((unanswered, "not answered"), (approved, "approved and not done")) if n]
-    unused = len(report["exceptions_unused"])
-    counts += [f"{unused} exception{'s' if unused != 1 else ''} answering no finding"] if unused else []
-    counts += [f"{remapped} remap row{'s' if remapped != 1 else ''} keeping a page survey moves"] if remapped else []
-    standing = (", ".join(counts) + ": run /jig:update to record an answer to each, and carry "
-                "out the approved moves" if counts and on_jig else "")
+    remapped, unused = len(report["remap_contradictions"]), len(report["exceptions_unused"])
+    # Each count names who acts on it: update records answers and makes the moves it can; an
+    # unused exception and a remap row are the owner's edits on trunk; a metarepo's move is a job's.
+    def count(n: int, what: str, route: str) -> list[str]:
+        return [f"{n} {what.format(s='s' if n != 1 else '')}: {route}"] if n else []
+    counts = (count(unanswered, "finding{s} not answered", "run /jig:update to record an answer to each")
+              + count(approved, "finding{s} approved and not done", "move each in a job (M4)"
+                      if (root / META).exists()
+                      else "run /jig:update to carry out the moves, and make the edits by hand")
+              + count(unused, "exception{s} answering no finding",
+                      "drop each on trunk, or record it at the page's new path")
+              + count(remapped, "remap row{s} keeping a page survey moves",
+                      "move each page in the remap, or record the owner's exception"))
+    standing = "; ".join(counts) if counts and on_jig else ""
     verdict = (f"An older jig's board is at {old}: run /jig:update first, not /jig:adopt or /jig:init."
           if old else "Pages in the old Now / Rules / Checks shape: run /jig:redocument to convert them."
           if old_pages else f"Board pages in the old {OLD_BOARDS} layout: run /jig:redocument to move them."
@@ -7956,6 +7976,8 @@ def cmd_update(root: Path, args) -> int:
                                 os.path.dirname(e["path"]) + "/", [e], {})
             if not l.startswith(("git mv ", "fold ", f"{CONFIG} docmap:"))]
 
+    kept_ids: list[str] = []
+
     def carried_report(done: bool) -> None:
         if carried or gone_ids:
             print(f"\nIn {CONFIG} findings, {'done' if done else 'done by --apply'}:")
@@ -7963,10 +7985,13 @@ def cmd_update(root: Path, args) -> int:
                 print(f"  git mv {e['path']} {e['to']}  [{finding_id(e)}: approved]")
             for i in gone_ids:
                 print(f"  {i}: the finding no longer fires; its entry is dropped")
+            for line in kept_ids:
+                print(f"  {line}")
         if jobs_moves:
             print(f"\nApproved in {CONFIG} findings, a job's in a metarepo (M4): open one for these "
-                  "pages and move them there; each entry drops on the next --apply once its move "
-                  f"is on {trunk}:")
+                  "pages and move them there. Each approval drops on the next --apply once its "
+                  f"move is on {trunk}; record each moved page's exception again at its new path "
+                  "then, since jig moves an answer only with its own move:")
             for e in jobs_moves:
                 print(f"  git mv {e['path']} {e['to']}  [{finding_id(e)}]")
         if left and done:
@@ -8001,13 +8026,14 @@ def cmd_update(root: Path, args) -> int:
             return 2
         if not args.apply:
             carried_report(False)
-            print("\nDry run: nothing changed. Run again with --apply to carry these out; it stages "
-                  "and commits nothing.")
+            if carried or gone_ids:
+                print("\nDry run: nothing changed. Run again with --apply to carry these out; it "
+                      "stages and commits nothing.")
             return 0
         if not (carried or gone_ids):
             carried_report(False)
             return 0
-        carry_out(root, data, carried, gone_ids)
+        kept_ids[:] = carry_out(root, data, carried, gone_ids)
         (root / CONFIG).write_text(json.dumps(data, indent=2) + "\n")
         git("add", "--", CONFIG, check=True)
         carried_report(True)
@@ -8104,7 +8130,7 @@ def cmd_update(root: Path, args) -> int:
     for o, n in sorted(plan["moves"].items(), key=lambda m: m[0] == board_at):
         (root / n).parent.mkdir(parents=True, exist_ok=True)
         git("mv", o, n, check=True)
-    carry_out(root, new_board, carried, gone_ids)
+    kept_ids[:] = carry_out(root, new_board, carried, gone_ids)
     (root / CONFIG).parent.mkdir(parents=True, exist_ok=True)
     (root / CONFIG).write_text(json.dumps(new_board, indent=2) + "\n")
     if not (root / JOBS).exists():
