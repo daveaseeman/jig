@@ -30,12 +30,24 @@ Report the output, then say what it means in a few lines:
   any file `docmap` names, whatever its format) is printed with where it goes. Each line carries its fix; `/jig:update` proposes the same ones
   with everything they touch.
 - **Pages off the page contract.** A page describes what is built: a lead paragraph, sections
-  named for the system's parts, optional Talks to (what crosses the boundary), optional
+  named for what its code has, optional Talks to (what crosses the boundary), optional
   Invariants. Survey names an
   old Now/Rules/Checks page ("old contract — convert", a job of its own in this repo,
   `/jig:redocument`: fold what it says into description, delete what no longer holds, keep as
   Invariants only entries with a why and a holder), an invariant missing its why or holder,
   and a page with no lead paragraph.
+- **Old-contract holders.** A check of the old Now / Rules / Checks headings, a `reserve`
+  counter over numbered page headings, an always-loaded line that makes page rules bind or
+  cites a page by number. Each converts with the pages: `/jig:redocument` makes them its first
+  job, or `/jig:update` lists them once no old page is left. Never propose deleting one; such a
+  file holds more than the contract.
+- **Pages that own no files, and structure maps.** A page below a system whose docmap globs
+  cover no file is a section of the page above it; one with no docmap key is unmapped, its files
+  unknown until they are named; one whose every file another page covers is the same
+  subsystem as that page, or a seam. Each folds on the owner's yes. A JSON file that declares
+  the docs structure beside the docmap must change with it: keep one, or derive one from the
+  other. `--levels` prints every page's level with its evidence (own files, maps, CODEOWNERS,
+  manifests, imports); the owner approves a level, survey only proposes it.
 - **The project in the product.** A page or a decision entry says what the product does
   today; phases, order and parked work are `.jig/roadmap.md`'s. Survey names a `## Status`,
   `## Current state`, `## Roadmap` or `## Undefined` heading on a page or an entry file, and

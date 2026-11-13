@@ -1614,7 +1614,7 @@ def cmd_reading_list(root: Path, args) -> int:
     deep = board.data.get("deep_subsystems")
     deep = deep if isinstance(deep, dict) else {}
     shown: set[str] = set()
-    # A flat page in a system's folder is that system's, so it climbs like any part. A seam's
+    # A flat page in a system's folder is that system's, so it climbs like any subsystem's page. A seam's
     # page lives in the nearest folder both its systems share, docs/ for two, with none above.
     named = named_pages(board.data)
     flat = frozenset(p for p in want if flat_page(
@@ -2190,11 +2190,21 @@ def unapproved(folder: str, deep: dict) -> list[str]:
         isinstance(r := deep.get(d := "/".join(parts[:i])), str) and r.strip())]
 
 
-def deep_fix(h: dict, deep: dict) -> str:
-    """A deep page's two choices, shared by survey and update."""
+def deep_fix(h: dict, deep: dict, level: dict | None = None) -> str:
+    """A deep page's choices, shared by survey and update. LEVEL is its page_levels entry,
+    None where there is none. A section covers no file, so it is no subsystem by RULES.md's
+    definition, no rationale can hold, and the fold is the one choice; a shared page gets
+    level_line's one answer; a subsystem's own files are the rationale's evidence."""
+    move = f"{'fold it into' if h['fold'] else 'move it to'} {h['to']}"
+    if level and level["level"] == "section":
+        return f"{move}: it owns no files, so it is a section, not a subsystem"
+    if level and level["level"] in ("shared", "unmapped"):
+        return level_line(level)
+    own = level["own"] if level and level["level"] == "subsystem" else []
     ask = " and ".join(unapproved(page_folder(h["path"]), deep))
-    return (f"{'fold it into' if h['fold'] else 'move it to'} {h['to']}, or ask the owner to "
-            f"approve {ask} in {CONFIG} deep_subsystems, with its rationale")
+    have = (f", naming the files it has of its own ({', '.join(own[:3])}{' …' if len(own) > 3 else ''})"
+            if own else "")
+    return f"{move}, or ask the owner to approve {ask} in {CONFIG} deep_subsystems, with its rationale{have}"
 
 
 def at_home(path: str, registers: list[str], deep: dict, have: set[str] = frozenset()) -> bool:
@@ -2265,6 +2275,11 @@ def meta_hidden(root: Path, files: list[str], not_docs: list[str], read) -> list
     return [{"glob": g, "pages": hit} for g in not_docs if (hit := [f for f in md if matches(f, [g])])]
 
 
+# RULES.md sentences jig reworded, as they stood: a copy that froze before the rewording still
+# shares them. A rewording adds the old sentence here in the same commit.
+RETIRED_RULES = ("The tree names the product's own parts, not its files, so a rule that touches several files lives once.",)
+
+
 def doc_homes(root: Path, files: list[str], not_docs: list[str],
               read=None, deep: dict | None = None, docmap=None) -> list[dict]:
     """Every tracked Markdown file with no home, as {path, kind, to, fold, naming, named_at}.
@@ -2279,7 +2294,7 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
     READ maps a path to its text, for update, which judges the files where they will be."""
     read = read or (lambda f: (root / f).read_text(errors="replace") if (root / f).is_file() else "")
     rules_md = Path(__file__).resolve().parent / "RULES.md"
-    rules = re.sub(r"\s+", " ", rules_md.read_text()) if rules_md.exists() else ""
+    rules = " ".join([re.sub(r"\s+", " ", rules_md.read_text()), *RETIRED_RULES]) if rules_md.exists() else ""
     load_genres(root)
     registers = meta_registers(root, files, read)
     deep = deep if isinstance(deep, dict) else {}
@@ -2356,12 +2371,14 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
 
 
 def page_shapes(root: Path, files: list[str], not_docs: list[str], docmap: set[str],
-                skip: set[str], read) -> list[dict]:
+                skip: set[str], read, sections: frozenset[str] = frozenset()) -> list[dict]:
     """Pages in the wrong one of their two shapes, as {path, to, into, fold, named}: a page
     named for its folder with nothing else there to hold, which goes flat beside its parent's
     page (INTO false), and a flat page with a folder of its own name, which goes into it (INTO
     true). SKIP are the files with no home, reported already. NAMED is false where the flat
-    page would be neither in DOCMAP nor page-shaped, so read as a note."""
+    page would be neither in DOCMAP nor page-shaped, so read as a note. SECTIONS are pages that
+    cover no file (page_levels): each folds into the page above it, so its form is moot, unless
+    its other form is there too."""
     have, out = set(files), []
     def company(f: str) -> bool:
         # An ignored datasheet isn't tracked, but the folder on disk or the page's link says it's there.
@@ -2373,11 +2390,14 @@ def page_shapes(root: Path, files: list[str], not_docs: list[str], docmap: set[s
             continue
         if folder_page(f) and not old_layout(f):
             to = f"{page_folder(f)}.md"
-            if not company(f) and to not in have and flat_spot(to, have):
+            if not company(f) and to not in have and flat_spot(to, have) and f not in sections:
                 out.append({"path": f, "to": to, "into": False, "fold": False,
                             "named": f in docmap or page_shaped(read(f))})
         elif flat_page(f, have, docmap, read) and company(f):
             to = f"{page_folder(f)}/{Path(f).stem}.md"
+            # Both forms present are one page twice, folded whatever its level.
+            if f in sections and to not in have:
+                continue
             out.append({"path": f, "to": to, "into": True, "fold": to in have, "named": True})
     return out
 
@@ -2385,7 +2405,7 @@ def page_shapes(root: Path, files: list[str], not_docs: list[str], docmap: set[s
 def misfiled_seams(files: list[str], board: dict) -> list[dict]:
     """Each page filed in a system's folder whose docmap globs cover a file another system's
     page also covers, as {path, other}: a seam filed under one side, which the reading list
-    would climb from as that side's part. A board page under a system is its system's, whatever
+    would climb from as that side's subsystem. A board page under a system is its system's, whatever
     its globs reach, so none is listed."""
     docmap = board.get("docmap") if isinstance(board.get("docmap"), dict) else {}
     boards = board_pages(board)
@@ -2410,6 +2430,364 @@ def misfiled_seams(files: list[str], board: dict) -> list[dict]:
         if other:
             out.append({"path": p, "other": other})
     return out
+
+
+# The old page contract outside the pages (RULES.md, Documentation): jig shipped a check, a
+# counter and an AGENTS.md line with it, and converting the pages alone leaves them refusing
+# the new shape. Each is keyed on a shape jig itself retired, as LAYOUT keys on its old paths.
+OLD_HEADS = ("Now", "Rules", "Checks")
+# The three headings as one list literal or alternation: `["Now", "Rules", "Checks"]`,
+# `(Now|Rules|Checks)`. A fixture that writes an old page puts text between them, and checks nothing.
+OLD_HEADS_RUN = re.compile(r"\b(?:Now|Rules|Checks)\b(?:[\"'`,|\[\]() \t]+(?:Now|Rules|Checks)\b){2,}")
+OLD_PAIR = re.compile(r"\b(Now|Rules|Checks)\s*(?:and|or|/|,|&)\s*(Now|Rules|Checks)\b")
+# The template's sentence and its rewordings.
+OLD_BIND = re.compile(r"(?i:bind as if they stood)")
+# A page cited by rule number: a page's name right before `§2`, `§87` or `### 1.1`, as in
+# "core §2" or "docs/core/core.md §2". Any other name before a § is another document's: "RFC
+# 9111 §5.2", "CLA §4". The template's placeholder, `§N.M` or `### N.M`, is the old contract
+# wherever it is.
+CITE_AFTER = r"\s*(?:§\s*\d+(?:\.\d+)*\b|#{2,6}[ \t]+\d+\.\d+)"
+OLD_CITE_PLACEHOLDER = re.compile(r"§\s*N\.M\b|#{2,6}[ \t]+N\.M\b")
+# A page's Rules and Checks: the words right after a page's name or a system's or page's
+# possessive, as in "each system's Rules and Checks"; "the billing system gained Rules and
+# Checks" is the repo's own words.
+HEADS_AFTER = r"\s+(?:Now|Rules|Checks)\b"
+# Page names that are no system's: what a repo calls its changelog or its index.
+NOT_SYSTEM_NAMES = ("readme", "index", "changelog", "glossary", "contributing")
+HEADING_SAMPLES = ("# 1 x", "## 1 x", "## 1. x", "### 1.1 x", "### 12.3 x", "#### 1.1.1 x")
+
+
+def contract_holders(root: Path, files: list[str], board: dict) -> list[dict]:
+    """Each check, counter and always-loaded line that still holds the old page contract, as
+    {path, line, kind, label, fix}. A file under not_docs ships as code: its text is the
+    product's, not a check of this repo's pages. jig's own folder, under any name it has had,
+    defines the shapes, so it holds nothing."""
+    not_docs = board.get("not_docs") or []
+    tool = tuple({os.path.dirname(f) + "/" for f in files
+                  if Path(f).name in ("jig.py", "aidev.py") and "/" in f} | {f"{DIR}/"})
+    have, named = set(files), named_pages(board)
+
+    def read(f: str) -> str:
+        return (root / f).read_text(errors="replace") if (root / f).is_file() else ""
+    # A docs page's own name names it too: "core §2" for docs/core.md. Only a page's, in any
+    # case; a name of one or two letters is a word in any sentence.
+    stems = sorted({Path(f).stem for f in files if f.startswith("docs/") and f.endswith(".md")
+                    and len(Path(f).stem) > 2 and Path(f).stem.lower() not in NOT_SYSTEM_NAMES
+                    and (folder_page(f) or flat_page(f, have, named, read))})
+    page_name = r"(?i:docs/[\w./-]+" + "".join(f"|\\b{re.escape(t)}\\b" for t in stems) + ")"
+    cites_page = re.compile(page_name + CITE_AFTER)
+    pages_heads = re.compile(rf"(?:{page_name}|\b(?:system|page)'s){HEADS_AFTER}")
+
+    def theirs(f: str) -> bool:
+        return f in have and not f.startswith(tool) and not matches(f, not_docs)
+    out = []
+    hits = subprocess.run(["git", "grep", "-I", "-n", "--null", "-w", "-e", "Checks", "--", "."],
+                          capture_output=True, cwd=root).stdout.decode(errors="replace")
+    for hit in hits.splitlines():
+        f, line, text = (hit.split("\0", 2) + ["", ""])[:3]
+        if (line.isdigit() and not f.endswith(".md") and theirs(f)
+                and any(set(re.findall(r"Now|Rules|Checks", m)) == set(OLD_HEADS)
+                        for m in OLD_HEADS_RUN.findall(text))):
+            out.append({"path": f, "line": int(line), "kind": "check", "label": f"{f}:{line}",
+                        "fix": "checks the old page shape: it converts with the pages, accepting "
+                               "both shapes while /jig:redocument runs and only the new one after "
+                               "its cleanup"})
+    reserve = board.get("reserve") if isinstance(board.get("reserve"), dict) else {}
+    for name, c in reserve.items():
+        if not isinstance(c, dict):
+            continue
+        globs = [g for g in c.get("files") or [] if isinstance(g, str)]
+        try:
+            rx = re.compile(str(c.get("pattern") or ""), re.M)
+        except re.error:
+            continue
+        # A register or the decision log is no page: a counter over them numbers entries. A
+        # page is what survey reads as one; a folder of ADRs with no page of its own is not.
+        pages = [f for f in files if f.endswith(".md") and matches(f, globs) and f.startswith("docs/")
+                 and Path(f).name not in ("DECISIONS.md", "CHANGELOG.md", *ROOT_DOCS)
+                 and (folder_page(f) or flat_page(f, have, named, read))]
+        if ("#" in rx.pattern and any(rx.search(s) for s in HEADING_SAMPLES)
+                and (pages or matches("docs/x/x.md", globs))):
+            out.append({"path": CONFIG, "line": 0, "kind": "counter", "label": f"{CONFIG} reserve.{name}",
+                        "fix": "numbers page headings: drop it at /jig:redocument's cleanup, once no "
+                               "page holds a numbered heading, since the contract cites a page by "
+                               "its heading"})
+    for f in RULES_NAMES:
+        if f not in have or not (root / f).is_file():
+            continue
+        for i, text in enumerate((root / f).read_text(errors="replace").splitlines(), 1):
+            # The line's own heading marks are its heading, not a citation: `## 1.1 Setup`.
+            body = re.sub(r"^\s*#{1,6}\s+", "", text)
+            pair = [(x, y) for x, y in OLD_PAIR.findall(body) if x != y]
+            # Now in the pair is the old contract's alone; Rules and Checks are only a page's.
+            if (OLD_BIND.search(body) or OLD_CITE_PLACEHOLDER.search(body) or any("Now" in q for q in pair)
+                    or cites_page.search(body) or (pair and pages_heads.search(body))):
+                out.append({"path": f, "line": i, "kind": "line", "label": f"{f}:{i}",
+                            "fix": "holds the old page contract: replace it with the template's "
+                                   f"Documentation line (`{DIR}/RULES.md` (Documentation)), and cite "
+                                   "a page by its heading"})
+    return out
+
+
+# A structure map is a hand-kept file; a JSON file past this is data, not a map.
+MAP_MAX_BYTES = 1_000_000
+# Build manifests: a folder holding one builds on its own, found by presence, never parsed.
+MANIFESTS = ("package.json", "Cargo.toml", "go.mod", "pyproject.toml", "setup.py",
+             "CMakeLists.txt", "idf_component.yml", "library.json")
+OWNER_FILES = ("CODEOWNERS", ".github/CODEOWNERS", ".gitlab/CODEOWNERS", "docs/CODEOWNERS")
+PY_EXT, JS_EXT = (".py",), (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs")
+C_EXT = (".c", ".h", ".cc", ".cpp", ".hpp", ".hh", ".cxx", ".ino")
+JS_SPEC = re.compile(r"""(?:from\s+|import\s*\(\s*|require\s*\(\s*|import\s+)['"](\.{1,2}/[^'"]+)['"]""")
+C_INCLUDE = re.compile(r'^\s*#\s*include\s+"([^"]+)"', re.M)
+
+
+def level_pages(files: list[str], board: dict, read) -> list[str]:
+    """The docs pages a level is worked out for: a board page is what `boards` makes it."""
+    have, named = set(files), named_pages(board)
+    boards, not_docs = board_pages(board), board.get("not_docs") or []
+    return [f for f in files if f.startswith("docs/") and f.endswith(".md") and not reference_file(f)
+            and not matches(f, not_docs) and not any(same_page(b, f) for b in boards)
+            and Path(f).name not in RULES_NAMES and (folder_page(f) or flat_page(f, have, named, read))]
+
+
+def page_cover(files: list[str], docmap: dict, pages: list[str]) -> dict[str, set[str]]:
+    """The tracked files each page's docmap globs cover, in either of its forms."""
+    out = {}
+    for p in pages:
+        rxs = [glob_re(g) for g in page_globs(docmap, p) if isinstance(g, str)]
+        out[p] = {f for f in files if any(r.match(f) for r in rxs)}
+    return out
+
+
+def subsequence(want: list[str], path: list[str]) -> bool:
+    it = iter(path)
+    return all(w in it for w in want)
+
+
+def structure_maps(root: Path, files: list[str], pages: list[str], cover: dict, read) -> list[dict]:
+    """Each tracked JSON file whose entries name two docs pages or more, as {path, declares,
+    differs, naming}. An entry names a page when the page's folder names appear in order in
+    its key path, ending on the last (`systems.a.parts.b` → docs/a/b.md); its files are the
+    tracked files its own lists' strings match. DIFFERS are the declared pages whose files the
+    docmap gives otherwise. A map that agrees is a second declaration all the same. It counts as
+    a map only when two of its entries name tracked files."""
+    names = {p: page_folder(p).split("/")[1:] for p in pages}
+    by_last: dict[str, list[str]] = {}
+    for p, n in names.items():
+        if n:
+            by_last.setdefault(n[-1], []).append(p)
+    out = []
+    for f in files:
+        if (not f.endswith(".json") or f.startswith(TOOL_DIRS) or Path(f).name in MANIFESTS
+                or f.endswith("-lock.json") or "node_modules/" in f
+                or (root / f).is_file() and (root / f).stat().st_size > MAP_MAX_BYTES):
+            continue
+        text = read(f)
+        # A map names two pages as keys; a file holding fewer of their names as strings can't.
+        if sum(f'"{n}"' in text for n in by_last) < 2:
+            continue
+        try:
+            data = json.loads(text)
+        except (ValueError, RecursionError):
+            continue
+        found: dict[str, set[str]] = {}
+
+        def walk(node, path: list[str]) -> None:
+            if not isinstance(node, dict):
+                return
+            for k, v in node.items():
+                if not isinstance(v, dict):
+                    continue
+                kp = path + [str(k)]
+                hit = max((p for p in by_last.get(kp[-1], ()) if subsequence(names[p], kp)),
+                          key=lambda p: len(names[p]), default="")
+                if hit and hit not in found:
+                    rxs = [glob_re(s) for lst in v.values() if isinstance(lst, list)
+                           for s in lst if isinstance(s, str)]
+                    found[hit] = {t for t in files if any(r.match(t) for r in rxs)}
+                walk(v, kp)
+        try:
+            walk(data, [])
+        except RecursionError:
+            continue
+        # Entries whose lists name tracked files: keys that happen to match page names, as a
+        # locale file's do, name none.
+        if sum(bool(v) for v in found.values()) >= 2:
+            out.append({"path": f, "declares": sorted(found),
+                        "differs": sorted(p for p in found if found[p] != cover.get(p, set())),
+                        "naming": sorted(naming(root, f, files))})
+    return out
+
+
+def named_by(naming: list[str]) -> str:
+    """The files that name a map: the code that reads or writes it by name, then a count of
+    the prose that mentions it."""
+    code = [f for f in naming if not f.endswith(".md")]
+    prose = len(naming) - len(code)
+    return (f"; named by {', '.join(code)}" if code else "; named by" if prose else "") + (
+        f"{' and' if code else ''} {prose} Markdown file{'s' if prose > 1 else ''}" if prose else "")
+
+
+def code_owners(files: list[str], read) -> list[tuple[re.Pattern[str], list[str]]]:
+    """CODEOWNERS rules, last match wins, as gitignore-style globs read with jig's matcher."""
+    f = next((o for o in OWNER_FILES if o in files), "")
+    rules = []
+    for line in read(f).splitlines() if f else []:
+        parts = line.split("#", 1)[0].split()
+        if len(parts) < 2:
+            continue
+        pat = parts[0].lstrip("/") if parts[0].startswith("/") else (
+            parts[0] if "/" in parts[0].rstrip("/") else f"**/{parts[0]}")
+        pat = pat + "**" if pat.endswith("/") else pat
+        rules.append((glob_re(pat), parts[1:]))
+    return rules
+
+
+def import_edges(files: list[str], read) -> dict[str, set[str]]:
+    """file → the tracked files it imports: Python by ast, JS/TS by relative specifier, C/C++
+    by quoted include. Aliases, dynamic imports and runtime interfaces are not read."""
+    import ast
+    have, edges = set(files), {}
+    mods: dict[str, list[str]] = {}
+    for f in files:
+        if f.endswith(PY_EXT):
+            parts = f[:-3].split("/")
+            parts = parts[:-1] if parts[-1] == "__init__" else parts
+            for i in range(len(parts)):
+                mods.setdefault(".".join(parts[i:]), []).append(f)
+    base_of: dict[str, list[str]] = {}
+    for f in files:
+        base_of.setdefault(Path(f).name, []).append(f)
+    for f in files:
+        to: set[str] = set()
+        if f.endswith(PY_EXT):
+            try:
+                tree = ast.parse(read(f))
+            except (SyntaxError, ValueError):
+                continue
+            for n in ast.walk(tree):
+                wanted = []
+                if isinstance(n, ast.Import):
+                    wanted = [a.name for a in n.names]
+                elif isinstance(n, ast.ImportFrom):
+                    mod = n.module or ""
+                    if n.level:
+                        pkg = f.split("/")[:-n.level]
+                        mod = ".".join(pkg + ([mod] if mod else []))
+                    wanted = [mod] + [f"{mod}.{a.name}" for a in n.names]
+                to |= {t for m in wanted for t in mods.get(m, [])}
+        elif f.endswith(JS_EXT):
+            for s in JS_SPEC.findall(read(f)):
+                b = os.path.normpath(os.path.join(os.path.dirname(f), s))
+                to |= {next((c for c in (b, *[b + e for e in JS_EXT], *[f"{b}/index{e}" for e in JS_EXT])
+                             if c in have), "")} - {""}
+        elif f.endswith(C_EXT):
+            for s in C_INCLUDE.findall(read(f)):
+                b = os.path.normpath(os.path.join(os.path.dirname(f), s))
+                alone = [c for c in base_of.get(Path(s).name, []) if c.endswith(s)]
+                to |= {b} if b in have else set(alone[:1]) if len(alone) == 1 else set()
+        if to - {f}:
+            edges[f] = to - {f}
+    return edges
+
+
+def page_levels(root: Path, files: list[str], board: dict, read, imports: bool = False,
+                maps: list[dict] | None = None) -> list[dict]:
+    """Each page below a system with its level (RULES.md, Documentation: a subsystem has files
+    of its own), as {path, level, into, own, covered, shared_with, evidence}. Own files are
+    the files its docmap globs cover that no page but those above it covers. Levels:
+    `unmapped`, with no docmap key, so its files are unknown (INTO is the page above);
+    `section`, a key whose globs cover no tracked file, a section of INTO; `shared`, every file it covers
+    covered by another page, a sibling (INTO, the same subsystem) or another system's (a seam,
+    which misfiled_seams names); `subsystem`, with own files. Evidence is read-only: structure
+    maps, CODEOWNERS and build manifests always, imports with IMPORTS. A metarepo has no code,
+    and a system whose pages cover no file has no docmap to read."""
+    if GENRES is not None:
+        return []
+    have = set(files)
+    docmap = board.get("docmap") if isinstance(board.get("docmap"), dict) else {}
+    deep = board.get("deep_subsystems") if isinstance(board.get("deep_subsystems"), dict) else {}
+    pages = level_pages(files, board, read)
+    flats = frozenset(p for p in pages if not folder_page(p))
+    cover = page_cover(files, docmap, pages)
+    maps = structure_maps(root, files, pages, cover, read) if maps is None else maps
+    owners = code_owners(files, read)
+    units = {os.path.dirname(f) for f in files if Path(f).name in MANIFESTS and "/" in f}
+    edges = import_edges(files, read) if imports else {}
+
+    def system_of(p: str) -> str:
+        return "/".join(page_folder(p).split("/")[:2])
+    # A system the docmap maps nothing in gives no files to compare: its pages are not judged.
+    mapped = {system_of(p) for p in pages if cover[p]}
+    out = []
+    for p in pages:
+        # A folder no page owns is no system: the page is misplaced, which doc_homes reports.
+        if page_folder(p).count("/") < 2 or system_of(p) not in mapped or not folder_owner(system_of(p), have):
+            continue
+        above = [u for u, _ in pages_above(p, have, deep, flats)]
+        # Both forms of one page, flat and in its folder, are one page, not each other's sharer.
+        others = [q for q in pages if not same_page(q, p) and q not in above]
+        mine = cover[p]
+        own = mine - set().union(*(cover[q] for q in others))
+        sharers = sorted(q for q in others if cover[q] & mine)
+        system = system_of(p)
+        siblings = [q for q in sharers if system_of(q) == system]
+        up = above[0] if above else folder_owner(system, have)
+        # No docmap key says nothing about its files; a key whose globs match none says they are none.
+        if not any(same_page(k, p) for k in docmap):
+            level, into = "unmapped", up
+        elif not mine:
+            level, into = "section", up
+        elif not own:
+            level, into = "shared", siblings[0] if siblings else ""
+        else:
+            level, into = "subsystem", ""
+        ev = []
+        if level == "subsystem":
+            ev.append(f"{len(own)} own file{'s' if len(own) > 1 else ''}"
+                      + (f", {len(mine - own)} shared with {', '.join(sharers)}" if sharers else ""))
+        if imports and own:
+            rest = set().union(*(cover[q] for q in pages if system_of(q) == system and q != p)) - mine
+            code = sorted(f for f in own if f.endswith((*PY_EXT, *JS_EXT, *C_EXT)))
+            reached = {b: {a for a in rest if b in edges.get(a, ())} for b in code}
+            reached = sorted(((b, len(a)) for b, a in reached.items() if a), key=lambda x: (-x[1], x[0]))
+            if reached:
+                ev.append("reached through " + "; ".join(
+                    f"{b}, from {n} file{'s' if n > 1 else ''}" for b, n in reached[:5])
+                    + (f" (and {len(reached) - 5} more)" if len(reached) > 5 else ""))
+            elif code:
+                ev.append(f"reached through none of its {len(code)} code files")
+            unread = sorted({Path(f).suffix for f in own if f.endswith(SRC_EXT)
+                             and not f.endswith((*PY_EXT, *JS_EXT, *C_EXT))})
+            ev += [f"no import evidence for {e}" for e in unread]
+        ev += [f"declared in {m['path']}" for m in maps if p in m["declares"]]
+        who = sorted({o for f in own for o in next((who for rx, who in reversed(owners) if rx.match(f)), [])})
+        if who:
+            ev.append(f"owned by {', '.join(who)} (CODEOWNERS)")
+        built = sorted(u for u in units if any(f.startswith(f"{u}/") for f in own)
+                       and all(f in own for f in files if f.startswith(f"{u}/")))
+        if built:
+            ev.append(f"builds on its own: {', '.join(built)}")
+        out.append({"path": p, "level": level, "into": into, "own": sorted(own), "covered": len(mine),
+                    "shared_with": sharers, "evidence": ev})
+    return out
+
+
+def level_line(e: dict) -> str:
+    """A page's level and its evidence, as survey and redocument's seed show it."""
+    if e["level"] == "unmapped":
+        head = f"unmapped: no docmap key: name its files in docmap, or fold it into {e['into'] or 'its system page'}"
+    elif e["level"] == "section":
+        head = (f"section: covers no file: a section of {e['into'] or 'its system page'}; fold it "
+                "in on the owner's yes")
+    elif e["level"] == "shared":
+        head = (f"shared: every file it covers is {e['into']}'s too: the same subsystem, fold one "
+                "into the other" if e["into"] else
+                f"shared: every file it covers is another system's too ({', '.join(e['shared_with'])}): "
+                "a seam, which lives in the folder both systems share")
+    else:
+        return "subsystem: " + "; ".join(e["evidence"])
+    return "; ".join([head, *e["evidence"]])
 
 
 def shape_fix(e: dict) -> str:
@@ -2718,7 +3096,14 @@ def cmd_survey(root: Path, args) -> int:
         return (root / f).read_text(errors="replace") if (root / f).is_file() else ""
     flats = {f for f in md if flat_page(f, have, docmap, read)}
     pages = [f for f in md if (folder_page(f) or f in flats) and f not in homes and not matches(f, not_docs)]
-    report["page_shapes"] = page_shapes(root, files, not_docs, docmap, set(homes), read)
+    # The repo's own files that hold its docs structure are evidence too, not only its pages.
+    report["contract_holders"] = contract_holders(root, files, board)
+    bmap = board.get("docmap") if isinstance(board.get("docmap"), dict) else {}
+    lpages = level_pages(files, board, read) if GENRES is None else []
+    report["structure_maps"] = structure_maps(root, files, lpages, page_cover(files, bmap, lpages), read)
+    report["levels"] = page_levels(root, files, board, read, args.levels, report["structure_maps"])
+    sections = frozenset(e["path"] for e in report["levels"] if e["level"] == "section")
+    report["page_shapes"] = page_shapes(root, files, not_docs, docmap, set(homes), read, sections)
     report["seams_misfiled"] = misfiled_seams(files, board)
     report["datasheets_unlinked"], report["datasheets_missing"], report["datasheets_misplaced"] = datasheet_links(
         root, files, pages, deep, not_docs)
@@ -2817,10 +3202,31 @@ def cmd_survey(root: Path, args) -> int:
                   "lives in their nearest shared folder")
     below = [e for e in report["homeless"] if e["kind"] == "deep"]
     if below:
-        print(f"\nPages below a subsystem ({DIR}/RULES.md, Documentation); fold each into its "
-              f"subsystem's page,\nor propose it to the owner with its rationale for {CONFIG} deep_subsystems:")
+        print(f"\nPages below a subsystem ({DIR}/RULES.md, Documentation). Each line says what to do; "
+              f"only a page\nwith files of its own may be proposed to the owner for {CONFIG} deep_subsystems:")
+        levels = {e["path"]: e for e in report["levels"]}
         for e in below:
-            print(f"  {e['path']}: {deep_fix(e, deep)}")
+            print(f"  {e['path']}: {deep_fix(e, deep, levels.get(e['path']))}")
+    # One answer per page: a deep page and a misfiled seam are answered under their own headings.
+    answered = {e["path"] for e in below} | {e["path"] for e in report["seams_misfiled"]}
+    nofiles = [e for e in report["levels"] if e["level"] != "subsystem" and e["path"] not in answered]
+    if nofiles:
+        print(f"\nPages below a system that own no files, or that docmap doesn't map ({DIR}/RULES.md, "
+              "Documentation:\na subsystem has files of its own):")
+        for e in nofiles:
+            print(f"  {e['path']}: {level_line(e)}")
+    if report["structure_maps"]:
+        print("\nFiles that declare the docs structure: one that declares the docmap's files is a second "
+              "declaration,\nand the two must change together: keep one, or derive one from the other:")
+        for m in report["structure_maps"]:
+            print(f"  {m['path']}: declares {', '.join(m['declares'])}; "
+                  + (f"differs from the docmap for {', '.join(m['differs'])}" if m["differs"]
+                     else "the same files as the docmap")
+                  + named_by(m["naming"]))
+    if args.levels:
+        print("\nPage levels, from evidence (own files, structure maps, CODEOWNERS, manifests, imports):")
+        for e in report["levels"]:
+            print(f"  {e['path']}: {level_line(e)}")
     strays = [e for e in report["homeless"] if e["kind"] == "stray" and not e["to"]]
     for e in (e for e in report["homeless"] if e["kind"] == "stray" and e["to"]):
         print(f"\n{e['path']} → {e['to']}: a repo's terms are a section of its README, one "
@@ -2873,6 +3279,10 @@ def cmd_survey(root: Path, args) -> int:
         print(f"\nTerms in README.md § Glossary written as bold words, not headings: {len(terms)} "
               f"({', '.join(terms[:5])}{' …' if len(terms) > 5 else ''}).\nMake each a `### <term>` "
               f"heading, so `README.md § <term>` names it ({DIR}/RULES.md, Documentation).")
+    if report["contract_holders"]:
+        print(f"\nChecks, counters and lines that hold the old page contract ({DIR}/RULES.md, Documentation):")
+        for h in report["contract_holders"]:
+            print(f"  {h['label']}: {h['fix']}")
     if report["page_contract"]:
         print(f"\nPages off the page contract ({DIR}/RULES.md, Documentation):")
         for e in report["page_contract"]:
@@ -2949,7 +3359,9 @@ def cmd_survey(root: Path, args) -> int:
           if old else "Pages in the old Now / Rules / Checks shape: run /jig:redocument to convert them."
           if old_pages else f"Board pages in the old {OLD_BOARDS} layout: run /jig:redocument to move them."
           if report["old_boards"] else "Pages outside the docs tree: run /jig:redocument to convert them."
-          if outside and on_jig else "Pages off the page contract where they sit: run /jig:update "
+          if outside and on_jig else "Checks, counters or lines that hold the old page contract, with no "
+          "old page left: run /jig:update to edit each where it sits." if report["contract_holders"] and on_jig
+          else "Pages off the page contract where they sit: run /jig:update "
           "to review each in place." if in_place and on_jig
           else "On jig already, no page to convert: give each file above its home" + project + "."
           if report["homeless"] and on_jig else f"On jig already{project or ': nothing to do'}."
@@ -7433,7 +7845,9 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
     homeless = doc_homes(root, after, board.get("not_docs") or [], read,
                          board.get("deep_subsystems"), docmap)
     homes = [h for h in homeless if h["path"] not in reviewed]
-    out = [(h["path"], home_fix(h)) for h in homes if h["kind"] in ("rules", "copy", "reserved")]
+    # The old contract outside the pages: listed for the owner, converted with the pages, never edited here.
+    out = [(h["label"], h["fix"]) for h in contract_holders(root, after, board) if h["label"] not in reviewed]
+    out += [(h["path"], home_fix(h)) for h in homes if h["kind"] in ("rules", "copy", "reserved")]
     # A metarepo page with no genre in its path has no move to propose: the remap places it.
     pages = [h for h in homes if h["kind"] == "page" and h["to"]]
     out += [(h["path"], f"a metarepo page in no genre folder ({DIR}/RULES.md, Metarepo and "
@@ -7497,12 +7911,32 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
                     "each board is a system now, and /jig:redocument carries the moves. In one commit:"
                     + "".join(f"\n      {l}" for l in lines)
                     + "".join(f"\n      {r['path']}: {r['why']}" for r in lost)))
+    levels = page_levels(root, after, board, read)
+    by_page = {e["path"]: e for e in levels}
     for h in (h for h in homes if h["kind"] == "deep"):
+        lv = by_page.get(h["path"])
+        fix = f"below a subsystem ({DIR}/RULES.md, Documentation): {deep_fix(h, deep, lv)}"
+        # An unmapped page names its files first, and a shared one's answer is another page:
+        # neither is the fold into the subsystem's page, so none is drafted.
+        if lv and lv["level"] in ("unmapped", "shared"):
+            out.append((h["path"], fix))
+            continue
         lines = commit_lines(os.path.dirname(h["path"]) + "/", [h])
-        out.append((h["path"], f"below a subsystem ({DIR}/RULES.md, Documentation): {deep_fix(h, deep)}. "
-                    "To fold it, in one commit:" + "".join(f"\n      {l}" for l in lines)))
-    for e in page_shapes(root, after, board.get("not_docs") or [], docmap,
-                         {h["path"] for h in homeless}, read):
+        out.append((h["path"], f"{fix}. To fold it, in one commit:" + "".join(f"\n      {l}" for l in lines)))
+    homeless_at = {h["path"] for h in homeless}
+    for e in levels:
+        if e["level"] != "section" or not e["into"] or e["path"] in homeless_at or e["path"] in reviewed:
+            continue
+        lines = commit_lines(os.path.dirname(e["path"]) + "/", [{"path": e["path"], "to": e["into"], "fold": True}])
+        out.append((e["path"], f"covers no file ({DIR}/RULES.md, Documentation: a subsystem has files of "
+                    f"its own): a section of {e['into']}. On the owner's yes, fold it in, in one commit:"
+                    + "".join(f"\n      {l}" for l in lines)))
+    # An unmapped page's files are unknown: naming them comes first, so no fold is drafted.
+    out += [(e["path"], f"{level_line(e)} ({DIR}/RULES.md, Documentation: a subsystem has files of its own)")
+            for e in levels if e["level"] == "unmapped" and e["path"] not in homeless_at
+            and e["path"] not in reviewed]
+    sections = frozenset(e["path"] for e in levels if e["level"] == "section")
+    for e in page_shapes(root, after, board.get("not_docs") or [], docmap, homeless_at, read, sections):
         if e["path"] in reviewed:
             continue
         # docmap and boards name a page in either form, so the move needs no config edit.
@@ -7512,7 +7946,6 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
                     "On the owner's yes, in one commit:" + "".join(f"\n      {l}" for l in lines)))
     # A page at home but off the contract is fixed where it sits; redocument only converts.
     flats = {f for f in after if flat_page(f, set(after), docmap, read)}
-    homeless_at = {h["path"] for h in homeless}
     for f in after:
         if ((folder_page(f) or f in flats) and f not in homeless_at and f not in reviewed
                 and not matches(f, board.get("not_docs") or [])):
@@ -8747,6 +9180,7 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("name", nargs="?")
     sv = sub.add_parser("survey", help="inventory the repo against the jig shape")
     sv.add_argument("--json", action="store_true")
+    sv.add_argument("--levels", action="store_true", help="each page's level with its evidence, imports included")
     rl_ = sub.add_parser("release", help="run this repo's release protocol, then tag vX.Y.Z")
     bump = rl_.add_mutually_exclusive_group()
     bump.add_argument("--major", action="store_true", help="in a metarepo: a rename or a reversed decision")

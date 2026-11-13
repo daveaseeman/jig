@@ -18,24 +18,6 @@
     ],
     "reserved": {}
   },
-  "docs-structure-evidence": {
-    "spec": ".jig/specs/docs-structure-evidence.md",
-    "state": "ready",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "plugin/templates/jig/docs-page.md",
-      "plugin/skills/survey/SKILL.md",
-      "plugin/skills/update/SKILL.md",
-      "plugin/skills/redocument/SKILL.md",
-      "plugin/skills/adopt/SKILL.md",
-      "tests/smoke.sh",
-      "tests/redocument-fixture.sh"
-    ],
-    "reserved": {}
-  },
   "findings-record": {
     "spec": ".jig/specs/findings-record.md",
     "state": "claimed",
