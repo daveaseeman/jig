@@ -1,7 +1,7 @@
 {
   "merge-append-conflicts": {
     "spec": ".jig/specs/bug-merge-append-conflicts.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [
       ".jig/specs/bug-merge-append-conflicts.md",
@@ -30,7 +30,7 @@
   },
   "release-roadmap-view": {
     "spec": ".jig/specs/bug-release-roadmap-view.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
