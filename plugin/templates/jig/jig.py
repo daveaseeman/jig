@@ -1089,6 +1089,7 @@ def cmd_mark(root: Path, args) -> int:
 def cmd_merge(root: Path, args) -> int:
     """Merge a job into trunk and delete its entry in the same commit: trunk never holds a
     merged job, and the merge commit is the record of it."""
+    os.chdir(root)        # its git paths (the notes, the entry, derived files) are the whole repo's
     board = Board.load(root, working_tree=True)
     trunk, name = board.trunk, args.name
     if args.number:
@@ -1110,9 +1111,13 @@ def cmd_merge(root: Path, args) -> int:
         die("commit or stash first: the merge commit carries the job and its entry, nothing else")
     # The merge stages whatever derived_files matches, so an untracked file there (a draft, a
     # stray output) would be committed as derived.
-    stray = sorted(set(derived_files(root, board)) - set(git("ls-files", "-z").split("\0")))
+    globs = board.data.get("derived_files", [])
+    stray = sorted(f for f in git("ls-files", "--others", "--exclude-standard", "-z",
+                                  cwd=str(root)).split("\0") if f and matches(f, globs)) if globs else []
     if stray:
-        die(f"untracked {', '.join(stray)} matches derived_files: remove or commit it")
+        die(f"untracked {', '.join(stray)} "
+            f"{'matches' if len(stray) == 1 else 'match'} derived_files: remove or commit "
+            f"{'it' if len(stray) == 1 else 'them'}")
     waiting = [d for d in board.jobs[name].get("after", []) if d in board.jobs]
     if waiting:
         die(f"R8 job {name} builds after {', '.join(waiting)}, which has not merged")
@@ -1189,9 +1194,10 @@ def cmd_merge(root: Path, args) -> int:
     # doesn't run. A hand merge brought the job's sources in without it, so they may be stale.
     if not merging:
         run_setup(root)
-        if (root / DERIVE).exists():
+        if board.data.get("derived_files"):
+            now = "" if (root / META).exists() else f", or run {DERIVE} and commit now"
             print(f"jig: {DERIVE} didn't run: a hand merge leaves derived files stale until the "
-                  f"next `jig merge`", file=sys.stderr)
+                  f"next `jig merge`{now}", file=sys.stderr)
     elif not setup_and_derive(root, board, name):
         return 1
     commit = ["git", "commit", "-q", "--no-edit"] if merging else \

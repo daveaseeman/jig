@@ -5074,6 +5074,11 @@ fresh() { .jig/scripts/derive.sh && git diff --quiet -- INDEX.md; }
 derived() { python3 -c "import json,sys; f='.jig/config.json'; d=json.load(open(f)); d['derived_files']=sys.argv[1:]; json.dump(d, open(f,'w'), indent=2)" "$@"; }
 parents() { git log -1 --format=%P | wc -w | tr -d ' '; }
 
+mdjob H0 c0.py; git merge -q --no-ff --no-edit H0 2>/dev/null
+msg="derive: with no derived_files, a job already in trunk merges without the stale-files line"
+out=$($J merge H0 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && ! echo \"\$0\" | grep -q \"didn't run\"" "$out"
+
 mdjob T0 c.py
 msg="derive: with the template's derive.sh, jig merge prints no derived: line and commits the job's files and its entry, nothing more"
 out=$($J merge T0 2>&1)
@@ -5102,7 +5107,7 @@ mdjob C a0.py regen; mdjob D z9.py regen
 $J merge C >/dev/null 2>&1
 msg="derive: two jobs that each committed a regenerated INDEX.md merge cleanly, and trunk's INDEX.md counts both"
 out=$($J merge D 2>&1); rc=$?
-expect_pass sh -c "test $rc = 0 && grep -qx 'count: 11' INDEX.md && grep -qx a0.py INDEX.md && grep -qx z9.py INDEX.md && test -z \"\$(git status --porcelain)\"" "$out"
+expect_pass sh -c "test $rc = 0 && grep -qx 'count: 12' INDEX.md && grep -qx a0.py INDEX.md && grep -qx z9.py INDEX.md && test -z \"\$(git status --porcelain)\"" "$out"
 
 mdjob E k.py; touch "$FLAG"
 msg="derive: a derive.sh that exits 3 stops jig merge before its commit: exit 1, MERGE_HEAD, stderr naming derive.sh, 3 and jig merge --number"
@@ -5234,8 +5239,13 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'untracked gen/scratc
 rm gen/scratch-draft.md
 msg="derive: a derived_files glob that matches nothing after derive ran is named"
 out=$($J merge N5 2>&1); rc=$?
-expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'derived_files glob docs/reference matches no file'" "$out"
-git checkout -q -- undeclared.md 2>/dev/null; true
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'derived_files glob docs/reference matches no file' && ! echo \"\$0\" | grep -q 'glob gen/'" "$out"
+
+git checkout -q -- undeclared.md; mdjob N6 zz.py; mkdir -p sub
+msg="derive: jig merge run from a subdirectory isn't refused for tracked derived files, and commits INDEX.md"
+out=$(cd sub && python3 ../.jig/jig.py merge N6 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && ! echo \"\$0\" | grep -q 'matches derived_files' && git show HEAD:INDEX.md | grep -qx zz.py" "$out"
+git checkout -q -- undeclared.md 2>/dev/null
 }
 
 # ---------------------------------------------------------------- what --merge-log writes

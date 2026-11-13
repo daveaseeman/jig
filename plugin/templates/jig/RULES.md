@@ -434,8 +434,9 @@ else stops with the files named, and a person resolves it.
    derive stops the merge before its commit, as a conflict does: fix it, `jig merge --number`,
    `git commit`.
    A hand `git merge` on trunk runs `setup.sh` but not `derive.sh`: run it and commit what it
-   wrote, or the derived files stay stale until the next `jig merge`. A metarepo's M4 refuses
-   that separate commit, so there the derived files wait for the next `jig merge`.
+   wrote, or the derived files stay stale until the next `jig merge`. In a metarepo, don't run
+   `derive.sh` on trunk after a hand merge: M4 refuses the commit, and what it writes blocks the
+   next `jig merge`, which writes them.
 
 ## Workflow
 
