@@ -2497,18 +2497,25 @@ def approved_moves(root: Path, files: list[str], board: dict,
     # A remap on trunk is judged on the tree it leaves: an exception the hook asked for there
     # still answers a finding, though today's tree doesn't fire it.
     remap = (root / REMAP).read_text(errors="replace") if (root / REMAP).is_file() else ""
+    rows = remap_rows(remap)
     if remap:
-        end, read_end = remap_end(root, files, remap_rows(remap))
+        end, read_end = remap_end(root, files, rows)
     ends = file_findings(root, end, board, read_end) if remap else {}
     fires = lambda i: i in found or i in ends
     have, gone, rekey = set(files), [], {}
+    # Where the remap took each page it moved alone to one new path.
+    remapped = {olds[0]: news[0] for olds, news in rows
+                if len(olds) == 1 and len(news) == 1 and olds != news and news[0] in have}
     for i in raw:
         kind, _, path = i.partition(":")
         if kind not in FINDING_KINDS or fires(i):
             continue
-        # A page a job or the remap moved keeps its answers, under the form it has now.
-        moved = f"{kind}:{page_in(path, have)}"
-        if path not in have and moved != i and moved not in raw and fires(moved):
+        # A page a job or the remap moved keeps its answers, under the path it has now. A
+        # move's own answer doesn't follow: once the page changed form, that question is
+        # settled, and carried over it would answer the opposite move.
+        moved = f"{kind}:{remapped.get(path) or page_in(path, have)}"
+        if (kind not in MOVE_KINDS and path not in have and moved != i and moved not in raw
+                and fires(moved)):
             rekey[i] = moved
         else:
             gone.append(i)
@@ -7857,8 +7864,19 @@ def cmd_update(root: Path, args) -> int:
             warnings.append(f"{f} names a path jig moved ({len(live)} line{'s' if len(live) > 1 else ''} "
                             "outside comments): code or config the repo's checks may run")
     arriving = set(plan["after"]) | set(replace) | {SETUP for s in steps if s[2] is add_setup}
+    # The owner's recorded yeses, judged on the repo as the layout moves will leave it.
+    back = {n: o for o, n in plan["moves"].items()}
+
+    def read_after(f: str) -> str:
+        p = root / back.get(f, f)
+        return p.read_text(errors="replace") if p.is_file() else ""
+    carried, gone_ids, rekeyed = approved_moves(root, plan["after"], new_board, read_after)
     review = files_to_review(root, plan, here.parent / "AGENTS.md", arriving)
-    review += home_findings(root, plan, new_board, board_at, [f for f, _ in review])
+    # Tagged as the record will stand once --apply rekeys it, so the list never asks for an
+    # answer --apply then fills in itself.
+    recorded = new_board.get("findings") if isinstance(new_board.get("findings"), dict) else {}
+    review += home_findings(root, plan, {**new_board, "findings": {rekeyed.get(k, k): v for k, v in recorded.items()}},
+                            board_at, [f for f, _ in review])
     review += [(LOG, f"{e} has no Touches line: add one under its status line, naming the pages "
                 f"it touches ({DIR}/RULES.md, Decision log)") for e in untouched_entries(root, trunk)]
     review += superseded_kept(root)
@@ -7871,13 +7889,6 @@ def cmd_update(root: Path, args) -> int:
                        "PDFs under datasheets/ folders: add " + ", ".join(f"`{g}`" for g in REFERENCE_IGNORES)
                        + ", or keep the repo's own line if it covers them"))
 
-    # The owner's recorded yeses, judged on the repo as the layout moves will leave it.
-    back = {n: o for o, n in plan["moves"].items()}
-
-    def read_after(f: str) -> str:
-        p = root / back.get(f, f)
-        return p.read_text(errors="replace") if p.is_file() else ""
-    carried, gone_ids, rekeyed = approved_moves(root, plan["after"], new_board, read_after)
     # A metarepo's pages change only in a job (M4), and trunk is where the record is: the move
     # is the job's, and its entry drops on trunk once the move has merged and the finding is gone.
     jobs_moves = carried if (root / META).exists() else []

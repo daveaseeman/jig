@@ -367,8 +367,10 @@ do while one stands.
 the `docmap` key and `boards` entry naming the old path, drops the entry, and moves the page's
 other entries (an exception on its `contract` finding) to its new path. It drops any entry
 whose finding no longer fires, on today's tree and, while `.jig/redocument.md` is on trunk, on
-the tree the remap leaves; an entry for a page that moved by other means (a job, the remap)
-follows it to the form it has now. What it can't do — a reference in another file, a
+the tree the remap leaves. When a page moved by other means (a job, the remap), its other
+entries follow it: to the form it has now, or to the one new path a remap row on trunk moved it
+to alone. Its `shape` or `page` entry doesn't follow and drops: that question is settled, and
+carried over it would answer the opposite move. What it can't do — a reference in another file, a
 `contract_paths` glob, a `BUFFER.md` row per cached pointer, an edit — it prints for the
 session to make in the same commit, and an approved finding it can't carry out stays recorded.
 The usual refusals apply (open jobs, tracked changes), and it commits nothing. In a metarepo a

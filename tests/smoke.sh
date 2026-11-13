@@ -5000,6 +5000,31 @@ mkdir -p docs/a/c/d && printf '# D\n\n## Part\n\nNo lead.\n' > docs/a/c/d/d.md &
 out=$($UP 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a/c/d/d.md: off the page contract.*\[contract:docs/a/c/d/d.md: not answered\]'" "$out"
 
+# A page that changed form by hand settles its move's answer; its other answers follow it.
+FI="$T/findings-follow"; pcnew "$FI" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p docs/a/x docs/a/b && printf '# A\n\nThe a system.\n' > docs/a/a.md && printf '# X\n\nThe x part.\n' > docs/a/x/x.md
+printf '# B\n\n## Part\n\nB, with no lead.\n' > docs/a/b/b.md
+board "b['docmap'] = {'docs/a/x/x.md': ['src/x/**'], 'docs/a/b/b.md': ['src/b/**']}; b['findings'] = {'shape:docs/a/x/x.md': 'approved', 'contract:docs/a/b/b.md': 'exception: table lead'}"
+git add -A && git commit -qm pages
+git mv docs/a/x/x.md docs/a/x.md && mkdir -p docs/a/x && printf 'n\n' > docs/a/x/notes.md && printf 'f\n' > docs/a/x/fig.txt
+printf '[notes](x/notes.md) [fig](x/fig.txt)\n' >> docs/a/x.md && git add -A && git commit -qm "x flat by hand, then company"
+msg="findings: a move's answer doesn't follow a page that changed form, so --apply never makes the opposite move"
+$UP --apply >/dev/null 2>&1 && git commit -qm "update" >/dev/null 2>&1; $UP --apply >/dev/null 2>&1
+expect_pass sh -c "test -f docs/a/x.md && ! git diff --cached --name-status | grep -q '^R' && python3 -c \"
+import json; b = json.load(open('.jig/config.json'))
+assert not any(k.startswith('shape:') for k in b.get('findings', {})), b.get('findings')\""
+undo
+printf '# Remap\n\n| # | Old path(s) | New path | Verb | Notes |\n|---|---|---|---|---|\n| 1 | `docs/a/b/b.md` | `docs/a/e/e.md` | move | |\n' > .jig/redocument.md
+git add -A && git commit -qm remap && mkdir -p docs/a/e && git mv docs/a/b/b.md docs/a/e/e.md && git commit -qm "the job's move, merged"
+msg="findings: update's review list already tags b's exception at the path the remap moved it to"
+out=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '\[contract:docs/a/e/e.md: exception: table lead\]'" "$out"
+msg="findings: --apply moves the exception to the one new path the remap row gave the page"
+$UP --apply >/dev/null 2>&1
+expect_pass python3 -c "
+import json; b = json.load(open('.jig/config.json'))
+assert b.get('findings') == {'contract:docs/a/e/e.md': 'exception: table lead'}, b.get('findings')"
+
 # A metarepo's pages move in a job (M4): trunk records the yes, and makes no move.
 FM="$T/findings-meta"; mkdir -p "$FM" && cd "$FM" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init

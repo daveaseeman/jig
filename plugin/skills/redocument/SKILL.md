@@ -163,7 +163,9 @@ Otherwise:
    `${CLAUDE_PLUGIN_ROOT}/skills/redocument/SKILL.md` in the hubnode's session. The subnode
    cannot load this skill itself.
 5. **As each job merges,** write that page's `docmap` entries on trunk from the Docmap list in
-   its handoff note's conversion report (R5: subnodes propose them, never write them). In a
+   its handoff note's conversion report (R5: subnodes propose them, never write them), and run
+   `jig update --apply` there and commit it: while the remap is on trunk, the page's `findings`
+   entries follow it to its new path, and step 6 deletes the remap. In a
    pararepo, also fill that page's lines in `.jig/specs/redocument-pointers.md` from the
    report's Cited list, and write the same rewrite on the pointers branch in the metarepo
    checkout (`jig propose` printed where).
