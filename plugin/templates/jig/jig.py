@@ -5629,8 +5629,16 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
         if touched or n[:-1] != r[:-1]:
             out.append(f"P2 {BUFFER} row {r[0]} closed by hand: {how}")
         elif answered:
-            if version_key(answered.group("tag")) > version_key(pin):
-                out.append(f"P2 {BUFFER} row {r[0]} is answered in {answered.group('tag')}, which "
+            # A tag that isn't a version sorts below every pin, so it must be a real release: the
+            # metarepo's own list when its checkout is here, else at least a release's shape.
+            tag = answered.group("tag")
+            loc = loc or meta_checkout(root, para)
+            real = tag in released_tags(str(loc)) if loc else bool(re.match(META_DEFAULTS["tag_pattern"], tag))
+            if not real:
+                out.append(f"P2 {BUFFER} row {r[0]} is answered in {tag}, which is not a release of "
+                           f"{para.get('meta')}: name the release that answered it")
+            elif version_key(tag) > version_key(pin):
+                out.append(f"P2 {BUFFER} row {r[0]} is answered in {tag}, which "
                            f"the pin {pin} doesn't hold: take that release first")
         else:
             # Only the metarepo knows whether a release holds the branch; sync fetched it first.
@@ -5965,7 +5973,10 @@ def unreleased_proposals(root: Path, para: dict, trunk: str, commit: str, named:
     specs = list(dict.fromkeys([*filter(None, named), *changed]))
     found = [(s, m) for s in specs
              for m in PROPOSAL.finditer(git("show", f"{commit}:{s}") or git("show", f"{trunk}:{s}") or s)]
-    cited = [(s, m) for s, m in found if m.group("branch")]
+    # A withdrawal is the owner's word on trunk: it wins over a job's copy from before it.
+    gone = {w.group("branch") for s in specs for w in WITHDRAWN.finditer(git("show", f"{trunk}:{s}") or "")
+            if w.group("meta") == para.get("meta")}
+    cited = [(s, m) for s, m in found if m.group("branch") and m.group("branch") not in gone]
     ahead = [(s, m) for s, m in found if m.group("pbranch")]
     if not cited and not ahead:
         return []
@@ -6029,6 +6040,15 @@ def sync_meta(root: Path) -> int:
     open_ids = {r[0] for r in still}
     for spec in sorted((root / DIR / "specs").glob("*.md")):
         text = spec.read_text()
+        # Withdrawn, then released anyway: its rows still Open are answered, by --answered.
+        for w in WITHDRAWN.finditer(text):
+            owed = [i for i in listed_rows(text) if i in open_ids]
+            if w.group("meta") == name and owed:
+                first = next((t for t in tags if proposal_in(loc, w.group("branch"), t)), None)
+                if first:
+                    print(f"proposal {w.group('branch')} ({spec.relative_to(root)}): withdrawn, but "
+                          f"released by {first}: once the pin holds it, `jig sync --answered "
+                          f"{','.join(owed)} --in {first} --reason <text>`")
         for m in PROPOSAL.finditer(text):
             if m.group("branch") and m.group("meta") == name:
                 first = next((t for t in sorted(set(tags) | {pin}, key=version_key)
@@ -6751,6 +6771,12 @@ def withdraw_proposal(root: Path, para: dict, loc: Path, branch: str, reason: st
     git("fetch", "-q", "--tags", cwd=str(loc))
     if proposal_in(loc, branch, pin):
         die(f"{name} {pin}, the pin, already holds {branch}: a released proposal can't be withdrawn", 2)
+    # Released above the pin, it isn't moot: the pin moves, and sync closes its rows.
+    later = next((t for t in released_tags(str(loc)) if version_key(t) > version_key(pin)
+                  and proposal_in(loc, branch, t)), None)
+    if later:
+        die(f"{name} {later} released {branch}: bump the pin instead (`jig sync` on trunk says how), "
+            "and sync closes its rows", 2)
     for spec, m in hits:
         text = spec.read_text()
         line = re.sub(r"meta: \S+ proposal \S+", lambda _: f"meta: {name} withdrawn {branch} — {reason}",

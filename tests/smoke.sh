@@ -3121,15 +3121,22 @@ before=$(git rev-parse HEAD); f=0
 for a in "B1 --in v0.3.0 --reason r" "B1 --in v9.9.9 --reason r" "B1 --in v0.2.0 --reason ''" "B9 --in v0.2.0 --reason r"; do
   eval "$J sync --answered $a" >/dev/null 2>&1 && f=1; done
 expect_pass sh -c "test $f = 0 && test \"\$(git rev-parse HEAD)\" = $before && test -z \"\$(git status --porcelain)\""
-msg="answered P2: by hand, an answer with no reason, one above the pin, and one beside a contract change are each refused"
+msg="answered P2: by hand, an answer with no reason, one above the pin, one naming no release, and one beside a contract change are each refused naming P2"
 f=0
-sed -i.bak 's/| Open |$/| Closed (answered in v0.2.0: ) |/' .jig/ledgers/BUFFER.md && git add -A && git commit -qm x >/dev/null 2>&1 && f=1; undo
-sed -i.bak 's/| Open |$/| Closed (answered in v0.3.0: later) |/' .jig/ledgers/BUFFER.md && git add -A && git commit -qm x >/dev/null 2>&1 && f=1; undo
-sed -i.bak 's/| Open |$/| Closed (answered in v0.2.0: rewritten) |/' .jig/ledgers/BUFFER.md && printf 'z=3\n' >> api/a.py && git add -A && git commit -qm x >/dev/null 2>&1 && f=1; undo
+for st in 'Closed (answered in v0.2.0: )' 'Closed (answered in v0.3.0: later)' 'Closed (answered in elsewhere: done)' 'Closed (answered in v0.2.0: rewritten)'; do
+  sed -i.bak "s/| Open |\$/| $st |/" .jig/ledgers/BUFFER.md && rm .jig/ledgers/BUFFER.md.bak
+  case "$st" in *rewritten*) printf 'z=3\n' >> api/a.py ;; esac
+  git add -A; out=$(git commit -qm x 2>&1) && f=1; echo "$out" | grep -q '^jig: P2 .*row B1' || f=1; undo; done
 expect_pass test $f = 0
+msg="answered P2: naming no release, the refusal says so"
+sed -i.bak 's/| Open |$/| Closed (answered in elsewhere: done) |/' .jig/ledgers/BUFFER.md && rm .jig/ledgers/BUFFER.md.bak && git add -A; out=$(git commit -qm x 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'answered in elsewhere, which is not a release of bam'" "$out"
 msg="answered: sync --answered closes B1 and B2 in one commit, recording the release and the reason, and offers the withdraw"
 before=$(git rev-parse HEAD); out=$($J sync --answered B1,B2 --in v0.2.0 --reason "D-001 rewritten" 2>&1)
 expect_pass sh -c "test \"\$(git rev-list --count $before..HEAD)\" = 1 && git log -1 --format=%s | grep -qx 'meta: bam v0.2.0: B1, B2 answered in v0.2.0' && grep -q '^| B1 | DECISIONS.md § D-001: ids shown | .*| Closed (answered in v0.2.0: D-001 rewritten) |\$' .jig/ledgers/BUFFER.md && grep -q '^| B2 .*| Closed (answered in v0.2.0: D-001 rewritten) |\$' .jig/ledgers/BUFFER.md && test -z \"\$(git status --porcelain)\" && echo \"\$0\" | grep -q 'jig propose --withdraw propose/ba-para-moot'" "$out"
+msg="answered: a row already Closed is refused, committing nothing"
+before=$(git rev-parse HEAD); out=$($J sync --answered B1 --in v0.2.0 --reason again 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && test \"\$(git rev-parse HEAD)\" = $before && echo \"\$0\" | grep -q 'not an Open row of .jig/ledgers/BUFFER.md: B1'" "$out"
 msg="answered: sync names the proposal as carrying no Open row, with the withdraw"
 out=$($J sync 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'proposal propose/ba-para-moot (.jig/specs/moot.md): not released, and carries no Open row: .jig propose --withdraw propose/ba-para-moot'" "$out"
@@ -3162,6 +3169,26 @@ expect_refuse $J propose --withdraw propose/ba-para-buffer-v1.0.1 --reason late
 msg="answered P2: sync's own close, the pin holding the proposal, still commits"
 before=$(git rev-parse HEAD); out=$($J sync 2>&1)
 expect_pass sh -c "git log -1 --format=%s | grep -qx 'meta: bam v0.4.0: close B3' && grep -q '^| B3 .*| Closed |\$' .jig/ledgers/BUFFER.md" "$out"
+msg="withdraw: a proposal a release above the pin holds is refused, saying to bump the pin"
+brow B5 'five' 'not five' 'third' Open >> .jig/ledgers/BUFFER.md && printf 'v=5\n' >> api/a.py && git add -A && git commit -qm "api: v"
+$J propose --buffer b5 >/dev/null && git add -A && git commit -qm "specs: b5" && sbland propose/ba-para-b5 Five
+out=$($J propose --withdraw propose/ba-para-b5 --reason late 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'bam v0.5.0 released propose/ba-para-b5: bump the pin' && grep -q 'meta: bam proposal propose/ba-para-b5' .jig/specs/b5.md" "$out"
+$J sync >/dev/null 2>&1
+msg="withdraw: a withdrawn proposal released anyway is reported, naming --answered for its Open row"
+brow B6 'six' 'not six' 'fourth' Open >> .jig/ledgers/BUFFER.md && printf 'u=6\n' >> api/a.py && git add -A && git commit -qm "api: u"
+$J propose --buffer b6 >/dev/null && git add -A && git commit -qm "specs: b6"
+$J propose --withdraw propose/ba-para-b6 --reason moot >/dev/null && git add -A && git commit -qm "specs: withdraw b6" && sbland propose/ba-para-b6 Six
+out=$($J sync 2>&1)
+expect_pass sh -c "grep -q '^| B5 .*| Closed |\$' .jig/ledgers/BUFFER.md && echo \"\$0\" | grep -q 'proposal propose/ba-para-b6 (.jig/specs/b6.md): withdrawn, but released by v0.6.0: .*jig sync --answered B6 --in v0.6.0'" "$out"
+msg="withdraw: a job that hasn't synced since its proposal was withdrawn on trunk isn't told to wait for it"
+printf '# gj\n\n## Decisions\n' > .jig/specs/gj.md && $J propose .jig/specs/gj.md gj >/dev/null && git add -A && git commit -qm "specs: gj"
+$J open gj --spec .jig/specs/gj.md --owns 'api/gj.py' >/dev/null && git add -A && git commit -qm "open gj"
+(cd .git/jig/worktrees/gj && printf 'g=1\n' > api/gj.py && git add -A && git commit -qm "api: gj" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note gj") >/dev/null 2>&1
+out=$($J gate gj 2>&1); git worktree remove --force .git/jig/worktrees/gate-gj 2>/dev/null
+$J propose --withdraw propose/ba-para-gj --reason "no longer needed" >/dev/null && git add -A && git commit -qm "specs: withdraw gj"
+out2=$($J gate gj 2>&1); git worktree remove --force .git/jig/worktrees/gate-gj 2>/dev/null
+expect_pass sh -c "echo \"\$0\" | grep -q 'cites proposal propose/ba-para-gj' && ! echo \"\$1\" | grep -q 'cites proposal propose/ba-para-gj' && ! git -C .git/jig/worktrees/gj show HEAD:.jig/specs/gj.md | grep -q withdrawn" "$out" "$out2"
 msg="answered: RULES.md names the answered state, the withdrawn line and both commands"
 expect_pass sh -c "grep -q 'Closed (answered in <release>: <reason>)' '$P/jig/RULES.md' && grep -q 'meta: <name> withdrawn <branch>' '$P/jig/RULES.md' && grep -q '^jig propose --withdraw' '$P/jig/RULES.md' && grep -q '^jig sync --answered' '$P/jig/RULES.md'"
 }

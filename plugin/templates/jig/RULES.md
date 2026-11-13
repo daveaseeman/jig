@@ -964,7 +964,9 @@ commits it alone. jig checks the release, not the claim: the reason is the owner
 `jig propose --withdraw <branch> --reason <text>` rewrites its spec's line to
 `meta: <name> withdrawn <branch> — <reason>`. Sync and gate stop waiting on it, it answers no
 change, and the rows it carried that are still `Open` go again in the next proposal. Its branch
-in the metarepo is the metarepo's to delete. Sync names a buffer proposal that carries no `Open`
+in the metarepo is the metarepo's to delete. A proposal a release already holds can't be withdrawn: the
+pin moves instead, and sync closes its rows. One withdrawn and released anyway, sync names, with
+the `--answered` that closes its rows. Sync names a buffer proposal that carries no `Open`
 row as one to withdraw.
 `jig sync` also names each file here that a decision at the pin cites and `contract_paths`
 doesn't cover. A path under a folder counts bare or after this repo's name; a root file every
