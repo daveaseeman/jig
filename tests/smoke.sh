@@ -5129,9 +5129,9 @@ out=$($J merge --number 2>&1)
 expect_pass sh -c "test \$(wc -l < '$LOG' | tr -d ' ') = 1 && echo \"\$0\" | grep -qx 'derived: INDEX.md' && git commit -q --no-edit && test -z \"\$(git status --porcelain)\" && grep -qx n.py INDEX.md" "$out"
 
 mdjob H o.py; git merge -q --no-ff --no-edit H 2>/dev/null; touch "$FLAG"
-msg="derive: a job already in trunk merges with no derive run: exit 0, its entry gone, the tree clean"
+msg="derive: a job already in trunk merges with no derive run, saying derived files may be stale: exit 0, its entry gone, the tree clean"
 out=$($J merge H 2>&1); rc=$?
-expect_pass sh -c "test $rc = 0 && ! grep -q '\"H\"' .jig/jobs.json && test -z \"\$(git status --porcelain)\" && ! echo \"\$0\" | grep -q '^derived:'" "$out"
+expect_pass sh -c "test $rc = 0 && ! grep -q '\"H\"' .jig/jobs.json && test -z \"\$(git status --porcelain)\" && ! echo \"\$0\" | grep -q '^derived:' && echo \"\$0\" | grep -q \"derive.sh didn't run: a hand merge leaves derived files stale\"" "$out"
 rm "$FLAG"
 
 printf 'cp INDEX.md índice.md\n' >> .jig/scripts/derive.sh && derived INDEX.md índice.md && .jig/scripts/derive.sh && git add -A && git commit -qm "derive: a non-ASCII name"
@@ -5225,6 +5225,17 @@ msg="derive: a tracked file derive.sh writes outside derived_files is named and 
 out=$($J merge N4 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'changed and not committed: undeclared.md' && ! git diff --name-only HEAD^1 HEAD | grep -qx undeclared.md && git diff --name-only HEAD^1 HEAD | grep -qx INDEX.md" "$out"
 git checkout -q -- undeclared.md
+
+mdjob N5 z.py; derived INDEX.md "gen/**" "docs/reference" && git commit -qam "derived: gen and a typo"
+printf 'draft\n' > gen/scratch-draft.md
+msg="derive: an untracked file matching derived_files refuses the merge before it starts, naming it"
+err=$($J merge N5 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'untracked gen/scratch-draft.md matches derived_files: remove or commit it' && ! git rev-parse -q --verify MERGE_HEAD && grep -q '\"N5\"' .jig/jobs.json" "$err"
+rm gen/scratch-draft.md
+msg="derive: a derived_files glob that matches nothing after derive ran is named"
+out=$($J merge N5 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'derived_files glob docs/reference matches no file'" "$out"
+git checkout -q -- undeclared.md 2>/dev/null; true
 }
 
 # ---------------------------------------------------------------- what --merge-log writes

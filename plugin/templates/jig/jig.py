@@ -785,6 +785,12 @@ def run_derive(root: Path, board: "Board") -> tuple[int, list[str]]:
     globs = board.data.get("derived_files", [])
     wrote = sorted(f for f in git("diff", "--cached", "--name-only", "-z", "HEAD", cwd=str(root)).split("\0")
                    if f and matches(f, globs))
+    # A glob that matches nothing is most likely a typo (`docs/reference` for
+    # `docs/reference/**`), and the outputs it meant stay out of every merge commit.
+    now = derived_files(root, board)
+    for g in globs if not rc else []:
+        if not any(matches(f, [g]) for f in now):
+            print(f"jig: derived_files glob {g} matches no file after {DERIVE} ran", file=sys.stderr)
     return rc, wrote
 
 
@@ -805,8 +811,8 @@ def setup_and_derive(root: Path, board: "Board", name: str) -> bool:
     left = sorted(filter(None, git("diff", "--name-only", "-z", cwd=str(root)).split("\0")))
     if left:
         print(f"jig: changed and not committed: {', '.join(left)}. {DIR}/scripts/setup.sh must "
-              f"leave tracked files alone; a file {DERIVE} writes goes in {CONFIG}'s derived_files.",
-              file=sys.stderr)
+              f"leave tracked files alone; a file {DERIVE} writes goes in {CONFIG}'s derived_files. "
+              f"`git checkout -- <files>` drops them.", file=sys.stderr)
     return True
 
 
@@ -1102,6 +1108,11 @@ def cmd_merge(root: Path, args) -> int:
         die(f"no job {name}")
     if git("status", "--porcelain", "--untracked-files=no"):
         die("commit or stash first: the merge commit carries the job and its entry, nothing else")
+    # The merge stages whatever derived_files matches, so an untracked file there (a draft, a
+    # stray output) would be committed as derived.
+    stray = sorted(set(derived_files(root, board)) - set(git("ls-files", "-z").split("\0")))
+    if stray:
+        die(f"untracked {', '.join(stray)} matches derived_files: remove or commit it")
     waiting = [d for d in board.jobs[name].get("after", []) if d in board.jobs]
     if waiting:
         die(f"R8 job {name} builds after {', '.join(waiting)}, which has not merged")
@@ -1174,10 +1185,13 @@ def cmd_merge(root: Path, args) -> int:
     for line in numbered:
         print(f"numbered {line}")
     # git runs post-merge only for a merge it commits itself, not this one.
-    # A job already in trunk brings no sources, so derive has nothing new to write, and this
-    # commit isn't a merge: a metarepo's M4 would refuse derived files in it.
+    # This commit isn't a merge, so a metarepo's M4 would refuse derived files in it, and derive
+    # doesn't run. A hand merge brought the job's sources in without it, so they may be stale.
     if not merging:
         run_setup(root)
+        if (root / DERIVE).exists():
+            print(f"jig: {DERIVE} didn't run: a hand merge leaves derived files stale until the "
+                  f"next `jig merge`", file=sys.stderr)
     elif not setup_and_derive(root, board, name):
         return 1
     commit = ["git", "commit", "-q", "--no-edit"] if merging else \
