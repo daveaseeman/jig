@@ -20,7 +20,7 @@
   },
   "findings-record": {
     "spec": ".jig/specs/findings-record.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
