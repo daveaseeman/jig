@@ -3475,7 +3475,7 @@ def log_rules(trunk: str, staged: bool, trunk_side: bool = False) -> list[str]:
     # a release HEAD has beyond the merge base is trunk's too. Only the releases `--merge-log`
     # writes from the merge base's CHANGELOG.md, before the base had a log, are the branch's.
     head = at_rev("HEAD", LOG) if since != "HEAD" else old
-    converted = set() if old else converted_versions(since)
+    converted = set() if old else converted_versions(trunk, since)
     beyond = set(release_sections(head)) - set(release_sections(old)) - converted
     if not new:
         if old or (head and (beyond or not unconverting(trunk, since, staged))):
@@ -3905,15 +3905,26 @@ def merged_files_at(at: str, meta: dict | None) -> list[str]:
             and holds_old_log(at_rev(at, f), f, prefix)]
 
 
-def converted_versions(at: str) -> set[str]:
-    """The releases `--merge-log` writes from AT's CHANGELOG.md, in the log's spelling."""
-    return {f"v{m.group(1)}" for l in at_rev(at, CHANGELOG).splitlines() if (m := OLD_RELEASE.match(l))}
+def converted_versions(trunk: str, since: str) -> set[str]:
+    """The releases this branch's `--merge-log` wrote: in SINCE's CHANGELOG.md, and in the log as
+    the commit adding it wrote it. A release trunk made later, under a version it reused, isn't;
+    nor is anything when a remote's trunk has that commit, since then trunk converted."""
+    added = git("log", "--diff-filter=A", "--format=%H", "--reverse", f"{since}..HEAD", "--", LOG).split()
+    if not added:
+        return set()
+    remotes = [r for r in git("for-each-ref", "--format=%(refname)", "refs/remotes").split()
+               if r.endswith(f"/{trunk}")]
+    if any(subprocess.run(["git", "merge-base", "--is-ancestor", added[0], r],
+                          capture_output=True).returncode == 0 for r in remotes):
+        return set()
+    was = {f"v{m.group(1)}" for l in at_rev(since, CHANGELOG).splitlines() if (m := OLD_RELEASE.match(l))}
+    return was & set(release_sections(at_rev(added[0], LOG)))
 
 
 def unconverting(trunk: str, since: str, staged: bool) -> bool:
     """Removing the log undoes the branch's `--merge-log`: every file it merged is back as it was."""
     olds = merged_files_at(since, load_meta(trunk))
-    return bool(olds) and all(in_index(f, staged) == at_rev(since, f) for f in olds)
+    return bool(olds) and all(in_index(f, staged).strip() == at_rev(since, f).strip() for f in olds)
 
 
 def migrated_ids(trunk: str, prefix: str | None) -> set[str]:

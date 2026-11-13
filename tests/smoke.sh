@@ -4317,8 +4317,10 @@ ulog '### D-009 x
 Accepted (owner, 2026-11-03).' && git add -A; out=$(git commit -qm "D-009: x" 2>&1); git reset -q --hard "$A"
 expect_pass sh -c "echo \"\$0\" | grep -q 'D-009 names no page it touches'" "$out"
 msg="branch log: reverting the conversion, staged and committed, passes with the counter on the register's rows"
-git revert --no-commit HEAD && out=$(git commit -qm "TOOL: revert the log" 2>&1); rc=$?; git reset -q --hard "$A"
+git revert --no-commit HEAD && ck=$($J check 2>&1) && out=$(git commit -qm "TOOL: revert the log" 2>&1); rc=$?; git reset -q --hard "$A"
 expect_pass sh -c "test $rc = 0" "$out"
+msg="branch log: jig check on the reverted tree, unstaged, agrees with the hook"
+expect_pass sh -c "test \"\$0\" = ok" "$ck"
 $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note ml" && cd "$OM"
 msg="migration: the job merges into main, and --apply --merge-log there then rewrites only the board: append_files and the counter"
 $J merge ml >/dev/null 2>&1; out=$($UP --apply --merge-log 2>&1)
@@ -4573,6 +4575,26 @@ r1=$(git rm -q .jig/decisions.md; git commit -qm gone 2>&1); undo
 r2=$(git rm -q .jig/decisions.md; printf '# Changelog\n\n## v0.0.1 - 2026-11-01\n\n### Added\n- IDS: Number them.\n' > CHANGELOG.md; git add -A; git commit -qm gone 2>&1); undo
 r3=$(git rm -q .jig/decisions.md; printf '# Notes\n\n| REQ-1 | x |\n' > notes.md; git add -A; git commit -qm gone 2>&1); undo
 expect_pass sh -c "for r in \"\$0\" \"\$1\" \"\$2\"; do echo \"\$r\" | grep -q 'it is never deleted' || exit 1; done" "$r1" "$r2" "$r3"
+msg="branch log: with a stale trunk, a conversion a remote's trunk already holds is trunk's: its releases are frozen"
+git update-ref refs/remotes/origin/main HEAD && sed -i.bak 's/^- IDS: Number them\.$/- IDS: Number all./' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
+out=$(git commit -qm "IDS: all" 2>&1); undo; git update-ref -d refs/remotes/origin/main
+expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.0.1 is frozen on main'" "$out"
+# The base's CHANGELOG.md had a v0.1.0; trunk dropped it, started a fresh log and released its
+# own v0.1.0. Only what the commit adding the log wrote is a conversion's, so trunk's is frozen.
+SW="$T/sw"; pcnew "$SW" && git add -A && git commit -qm init && $J init >/dev/null
+sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
+printf 'mkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/release.sh && printf 'dist/\n' > .gitignore
+board "b['release']['artifacts'] = ['dist/*.zip']" && git add -A && git commit -qm board
+$J open feat >/dev/null && git add -A && git commit -qm "open feat"; cp .jig/decisions.md "$T/sw-log"
+git rm -q .jig/decisions.md && printf '# Changelog\n\n## v0.1.0 - 2026-11-01\n\n### Added\n- IDS: Number them.\n' > CHANGELOG.md && git add -A && nohook "pre-log"; was=$(git rev-parse HEAD)
+git rm -q CHANGELOG.md && cp "$T/sw-log" .jig/decisions.md && git add -A && nohook "fresh log"
+ulog '### Added
+- TRUNK: Its own v0.1.0.' && git add -A && git commit -qm "TRUNK: own" && $J release --minor >/dev/null 2>&1
+cd .git/jig/worktrees/feat && git merge -q --ff-only main && git update-ref refs/heads/main "$was"
+msg="branch log: a release trunk made after dropping the base's CHANGELOG.md, under a version it held, is frozen"
+sed -i.bak 's/^- TRUNK: Its own v0\.1\.0\.$/- TRUNK: Rewritten./' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
+out=$(git commit -qm "TRUNK: rewritten" 2>&1); undo
+expect_pass sh -c "grep -q '^- TRUNK: Its own v0.1.0.' .jig/decisions.md && echo \"\$0\" | grep -q 'release v0.1.0 is frozen on main'" "$out"
 cd "$SR"
 }
 
