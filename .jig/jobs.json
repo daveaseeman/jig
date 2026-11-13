@@ -88,7 +88,9 @@
       "plugin/skills/hubnode/SKILL.md",
       "plugin/templates/jig/RULES.md",
       "plugin/templates/jig/jig.py",
-      "tests/smoke.sh"
+      "tests/smoke.sh",
+      "plugin/skills/review/SKILL.md",
+      "plugin/skills/spec/SKILL.md"
     ],
     "reserved": {}
   },
