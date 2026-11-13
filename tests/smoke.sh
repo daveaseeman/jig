@@ -4017,6 +4017,54 @@ msg="glossary: survey lists a page's prose naming the root README, which the hoo
 printf '\nListed in the root README.\n' >> docs/b.md && git add -A && git commit -qm prose
 expect_pass gs "assert [e['lines'] for e in r['root_docs_named'] if e['path'] == 'docs/b.md'] == [[[5, 'Listed in the root README.']]], r['root_docs_named']"
 
+msg="glossary: a README Glossary section holding only a link to docs/glossary.md gets no finding"
+printf '# App\n\n## Glossary\n\nSee [the glossary](docs/glossary.md).\n' > README.md && git add -A && git commit -qm "readme link"
+expect_pass sh -c "python3 -c \"
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+assert not r['readme_glossary'], r['readme_glossary']\" && ! $J update 2>&1 | grep -qi 'glossary.s home'"
+msg="glossary: a table term written as a link reads as its text, and docs/glossary.md § vat resolves"
+printf '| [vat](#vat) | a tub |\n' >> docs/glossary.md && git add -A && git commit -qm vat
+expect_pass python3 -c "
+import importlib.util
+sp = importlib.util.spec_from_file_location('j', '.jig/jig.py'); j = importlib.util.module_from_spec(sp); sp.loader.exec_module(j)
+text = open('docs/glossary.md').read()
+assert j.glossary_terms(text) == ['mote', 'seam', 'vat'], j.glossary_terms(text)
+assert j.pointer_gap('docs/glossary.md', 'vat', False, text)[0] == j.RESOLVES"
+msg="glossary hook: a page under a not_docs glob may name README.md"
+board "b['not_docs'] = ['docs/vendor/**']" && git add -A && git commit -qm not_docs
+mkdir -p docs/vendor && printf '# Vendor\n\nSee README.md for setup.\n' > docs/vendor/v.md && git add -A
+expect_pass git commit -qm vendor
+msg="glossary hook: a page's link to its own folder's README.md passes"
+mkdir -p docs/x && printf '# x notes\n\nNotes for x.\n' > docs/x/README.md && printf '# X\n\nThe x system. See [its notes](README.md).\n' > docs/x/x.md && git add -A
+expect_pass git commit -qm x
+msg="glossary hook: and a backticked README.md § y in it is refused: a pointer is from the root"
+printf '\nSee `README.md § y`.\n' >> docs/x/x.md && git add -A
+expect_refuse git commit -qm y; undo
+msg="glossary: survey leaves out a released decision-log line naming the README"
+python3 -c "f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(s.rstrip('\n') + '\n\n## v0.1.0 - 2026-01-01\n\n### Changed\n- The README intro.\n')"
+git add -A && nohook released
+expect_pass gs "assert not [e for e in r['root_docs_named'] if e['path'] == '.jig/decisions.md'], r['root_docs_named']"
+
+GH="$T/gl-hook"; pcnew "$GH" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+printf '# App\n\n## Glossary\n\n### mote\nA speck.\n\n### log\nWhat CHANGELOG.md keeps.\n\n## Install\n\nrun it\n' > README.md
+mkdir -p docs .jig/handoffs && printf '# C\n\nThe c system.\n\nMotes (README.md § mote) and setup (README.md § Install).\n\n```\nREADME.md § mote\n```\n' > docs/c.md
+printf '# note\n\nSee README.md § mote.\n' > .jig/handoffs/old-note.md
+printf '# Changelog\n\n## Unreleased\n\n- README.md § mote added\n\n## [1.0.0] - 2026-01-01\n\n- README.md § mote added\n' > CHANGELOG.md
+git add -A && nohook pages
+out=$($J update --glossary 2>&1)
+msg="glossary: the dry run lists, as edit before committing, a rewritten line still naming README.md and a term naming CHANGELOG.md"
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Pointers left/,/^Pointers in history/p' | grep -q '^  docs/c.md:5: names README.md, a root document, which the hook refuses' && echo \"\$0\" | sed -n '/^Pointers left/,/^Pointers in history/p' | grep -q '^  docs/glossary.md:[0-9]*: names CHANGELOG.md, a root document'" "$out"
+msg="glossary: and lists the fenced block, the handoff and the released changelog line as history"
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Pointers in history/,\$p' | grep -q '^  docs/c.md:8: in a fenced code block' && echo \"\$0\" | sed -n '/^Pointers in history/,\$p' | grep -q '^  .jig/handoffs/old-note.md:3: a handoff' && echo \"\$0\" | sed -n '/^Pointers in history/,\$p' | grep -q '^  CHANGELOG.md:9: a released section'" "$out"
+$J update --apply --glossary >/dev/null 2>&1
+msg="glossary: --apply leaves the fenced block, the handoff and the released line as written, and rewrites the unreleased one"
+expect_pass sh -c "sed -n 8p docs/c.md | grep -qx 'README.md § mote' && grep -q 'See README.md § mote' .jig/handoffs/old-note.md && sed -n 9p CHANGELOG.md | grep -qx -- '- README.md § mote added' && sed -n 5p CHANGELOG.md | grep -qx -- '- docs/glossary.md § mote added'"
+msg="glossary: the move's commit is refused until the listed lines are edited, then passes"
+rc=$(code git commit -qm move)
+sed -i.bak -e 's/ and setup (README.md § Install)//' docs/c.md && sed -i.bak 's/What CHANGELOG.md keeps./What the changelog keeps./' docs/glossary.md && rm docs/*.bak && git add -A
+expect_pass sh -c "test $rc != 0 && git commit -qm move"
+
 GM="$T/gl-meta"; pcnew "$GM" && git add -A && git commit -qm init && $J init --meta --name gm --genres a,b >/dev/null 2>&1 && git add -A && git commit -qm meta-init && $J release >/dev/null
 msg="glossary meta: init --meta seeds docs/glossary.md with a ## heading per genre, and entry_files has no README.md"
 expect_pass sh -c "grep -qx '## a' docs/glossary.md && grep -qx '## b' docs/glossary.md && ! grep -q '\"README.md\"' .jig/meta.json"
@@ -4038,21 +4086,27 @@ git switch -q main
 # A metarepo on the old home, a pararepo citing it, and the release that moves it.
 GO="$T/gl-old"; pcnew "$GO" && git add -A && git commit -qm init && $J init --meta --name go >/dev/null 2>&1
 rm -r docs && setentry .jig/decisions.md README.md
-printf '# go\n\n## Glossary\n\n### mote\nA speck.\n\n### seam\nA join.\n' > README.md && git add -A && nohook "meta-init" && $J release >/dev/null
+printf '# go\n\n## Glossary\n\n### mote\nA speck.\n\n### seam\nA join.\n\n**grain** — wood\n' > README.md && git add -A && nohook "meta-init" && $J release >/dev/null
 GP="$T/gl-para"; pcnew "$GP" && mkdir -p api && printf 'x=1\n' > api/a.py && printf 'Each mote: `go/README.md § mote`.\n' > api/notes.md \
   && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 $J init --para go --location "$GO" >/dev/null 2>&1 && git add -A && git commit -qm "init --para"
 cd "$GO"
+msg="glossary meta: before the move, a README prose edit needs no log line: only its Glossary section is cited"
+git switch -q -c prose >/dev/null 2>&1 && perl -0pi -e 's/^# go\n/# go\n\nWhat go defines.\n/' README.md && git add -A
+expect_pass git commit -qm "README: intro"
+msg="glossary meta: and an edit inside its Glossary section still needs one"
+printf '\n### vat\nA tub.\n' >> README.md && git add -A
+expect_refuse git commit -qm "GLOSSARY: vat"; git reset -q --hard && git switch -q main >/dev/null 2>&1
 msg="glossary meta: --apply --glossary on the metarepo's trunk is refused: the move is a job's (M4)"
 expect_pass sh -c "test \$($J update --apply --glossary >/dev/null 2>&1; echo \$?) = 2 && test -z \"\$(git status --porcelain)\""
 git switch -q -c mv >/dev/null 2>&1 && $J update --apply --glossary >/dev/null 2>&1
 msg="glossary meta: on a branch the move rewrites entry_files in the same change"
 expect_pass sh -c "git diff --cached --name-only | grep -qx .jig/meta.json && python3 -c \"import json; e = json.load(open('.jig/meta.json'))['entry_files']; assert 'README.md' not in e and 'docs/glossary.md' in e, e\""
 ulog '- GLOSSARY: moved to docs/glossary.md' && git add -A && git commit -qm "GLOSSARY: move to docs/" && $J reviewed >/dev/null \
-  && git switch -q main && git merge -q --no-ff --no-edit mv && $J release >/dev/null
+  && git switch -q main >/dev/null 2>&1 && git merge -q --no-ff --no-edit mv && $J release >/dev/null
 cd "$GP" && out=$($J sync 2>&1)
-msg="glossary meta: a release across the move reports each term as moved, not removed"
-expect_pass sh -c "echo \"\$0\" | grep -q '^  mote (moved: README.md § mote → docs/glossary.md § mote): used in api/notes.md' && echo \"\$0\" | grep -q '^  seam (moved: ' && ! echo \"\$0\" | grep -q '^  mote: '" "$out"
+msg="glossary meta: a release across the move reports each term as moved, a bold-paragraph one too, not removed or added"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  mote (moved: README.md § mote → docs/glossary.md § mote): used in api/notes.md' && echo \"\$0\" | grep -q '^  seam (moved: ' && echo \"\$0\" | grep -q '^  grain (moved: ' && ! echo \"\$0\" | grep -q '^  grain: ' && ! echo \"\$0\" | grep -q '^  mote: '" "$out"
 setjson .jig/para.json pin v0.2.0 && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: go v0.1.0 → v0.2.0"
 msg="glossary meta: at the pin bump, the pararepo's go/README.md § mote is named with its new home"
 out=$($J sync 2>&1)

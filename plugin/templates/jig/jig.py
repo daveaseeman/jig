@@ -379,7 +379,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
         if f in guarded and branch != trunk:
             out.append(f"R5 the roadmap is the owner's: {f} is edited on {trunk} only")
     out += roadmap_rules(board, branch, staged, paths, guarded)
-    out += boundary_rules(trunk, branch, staged, paths, meta)
+    out += boundary_rules(trunk, branch, staged, paths, meta, board.data.get("not_docs") or [])
     out += page_form_rules(root, board, trunk, staged, guarded)
     if CONFIG in paths and (raw := in_index(CONFIG, staged)):
         try:
@@ -3155,13 +3155,29 @@ TABLE_RULE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$")
 
 
 def readme_glossary(text: str) -> list[str] | None:
-    """The lines of a README's Glossary section, the old home, or None when it has none."""
+    """The lines of a README's Glossary section, the old home, or None when it holds no term:
+    a section left with only a link to docs/glossary.md is the README pointing into docs."""
     lines = text.splitlines()
     start = next((i for i, l in enumerate(lines) if l.strip() == README_GLOSSARY), None)
     if start is None:
         return None
     end = next((j for j in range(start + 1, len(lines)) if re.match(r"#{1,2}\s", lines[j])), len(lines))
-    return lines[start + 1:end]
+    section = lines[start + 1:end]
+    if not (any(re.match(r"#{3,6}\s", l) for l in section) or bold_terms(section) or table_terms(section)):
+        return None
+    return section
+
+
+def old_glossary(text: str) -> list[str] | None:
+    """A README's Glossary section without its blank lines, which git's output may have trimmed."""
+    section = readme_glossary(text)
+    return None if section is None else [l for l in section if l.strip()]
+
+
+def term_text(text: str) -> str:
+    """A term as a heading or a first cell writes it: a link's text, without code marks or
+    emphasis, so `| [mote](#mote) |` and `## **mote**` both name mote."""
+    return plain(re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text))
 
 
 def bold_terms(lines: list[str]) -> list[tuple[int, str]]:
@@ -3187,7 +3203,7 @@ def table_terms(lines: list[str]) -> list[tuple[int, str]]:
             run.append(i)
             continue
         if len(run) > 2 and TABLE_RULE.match(lines[run[1]]):
-            out += [(j, t) for j in run[2:] if (t := plain(table_cells(lines[j])[0]))]
+            out += [(j, t) for j in run[2:] if (t := term_text(table_cells(lines[j])[0]))]
         run = []
     return out
 
@@ -3196,7 +3212,7 @@ def glossary_terms(text: str) -> list[str]:
     """The terms of a glossary file, in order: its `## <term>` headings and its tables' first
     cells, the two forms a term may take."""
     lines = text.splitlines()
-    heads = [(i, plain(m.group(1))) for i, l in enumerate(lines) if (m := re.match(r"##\s+(.+?)\s*$", l))]
+    heads = [(i, term_text(m.group(1))) for i, l in enumerate(lines) if (m := re.match(r"##\s+(.+?)\s*$", l))]
     return [t for _, t in sorted(heads + table_terms(lines))]
 
 
@@ -3501,7 +3517,7 @@ def cmd_survey(root: Path, args) -> int:
         if (probs := (project_sections(read(f)) if f != LOG else []) + project_prose(read(f), sids))]
     report["root_docs_named"] = [
         {"path": f, "lines": hits} for f in product if f == LOG or f.startswith("docs/")
-        if (hits := root_doc_mentions(read(f)))]
+        if (hits := root_doc_mentions(f, read(f), released_lines(read(f)) if f == LOG else set()))]
     rec = findings_record(board)
     report["homeless"] = [tagged(e, rec) for e in report["homeless"]]
     report["page_shapes"] = [tagged(e, rec) for e in report["page_shapes"]]
@@ -3958,6 +3974,12 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
                        *(["--cached"] if staged else [])).splitlines()
     record = LOG if by_log else CHANGELOG
     cited = [p for p in branch_paths if p and p != record and is_entry(p, entry)]
+    # A metarepo that hasn't moved its glossary yet still names README.md in entry_files, and
+    # pararepos cite only that section of it: its other prose changes with no log line. The
+    # move takes README.md out of entry_files, and this with it.
+    if "README.md" in cited and old_glossary(at_rev(since, "README.md")) == old_glossary(
+            in_index("README.md", staged)):
+        cited.remove("README.md")
     if cited and (record not in branch_paths or not in_index(record, staged)):
         out.append(f"M3 {', '.join(cited)} changed: add a line{' or an entry' if by_log else ''} "
                    f"to {record} under ## Unreleased")
@@ -5821,13 +5843,17 @@ def terms_changed(loc: Path, old: str, new: str) -> list[str]:
 
 def term_blocks(lines: list[str], level: int) -> dict[str, list[str]]:
     """Each term in LINES with its text, blank lines dropped: a table row is its own text, a
-    heading of LEVEL the lines under it. The heading line itself is left out, so a term whose
-    level changed with its home reads the same."""
+    heading of LEVEL the lines under it, a bold-paragraph term its paragraph. The heading line
+    itself is left out, so a term whose level changed with its home reads the same, and a term
+    is matched by name whatever its form."""
     out = {t: [lines[i].strip()] for i, t in table_terms(lines)}
+    for i, t in bold_terms(lines):
+        end = next((j for j in range(i + 1, len(lines)) if not lines[j].strip()), len(lines))
+        out[t] = lines[i:end]
     for i, line in enumerate(lines):
         if m := re.match(rf"#{{{level}}}\s+(.+?)\s*$", line):
             end = next((j for j in range(i + 1, len(lines)) if re.match(rf"#{{1,{level}}}\s", lines[j])), len(lines))
-            out[plain(m.group(1))] = [l for l in lines[i + 1:end] if l.strip()]
+            out[term_text(m.group(1))] = [l for l in lines[i + 1:end] if l.strip()]
     return out
 
 
@@ -7512,12 +7538,32 @@ ROOT_DOC_NAMES = r"(?:README|AGENTS|CLAUDE|GEMINI|CHANGELOG)"
 ROOT_DOC_PATH = re.compile(rf"(?<![\w./:-])(?:\.\./)*{ROOT_DOC_NAMES}\.md(?![\w/-])")
 # Prose that names one without a path ("listed in the root README"): a hook can't judge it,
 # so survey lists it.
-ROOT_DOC_WORD = re.compile(rf"(?<![\w/-]){ROOT_DOC_NAMES}\b")
+ROOT_DOC_WORD = re.compile(rf"(?<![\w/-]){ROOT_DOC_NAMES}\b(?!\.md)")
 
 
-def root_doc_mentions(text: str) -> list[tuple[int, str]]:
-    """(line number, line) for each line of TEXT that names a root document."""
-    return [(n, line) for n, line in enumerate(text.splitlines(), 1) if ROOT_DOC_WORD.search(line)]
+MD_LINK = re.compile(r"\]\((?P<target>[^)\s]+)")
+
+
+def root_doc_named(path: str, line: str) -> str:
+    """The root document LINE, in file PATH, names as a path, as written; '' for none. A
+    Markdown link is relative to its file, so a page's link to its own folder's README.md names
+    no root document; any other path is from the repo's root, as jig's pointers are."""
+    spans = []
+    for m in MD_LINK.finditer(line):
+        spans.append(m.span("target"))
+        target = m.group("target").split("#")[0]
+        if target and "://" not in target and \
+                os.path.normpath(os.path.join(os.path.dirname(path), target)) in ROOT_DOCS:
+            return m.group("target")
+    return next((m.group(0) for m in ROOT_DOC_PATH.finditer(line)
+                 if not any(a <= m.start() < b for a, b in spans)), "")
+
+
+def root_doc_mentions(path: str, text: str, frozen: set[int] = frozenset()) -> list[tuple[int, str]]:
+    """(line number, line) for each line of TEXT, file PATH, that names a root document, as a
+    path or in prose, but the FROZEN ones (0-based): a released change line can't be edited."""
+    return [(n, line) for n, line in enumerate(text.splitlines(), 1)
+            if n - 1 not in frozen and (root_doc_named(path, line) or ROOT_DOC_WORD.search(line))]
 
 
 def product_file(path: str, meta: dict | None = None) -> bool:
@@ -7573,8 +7619,16 @@ def dead_touches(text: str, have: set[str]) -> set[tuple[str, str]]:
     return out
 
 
+def root_doc_refusal(at: str, n: int, named: str, text: str) -> str:
+    what = "the decision log" if at == LOG else "a page"
+    return (f"{at} line {n} names {named}, a root document: {what} points only at docs, and the "
+            f"root documents may point into docs/, never the other way"
+            + (f"; a term is {GLOSSARY} § <term>" if "README.md" in named else "")
+            + f": {clip(text.strip())}")
+
+
 def boundary_rules(trunk: str, branch: str, staged: bool, paths: list[str],
-                   meta: dict | None) -> list[str]:
+                   meta: dict | None, not_docs: list[str] = ()) -> list[str]:
     """References run one way: a page or a decision entry never names a spec, a handoff, the
     roadmap, or a scope of it. A roadmap is .jig/roadmap.md's, never a page, and the pages it
     names exist."""
@@ -7609,12 +7663,9 @@ def boundary_rules(trunk: str, branch: str, staged: bool, paths: list[str],
             out.append(f"{at} line {n} names {hit.group(0)}, the project's: {what} describes the "
                        f"product, and a spec, a handoff or the roadmap cites it, never the other "
                        f"way: {clip(text.strip())}")
-        elif (at == LOG or at.startswith("docs/")) and (hit := ROOT_DOC_PATH.search(text)):
-            what = "the decision log" if at == LOG else "a page"
-            out.append(f"{at} line {n} names {hit.group(0)}, a root document: {what} points only "
-                       f"at docs, and the root documents may point into docs/, never the other way"
-                       + (f"; a term is {GLOSSARY} § <term>" if hit.group(0).endswith("README.md") else "")
-                       + f": {clip(text.strip())}")
+        elif (at == LOG or (at.startswith("docs/") and not matches(at, not_docs))) \
+                and (named := root_doc_named(at, text)):
+            out.append(root_doc_refusal(at, n, named, text))
     return out
 
 
@@ -9840,19 +9891,46 @@ def from_root(f: str, pre: str, name: str) -> bool:
     return os.path.normpath(os.path.join(os.path.dirname(f), pre + name)) == name
 
 
-def glossary_pointers(f: str, text: str, terms: list[str], frozen: set[int]) -> tuple[str, list, list]:
-    """TEXT, file F, with its pointers to the old homes rewritten, and (line, was, now) for each
-    line rewritten and (line, why) for each pointer it can't rewrite: a section naming no term,
-    prose naming the README's glossary, a released change line, which is frozen."""
+def old_home_named(line: str) -> bool:
+    return bool(OLD_README_POINTER.search(line) or OLD_README_LINK.search(line) or OLD_GLOSSARY_PATH.search(line))
+
+
+def history_lines(f: str, text: str) -> dict[int, str]:
+    """The 0-based lines of TEXT, file F, that record what was, with why: fenced code, which
+    quotes as written, and a released section of the decision log or of a root CHANGELOG.md."""
+    out, fence = {}, ""
+    for n, line in enumerate(text.splitlines()):
+        mark = re.match(r"\s*(`{3,}|~{3,})", line)
+        if fence or mark:
+            out[n] = "in a fenced code block, which quotes as written"
+            if mark and (not fence or mark.group(1).startswith(fence)):
+                fence = "" if fence else mark.group(1)
+    if f == LOG:
+        out |= {n: "a released change line, which is frozen" for n in released_lines(text)}
+    elif f == CHANGELOG:
+        inside = False
+        for n, line in enumerate(text.splitlines()):
+            if line.startswith("## "):
+                inside = not re.search(r"(?i)unreleased", line)
+            if inside:
+                out[n] = "a released section of the changelog, which is history"
+    return out
+
+
+def glossary_pointers(f: str, text: str, terms: list[str]) -> tuple[str, list, list, list]:
+    """TEXT, file F, with its pointers to the old homes rewritten; (line, was, now) for each line
+    rewritten; (line, why) for each pointer it can't rewrite (a section naming no term, prose
+    naming the README's glossary); and (line, why) for each it leaves as history."""
     lines = text.splitlines(keepends=True)
-    done, left = [], []
+    done, left, history = [], [], []
+    frozen = history_lines(f, text)
     # A link is relative to its file; a pointer is a path from the root unless written with ../.
     rel = os.path.relpath(GLOSSARY, os.path.dirname(f) or ".")
     slugs = {re.sub(r"[^\w -]", "", t.lower()).replace(" ", "-") for t in terms}
     for n, line in enumerate(lines):
         if n in frozen:
-            if OLD_README_POINTER.search(line) or OLD_GLOSSARY_PATH.search(line):
-                left.append((n + 1, "a released change line, which is frozen"))
+            if old_home_named(line):
+                history.append((n + 1, frozen[n]))
             continue
         out, at, missed = [], 0, False
         for m in OLD_README_POINTER.finditer(line):
@@ -9889,7 +9967,7 @@ def glossary_pointers(f: str, text: str, terms: list[str], frozen: set[int]) -> 
         elif not missed and "README" in line and re.search(r"(?i)glossar", line):
             left.append((n + 1, "prose naming the README's glossary, with no path to rewrite"))
         lines[n] = new
-    return "".join(lines), done, left
+    return "".join(lines), done, left, history
 
 
 def glossary_plan(root: Path) -> dict:
@@ -9901,7 +9979,7 @@ def glossary_plan(root: Path) -> dict:
     section = readme_glossary(rtext)
     old = root / "GLOSSARY.md"
     sources = (["README.md"] if section is not None else []) + (["GLOSSARY.md"] if "GLOSSARY.md" in files and old.is_file() else [])
-    plan = {"sources": sources, "write": {}, "remove": [], "rewrites": [], "left": [], "terms": [],
+    plan = {"sources": sources, "write": {}, "remove": [], "rewrites": [], "left": [], "history": [], "terms": [],
             "blocked": ""}
     if not sources:
         return plan
@@ -9931,6 +10009,12 @@ def glossary_plan(root: Path) -> dict:
     plan["terms"] = glossary_terms(gtext)
     keep = (f"{DIR}/specs/", f"{DIR}/ledgers/", LOG)
     for f in [*files, GLOSSARY]:
+        if f.startswith(f"{DIR}/handoffs/") and (root / f).is_file():
+            # A handoff records its day: a pointer in it is history, named and left.
+            plan["history"] += [(f, n, "a handoff, which records its day")
+                                for n, line in enumerate((root / f).read_text(errors="replace").splitlines(), 1)
+                                if old_home_named(line)]
+            continue
         if (f in plan["remove"] or (f.startswith(f"{DIR}/") and not f.startswith(keep))
                 or (f != GLOSSARY and not (root / f).is_file())):
             continue
@@ -9944,11 +10028,31 @@ def glossary_plan(root: Path) -> dict:
             text = raw.decode(errors="replace")
         if "README" not in text and "GLOSSARY" not in text:
             continue
-        new, done, left = glossary_pointers(f, text, plan["terms"], released_lines(text) if f == LOG else set())
+        new, done, left, history = glossary_pointers(f, text, plan["terms"])
         if new != text:
             plan["write"][f] = new
         plan["rewrites"] += [(f, *d) for d in done]
         plan["left"] += [(f, *l) for l in left]
+        plan["history"] += [(f, *h) for h in history]
+    # What the hook will judge in the move's own commit: every line it adds to a page or to
+    # the log. A term's text moves byte for byte, and a rewritten line may hold a second root
+    # document, so the move can't make those lines pass; it names them for the session.
+    try:
+        not_docs = Board.load(root).data.get("not_docs") or []
+    except SystemExit:
+        not_docs = []
+    # The glossary is a new file, every line of it added; elsewhere, the lines rewritten.
+    added: dict[str, set[int] | None] = {f: set() for f, *_ in plan["rewrites"]}
+    for f, n, *_ in plan["rewrites"]:
+        added[f].add(n)
+    added[GLOSSARY] = None
+    for f, ns in added.items():
+        if not (f == LOG or (f.startswith("docs/") and product_file(f) and not matches(f, not_docs))):
+            continue
+        for n, line in enumerate(plan["write"].get(f, "").splitlines(), 1):
+            if (ns is None or n in ns) and (named := root_doc_named(f, line)):
+                plan["left"].append((f, n, f"names {named}, a root document, which the hook refuses: "
+                                           "edit it before committing"))
     meta = root / META
     if meta.is_file():
         data = json.loads(meta.read_text())
@@ -9985,7 +10089,11 @@ def cmd_glossary(root: Path, apply: bool) -> int:
             print(f"  {f}:{n}: {clip(was)}  →  {clip(now)}")
     if plan["left"]:
         print("Pointers left for the session (no mechanical rewrite):")
-        for f, n, why in plan["left"]:
+        for f, n, why in sorted(plan["left"]):
+            print(f"  {f}:{n}: {why}")
+    if plan["history"]:
+        print("Pointers in history, left as written:")
+        for f, n, why in plan["history"]:
             print(f"  {f}:{n}: {why}")
     meta = (root / META).exists()
     if meta:

@@ -197,8 +197,10 @@ exempt only where `.jig/roadmap.md` exists.
 `GEMINI.md`, `CHANGELOG.md`) are for outsiders and for agents: they may point into `docs/`, and
 a page or a decision entry never names one. The hook refuses an added line in a page under
 `docs/` or in `.jig/decisions.md` that names a root document as a path, with or without `§`
-(`README.md § mote`, `../AGENTS.md`), and names the line. Another repo's file
-(`<repo>/README.md`), a folder's own README and a code path are not root documents. Prose
+(`README.md § mote`, `../AGENTS.md`), and names the line; a file `not_docs` matches is exempt.
+A Markdown link resolves from the page's folder, so a page's link to its own folder's
+`README.md` is no root document; any other path is from the repo's root, as jig's pointers are.
+Another repo's file (`<repo>/README.md`) and a code path are not root documents. Prose
 that names one without a path ("listed in the root README") the hook can't judge; `jig survey`
 lists those lines too.
 
@@ -350,8 +352,12 @@ bold word opening a paragraph (`**term** — …`) rather than a heading or a ro
 README's `### <term>` becomes `## <term>`, a bold-paragraph term gets a heading, a table moves
 as the table), the old section or file removed, and in the same change every pointer to the old
 home rewritten (`README.md § <term>` to `docs/glossary.md § <term>`, a pointer to the
-section itself and `GLOSSARY.md` to `docs/glossary.md`). The dry run lists each line it rewrites, and each pointer
-it can't (a section naming no term, prose naming the README), which it leaves for the session.
+section itself and `GLOSSARY.md` to `docs/glossary.md`). The dry run lists each line it rewrites; each pointer it
+can't (a section naming no term, prose naming the README), and each line the hook would refuse
+in the move's commit (a term's text naming a root document), which it leaves for the session
+to edit before committing; and each pointer in history, left as written: fenced code, a
+handoff, a released section of the decision log or of a root `CHANGELOG.md`. A README
+`## Glossary` section holding no term, only a link to `docs/glossary.md`, is no glossary.
 
 `jig survey` also reads each page at home under `docs/`, board pages included, against the
 contract above, and names a page in the old Now, Rules and Checks shape (convert it: fold
@@ -891,7 +897,9 @@ is: a folder of pages goes in as `docs/**/*.md`, and a new page there needs no e
 under `.jig/` counts, whatever the globs say, except `.jig/decisions.md`, which always does.
 `jig init --meta` names `.jig/decisions.md` and `docs/glossary.md`, which holds the terms
 (Documentation), and writes the glossary. The README is for outsiders and no entry file, so its
-prose changes without a log line. A release's term report reads the glossary's terms, headings
+prose changes without a log line. A metarepo that hasn't moved its glossary still names
+`README.md`, and pararepos cite only its `## Glossary` section: M3 counts a `README.md` change
+only there, until the move takes `README.md` out of `entry_files`. A release's term report reads the glossary's terms, headings
 and table rows alike, and names each term added, removed or reworded; across the release that
 moves a README glossary to `docs/glossary.md`, it reads the older side's README, and names each
 term as moved. The move, in a metarepo, runs in a job's worktree (M4), and rewrites
@@ -902,7 +910,7 @@ bump with the term's new home, `<meta>/docs/glossary.md § <term>`.
 |---|---|
 | M1 | a source file outside `.jig/` in the metarepo |
 | M2 | in every repo, a `.jig/decisions.md` entry with a status in its heading, no status line (`Accepted (who, YYYY-MM-DD).`, `Open (YYYY-MM-DD).`, `Proposed (YYYY-MM-DD).`), a supersedes link to no entry in the log or in trunk's history of it, an id used twice, or an open or proposed entry outside `## Open`, or an entry added or changed with no `Touches:` line, or one naming what is no docs page there (Decision log) |
-| M3 | an entry file changed without a line or entry in `.jig/decisions.md`, judged on the branch since it left trunk: a line an earlier commit on the branch added covers this one, and a commit that drops the branch's only line is refused |
+| M3 | an entry file changed without a line or entry in `.jig/decisions.md` (of a `README.md` still listed, only its `## Glossary` section), judged on the branch since it left trunk: a line an earlier commit on the branch added covers this one, and a commit that drops the branch's only line is refused |
 | M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted, but not `.jig/decisions.md`: a decision is reviewed work); a detached HEAD at trunk, or behind it, is trunk |
 | M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes and the rows they add to `.jig/ledgers/DEFERRED.md` (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`; on a branch, `D-?store-ro: …`) |
