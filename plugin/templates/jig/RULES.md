@@ -656,13 +656,22 @@ different folders still meet on it. An entry already on trunk with no `Touches:`
 changes, and so do the entries `jig update --merge-log` converts from a register; `jig update`
 lists each one to backfill.
 
+Not every decision rules on a page. One that rules on a term, such as how products are named,
+names it in the glossary: `docs/glossary.md § <term>` (`<meta>/docs/glossary.md § <term>` from
+a pararepo), the term a `## <term>` heading or a table row there, matched whole. A genre's
+term is its glossary heading. `§` names a glossary term only, never a heading of another page.
+One that rules on no page and no term, such as a rule for the whole repo, says so as the
+whole line: `Touches: none — <reason>`. The review reads the reason.
+
 **The rule sentence.** The body opens with what the decision rules, as *When <situation>,
 <outcome>.*, or *Always, <outcome>.* Two entries that contradict each other govern one
 situation with different outcomes, and this sentence is where a reader sees that side by side.
 No hook judges it; the review reads it.
 
 **Peers.** Two live entries are peers when their `Touches:` name one page, in either form, or
-one names a page above the other's. Peers come from this log; in a pararepo, from the
+one names a page above the other's, or both name one glossary term. A pointer to the whole
+glossary meets every term, and a term never meets the pages of its genre. An entry that
+touches none has no peers. Peers come from this log; in a pararepo, from the
 metarepo's log at the pin; in a metarepo, from each registered pararepo's log on its trunk
 (`jig repos`). A log jig can't read (no cache, a cache at another pin than the pin, a pararepo
 not found) is named. `jig decision <id> --peers` prints an
@@ -909,7 +918,7 @@ bump with the term's new home, `<meta>/docs/glossary.md § <term>`.
 | Gate | Refuses |
 |---|---|
 | M1 | a source file outside `.jig/` in the metarepo |
-| M2 | in every repo, a `.jig/decisions.md` entry with a status in its heading, no status line (`Accepted (who, YYYY-MM-DD).`, `Open (YYYY-MM-DD).`, `Proposed (YYYY-MM-DD).`), a supersedes link to no entry in the log or in trunk's history of it, an id used twice, or an open or proposed entry outside `## Open`, or an entry added or changed with no `Touches:` line, or one naming what is no docs page there (Decision log) |
+| M2 | in every repo, a `.jig/decisions.md` entry with a status in its heading, no status line (`Accepted (who, YYYY-MM-DD).`, `Open (YYYY-MM-DD).`, `Proposed (YYYY-MM-DD).`), a supersedes link to no entry in the log or in trunk's history of it, an id used twice, or an open or proposed entry outside `## Open`, or an entry added or changed with no `Touches:` line, or one naming what is no docs page there, a `§` that is no term of that glossary, or `none` with no reason or beside pages (Decision log) |
 | M3 | an entry file changed without a line or entry in `.jig/decisions.md` (of a `README.md` still listed, only its `## Glossary` section), judged on the branch since it left trunk: a line an earlier commit on the branch added covers this one, and a commit that drops the branch's only line is refused |
 | M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted, but not `.jig/decisions.md`: a decision is reviewed work); a detached HEAD at trunk, or behind it, is trunk |
 | M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes and the rows they add to `.jig/ledgers/DEFERRED.md` (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |

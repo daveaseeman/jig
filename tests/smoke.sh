@@ -5226,6 +5226,109 @@ cd "$T"
 }
 
 
+sec_touches_terms() {
+# A decision that rules on a term names it in the glossary; one that rules on no page says none, and why.
+export JIG_CONFIG="$T/tt-repos.json" XDG_CONFIG_HOME="$T/tt-config"
+TA="$T/ta"; pcnew "$TA" && git add -A && git commit -qm init && $J init --meta --name ta --genres products,features >/dev/null
+mkdir -p docs/features && printf '# Pay\n' > docs/features/pay.md
+printf '# Glossary\n\n## products\n\nWhat we sell.\n\n## features\n\nWhat a product does.\n' > docs/glossary.md
+git add -A && git -c core.hooksPath=/dev/null commit -qm "meta-init" && $J release >/dev/null && git switch -q -c m2   # M4: trunk takes only merges
+msg="touches terms M2: an entry naming a glossary term passes, in any case"
+expect_pass m2 '### D-001 naming
+Accepted (owner, 2026-11-13).
+Touches: docs/glossary.md § products, docs/glossary.md § Features'
+msg="touches terms M2: Touches: none with a reason passes, commas and all"
+expect_pass m2 '### D-001 points
+Accepted (owner, 2026-11-13).
+Touches: none — this repo points, and never copies'
+msg="touches terms M2: a term the glossary lacks is refused, naming it"
+ulog '### D-001 naming
+Accepted (owner, 2026-11-13).
+Touches: docs/glossary.md § nosuchterm' && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'is no term in docs/glossary.md'" "$out"
+msg="touches terms M2: § on a page other than the glossary is refused"
+expect_refuse m2 '### D-001 naming
+Accepted (owner, 2026-11-13).
+Touches: docs/features/pay.md § Intro'
+msg="touches terms M2: none with no reason is refused"
+expect_refuse m2 '### D-001 points
+Accepted (owner, 2026-11-13).
+Touches: none'
+msg="touches terms M2: none beside a page is refused, either way round"
+expect_refuse m2 '### D-001 points
+Accepted (owner, 2026-11-13).
+Touches: none — x, docs/features/pay.md'
+expect_refuse m2 '### D-001 points
+Accepted (owner, 2026-11-13).
+Touches: docs/features/pay.md, none — x'
+msg="touches terms M2: a missing page is still refused"
+expect_refuse m2 '### D-001 points
+Accepted (owner, 2026-11-13).
+Touches: docs/features/gone.md'
+git switch -q main && ulog '### D-006 old
+Accepted (owner, 2026-11-13).
+
+Always, old.' && ulog '### D-005 points
+Accepted (owner, 2026-11-13).
+Touches: none — the whole repo, really
+
+Always, this repo points.' && ulog '### D-004 pay rounds
+Accepted (owner, 2026-11-13).
+Touches: docs/features/pay.md
+
+When pay rounds, it rounds down.' && ulog '### D-003 vocabulary
+Accepted (owner, 2026-11-13).
+Touches: docs/glossary.md
+
+Always, other repos use this vocabulary.' && ulog '### D-002 brand
+Accepted (owner, 2026-11-13).
+Touches: docs/glossary.md § Products
+
+Always, products carry the family name.' && ulog '### D-001 naming
+Accepted (owner, 2026-11-13).
+Touches: docs/glossary.md § products
+
+Always, a coined name takes one y.' && git add -A && git -c core.hooksPath=/dev/null commit -qm "D-001, D-002, D-003, D-004, D-005, D-006: x"
+msg="touches terms: two entries on one term are peers, the whole glossary meets the term, a page in its genre doesn't"
+out=$($J decision D-001 --peers 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '§ D-002 brand' && echo \"\$0\" | grep -q '§ D-003 vocabulary' && ! echo \"\$0\" | grep -qE '§ D-00[456]'" "$out"
+msg="touches terms: the page entry has no peer in the glossary"
+out=$($J decision D-004 --peers 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -qx 'No peers.'" "$out"
+msg="touches terms: --peers on a none entry says it touches no page, and why"
+out=$($J decision D-005 --peers 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -qF 'D-005 touches no page (the whole repo, really), so it has no peers.'" "$out"
+msg="touches terms update: lists the entry with no line, not the one that touches none"
+out=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'D-006 old has no Touches line' && ! echo \"\$0\" | grep -q 'D-005'" "$out"
+$J open tj --branch b-tj >/dev/null && git add -A && git -c core.hooksPath=/dev/null commit -qm "TOOL: open tj"
+cd .git/jig/worktrees/b-tj && ulog '### D-?nz none rules
+Accepted (owner, 2026-11-13).
+Touches: none — another repo-wide rule
+
+Always, nothing is copied.' && ulog '### D-?ny product names
+Accepted (owner, 2026-11-13).
+Touches: docs/glossary.md § products
+
+Always, product names are short.' && git add -A && git commit -qm "D-?ny, D-?nz: names" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
+note=$(ls .jig/handoffs/*.md)
+msg="touches terms fold-in: an entry on a term gets a pair line with each entry on it, and the none entry gets none"
+expect_pass sh -c "grep -qxF -- '- [ ] D-?ny vs .jig/decisions.md § D-001 (docs/glossary.md § products): ___' '$note' && grep -qF 'D-?ny vs .jig/decisions.md § D-002' '$note' && ! grep -qF 'D-?nz vs' '$note' && ! grep -qF '§ D-004' '$note'" 
+cd "$TA"
+TB="$T/tb"; pcnew "$TB" && mkdir -p docs && printf '# Own\n' > docs/own.md && git add -A && git commit -qm init \
+  && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para ta --location "$TA" >/dev/null 2>&1 && git add -A && git commit -qm "init --para" && git switch -q -c x
+msg="touches terms M2: a pararepo names the metarepo's term at the pin"
+expect_pass m2 '### D-?a a rules
+Accepted (owner, 2026-11-13).
+Touches: ta/docs/glossary.md § products'
+msg="touches terms M2: a pararepo naming a term the metarepo's glossary lacks at the pin is refused"
+expect_refuse m2 '### D-?a a rules
+Accepted (owner, 2026-11-13).
+Touches: ta/docs/glossary.md § nosuchterm'
+cd "$T"
+}
+
 # ---------------------------------------------------------------- a staged batch: after:, check, Workflow, near names
 sbafter() { sed -i.bak "s/^status: staged\$/after: $2\nstatus: staged/" ".jig/staging/$1" && rm ".jig/staging/$1.bak"; }
 sec_staging_batches() {
@@ -5982,7 +6085,7 @@ assert m.merged_registers(pathlib.Path('.').resolve(), 'HEAD~1', 'HEAD') and not
 cd "$MM"
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches merge_log findings glossary"
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file

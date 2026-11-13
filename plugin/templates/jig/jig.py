@@ -4639,14 +4639,43 @@ PAIR_SHAPED = re.compile(r"^- \[.\] \S+ vs \S+ § ")
 UNREAD = "not read for peers"
 
 
-def entry_touches(block: str) -> list[str] | None:
-    """The pointers on an entry's `Touches:` line, the line right under its status line; None
-    when it has no such line."""
+# `Touches: none — <reason>`: an entry that rules on no page or term, such as a rule for the whole
+# repo. The whole line, so a reason may hold commas; it peers with nothing.
+TOUCHES_NONE = re.compile(r"none\b\s*[—–-]?\s*(.*)$")
+
+
+def touches_line(block: str) -> str | None:
+    """The text after `Touches:` on the line right under an entry's status line; None when it
+    has no such line."""
     lines = [l.strip() for l in block.splitlines()[1:] if l.strip()]
     m = re.match(r"Touches:(.*)$", lines[1]) if len(lines) > 1 else None
-    if not m:
+    return m.group(1).strip() if m else None
+
+
+def touches_none(block: str) -> str | None:
+    """An entry's reason when its Touches line is `none — <reason>` (empty when it gives none);
+    None for any other line, or no line."""
+    line = touches_line(block)
+    m = TOUCHES_NONE.match(line.strip("`").strip()) if line is not None else None
+    return m.group(1).strip().rstrip(".").strip() if m else None
+
+
+def entry_touches(block: str) -> list[str] | None:
+    """The pointers on an entry's `Touches:` line, the line right under its status line; None
+    when it has no such line, and none for `Touches: none — <reason>`."""
+    line = touches_line(block)
+    if line is None:
         return None
-    return [p for p in (x.strip().strip("`").strip().rstrip(".") for x in m.group(1).split(",")) if p]
+    if touches_none(block) is not None:
+        return []
+    return [p for p in (x.strip().strip("`").strip().rstrip(".") for x in line.split(",")) if p]
+
+
+def pointer_term(path: str) -> tuple[str, str]:
+    """(page, term) for a pointer's path: `docs/glossary.md § products` names one glossary term,
+    the shared vocabulary an entry about naming or a genre rules on. Term empty for a page."""
+    page, _, term = path.partition("§")
+    return page.strip(), term.strip()
 
 
 def rule_sentence(block: str) -> str:
@@ -4680,9 +4709,15 @@ def split_pointer(ptr: str, names: dict[str, str]) -> tuple[str, str]:
 
 
 def touch_key(ptr: str, writer: str, names: dict[str, str]) -> tuple[str, str]:
-    """(repo, page key) for a pointer written in WRITER's log."""
+    """(repo, page key) for a pointer written in WRITER's log. A glossary term keys as a page
+    below the glossary, so two entries meet on one term, and a pointer to the whole glossary
+    meets every term; a term never meets the pages of its genre (owner, bug-touches-abstract)."""
     repo, path = split_pointer(ptr, names)
-    return repo or writer, page_key(path)
+    page, term = pointer_term(path)
+    key = page_key(page)
+    if term:
+        key += "/§" + " ".join(term.casefold().replace("/", " ").split())
+    return repo or writer, key
 
 
 def keys_meet(a: tuple[str, str], b: tuple[str, str]) -> bool:
@@ -4896,6 +4931,27 @@ def migrated_ids(trunk: str, prefix: str | None) -> set[str]:
             for row in rows_in(at_rev(was, f), prefix) if (m := rx.match(row))}
 
 
+def touched_term(path: str, term: str, repo: str, cache: Path | None, staged: bool) -> str:
+    """Why a `§` pointer on a Touches line isn't one glossary term, or ''. Only the glossary:
+    a § on another page would break when an ordinary heading is renamed. The term is matched
+    whole, so two entries spelling it alike meet as peers."""
+    if repo.startswith("?"):
+        return f"names {repo[1:]}, which is no repo jig knows here"
+    if path != GLOSSARY or not term:
+        return f"is no glossary term: § names a term of {GLOSSARY}, `{GLOSSARY} § <term>`"
+    if repo == META_KEY:
+        if cache is None:
+            return ""
+        text = (cache / GLOSSARY).read_text(errors="replace") if (cache / GLOSSARY).is_file() else ""
+        where = "the metarepo's glossary at the pin"
+    elif repo not in ("", SELF):
+        return "is a pararepo's page: a metarepo names only its own"
+    else:
+        text, where = body_now(GLOSSARY, staged) or "", GLOSSARY
+    have = {t.casefold() for t in glossary_terms(text)}
+    return "" if term.casefold() in have else f"is no term in {where}: add `## {term}` there, or name a term it has"
+
+
 def touches_problems(old: str, new: str, prefix: str, trunk: str, staged: bool) -> list[str]:
     """M2: an entry added or changed names the pages it touches, and each is a docs page. An
     entry as trunk has it is left alone until it changes. `jig update --merge-log` converting a
@@ -4915,15 +4971,30 @@ def touches_problems(old: str, new: str, prefix: str, trunk: str, staged: bool) 
             continue
         at = f"{LOG}:{e['line']} {e['id']}"
         ptrs = entry_touches(e["block"])
+        reason = touches_none(e["block"])
+        if reason is not None:
+            if not re.search(r"\w", reason):
+                out.append(f"M2 {at} touches none and says no why: `Touches: none — <reason>` "
+                           f"({DIR}/RULES.md, Decision log)")
+            elif re.search(r"(^|[\s,])[\w./:-]+\.md\b", reason):
+                out.append(f"M2 {at} mixes none with pages: `none — <reason>` is the whole line, "
+                           f"or name only the pages")
+            continue
         if not ptrs:
             shared = f"`{para['meta']}/docs/<genre>/<page>.md` for what it shares, " if para else ""
             out.append(f"M2 {at} names no page it touches: under its status line, `Touches: "
-                       f"{shared}docs/<page>.md` ({DIR}/RULES.md, Decision log)")
+                       f"{shared}docs/<page>.md`, a term as `{GLOSSARY} § <term>`, or `Touches: none — <reason>` "
+                       f"({DIR}/RULES.md, Decision log)")
             continue
         for p in ptrs:
             repo, path = split_pointer(p, names)
+            path, term = pointer_term(path)
             docs = path.startswith("docs/") and path.endswith(".md")
-            if repo.startswith("?"):
+            if TOUCHES_NONE.match(p) and not docs:
+                why = "is no docs page: `none — <reason>` is the whole line, never one of its pointers"
+            elif term or "§" in p:
+                why = touched_term(path, term, repo, cache, staged)
+            elif repo.startswith("?"):
                 why = f"names {repo[1:]}, which is no repo jig knows here"
             elif repo == META_KEY:
                 # With no cache at the pin, only its shape: the gate's checkout reads the cache.
@@ -4955,7 +5026,9 @@ def cmd_peers(root: Path, args) -> int:
     print(f"{entry['id']} {entry['title']}")
     print(f"  {rule_sentence(entry['block'])}")
     if not entry["pointers"]:
-        print(f"\n{entry['id']} has no Touches line, so no peers can be found.")
+        reason = touches_none(entry["block"])
+        print(f"\n{entry['id']} touches no page ({reason}), so it has no peers." if reason
+              else f"\n{entry['id']} has no Touches line, so no peers can be found.")
         return 0
     found = peers_of(entry, every, prefix)
     print(f"\nPeers ({len(found)}):" if found else "\nNo peers.")
@@ -4980,7 +5053,8 @@ def placement_hints(root: Path, trunk: str) -> list[str]:
         for k in e["keys"]:
             if e["writer"] != SELF and k[0] == SELF:
                 by_page.setdefault(k[1], set()).add(e["writer"])
-    return [f"{page}: {', '.join(sorted(ws))} rule on it, and no entry here does"
+    # A term keys as docs/glossary/§<term>: shown as the pointer that names it.
+    return [f"{page.replace('/§', '.md § ', 1)}: {', '.join(sorted(ws))} rule on it, and no entry here does"
             for page, ws in sorted(by_page.items())
             if len(ws) > 1 and not any(keys_meet((SELF, page), k) for k in ours)]
 
