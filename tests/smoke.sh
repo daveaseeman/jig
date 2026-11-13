@@ -4312,6 +4312,10 @@ expect_pass git commit -qm "TOOL: Changed above a release line"; git reset -q --
 msg="branch log: a later commit on the job retitling a converted entry with no Touches line passes"
 sed -i.bak 's/^### D-002 which wire format?$/### D-002 which wire format, then?/' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
 expect_pass git commit -qm "D-002: retitled"; git reset -q --hard "$A"
+msg="branch log: a new numbered entry with no Touches line on the converted branch is refused: only the register's ids are exempt"
+ulog '### D-009 x
+Accepted (owner, 2026-11-03).' && git add -A; out=$(git commit -qm "D-009: x" 2>&1); git reset -q --hard "$A"
+expect_pass sh -c "echo \"\$0\" | grep -q 'D-009 names no page it touches'" "$out"
 msg="branch log: reverting the conversion, staged and committed, passes with the counter on the register's rows"
 git revert --no-commit HEAD && out=$(git commit -qm "TOOL: revert the log" 2>&1); rc=$?; git reset -q --hard "$A"
 expect_pass sh -c "test $rc = 0" "$out"
@@ -4523,6 +4527,16 @@ msg="branch log: a new entry with no Touches line is still refused on the branch
 ulog '### D-?x x
 Accepted (owner, 2026-11-03).' && git add -A; out=$(git commit -qm x 2>&1); undo
 expect_pass sh -c "echo \"\$0\" | grep -q 'D-?x names no page it touches'" "$out"
+# A branch can hold a release its local trunk lacks: made from origin's trunk, or pulled. That
+# release is trunk's, and frozen, though the merge base doesn't have it.
+cd "$SU" && $J open sv >/dev/null && git add -A && git commit -qm "open sv"; was=$(git rev-parse HEAD)
+ulog '### Added
+- PORTS: Open on request.' && git add -A && git commit -qm "PORTS: open on request"; $J release --minor >/dev/null 2>&1
+cd .git/jig/worktrees/sv && git merge -q --ff-only main && git update-ref refs/heads/main "$was"
+msg="branch log: a branch holding a release its stale local trunk lacks finds it frozen"
+sed -i.bak 's/^- PORTS: Open on request\.$/- PORTS: Open./' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
+out=$(git commit -qm "PORTS: open" 2>&1); undo
+expect_pass sh -c "grep -qx '## v0.2.0 - [0-9-]*' .jig/decisions.md && echo \"\$0\" | grep -q 'release v0.2.0 is frozen on main'" "$out"
 cd "$SR"
 }
 

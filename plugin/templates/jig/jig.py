@@ -3408,13 +3408,15 @@ def touches_dropped(lines: list[str], keep: bool = False) -> list[str]:
     return out
 
 
-def frozen_problems(old: str, new: str, trunk: str) -> list[str]:
+def frozen_problems(old: str, new: str, trunk: str, only: set[str] | None = None) -> list[str]:
     """A commit may remove a superseded entry from a released section, in the commit adding the
     entry superseding it, or a struck one, in the commit adding a ### Removed line naming it; add or change an entry's Touches line (M2 checks its pages); and add
     ` [YANKED]` to a release heading with one line under it saying why. Anything else in a
-    released section, its change lines above all, is frozen."""
+    released section, its change lines above all, is frozen. ONLY: judge those releases alone."""
     out: list[str] = []
     old, bare = removed_entries(old, new)
+    if only is not None:
+        bare = [e for e in bare if e["section"] in only]
     out += [f"{LOG}: {e['id']} is removed from release {e['section']}, and no entry in the log "
             f"supersedes it: an entry is removed only by the commit adding the accepted one "
             f"that says `Supersedes {e['id']}.`, or, struck as project scope, by the commit adding "
@@ -3424,9 +3426,11 @@ def frozen_problems(old: str, new: str, trunk: str) -> list[str]:
     have = {id_number(e["id"], prefix) for e in log_entries(new, prefix)}
     out += [f"{LOG}: the ### Removed line for {prefix}{n:03d} strikes an entry the log still has: "
             f"remove the entry in the same commit, or drop the line"
-            for n in sorted(struck_ids(old, new, prefix) & have)]
+            for n in sorted(struck_ids(old, new, prefix) & have) if only is None]
     after = release_sections(new)
     for version, (day, yanked, body) in release_sections(old).items():
+        if only is not None and version not in only:
+            continue
         if version not in after:
             out.append(f"{LOG}: release {version} is gone; a released section is never edited or removed")
             continue
@@ -3465,11 +3469,20 @@ def log_rules(trunk: str, staged: bool, trunk_side: bool = False) -> list[str]:
     """M2 and the released sections, in every repo, whenever a change touches the log. On trunk
     an id is a number: a D-?<slug> that got there would be released as one."""
     new = in_index(LOG, staged)
-    old = at_rev(since_trunk(trunk), LOG)
+    since = since_trunk(trunk)
+    old = at_rev(since, LOG)
+    # A branch can hold trunk commits its local trunk lacks (made from origin's, or pulled):
+    # what HEAD has beyond the merge base is trunk's too, unless this branch converted it.
+    head = at_rev("HEAD", LOG) if since != "HEAD" else old
     if not new:
-        return [f"{LOG} is the repo's decision log: it is never deleted"] if old else []
+        if old or (head and not old_log_in_index(trunk, staged)):
+            return [f"{LOG} is the repo's decision log: it is never deleted"]
+        return []
     prefix = log_prefix(trunk)
     out = log_problems(new, prefix, trunk) + frozen_problems(old, new, trunk)
+    beyond = set(release_sections(head)) - set(release_sections(old))
+    if beyond and not migrating_log(trunk, staged):
+        out += frozen_problems(head, new, trunk, only=beyond)
     out += touches_problems(old, new, prefix, trunk, staged)
     if trunk_side:
         out += [f"M2 {LOG}:{e['line']} {e['id']} isn't numbered, and {trunk} takes numbers only: "
@@ -3883,12 +3896,33 @@ def migrating_log(trunk: str, staged: bool) -> bool:
             and not any(holds_old_log(in_index(f, staged), f, prefix) for f in olds))
 
 
+def old_log_in_index(trunk: str, staged: bool) -> bool:
+    """The change holds a register's rows or CHANGELOG.md's sections: removing the log with
+    them back undoes `--merge-log`."""
+    prefix = (load_meta(trunk) or {}).get("decision_prefix")
+    files = git("ls-files", *([] if staged else ["--cached", "--others", "--exclude-standard"])).splitlines()
+    return any(holds_old_log(in_index(f, staged), f, prefix) for f in files
+               if f == CHANGELOG or (f.endswith(".md") and not f.startswith(f"{DIR}/")))
+
+
+def migrated_ids(trunk: str, prefix: str | None) -> set[str]:
+    """The ids of the register rows where the branch left trunk: the entries `--merge-log`
+    writes from them, which may lack Touches."""
+    was = since_trunk(trunk)
+    rx = re.compile(r"^\s*\|\s*([A-Z][A-Z0-9]*-\d+)\s*\|")
+    return {m.group(1) for f in git("ls-tree", "-r", "--name-only", was).splitlines()
+            if f.endswith(".md") and not f.startswith(f"{DIR}/")
+            for row in rows_in(at_rev(was, f), prefix) if (m := rx.match(row))}
+
+
 def touches_problems(old: str, new: str, prefix: str, trunk: str, staged: bool) -> list[str]:
     """M2: an entry added or changed names the pages it touches, and each is a docs page. An
     entry as trunk has it is left alone until it changes. `jig update --merge-log` converting a
-    register writes entries decided before Touches; they are backfilled from update's list."""
+    register writes entries decided before Touches; they are backfilled from update's list. Only
+    those: an entry a later commit on the branch adds names its pages."""
     root = Path.cwd()
     migrating = not log_entries(old, prefix) and migrating_log(trunk, staged)
+    converted = migrated_ids(trunk, (load_meta(trunk) or {}).get("decision_prefix")) if migrating else set()
     names = touch_names(root, trunk)
     para, meta = load_para(trunk), load_meta(trunk)
     cache, _ = meta_cache(root, para) if para else (None, "")
@@ -3896,7 +3930,7 @@ def touches_problems(old: str, new: str, prefix: str, trunk: str, staged: bool) 
     was = {e["id"]: e["block"] for e in log_entries(old, prefix)}
     out = []
     for e in log_entries(new, prefix):
-        if was.get(e["id"]) == e["block"] or (migrating and "?" not in e["id"]):
+        if was.get(e["id"]) == e["block"] or e["id"] in converted:
             continue
         at = f"{LOG}:{e['line']} {e['id']}"
         ptrs = entry_touches(e["block"])
