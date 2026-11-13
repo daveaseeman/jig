@@ -4190,7 +4190,7 @@ Touches: docs/shared.md' "v0.1.0 - $day" && git add -A; out=$($J check --staged 
 expect_pass sh -c "echo \"\$0\" | grep -q 'M2 .*D-002 is open: release v0.1.0 holds accepted entries only'" "$out"
 msg="decisions: a commit editing a line under ## v0.1.0 is refused"
 sed -i.bak 's/^### D-001 ids are numbers$/### D-001 ids are strings/' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
-out=$(git commit -qm edit 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is frozen'" "$out"
+out=$(git commit -qm edit 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is frozen on main'" "$out"
 msg="decisions: adding [YANKED] to the heading and one line under it is accepted"
 python3 -c "import re; f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(re.sub(r'^(## v0\.1\.0 - \S+)$', r'\1 [YANKED]\n\nIds broke; pin v0.2.0.', s, flags=re.M))"
 git add -A; expect_pass git commit -qm yank
@@ -4301,10 +4301,34 @@ msg="migration: releases keep their lines, re-headed; rows land by status; a not
 expect_pass sh -c "sed -n '/^## v0.1.0 - /,\$p' .jig/decisions.md | grep -qx '### D-001 ids' && sed -n '/^## v0.1.0 - /,\$p' .jig/decisions.md | grep -qx -- '- D-001' && grep -qx '## v0.2.0 - [0-9-]*' .jig/decisions.md && sed -n '/^## Open/,/^## Unreleased/p' .jig/decisions.md | grep -qx '### D-002 which wire format?' && grep -qx 'Proposed (Ann, 2026-11-02).' .jig/decisions.md && sed -n '/^### D-002/,/^## Unreleased/p' .jig/decisions.md | grep -qx 'Source for D-002: the wire thread.' && ! grep -q '^### D-003' .jig/decisions.md && grep -q 'left out of it: D-003' .jig/decisions.md && grep -qx -- '- D-002, D-003' .jig/decisions.md && ! grep -q '^## .*—' .jig/decisions.md"
 msg="migration: the job's commit of it passes, judged by the log's rules since it merges the old files away"
 expect_pass git commit -qm "TOOL: merge the log"
+# The branch is judged from where it left trunk: its own conversion isn't trunk's yet, so a
+# later commit on it may correct what the first got wrong, as the squash would.
+A=$(git rev-parse HEAD)
+restate() { python3 -c "import re; f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(re.sub(r'(?m)^(### D-001 ids\n\w+ \()', r'\1owner, ', s, count=1))"; }
+msg="branch log: a later commit on the job changing a status line in its converted release passes"
+restate && git add -A; expect_pass git commit -qm "D-001: restated"; git reset -q --hard "$A"
+msg="branch log: a later commit on the job adding ### Changed above its converted release's change line passes"
+python3 -c "f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(s.replace('\n- D-002, D-003\n', '\n### Changed\n- D-002, D-003\n', 1))" && git add -A
+expect_pass git commit -qm "TOOL: Changed above a release line"; git reset -q --hard "$A"
+msg="branch log: a later commit on the job retitling a converted entry with no Touches line passes"
+sed -i.bak 's/^### D-002 which wire format?$/### D-002 which wire format, then?/' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
+expect_pass git commit -qm "D-002: retitled"; git reset -q --hard "$A"
+msg="branch log: a new numbered entry with no Touches line on the converted branch is refused: only the register's ids are exempt"
+ulog '### D-009 x
+Accepted (owner, 2026-11-03).' && git add -A; out=$(git commit -qm "D-009: x" 2>&1); git reset -q --hard "$A"
+expect_pass sh -c "echo \"\$0\" | grep -q 'D-009 names no page it touches'" "$out"
+msg="branch log: reverting the conversion, staged and committed, passes with the counter on the register's rows"
+git revert --no-commit HEAD && ck=$($J check 2>&1) && out=$(git commit -qm "TOOL: revert the log" 2>&1); rc=$?; git reset -q --hard "$A"
+expect_pass sh -c "test $rc = 0" "$out"
+msg="branch log: jig check on the reverted tree, unstaged, agrees with the hook"
+expect_pass sh -c "test \"\$0\" = ok" "$ck"
 $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note ml" && cd "$OM"
 msg="migration: the job merges into main, and --apply --merge-log there then rewrites only the board: append_files and the counter"
 $J merge ml >/dev/null 2>&1; out=$($UP --apply --merge-log 2>&1)
 expect_pass sh -c "git log -1 --format=%s | grep -qx 'merge ml' && python3 -c \"import json; c=json.load(open('.jig/config.json')); assert 'CHANGELOG.md' not in c['append_files'] and '.jig/decisions.md' in c['append_files'], c; assert c['reserve']['decision']['files']==['.jig/decisions.md'], c\" && git diff --cached --name-only | grep -qx .jig/config.json && git commit -qm 'TOOL: board after the log'" "$out"
+msg="branch log: on trunk after the merge, the status-line edit is refused as frozen on main"
+restate && git add -A; out=$(git commit -qm "D-001: restated" 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is frozen on main'" "$out"
 msg="migration: afterwards a job's entry is numbered above the rejected D-003, the counter agreeing, and the release takes the history"
 $J open o2 >/dev/null && git add -A && git commit -qm "TOOL: open o2"
 (cd .git/jig/worktrees/o2 && ulog '### D-?cache cache off
@@ -4352,7 +4376,7 @@ cd "$DL"
 }
 
 # ---------------------------------------------------------------- a superseded entry is removed
-rment() { python3 -c "import re,sys; f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(re.sub(r'(?ms)^### '+sys.argv[1]+r' .*?(?=^##)', '', s))" "$1"; }
+rment() { python3 -c "import re,sys; f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(re.sub(r'(?ms)^### '+sys.argv[1]+r' .*?(?=^##|\Z)', '', s))" "$1"; }
 sec_supersede() {
 SR="$T/sr"; pcnew "$SR" && git add -A && git commit -qm init && $J init >/dev/null
 sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
@@ -4367,7 +4391,7 @@ rment D-001 && git add -A; out=$(git commit -qm drop 2>&1); undo
 expect_pass sh -c "echo \"\$0\" | grep -q 'D-001 is removed from release v0.1.0, and no entry in the log supersedes it'" "$out"
 msg="supersede: editing a released change line is still refused"
 sed -i.bak 's/^- IDS: Number them\.$/- IDS: Number all./' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
-out=$(git commit -qm edit 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is frozen'" "$out"
+out=$(git commit -qm edit 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is frozen on main'" "$out"
 msg="supersede: a proposed entry naming Supersedes D-001 removes nothing: removing D-001 with it is refused"
 ulog '### D-002 maybe strings
 Proposed (2026-11-02). Supersedes D-001.
@@ -4459,6 +4483,119 @@ cd "$SP" && git -C smclone pull -q 2>/dev/null && setjson .jig/para.json pin v0.
   && git add -A && git commit -qm "meta: sm v0.3.0 → v0.4.0" >/dev/null 2>&1; out=$($J sync 2>&1)
 msg="supersede: a citation two removals back walks the metarepo's history to the entry that holds at the pin"
 expect_pass sh -c "echo \"\$0\" | grep -qF 'has no row for: now sm/.jig/decisions.md § D-003'" "$out"
+
+# A job's branch is judged from where it left trunk, migration or not: a later commit may
+# undo or correct a supersede that trunk never had, with a counter over the log.
+SU="$T/su"; pcnew "$SU" && git add -A && git commit -qm init && $J init >/dev/null
+sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
+printf 'mkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/release.sh && printf 'dist/\n' > .gitignore
+board "b['release']['artifacts'] = ['dist/*.zip']; b['reserve'] = {'decision': {'pattern': r'^### D-(\d+)', 'files': ['.jig/decisions.md']}}"
+ulog '### Added
+- PORTS: Closed.'
+ulog '### D-002 ports stay closed
+Accepted (owner, 2026-11-01).
+Touches: docs/shared.md
+
+### D-001 ids are numbers
+Accepted (owner, 2026-11-01).
+Touches: docs/shared.md' && git add -A && git commit -qm "board, D-001, D-002"; out=$($J release --minor 2>&1)
+msg="branch log: the set-up releases D-001 and D-002 in v0.1.0"
+expect_pass sh -c "git tag | grep -qx v0.1.0" "$out"
+$J open su >/dev/null && git add -A && git commit -qm "open su"
+cd .git/jig/worktrees/su
+ulog '### D-?str ids are strings
+Accepted (owner, 2026-11-02). Supersedes D-001.
+Touches: docs/shared.md' && rment D-001 && git add -A && git commit -qm "D-?str: strings"
+msg="branch log: the job's commit A supersedes D-001 and removes it"
+expect_pass sh -c "! grep -q '^### D-001' .jig/decisions.md && test -z \"\$(git status --porcelain)\""
+msg="branch log: reverting a job's supersede, staged and committed, passes with no R6"
+git revert --no-commit HEAD && out=$(git commit -qm "revert D-?str" 2>&1); rc=$?; git reset -q --hard HEAD~$((rc == 0))
+expect_pass sh -c "test $rc = 0" "$out"
+msg="branch log: correcting a job's supersede to supersede D-002 instead passes with no R6"
+git show HEAD~1:.jig/decisions.md > .jig/decisions.md && ulog '### D-?str ports are open
+Accepted (owner, 2026-11-02). Supersedes D-002.
+Touches: docs/shared.md' && rment D-002 && git add -A
+out=$(git commit -qm "D-?str: D-002 instead" 2>&1); rc=$?; git reset -q --hard HEAD~$((rc == 0))
+expect_pass sh -c "test $rc = 0" "$out"
+msg="branch log: editing an entry trunk released is still refused on the branch, frozen on main"
+sed -i.bak 's/^### D-002 ports stay closed$/### D-002 ports stay shut/' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
+out=$(git commit -qm edit 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is frozen on main'" "$out"
+msg="branch log: removing a released entry nothing supersedes is still refused on the branch"
+rment D-002 && git add -A; out=$(git commit -qm drop 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'D-002 is removed from release v0.1.0, and no entry in the log supersedes it'" "$out"
+msg="branch log: deleting a log trunk has is still refused on the branch"
+git rm -q .jig/decisions.md; out=$(git commit -qm gone 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'it is never deleted'" "$out"
+msg="branch log: a new entry with no Touches line is still refused on the branch"
+ulog '### D-?x x
+Accepted (owner, 2026-11-03).' && git add -A; out=$(git commit -qm x 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'D-?x names no page it touches'" "$out"
+# A branch can hold a release its local trunk lacks: made from origin's trunk, or pulled. That
+# release is trunk's, and frozen, though the merge base doesn't have it.
+cd "$SU" && printf '# Reqs\n\n| Id | What |\n|---|---|\n| REQ-1 | boot in 2s |\n' > docs/reqs.md && git add -A && git commit -qm "docs: reqs"
+$J open sv >/dev/null && git add -A && git commit -qm "open sv"; was=$(git rev-parse HEAD)
+ulog '### Added
+- PORTS: Open on request.' && git add -A && git commit -qm "PORTS: open on request"; $J release --minor >/dev/null 2>&1
+cd .git/jig/worktrees/sv && git merge -q --ff-only main && git update-ref refs/heads/main "$was"
+msg="branch log: a branch holding a release its stale local trunk lacks finds it frozen"
+sed -i.bak 's/^- PORTS: Open on request\.$/- PORTS: Open./' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
+out=$(git commit -qm "PORTS: open" 2>&1); undo
+expect_pass sh -c "grep -qx '## v0.2.0 - [0-9-]*' .jig/decisions.md && echo \"\$0\" | grep -q 'release v0.2.0 is frozen on main'" "$out"
+# A table in an ordinary page is no register: changing it doesn't make a commit a conversion.
+msg="branch log: with a stale trunk, rewording a table row beside an edit to trunk's later release doesn't unfreeze it"
+sed -i.bak 's/^- PORTS: Open on request\.$/- PORTS: Open./' .jig/decisions.md && sed -i.bak 's/^| REQ-1 | boot in 2s |$/- REQ-1: boot in 2s/' docs/reqs.md && rm .jig/decisions.md.bak docs/reqs.md.bak && git add -A
+out=$(git commit -qm "PORTS: open" 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.2.0 is frozen on main'" "$out"
+# The stale merge base can predate the log: only the releases its CHANGELOG.md held are ones a
+# conversion on this branch wrote. What trunk released after converting stays frozen.
+SV="$T/sv"; pcnew "$SV" && git add -A && git commit -qm init && $J init >/dev/null
+sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
+printf 'mkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/release.sh && printf 'dist/\n' > .gitignore
+board "b['release']['artifacts'] = ['dist/*.zip']" && git add -A && git commit -qm board
+$J open feat >/dev/null && git add -A && git commit -qm "open feat"; cp .jig/decisions.md "$T/sv-log"
+nohook() { git -c core.hooksPath=/dev/null commit -qm "$1"; }
+git rm -q .jig/decisions.md && printf '# Changelog\n\n## v0.0.1 - 2026-11-01\n\n### Added\n- IDS: Number them.\n' > CHANGELOG.md && git add -A && nohook "pre-log"; was=$(git rev-parse HEAD)
+git rm -q CHANGELOG.md && cp "$T/sv-log" .jig/decisions.md && ulog '## v0.0.1 - 2026-11-01
+
+### Added
+- IDS: Number them.' && git add -A && nohook "TOOL: merge the log"
+ulog '### D-002 ports stay shut
+Accepted (owner, 2026-11-05).
+Touches: docs/shared.md' && ulog '### Added
+- PORTS: Closed.' && git add -A && git commit -qm "D-002: ports" && $J release --minor >/dev/null 2>&1
+cd .git/jig/worktrees/feat && git merge -q --ff-only main && git update-ref refs/heads/main "$was"
+msg="branch log: with a stale trunk from before the log, the set-up holds v0.1.0 beyond it"
+expect_pass sh -c "grep -qx '## v0.1.0 - [0-9-]*' .jig/decisions.md && test \$(git merge-base main HEAD) = $was"
+msg="branch log: with a stale trunk from before the log, a status in trunk's later release is frozen"
+sed -i.bak 's/^Accepted (owner, 2026-11-05)\.$/Accepted (owner, 2026-11-06)./' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
+out=$(git commit -qm "D-002: restated" 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is frozen on main'" "$out"
+msg="branch log: with a stale trunk from before the log, dropping trunk's later release is refused"
+python3 -c "import re; f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(re.sub(r'(?s)## v0\.1\.0 .*?(?=## v0\.0\.1)', '', s))" && git add -A
+out=$(git commit -qm "drop v0.1.0" 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is gone'" "$out"
+msg="branch log: with a stale trunk from before the log, deleting the log is refused, alone or beside an old CHANGELOG.md or a table"
+r1=$(git rm -q .jig/decisions.md; git commit -qm gone 2>&1); undo
+r2=$(git rm -q .jig/decisions.md; printf '# Changelog\n\n## v0.0.1 - 2026-11-01\n\n### Added\n- IDS: Number them.\n' > CHANGELOG.md; git add -A; git commit -qm gone 2>&1); undo
+r3=$(git rm -q .jig/decisions.md; printf '# Notes\n\n| REQ-1 | x |\n' > notes.md; git add -A; git commit -qm gone 2>&1); undo
+expect_pass sh -c "for r in \"\$0\" \"\$1\" \"\$2\"; do echo \"\$r\" | grep -q 'it is never deleted' || exit 1; done" "$r1" "$r2" "$r3"
+msg="branch log: with a stale trunk, a conversion a remote's trunk already holds is trunk's: its releases are frozen"
+git update-ref refs/remotes/origin/main HEAD && sed -i.bak 's/^- IDS: Number them\.$/- IDS: Number all./' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
+out=$(git commit -qm "IDS: all" 2>&1); undo; git update-ref -d refs/remotes/origin/main
+expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.0.1 is frozen on main'" "$out"
+# The base's CHANGELOG.md had a v0.1.0; trunk dropped it, started a fresh log and released its
+# own v0.1.0. Only what the commit adding the log wrote is a conversion's, so trunk's is frozen.
+SW="$T/sw"; pcnew "$SW" && git add -A && git commit -qm init && $J init >/dev/null
+sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
+printf 'mkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/release.sh && printf 'dist/\n' > .gitignore
+board "b['release']['artifacts'] = ['dist/*.zip']" && git add -A && git commit -qm board
+$J open feat >/dev/null && git add -A && git commit -qm "open feat"; cp .jig/decisions.md "$T/sw-log"
+git rm -q .jig/decisions.md && printf '# Changelog\n\n## v0.1.0 - 2026-11-01\n\n### Added\n- IDS: Number them.\n' > CHANGELOG.md && git add -A && nohook "pre-log"; was=$(git rev-parse HEAD)
+git rm -q CHANGELOG.md && cp "$T/sw-log" .jig/decisions.md && git add -A && nohook "fresh log"
+ulog '### Added
+- TRUNK: Its own v0.1.0.' && git add -A && git commit -qm "TRUNK: own" && $J release --minor >/dev/null 2>&1
+cd .git/jig/worktrees/feat && git merge -q --ff-only main && git update-ref refs/heads/main "$was"
+msg="branch log: a release trunk made after dropping the base's CHANGELOG.md, under a version it held, is frozen"
+sed -i.bak 's/^- TRUNK: Its own v0\.1\.0\.$/- TRUNK: Rewritten./' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
+out=$(git commit -qm "TRUNK: rewritten" 2>&1); undo
+expect_pass sh -c "grep -q '^- TRUNK: Its own v0.1.0.' .jig/decisions.md && echo \"\$0\" | grep -q 'release v0.1.0 is frozen on main'" "$out"
 cd "$SR"
 }
 
@@ -4548,7 +4685,7 @@ touch_d1 docs/a.md && git add -A; out=$($J check --staged 2>&1); rc=$?; git rese
 expect_pass sh -c "test $rc = 0 && git show HEAD:.jig/decisions.md | grep -q '^## v0.1.0 - '" "$out"
 msg="touches release: the same backfill with the entry's body edited too is refused as frozen"
 touch_d1 docs/a.md 'log everything.' && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
-expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'release v0.1.0 is frozen'" "$out"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'release v0.1.0 is frozen on main'" "$out"
 msg="touches release: a backfill naming no docs page is refused by M2"
 touch_d1 AGENTS.md && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'D-001 touches AGENTS.md' && ! echo \"\$0\" | grep -q frozen" "$out"
@@ -5046,7 +5183,110 @@ import json; b = json.load(open('.jig/config.json'))
 assert b['findings'] == {'shape:docs/g/p/p.md': 'approved', 'contract:docs/g/q.md': 'exception: table lead'}, b['findings']"
 }
 
-UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches findings"
+# ---------------------------------------------------------------- what --merge-log writes
+# A register with a heading above its table and notes below, superseded rows whose who and date
+# only history holds, and bare change lines: the run's output commits as written.
+mlreg() {  # mlreg <D-002's status cell> <its date>: the register, D-002 as given
+  printf '# Cross-product decisions\n\nWhat binds every product.\n\n| Id | Decision | Status | Date |\n|---|---|---|---|\n| D-001 | a | accepted (Ann) | 2026-01-01 |\n| D-002 | b | %s | %s |\n| D-003 | c | accepted (Cy) | 2026-02-01 |\n\nA note naming no row.\n\n## Glossary mapping\n\n| Term | Meaning |\n|---|---|\n| foo | bar |\n' "$1" "$2" > DECISIONS.md; }
+mlchangelog() {
+  printf '# Release notes\n\nFirst paragraph.\n\nEvery change to an entry file adds a line here; `jig release` turns Unreleased into the next version.\n\nSecond paragraph.\n\n## Unreleased\n- D-003 later\n\n## v1.0.0 — 2026-01-01\n- D-001, D-002 the first rules\n\n## v0.9.0 — 2025-12-01\n- an older line\n' > CHANGELOG.md; }
+nocl() { python3 -c "
+import sys, importlib.util as u
+s = u.spec_from_file_location('j', '.jig/jig.py'); m = u.module_from_spec(s); s.loader.exec_module(m)
+bad = [e['id'] for e in m.log_entries(open('.jig/decisions.md').read(), 'D-') if any(l.startswith('- ') for l in e['block'].splitlines())]
+assert not bad, bad"; }
+sec_merge_log() {
+ML="$T/ml-plain"; pcnew "$ML" && mlchangelog && mlreg 'accepted (Bo)' 2026-01-01 && git add -A && git commit -qm init
+mlreg 'superseded by D-003' 2026-02-01 && git add -A && git commit -qm "D-003 supersedes D-002"
+$J init >/dev/null 2>&1 && git add -A && git commit -qm board
+out=$($UP --apply --merge-log 2>&1)
+msg="merge-log: the kept register has its heading, preamble and note, and no line of the decision table"
+expect_pass sh -c "grep -qx '# Cross-product decisions' DECISIONS.md && grep -qx 'What binds every product.' DECISIONS.md && grep -qx 'A note naming no row.' DECISIONS.md && ! grep -qE '^\| (D-0|Id )|^\|---\|---\|---\|---\|' DECISIONS.md"
+msg="merge-log: the kept register's lines are the old ones less the decision table, in order, a note's own table kept whole"
+expect_pass sh -c "test \"\$(git show HEAD:DECISIONS.md | grep -v '^\$' | grep -v '^| D-0' | grep -vxF '| Id | Decision | Status | Date |' | grep -vxF '|---|---|---|---|')\" = \"\$(grep -v '^\$' DECISIONS.md)\" && grep -qxF '|---|---|' DECISIONS.md"
+msg="merge-log: the changelog preamble keeps both paragraphs and drops the old seed line"
+expect_pass sh -c "test \"\$(cat CHANGELOG.md)\" = \"\$(printf '# Release notes\n\nFirst paragraph.\n\nSecond paragraph.')\""
+msg="merge-log: a superseded row takes its who and date from the register's history"
+expect_pass sh -c "grep -qx 'Accepted (Bo, 2026-01-01).' .jig/decisions.md && ! grep -q 'not recorded' .jig/decisions.md && ! echo \"\$0\" | grep -q 'D-002: superseded'" "$out"
+msg="merge-log: no entry's block holds a change line"
+expect_pass nocl
+msg="merge-log: bare change lines get ### Changed above them, in Unreleased and in a release"
+expect_pass sh -c "sed -n '/^## Unreleased/,/^## v1/p' .jig/decisions.md | grep -A2 -x '### Changed' | grep -qx -- '- D-003 later' && sed -n '/^## v1.0.0/,\$p' .jig/decisions.md | grep -A2 -x '### Changed' | grep -qx -- '- D-001, D-002 the first rules'"
+msg="merge-log: each release keeps its own change lines"
+expect_pass sh -c "sed -n '/^## v1.0.0/,/^## v0.9.0/p' .jig/decisions.md | grep -qx -- '- D-001, D-002 the first rules' && ! sed -n '/^## v1.0.0/,/^## v0.9.0/p' .jig/decisions.md | grep -q 'older line' && sed -n '/^## v0.9.0/,\$p' .jig/decisions.md | grep -qx -- '- an older line'"
+msg="merge-log: the run's output commits unedited"
+expect_pass git commit -qm "TOOL: merge the log"
+$J open rm >/dev/null 2>&1 && git add -A && git commit -qm "open rm" && cd .git/jig/worktrees/rm
+msg="merge-log: a later job removes the superseded D-002, last in its release, by its heading and status line"
+python3 -c "f='.jig/decisions.md'; s=open(f).read(); b='### D-002 b\nAccepted (Bo, 2026-01-01).\n\n'; assert b in s; open(f,'w').write(s.replace(b, ''))" && git add -A
+expect_pass git commit -qm "D-002: removed, D-003 supersedes it"
+git reset -q --hard HEAD~1
+msg="merge-log: removing the release's change lines with it is refused as frozen"
+python3 -c "f='.jig/decisions.md'; s=open(f).read(); b='### D-002 b\nAccepted (Bo, 2026-01-01).\n\n### Changed\n\n- D-001, D-002 the first rules\n'; assert b in s; open(f,'w').write(s.replace(b, ''))" && git add -A
+out=$(git commit -qm "D-002: removed" 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'release v1.0.0 is frozen'" "$out"
+cd "$ML"
+
+msg="merge-log: a row superseded in its only commit converts as not recorded, and the run names it"
+ML1="$T/ml-one"; pcnew "$ML1" && mlchangelog && mlreg 'superseded by D-003' 2026-02-01 && git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
+out=$($UP --apply --merge-log 2>&1)
+expect_pass sh -c "grep -qx 'Accepted (not recorded, 2026-02-01).' .jig/decisions.md && echo \"\$0\" | grep -q '^  D-002: superseded, .* who accepted it or when: check'" "$out"
+msg="merge-log: no converted entry reads not recorded without the run naming it"
+expect_pass sh -c "for i in \$(grep -B1 'not recorded' .jig/decisions.md | sed -n 's/^### \(D-[0-9]*\) .*/\1/p'); do echo \"\$0\" | grep -q \"^  \$i: superseded\" || exit 1; done" "$out"
+
+msg="merge-log: a row proposed, then superseded, is never dated as accepted from its proposal: the run names it"
+ML2="$T/ml-prop"; pcnew "$ML2" && mlchangelog && mlreg 'proposed (Bo)' 2026-01-02 && git add -A && git commit -qm init
+mlreg 'superseded by D-003' 2026-02-01 && git add -A && git commit -qm sup && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
+out=$($UP --apply --merge-log 2>&1)
+expect_pass sh -c "grep -qx 'Accepted (not recorded, 2026-02-01).' .jig/decisions.md && ! grep -q 'Bo' .jig/decisions.md && echo \"\$0\" | grep -q '^  D-002: superseded, .* or when: check'" "$out"
+
+msg="merge-log: a second decision table with its own header, and one headed No., leave no header or separator behind"
+ML3="$T/ml-tables"; pcnew "$ML3" && mlchangelog
+printf '# Register\n\nKept.\n\n## Current\n\n| Id | Decision | Status | Date |\n|---|---|---|---|\n| D-001 | a | accepted (Ann) | 2026-01-01 |\n\n## Retired\n\n| Id | Decision | Status | Date | Why |\n|---|---|---|---|---|\n| D-002 | b | rejected | 2026-01-01 | too slow |\n| D-005 | e | accepted (Ed) | 2026-01-01 | cheap |\n\n## Moved\n\n| Id | Status | Date | Decision | Why |\n|---|---|---|---|---|\n| D-004 | accepted (Bo) | 2026-02-01 | b wins | speed |\n\n## Later\n\n| Id | Status | Date | Decision |\n|---|---|---|---|\n| TBD | placeholder | | |\n| D-006 | accepted (Fy) | 2026-03-01 | f wins |\n' > DECISIONS.md
+mkdir -p bare && printf '# Bare register\n\nKept as well.\n\n| D-007 | g | accepted (Gu) | 2026-03-02 |\n|---|---|---|---|\n| D-008 | h | accepted (Gu) | 2026-03-03 |\n' > bare/DECISIONS.md
+mkdir -p sub && printf '# Sub register\n\nKept too.\n\n| No. | Decision | Status | Date |\n|---|---|---|---|\n| D-003 | c | accepted (Cy) | 2026-02-01 |\n' > sub/DECISIONS.md
+git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
+$UP --apply --merge-log >/dev/null 2>&1
+expect_pass sh -c "grep -qx 'Kept.' DECISIONS.md && grep -qx '## Retired' DECISIONS.md && grep -qx 'Kept too.' sub/DECISIONS.md && ! grep -q '^|' sub/DECISIONS.md && ! grep -qE '^\| (D-0|Id \| Decision)|^\|---\|---\|---\|---\|---\|' DECISIONS.md && test \$(grep -cxF '|---|---|---|---|' DECISIONS.md) = 1"
+msg="merge-log: each row is read against its own table's header: columns in another order, and an extra column's name"
+expect_pass sh -c "grep -qx '### D-004 b wins' .jig/decisions.md && grep -qx 'Accepted (Bo, 2026-02-01).' .jig/decisions.md && grep -qx 'Why: speed' .jig/decisions.md && grep -qx 'Why: cheap' .jig/decisions.md && ! grep -q '^Note: ' .jig/decisions.md"
+msg="merge-log: a table whose first row is no decision reads its rows by its own header, and keeps that row with its header"
+expect_pass sh -c "grep -qx '### D-006 f wins' .jig/decisions.md && grep -qx 'Accepted (Fy, 2026-03-01).' .jig/decisions.md && grep -qxF '| TBD | placeholder | | |' DECISIONS.md && grep -qxF '| Id | Status | Date | Decision |' DECISIONS.md"
+msg="merge-log: a register with no header row keeps every row, the first included, and leaves no separator"
+expect_pass sh -c "grep -qx '### D-007 g' .jig/decisions.md && grep -qx '### D-008 h' .jig/decisions.md && grep -qx 'Kept as well.' bare/DECISIONS.md && ! grep -q '^|' bare/DECISIONS.md"
+msg="merge-log: a row that comes out as no entry, whatever the cause, refuses the run, naming it, and writes nothing"
+git reset -q --hard && git clean -fdq && out=$(python3 -c "
+import sys, pathlib, importlib.util as u
+s = u.spec_from_file_location('j', '$P/jig/jig.py'); m = u.module_from_spec(s); s.loader.exec_module(m)
+orig = m.parse_register
+m.parse_register = lambda t, p: (lambda r: ([e for e in r[0] if e['id'] != 'D-001'], r[1]))(orig(t, p))
+sys.exit(m.cmd_merge_log(pathlib.Path('.').resolve(), True))" 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'DECISIONS.md: row D-001 came out as no entry' && test ! -e .jig/decisions.md && test -z \"\$(git status --porcelain)\"" "$out"
+
+# A metarepo job: the run's output commits unedited, with no M3 and no M2 asking for Touches.
+MM="$T/ml-meta"; mkdir -p "$MM/.t" && git -C "$JR" archive v0.9.0 plugin/templates | tar -x -C "$MM/.t"
+cd "$MM" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r .t/plugin/templates/jig .jig && cp .t/plugin/templates/AGENTS.md .t/plugin/templates/CLAUDE.md . && rm -rf .t
+git add -A && git commit -qm init && $J init --meta --name mm >/dev/null && git add -A && git commit -qm meta-init
+mlchangelog && mlreg 'accepted (Bo)' 2026-01-01 && git add -A && git -c core.hooksPath=/dev/null commit -qm rows
+mlreg 'superseded by D-003' 2026-02-01 && git add -A && git -c core.hooksPath=/dev/null commit -qm "D-003 supersedes D-002"
+cp "$P/jig/jig.py" .jig/jig.py && git add -A && git commit -qm "TOOL: this jig"
+$UP --apply >/dev/null 2>&1; git add -A && git commit -qm "TOOL: update" >/dev/null 2>&1
+$J open mlj --shares CHANGELOG.md DECISIONS.md >/dev/null 2>&1 && git add -A && git commit -qm "TOOL: open mlj"
+cd .git/jig/worktrees/mlj && $UP --apply --merge-log >/dev/null 2>&1
+msg="merge-log: in a metarepo job, the run's output commits unedited: no M3, no entry asked for its pages"
+out=$(git commit -qm "TOOL: merge the log" 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && ! echo \"\$0\" | grep -q 'M3 ' && ! echo \"\$0\" | grep -q 'names no page it touches'" "$out"
+msg="merge-log: across the merge, a pararepo's sync hears of no decision as changed, the history-dated D-002 included"
+expect_pass python3 -c "
+import importlib.util as u, pathlib
+s = u.spec_from_file_location('j', '.jig/jig.py'); m = u.module_from_spec(s); s.loader.exec_module(m)
+got = m.terms_changed(pathlib.Path('.').resolve(), 'HEAD~1', 'HEAD')
+assert m.merged_registers(pathlib.Path('.').resolve(), 'HEAD~1', 'HEAD') and not got, got"
+cd "$MM"
+}
+
+UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches merge_log findings"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file
