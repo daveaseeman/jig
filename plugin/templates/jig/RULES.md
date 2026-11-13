@@ -366,7 +366,9 @@ do while one stands.
 `shape` finding, or a `page` outside the tree that isn't a fold. It makes the `git mv`, renames
 the `docmap` key and `boards` entry naming the old path, drops the entry, and moves the page's
 other entries (an exception on its `contract` finding) to its new path. It drops any entry
-whose finding no longer fires. What it can't do — a reference in another file, a
+whose finding no longer fires, on today's tree and, while `.jig/redocument.md` is on trunk, on
+the tree the remap leaves; an entry for a page that moved by other means (a job, the remap)
+follows it to the form it has now. What it can't do — a reference in another file, a
 `contract_paths` glob, a `BUFFER.md` row per cached pointer, an edit — it prints for the
 session to make in the same commit, and an approved finding it can't carry out stays recorded.
 The usual refusals apply (open jobs, tracked changes), and it commits nothing. In a metarepo a

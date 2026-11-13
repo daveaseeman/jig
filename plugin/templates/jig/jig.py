@@ -2483,24 +2483,45 @@ def contradiction_fix(c: dict, trunk: str) -> str:
             f"\"{c['id']}\": \"exception: <the owner's reason>\"")
 
 
-def approved_moves(root: Path, files: list[str], board: dict, read) -> tuple[list[dict], list[str]]:
-    """The approved moves jig can carry out now, and the entries whose finding no longer
-    fires. A kind this jig doesn't compute is never dropped: another jig may."""
+def approved_moves(root: Path, files: list[str], board: dict,
+                   read) -> tuple[list[dict], list[str], dict[str, str]]:
+    """The approved moves jig can carry out now; the entries whose finding no longer fires,
+    to drop; and the entries of a page that moved by other means, to follow it to the form it
+    is in now. A kind this jig doesn't compute is never dropped: another jig may."""
     raw = board.get("findings") if isinstance(board.get("findings"), dict) else {}
     if not raw:
-        return [], []
+        return [], [], {}
     rec, found = findings_record(board), file_findings(root, files, board, read)
     moves = [e for i, e in found.items() if rec.get(i) == "approved" and e["kind"] in MOVE_KINDS
              and e.get("to") and not e.get("fold") and not (root / e["to"]).exists()]
-    gone = [i for i in raw if i.split(":", 1)[0] in FINDING_KINDS and i not in found]
-    return moves, gone
+    # A remap on trunk is judged on the tree it leaves: an exception the hook asked for there
+    # still answers a finding, though today's tree doesn't fire it.
+    remap = (root / REMAP).read_text(errors="replace") if (root / REMAP).is_file() else ""
+    if remap:
+        end, read_end = remap_end(root, files, remap_rows(remap))
+    ends = file_findings(root, end, board, read_end) if remap else {}
+    fires = lambda i: i in found or i in ends
+    have, gone, rekey = set(files), [], {}
+    for i in raw:
+        kind, _, path = i.partition(":")
+        if kind not in FINDING_KINDS or fires(i):
+            continue
+        # A page a job or the remap moved keeps its answers, under the form it has now.
+        moved = f"{kind}:{page_in(path, have)}"
+        if path not in have and moved != i and moved not in raw and fires(moved):
+            rekey[i] = moved
+        else:
+            gone.append(i)
+    return moves, gone, rekey
 
 
-def carry_out(root: Path, board: dict, moves: list[dict], gone: list[str]) -> None:
+def carry_out(root: Path, board: dict, moves: list[dict], gone: list[str],
+              rekey: dict[str, str]) -> None:
     """Make each approved move with git mv, rename the board keys naming it, drop its entry and
     every gone one from BOARD, and move the other entries on its old path to its new one, so an
     exception recorded for the page goes with it."""
     rec = board.get("findings") if isinstance(board.get("findings"), dict) else {}
+    rec = {rekey.get(k, k): v for k, v in rec.items()}
     for i in [finding_id(e) for e in moves] + gone:
         rec.pop(i, None)
     for e in moves:
@@ -7589,8 +7610,10 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
     # A page at home but off the contract is fixed where it sits; redocument only converts.
     flats = {f for f in after if flat_page(f, set(after), docmap, read)}
     homeless_at = {h["path"] for h in homeless}
+    deep_at = {h["path"] for h in homeless if h["kind"] == "deep"}
     for f in after:
-        if ((folder_page(f) or f in flats) and f not in homeless_at and f not in reviewed
+        # A deep page is still a page: survey reads it against the contract, so update asks too.
+        if ((folder_page(f) or f in flats) and (f not in homeless_at or f in deep_at) and f not in reviewed
                 and not matches(f, board.get("not_docs") or [])):
             probs = [p for p in page_problems(read(f)) if not p.startswith("old contract")]
             if probs:
@@ -7854,7 +7877,7 @@ def cmd_update(root: Path, args) -> int:
     def read_after(f: str) -> str:
         p = root / back.get(f, f)
         return p.read_text(errors="replace") if p.is_file() else ""
-    carried, gone_ids = approved_moves(root, plan["after"], new_board, read_after)
+    carried, gone_ids, rekeyed = approved_moves(root, plan["after"], new_board, read_after)
     # A metarepo's pages change only in a job (M4), and trunk is where the record is: the move
     # is the job's, and its entry drops on trunk once the move has merged and the finding is gone.
     jobs_moves = carried if (root / META).exists() else []
@@ -7867,12 +7890,14 @@ def cmd_update(root: Path, args) -> int:
             if not l.startswith(("git mv ", "fold ", f"{CONFIG} docmap:"))]
 
     def carried_report(done: bool) -> None:
-        if carried or gone_ids:
-            print(f"\nApproved in {CONFIG} findings, {'carried out' if done else 'carried out by --apply'}:")
+        if carried or gone_ids or rekeyed:
+            print(f"\nIn {CONFIG} findings, {'done' if done else 'done by --apply'}:")
             for e in carried:
-                print(f"  git mv {e['path']} {e['to']}  [{finding_id(e)}]")
+                print(f"  git mv {e['path']} {e['to']}  [{finding_id(e)}: approved]")
             for i in gone_ids:
                 print(f"  {i}: the finding no longer fires; its entry is dropped")
+            for o, n in rekeyed.items():
+                print(f"  {o} → {n}: the page moved; its entry follows it")
         if jobs_moves:
             print(f"\nApproved in {CONFIG} findings, a job's in a metarepo (M4): open one for these "
                   "pages and move them there; each entry drops on the next --apply once its move "
@@ -7901,7 +7926,7 @@ def cmd_update(root: Path, args) -> int:
         if board_at == CONFIG and (root / PARA).exists():
             for line in removal_blocks(root, trunk, always=False):
                 print(line)
-        if not (carried or gone_ids or jobs_moves):
+        if not (carried or gone_ids or rekeyed or jobs_moves):
             return 0
         # A recorded yes is carried out whether or not the layout is current.
         if args.apply and (refused or dirty):
@@ -7914,10 +7939,10 @@ def cmd_update(root: Path, args) -> int:
             print("\nDry run: nothing changed. Run again with --apply to carry these out; it stages "
                   "and commits nothing.")
             return 0
-        if not (carried or gone_ids):
+        if not (carried or gone_ids or rekeyed):
             carried_report(False)
             return 0
-        carry_out(root, data, carried, gone_ids)
+        carry_out(root, data, carried, gone_ids, rekeyed)
         (root / CONFIG).write_text(json.dumps(data, indent=2) + "\n")
         git("add", "--", CONFIG, check=True)
         carried_report(True)
@@ -8014,7 +8039,7 @@ def cmd_update(root: Path, args) -> int:
     for o, n in sorted(plan["moves"].items(), key=lambda m: m[0] == board_at):
         (root / n).parent.mkdir(parents=True, exist_ok=True)
         git("mv", o, n, check=True)
-    carry_out(root, new_board, carried, gone_ids)
+    carry_out(root, new_board, carried, gone_ids, rekeyed)
     (root / CONFIG).parent.mkdir(parents=True, exist_ok=True)
     (root / CONFIG).write_text(json.dumps(new_board, indent=2) + "\n")
     if not (root / JOBS).exists():

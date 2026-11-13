@@ -189,7 +189,8 @@ Otherwise:
 
    Then check the end state. `jig survey` names no page off the contract and no page outside
    the docs tree, and no finding not answered or deferred to redocument (run `jig update
-   --apply` on trunk first: it drops each `findings` entry whose finding the run answered); no `docmap` key names a file that doesn't exist; `git grep -n -F <old path>`
+   --apply` on trunk first, and commit it: it drops each `findings` entry whose finding the run
+   answered); no `docmap` key names a file that doesn't exist; `git grep -n -F <old path>`
    finds nothing for any old path. Anything left is fixed before the run is called done.
 
 ## Subnode: three phases per page

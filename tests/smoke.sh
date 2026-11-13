@@ -4986,6 +4986,20 @@ remap same && git add .jig/redocument.md && git -c core.hooksPath=/dev/null comm
 out=$($J survey 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q '^Remap rows that keep a page where survey moves it' && echo \"\$0\" | grep -q '^  docs/a/c/c.md: survey moves it to docs/a/c.md' && echo \"\$0\" | tail -1 | grep -q '1 remap row keeping a page survey moves'" "$out"
 
+msg="findings: an exception the remap check asked for outlives update --apply while the remap stands"
+printf '# Z\n\nz notes\n' > docs/a/c/z.md && git add -A && git commit -qm "z beside c"
+board "b['findings'] = {'shape:docs/a/c/c.md': 'exception: the generator reads folder paths'}" && git add -A && git commit -qm "findings: c"
+remap same '| 2 | `docs/a/c/z.md` | `docs/a/z.md` | move | |\n' && git add .jig/redocument.md && git commit -qm "remap: z out" >/dev/null 2>&1
+$UP --apply >/dev/null 2>&1
+expect_pass python3 -c "
+import json; b = json.load(open('.jig/config.json'))
+assert b['findings'] == {'shape:docs/a/c/c.md': 'exception: the generator reads folder paths'}, b.get('findings')"
+undo
+msg="findings: update lists a deep page's contract finding with its id, as survey counts it"
+mkdir -p docs/a/c/d && printf '# D\n\n## Part\n\nNo lead.\n' > docs/a/c/d/d.md && git add -A && git commit -qm "d below c" >/dev/null 2>&1
+out=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a/c/d/d.md: off the page contract.*\[contract:docs/a/c/d/d.md: not answered\]'" "$out"
+
 # A metarepo's pages move in a job (M4): trunk records the yes, and makes no move.
 FM="$T/findings-meta"; mkdir -p "$FM" && cd "$FM" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
@@ -4995,6 +5009,16 @@ msg="findings: in a metarepo, update --apply lists an approved move as a job's a
 board "b['findings'] = {'shape:docs/g/p/p.md': 'approved'}" && git add -A && git commit -qm "findings: p"
 out=$($UP --apply 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'a job.s in a metarepo (M4)' && echo \"\$0\" | grep -q '^  git mv docs/g/p/p.md docs/g/p.md' && test -f docs/g/p/p.md && ! git diff --cached --name-status | grep -q docs/g" "$out"
+nohook() { git -c core.hooksPath=/dev/null commit -qm "$1"; }
+git add -A && nohook update
+msg="findings: a page a job moved keeps its exception, under the form it has now"
+printf '# Q\n\n## Part\n\nQ, with no lead.\n' > docs/g/q/q.md
+board "b['findings']['contract:docs/g/q/q.md'] = 'exception: table lead'; b['findings']['shape:docs/g/q/q.md'] = 'approved'; b['docmap'] = {'docs/g/q/q.md': ['x/**']}"
+git add -A && nohook "findings: q" && git mv docs/g/q/q.md docs/g/q.md && nohook "the job's move, merged"
+$UP --apply >/dev/null 2>&1
+expect_pass python3 -c "
+import json; b = json.load(open('.jig/config.json'))
+assert b['findings'] == {'shape:docs/g/p/p.md': 'approved', 'contract:docs/g/q.md': 'exception: table lead'}, b['findings']"
 }
 
 UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches findings"
