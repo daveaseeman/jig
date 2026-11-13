@@ -352,7 +352,9 @@ entries trunk's roadmap holds.
 
 Each file finding `jig survey` prints, and `jig update` lists under Repo files to review, has
 an id, `<kind>:<path>`, the kind as survey's `--json` gives it (`shape`, `page`, `deep`,
-`contract`, …): `shape:docs/a/b/b.md`. A stray, a metarepo page in no genre, an old board file
+`contract`, and a page's level when it isn't a subsystem: `section`, `shared`, `unmapped`):
+`shape:docs/a/b/b.md`. Two approved moves onto one path go one at a time: `--apply` makes the
+first and keeps the other recorded, and says so. A stray, a metarepo page in no genre, an old board file
 and a page whose only problem is the old contract have no id: `/jig:redocument`'s remap answers
 them. The owner's answer to each is recorded on trunk in
 `config.json`'s `findings`, one entry per id, no globs, trunk-only like the rest of the board

@@ -3648,7 +3648,7 @@ expect_pass sh -c "for w in 'git mv docs/crates/s/store.md docs/store.md' 'git m
 HL="$T/homes-nolead"; pcnew "$HL" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 mkdir -p docs/s && printf '# S\n\n## Part\n\nText.\n' > docs/s/s.md && git add -A && git commit -qm page
 msg="house: a page at home with no lead paragraph sends a jig repo to /jig:update, not adopt or redocument"
-expect_pass sh -c "$J survey | tail -1 | grep -q 'run /jig:update to review each in place'"
+expect_pass sh -c "$J survey | tail -1 | grep -q 'run /jig:update to review each in place' && test \$($J survey | tail -1 | grep -o '/jig:update' | wc -l) = 1"
 msg="house: on a current repo, update is up to date, exits 0, and still lists the page with its problem"
 out=$($UP 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | head -1 | grep -qx 'up to date' && echo \"\$0\" | sed -n '/^Repo files to review/,/^\$/p' | grep -q '^  docs/s/s.md: off the page contract .*no lead paragraph'" "$out"
@@ -5261,6 +5261,8 @@ out=$($J survey 2>&1)
 expect_pass sh -c "echo \"\$0\" | sed -n '/findings entries that count as no answer/,/^\$/p' | grep -q '^  stray:docs/x.md: no finding has the kind stray' && echo \"\$0\" | grep -q '^  shapes:docs/a/q.md: no finding has the kind shapes'" "$out"
 fpages "$T/findings-taken"
 board "b['findings'] = {'shape:docs/a/b/b.md': 'approved', 'contract:docs/a/b/b.md': 'exception: NEW', 'contract:docs/a/b.md': 'exception: OLD'}" && git add -A && git commit -qm "two exceptions for b"
+msg="findings: the dry run already says which entry a move will leave at its old id"
+expect_pass sh -c "$UP 2>&1 | grep -q 'contract:docs/a/b/b.md: left at its old id, since contract:docs/a/b.md is already recorded'"
 msg="findings: a carried-out move never renames an entry onto an id already recorded, and says so"
 out=$($UP --apply 2>&1)
 expect_pass sh -c "python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['findings'] == {'contract:docs/a/b/b.md': 'exception: NEW', 'contract:docs/a/b.md': 'exception: OLD'}, b['findings']\" && echo \"\$0\" | grep -q 'contract:docs/a/b/b.md: left at its old id, since contract:docs/a/b.md is already recorded'" "$out"
@@ -5289,6 +5291,31 @@ msg="findings: by the book, redocument ends with the exception at e, survey show
 $UP --apply >/dev/null 2>&1; git commit -qm update >/dev/null 2>&1
 out=$($J survey 2>&1)
 expect_pass sh -c "python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['findings'] == {'contract:docs/a/e.md': 'exception: table lead'}, b['findings']\" && echo \"\$0\" | grep -q '\[contract:docs/a/e.md: exception: table lead\]' && ! echo \"\$0\" | grep -q 'answer no finding'" "$out"
+
+pcnew "$T/findings-onto-one" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p notes misc docs && printf '# B\n\nThe b system.\n' > notes/b.md && printf '# B2\n\nAnother b.\n' > misc/b.md && printf '# A\n\nThe a system.\n' > docs/a.md
+board "b['docmap'] = {'docs/a.md': ['src/a/**'], 'notes/b.md': ['src/b/**'], 'misc/b.md': ['src/c/**']}; b['findings'] = {'page:notes/b.md': 'approved', 'page:misc/b.md': 'approved'}"
+git add -A && git commit -qm "two pages approved onto docs/b.md"
+msg="findings: two approved moves onto one path: the dry run holds one back, and --apply moves one and keeps the other recorded"
+dry=$($UP 2>&1); out=$($UP --apply 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'held back' && test \$(git diff --cached --name-status | grep -c '^R') = 1 && python3 -c \"
+import json; b = json.load(open('.jig/config.json')); assert len(b['findings']) == 1 and list(b['findings'].values()) == ['approved'], b['findings']\"" "$dry"
+undo
+pcnew "$T/findings-flagged" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p docs/a/b && printf '# A\n\nThe a system.\n' > docs/a/a.md && printf '# B\n\nThe b part.\n' > docs/a/b/b.md
+board "b['docmap'] = {'docs/a/a.md': ['src/a/**'], 'docs/a/b/b.md': ['src/b/**']}; b['findings'] = {'shape:docs/a/b/b.md ': 'approved'}"
+git add -A && git commit -qm "an approval with a trailing space"
+msg="findings: --apply never drops an entry survey lists as no answer"
+$UP --apply >/dev/null 2>&1
+expect_pass sh -c "test -f docs/a/b/b.md && python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['findings'] == {'shape:docs/a/b/b.md ': 'approved'}, b['findings']\" && $J survey 2>&1 | grep -q '^  shape:docs/a/b/b.md : the id has stray space'"
+undo
+pcnew "$T/findings-level" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p src/a docs/a/s && echo x > src/a/x.py && printf '# A\n\nThe a system.\n\n[s](s/s.md)\n' > docs/a/a.md && printf '# S\n\nThe s part.\n\n[n](n.txt)\n' > docs/a/s/s.md && printf 'n\n' > docs/a/s/n.txt
+board "b['docmap'] = {'docs/a/a.md': ['src/a/**'], 'docs/a/s/s.md': ['nothing/**']}"
+git add -A && git commit -qm "s covers no file"
+msg="findings: a page covering no file has a section id in survey and update, and survey's last line counts it"
+sv=$($J survey 2>&1); up=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a/s/s.md: section: .*\[section:docs/a/s/s.md: not answered\]' && echo \"\$0\" | tail -1 | grep -q '1 finding not answered: run /jig:update' && echo \"\$1\" | grep -q '\[section:docs/a/s/s.md: not answered\]'" "$sv" "$up"
 
 # A metarepo's pages move in a job (M4): trunk records the yes, and makes no move.
 FM="$T/findings-meta"; mkdir -p "$FM" && cd "$FM" && git init -q -b main && git config user.email t@t && git config user.name t

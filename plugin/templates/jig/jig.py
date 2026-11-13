@@ -2728,7 +2728,10 @@ def shape_fix(e: dict) -> str:
 REMAP = f"{DIR}/redocument.md"
 # The kinds survey and update both show with an id, so both count the same findings. A stray,
 # a genre and an old board file go to redocument's remap, not to an answer here.
-FINDING_KINDS = ("rules", "copy", "reserved", "page", "deep", "shape", "contract")
+# A page's level is a finding too when it isn't a subsystem: a section to fold, a page sharing
+# another's files, a page docmap doesn't map.
+LEVEL_KINDS = ("section", "shared", "unmapped")
+FINDING_KINDS = ("rules", "copy", "reserved", "page", "deep", "shape", "contract", *LEVEL_KINDS)
 # The findings jig carries out itself on a recorded yes: a rename, never an edit.
 MOVE_KINDS = ("shape", "page")
 
@@ -2794,6 +2797,13 @@ def state_tag(e: dict, rec: dict) -> str:
     return f"  [{finding_id(e)}: {outcome_label(rec.get(finding_id(e)))}]" if is_finding(e) else ""
 
 
+def level_findings(levels: list[dict], homes: set[str], seams: set[str]) -> list[dict]:
+    """The page levels that are findings, as entries of their level's kind: a page with no home
+    or a misfiled seam is answered under its own heading, once."""
+    return [{**e, "kind": e["level"]} for e in levels
+            if e["level"] in LEVEL_KINDS and e["path"] not in homes and e["path"] not in seams]
+
+
 def file_findings(root: Path, files: list[str], board: dict, read) -> dict[str, dict]:
     """Every file finding survey and update show with an id, by id: the homes, the shapes and
     the page contract, judged on FILES as READ gives them."""
@@ -2803,9 +2813,12 @@ def file_findings(root: Path, files: list[str], board: dict, read) -> dict[str, 
     homes = doc_homes(root, files, not_docs, read, deep, docmap)
     out = {finding_id(h): h for h in homes if is_finding(h)}
     # A page that is a section of its parent is one page twice, folded, not moved: as update reads it.
-    sections = frozenset(e["path"] for e in page_levels(root, files, board, read) if e["level"] == "section")
+    levels = page_levels(root, files, board, read)
+    sections = frozenset(e["path"] for e in levels if e["level"] == "section")
     out.update({finding_id(e): e for e in page_shapes(root, files, not_docs, docmap,
                                                       {h["path"] for h in homes}, read, sections)})
+    out.update({finding_id(e): e for e in level_findings(
+        levels, {h["path"] for h in homes}, {e["path"] for e in misfiled_seams(files, board)})})
     at, have = {h["path"]: h for h in homes}, set(files)
     for f in files:
         if (f.endswith(".md") and (folder_page(f) or flat_page(f, have, docmap, read))
@@ -2882,22 +2895,50 @@ def contradiction_fix(c: dict, trunk: str) -> str:
             f"\"{c['id']}\": \"exception: <the owner's reason>\"")
 
 
-def approved_moves(root: Path, files: list[str], board: dict, read) -> tuple[list[dict], list[str]]:
-    """The approved moves jig can carry out now, and the approvals and deferrals whose finding
-    no longer fires. A kind this jig doesn't compute is never dropped: another jig may."""
+def approved_moves(root: Path, files: list[str], board: dict,
+                   read) -> tuple[list[dict], list[str], list[str]]:
+    """The approved moves jig can carry out now; the approvals and deferrals whose finding no
+    longer fires; and the approved moves held back, each with why. A kind this jig doesn't
+    compute is never dropped: another jig may."""
     raw = board.get("findings") if isinstance(board.get("findings"), dict) else {}
     if not raw:
-        return [], []
+        return [], [], []
     rec, found = findings_record(board), file_findings(root, files, board, read)
-    moves = [e for i, e in found.items() if rec.get(i) == "approved" and e["kind"] in MOVE_KINDS
-             and e.get("to") and not e.get("fold") and not (root / e["to"]).exists()]
+    moves, held, dests = [], [], {}
+    for i, e in found.items():
+        if not (rec.get(i) == "approved" and e["kind"] in MOVE_KINDS and e.get("to")
+                and not e.get("fold") and not (root / e["to"]).exists()):
+            continue
+        # Two pages approved onto one path: the first goes, the next would find it taken.
+        if e["to"] in dests:
+            held.append(f"{i}: {e['to']} is also {dests[e['to']]}'s destination, which moves first; "
+                        "this one stays recorded: answer it again once that move is committed")
+            continue
+        dests[e["to"]] = i
+        moves.append(e)
     # jig changes an entry only where it acted itself: its own move (carry_out), or an approval
     # or deferral whose finding no longer fires, which is settled. An exception is the owner's
     # reason, which no tree can rebuild: it stays until the owner drops it or records it again
     # at the page's new path, and survey lists it while it answers nothing.
+    # An entry survey lists as no answer stays listed: dropping it would hide the typo.
     gone = [i for i, v in raw.items() if i.partition(":")[0] in FINDING_KINDS and i not in found
-            and not (isinstance(v, str) and v.strip().startswith("exception:"))]
-    return moves, gone
+            and not entry_problem(i, v) and not v.strip().startswith("exception:")]
+    return moves, gone, held
+
+
+def move_entries(rec: dict, moves: list[dict]) -> list[str]:
+    """Move each moved page's other entries in REC to its new path, never onto an id already
+    recorded: one answer never overwrites another. Returns the entries left at their old id."""
+    kept = []
+    for e in moves:
+        moved = {k: f"{k.partition(':')[0]}:{e['to']}" for k in rec
+                 if k.partition(":")[2] == e["path"] and k != finding_id(e)}
+        for k, n in moved.items():
+            if n in rec:
+                kept.append(f"{k}: left at its old id, since {n} is already recorded; drop one on trunk")
+            else:
+                rec[n] = rec.pop(k)
+    return kept
 
 
 def carry_out(root: Path, board: dict, moves: list[dict], gone: list[str]) -> list[str]:
@@ -2906,7 +2947,6 @@ def carry_out(root: Path, board: dict, moves: list[dict], gone: list[str]) -> li
     exception recorded for the page goes with it. Returns the entries it left at their old id
     because the new one was taken: one answer never overwrites another."""
     rec = board.get("findings") if isinstance(board.get("findings"), dict) else {}
-    kept: list[str] = []
     for i in [finding_id(e) for e in moves] + gone:
         rec.pop(i, None)
     for e in moves:
@@ -2920,13 +2960,7 @@ def carry_out(root: Path, board: dict, moves: list[dict], gone: list[str]) -> li
             board["docmap"] = {(e["to"] if k == e["path"] else k): v for k, v in board["docmap"].items()}
         if isinstance(board.get("boards"), list):
             board["boards"] = [e["to"] if b == e["path"] else b for b in board["boards"]]
-        moved = {k: f"{k.partition(':')[0]}:{e['to']}" for k in rec if k.partition(":")[2] == e["path"]}
-        for k, n in moved.items():
-            if n in rec:
-                kept.append(f"{k}: left at its old id, since {n} is already recorded; drop one "
-                            "on trunk")
-            else:
-                rec[n] = rec.pop(k)
+    kept = move_entries(rec, moves)
     if rec:
         board["findings"] = rec
     else:
@@ -3267,8 +3301,10 @@ def cmd_survey(root: Path, args) -> int:
     report["homeless"] = [tagged(e, rec) for e in report["homeless"]]
     report["page_shapes"] = [tagged(e, rec) for e in report["page_shapes"]]
     report["page_contract"] = [tagged({**e, "kind": "contract"}, rec) for e in report["page_contract"]]
+    report["level_findings"] = [tagged(e, rec) for e in level_findings(
+        report["levels"], set(homes), {e["path"] for e in report["seams_misfiled"]})]
     finds = {e["id"]: e for e in report["homeless"] + report["page_shapes"] + report["page_contract"]
-             if "id" in e}
+             + report["level_findings"] if "id" in e}
     report["remap_contradictions"] = remap_contradictions(
         root, files, board, at_rev(Board.trunk_name(root), REMAP))
     raw_rec = board.get("findings") if isinstance(board.get("findings"), dict) else {}
@@ -3360,13 +3396,12 @@ def cmd_survey(root: Path, args) -> int:
         for e in below:
             print(f"  {e['path']}: {deep_fix(e, deep, levels.get(e['path']))}{state_tag(e, rec)}")
     # One answer per page: a deep page and a misfiled seam are answered under their own headings.
-    answered = {e["path"] for e in below} | {e["path"] for e in report["seams_misfiled"]}
-    nofiles = [e for e in report["levels"] if e["level"] != "subsystem" and e["path"] not in answered]
+    nofiles = report["level_findings"]
     if nofiles:
         print(f"\nPages below a system that own no files, or that docmap doesn't map ({DIR}/RULES.md, "
               "Documentation:\na subsystem has files of its own):")
         for e in nofiles:
-            print(f"  {e['path']}: {level_line(e)}")
+            print(f"  {e['path']}: {level_line(e)}{state_tag(e, rec)}")
     if report["structure_maps"]:
         print("\nFiles that declare the docs structure: one that declares the docmap's files is a second "
               "declaration,\nand the two must change together: keep one, or derive one from the other:")
@@ -3551,6 +3586,11 @@ def cmd_survey(root: Path, args) -> int:
           else "On jig already, no page to convert: give each file above its home" + project + "."
           if report["homeless"] and on_jig else f"On jig already{project or ': nothing to do'}."
           if on_jig else "Run /jig:adopt to turn this into a migration plan.")
+    # Pages off the contract in place are among the findings not answered: one route says both.
+    if standing and verdict.startswith("Pages off the page contract where they sit") and unanswered:
+        verdict = "On jig already: nothing to do."
+        standing = standing.replace("run /jig:update to record an answer to each",
+                                    "run /jig:update to review each in place and record an answer to each", 1)
     if standing:
         verdict = (f"On jig already: {standing}." if verdict.endswith(": nothing to do.")
                    else f"{verdict} {standing[0].upper()}{standing[1:]}.")
@@ -8110,17 +8150,19 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
         lines = commit_lines(os.path.dirname(h["path"]) + "/", [h])
         out.append((h["path"], f"{fix}. To fold it, in one commit:" + "".join(f"\n      {l}" for l in lines)))
     homeless_at = {h["path"] for h in homeless}
-    for e in levels:
-        if e["level"] != "section" or not e["into"] or e["path"] in homeless_at or e["path"] in reviewed:
+    for e in level_findings(levels, homeless_at, {m["path"] for m in misfiled_seams(after, board)}):
+        if e["path"] in reviewed:
             continue
-        lines = commit_lines(os.path.dirname(e["path"]) + "/", [{"path": e["path"], "to": e["into"], "fold": True}])
-        out.append((e["path"], f"covers no file ({DIR}/RULES.md, Documentation: a subsystem has files of "
-                    f"its own): a section of {e['into']}. On the owner's yes, fold it in, in one commit:"
-                    + "".join(f"\n      {l}" for l in lines)))
-    # An unmapped page's files are unknown: naming them comes first, so no fold is drafted.
-    out += [(e["path"], f"{level_line(e)} ({DIR}/RULES.md, Documentation: a subsystem has files of its own)")
-            for e in levels if e["level"] == "unmapped" and e["path"] not in homeless_at
-            and e["path"] not in reviewed]
+        tag = state_tag(e, rec)
+        if e["level"] == "section" and e["into"]:
+            lines = commit_lines(os.path.dirname(e["path"]) + "/", [{"path": e["path"], "to": e["into"], "fold": True}])
+            out.append((e["path"], f"covers no file ({DIR}/RULES.md, Documentation: a subsystem has files of "
+                        f"its own): a section of {e['into']}{tag}. On the owner's yes, fold it in, in one commit:"
+                        + "".join(f"\n      {l}" for l in lines)))
+        else:
+            # An unmapped page's files are unknown, and a shared page's answer is another page: no fold is drafted.
+            out.append((e["path"], f"{level_line(e)} ({DIR}/RULES.md, Documentation: a subsystem has files "
+                        f"of its own){tag}"))
     sections = frozenset(e["path"] for e in levels if e["level"] == "section")
     for e in page_shapes(root, after, board.get("not_docs") or [], docmap, homeless_at, read, sections):
         if e["path"] in reviewed:
@@ -8385,7 +8427,7 @@ def cmd_update(root: Path, args) -> int:
     def read_after(f: str) -> str:
         p = root / back.get(f, f)
         return p.read_text(errors="replace") if p.is_file() else ""
-    carried, gone_ids = approved_moves(root, plan["after"], new_board, read_after)
+    carried, gone_ids, held = approved_moves(root, plan["after"], new_board, read_after)
     review = files_to_review(root, plan, here.parent / "AGENTS.md", arriving)
     review += home_findings(root, plan, new_board, board_at, [f for f, _ in review])
     review += [(LOG, f"{e} has no Touches line: add one under its status line, naming the pages "
@@ -8411,9 +8453,15 @@ def cmd_update(root: Path, args) -> int:
                                 os.path.dirname(e["path"]) + "/", [e], {})
             if not l.startswith(("git mv ", "fold ", f"{CONFIG} docmap:"))]
 
-    kept_ids: list[str] = []
+    recorded = new_board.get("findings") if isinstance(new_board.get("findings"), dict) else {}
+    # What --apply will leave at its old id, said before it runs.
+    kept_ids: list[str] = move_entries(dict(recorded), carried) if carried else []
 
     def carried_report(done: bool) -> None:
+        if held:
+            print(f"\nApproved in {CONFIG} findings, held back:")
+            for line in held:
+                print(f"  {line}")
         if carried or gone_ids:
             print(f"\nIn {CONFIG} findings, {'done' if done else 'done by --apply'}:")
             for e in carried:
@@ -8451,7 +8499,7 @@ def cmd_update(root: Path, args) -> int:
         if board_at == CONFIG and (root / PARA).exists():
             for line in removal_blocks(root, trunk, always=False):
                 print(line)
-        if not (carried or gone_ids or jobs_moves):
+        if not (carried or gone_ids or jobs_moves or held):
             return 0
         # A recorded yes is carried out whether or not the layout is current.
         if args.apply and (refused or dirty):
