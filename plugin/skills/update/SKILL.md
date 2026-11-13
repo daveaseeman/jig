@@ -130,12 +130,16 @@ the log itself. Say each removal out loud. On a yes:
 Then, on a yes each, move what had no home and repoint the files it named. A refusal names rows the merged log wouldn't
 pass M2 with: show them, and fix the register with the owner first.
 
-A root **`GLOSSARY.md`**: the glossary's home is `README.md § Glossary` now. On a yes, move each
-term into that section as a `### <term>` heading, its text below it, delete the file, replace it
-with `README.md` in a metarepo's `entry_files`, and repoint the lines that name it. In a metarepo
-this is one changelog line (`GLOSSARY: …`). After migrating, find each pararepo's citations of
-`GLOSSARY.md` with `git grep GLOSSARY.md` in its checkout (`jig repos` lists them), and repoint
-each to `README.md § <term>`.
+A **glossary** in the README's `## Glossary` section, or in a root `GLOSSARY.md`: its home is
+`docs/glossary.md`, since pages cite its terms and docs point only at docs. Show the user
+`jig update --glossary`: the terms it moves, in the form they have (headings, or a table moved as
+it is), and every line whose pointer to the old home it rewrites in the same change, then the
+pointers it can't rewrite. On a yes, `jig update --apply --glossary`, and commit what it staged.
+Then repoint, with the user, each pointer it left. In a metarepo the move runs in a job's
+worktree (M4): `jig open glossary-move --shares README.md docs/glossary.md <the files it
+rewrites>`, the run there, and one changelog line (`GLOSSARY: moved to docs/glossary.md`); it
+rewrites `entry_files` too. Pararepos' citations of `<meta>/README.md § <term>` are theirs: each
+is named, with its new home, at that pararepo's pin bump.
 
 The **AGENTS.md** lines are the few the template still needs there: the Rulebook line, a
 Commands line for a `.jig/scripts/` file the repo has or this run adds, and a block jig retired

@@ -29,8 +29,9 @@ without Claude Code.
 - **Docs move with the code.** A board maps docs pages to source files, and a handoff has to
   answer for every page its change touched. A page stays a single file until it has something
   to hold (a datasheet, a step file, its own parts), and only then gets a folder. Editing a
-  part's file hands you its page and the system page above it, and your own terms live in a
-  `## Glossary` section of the README, one heading per term, so anything can point at one.
+  part's file hands you its page and the system page above it, and your own terms live in
+  `docs/glossary.md`, a heading or a table row per term, so any page can point at one. Docs
+  point only at docs: the README may point into `docs/`, never the reverse.
 - **Every repo keeps one log of what changed and why.** `.jig/decisions.md` holds decision
   entries (who decided, when, what it replaced) and plain change lines in Keep a Changelog's
   groups, under one heading per release. You change your mind by writing a new entry that

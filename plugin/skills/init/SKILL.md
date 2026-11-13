@@ -53,7 +53,7 @@ pararepos), so ask which genres it uses, offering two templates:
 
 Then run `python3 .jig/jig.py init --meta --genres product-ecosystem`, or
 `--genres <a,b,c>`, in place of the plain `init`. It writes `.jig/meta.json` with the genres, and
-a `### <genre>` heading for each under `README.md § Glossary`, where each genre is defined
+a `## <genre>` heading for each in `docs/glossary.md`, where each genre is defined
 once: a genre gets no page of its own. Fill each heading's TODO with the user, or name it as
 remaining.
 

@@ -25,6 +25,6 @@ Then read `## Up next` in `.jig/roadmap.md`, if the repo keeps one:
 - An item that is really a review finding → it belongs in `.jig/ledgers/DEFERRED.md`, not both.
 - A page still carrying `## Undefined`, `## Status` or `## Roadmap` (`jig survey` lists them) → each entry is an Up next item or an `## Open` question to propose, and the section goes.
 
-In a pararepo: the same cross-repo confusion twice is a glossary entry, proposed to the metarepo with `jig propose`.
+In a pararepo: the same cross-repo confusion twice is a glossary entry, a term in the metarepo's `docs/glossary.md`, proposed to the metarepo with `jig propose`.
 
 Don't file one-offs. Twice is the bar.
