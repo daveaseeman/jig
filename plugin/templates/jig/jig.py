@@ -7869,7 +7869,8 @@ def row_entry(cells: list[str], header: list[str]) -> dict:
         # A title starting with a status word would read as a status: it moves to the body.
         title, rest = "Decision", [cells[title_i], *rest]
     return {"id": cells[0].strip(), "title": title, "status": line, "rest": rest, "where": where,
-            "word": word, "by": by.group(1) if by and word == "superseded" else None,
+            "word": word, "who": who, "day": day if dates else "",
+            "by": by.group(1) if by and word == "superseded" else None,
             # What the old M2 refused stays refused: no status cell, or no date.
             "bad": status_i is None or not dates}
 
@@ -7898,11 +7899,46 @@ def paragraphs(lines: list[tuple[int, str]]) -> list[list[tuple[int, str]]]:
     return out
 
 
-def as_written(text: str, paras: list[list[tuple[int, str]]]) -> str:
-    """Leftover paragraphs as the old file had them: each one's lines, blank ones inside it
-    included, and a blank line between them."""
-    lines = text.splitlines()
-    return "\n\n".join("\n".join(lines[p[0][0] - 1:p[-1][0]]) for p in paras) + "\n"
+def as_written(paras: list[list[tuple[int, str]]]) -> str:
+    """Leftover paragraphs as the old file had them: each one's own lines, one blank line where
+    the old file had a gap inside it, and a blank line between them. Only their own: a heading's
+    paragraph can span a table the log took, and the lines between are not leftovers."""
+    out = []
+    for para in paras:
+        lines: list[str] = []
+        for i, (n, l) in enumerate(para):
+            if i and n > para[i - 1][0] + 1:
+                lines.append("")
+            lines.append(l)
+        out.append("\n".join(lines))
+    return "\n\n".join(out) + "\n"
+
+
+def accepted_before(root: Path, f: str, ids: set[str], prefix: str | None) -> dict[str, dict]:
+    """For each superseded row in IDS, the row as F's newest revision in git had it before it
+    was superseded. Superseding overwrote the row's status and date cells, so only history still
+    says who accepted it and when. F's own path only: a moved register is left to the owner."""
+    out: dict[str, dict] = {}
+    for c in git("log", "--format=%H", "--", f, cwd=str(root)).splitlines():
+        if len(out) == len(ids):
+            break
+        old = parse_register(git("show", f"{c}:{f}", cwd=str(root)), prefix)[0]
+        for e in old:
+            k = decision_id(e["id"])
+            if k in ids and k not in out and e["word"] not in ("superseded", "rejected", "struck") and e["day"]:
+                out[k] = e
+    return out
+
+
+def grouped(lines: list[str]) -> list[str]:
+    """A release section's change lines under a Keep a Changelog group, as RULES.md's log has
+    them. Lines under no group get `### Changed`: an entry's block runs to the next `### `, so
+    bare lines would read as the last entry's. A guessed Added or Fixed would freeze a guess."""
+    lines = trimmed(lines)
+    first = next((i for i, l in enumerate(lines) if l.startswith("### ")), len(lines))
+    if any(l.strip() for l in lines[:first]):
+        return ["### Changed", "", *lines]
+    return lines
 
 
 def parse_register(text: str, prefix: str | None) -> tuple[list[dict], list[list[tuple[int, str]]]]:
@@ -7951,9 +7987,21 @@ def merged_log(root: Path) -> dict:
     keep: dict[str, str] = {}          # an old file's leftover, kept in it after the merge
     rejected: list[str] = []
     struck: list[str] = []
+    undated: list[str] = []
     for f in old_registers(root):
         found, notes = parse_register((root / f).read_text(errors="replace"), prefix)
         p = prefix or (re.match(r"[A-Z][A-Z0-9]*-", found[0]["id"]).group(0) if found else "D-")
+        gone_by = {decision_id(e["id"]) for e in found if e["word"] == "superseded"}
+        then = accepted_before(root, f, gone_by, prefix) if gone_by else {}
+        for e in found:
+            if e["word"] != "superseded":
+                continue
+            was = then.get(decision_id(e["id"]))
+            if was:
+                e["status"] = f"Accepted ({was['who'] or 'not recorded'}, {was['day']})."
+            if not was or not was["who"]:
+                undated.append(f"{e['id']}: superseded, and {f}'s history in git doesn't say who accepted it"
+                               + ("" if was else " or when") + f": check `{e['status']}` before committing")
         by_num = {}
         for e in found:
             if e["word"] in ("rejected", "struck"):
@@ -7969,9 +8017,9 @@ def merged_log(root: Path) -> dict:
                 homeless.append((f, para))
         mine = [para for g, para in homeless if g == f]
         if mine:
-            keep[f] = as_written((root / f).read_text(errors="replace"), mine)
+            keep[f] = as_written(mine)
     if preamble:
-        keep[CHANGELOG] = as_written(old, paragraphs(preamble))
+        keep[CHANGELOG] = as_written(paragraphs(preamble))
     p = prefix or (re.match(r"[A-Z][A-Z0-9]*-", entries[0]["id"]).group(0) if entries else "D-")
     # A row a struck row superseded would come back accepted, since nothing in the log retires it.
     gone_live = [f"{e['id']} is superseded by {e['by']}, which is struck: strike {e['id']} too "
@@ -8004,9 +8052,9 @@ def merged_log(root: Path) -> dict:
         head += (f"Struck as project scope before this log, and left out of it: {', '.join(struck)} "
                  "(git keeps their rows).\n\n")
     text = head + "## Open\n\n" + "\n".join(blocks("Open")) + "\n## Unreleased\n\n"
-    text += "\n".join(blocks("Unreleased") + trimmed(unreleased[1:])) + "\n"
+    text += "\n".join(blocks("Unreleased") + grouped(unreleased[1:])) + "\n"
     for heading, body, _ in sections:
-        text += f"\n{heading}\n\n" + "\n".join(blocks(heading) + trimmed(body)) + "\n"
+        text += f"\n{heading}\n\n" + "\n".join(blocks(heading) + grouped(body)) + "\n"
     text = re.sub(r"\n{3,}", "\n\n", text)
     placed: dict[str, list[str]] = {}
     for e in entries:
@@ -8015,7 +8063,7 @@ def merged_log(root: Path) -> dict:
     notes += [f"{', '.join(rejected)}: rejected, left out (their numbers stay taken)"] if rejected else []
     notes += [f"{', '.join(struck)}: struck as project scope, left out (their numbers stay taken)"] if struck else []
     return {"text": text, "notes": notes, "homeless": homeless, "keep": keep, "prefix": p,
-            "struck_live": gone_live}
+            "struck_live": gone_live, "undated": undated}
 
 
 def names_of(root: Path, gone: list[str]) -> list[tuple[str, int]]:
@@ -8118,6 +8166,8 @@ def cmd_merge_log(root: Path, apply: bool) -> int:
         print(f"  {f} ({what}), " + ("kept for what has no home" if f in keep else "removed after"))
     for n in m["notes"]:
         print(f"  {n}")
+    for line in m["undated"]:
+        print(f"  {line}")
     for f, para in m["homeless"]:
         print(f"  no home, move by hand: {f}:{para[0][0]}–{para[-1][0]} `{para[0][1].strip()[:60]}`")
     entry = json.loads(meta.read_text() or "{}").get("entry_files", []) if meta.exists() else None

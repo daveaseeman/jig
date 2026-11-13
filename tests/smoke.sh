@@ -4917,7 +4917,73 @@ expect_pass sh -c "grep -qx '### D-003 ids are numbers' .jig/decisions.md && ! g
 }
 
 
-UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches"
+# ---------------------------------------------------------------- what --merge-log writes
+# A register with a heading above its table and notes below, superseded rows whose who and date
+# only history holds, and bare change lines: the run's output commits as written.
+mlreg() {  # mlreg <D-002's status cell> <its date>: the register, D-002 as given
+  printf '# Cross-product decisions\n\nWhat binds every product.\n\n| Id | Decision | Status | Date |\n|---|---|---|---|\n| D-001 | a | accepted (Ann) | 2026-01-01 |\n| D-002 | b | %s | %s |\n| D-003 | c | accepted (Cy) | 2026-02-01 |\n\nA note naming no row.\n' "$1" "$2" > DECISIONS.md; }
+mlchangelog() {
+  printf '# Release notes\n\nFirst paragraph.\n\nEvery change to an entry file adds a line here; `jig release` turns Unreleased into the next version.\n\nSecond paragraph.\n\n## Unreleased\n- D-003 later\n\n## v1.0.0 — 2026-01-01\n- D-001, D-002 the first rules\n' > CHANGELOG.md; }
+nocl() { python3 -c "
+import sys, importlib.util as u
+s = u.spec_from_file_location('j', '.jig/jig.py'); m = u.module_from_spec(s); s.loader.exec_module(m)
+bad = [e['id'] for e in m.log_entries(open('.jig/decisions.md').read(), 'D-') if any(l.startswith('- ') for l in e['block'].splitlines())]
+assert not bad, bad"; }
+sec_merge_log() {
+ML="$T/ml-plain"; pcnew "$ML" && mlchangelog && mlreg 'accepted (Bo)' 2026-01-01 && git add -A && git commit -qm init
+mlreg 'superseded by D-003' 2026-02-01 && git add -A && git commit -qm "D-003 supersedes D-002"
+$J init >/dev/null 2>&1 && git add -A && git commit -qm board
+out=$($UP --apply --merge-log 2>&1)
+msg="merge-log: the kept register has its heading, preamble and note, and no table line"
+expect_pass sh -c "grep -qx '# Cross-product decisions' DECISIONS.md && grep -qx 'What binds every product.' DECISIONS.md && grep -qx 'A note naming no row.' DECISIONS.md && ! grep -q '^|' DECISIONS.md"
+msg="merge-log: the kept register's lines are the old ones less the table, in order"
+expect_pass sh -c "test \"\$(git show HEAD:DECISIONS.md | grep -v '^\$' | grep -v '^|')\" = \"\$(grep -v '^\$' DECISIONS.md)\""
+msg="merge-log: the changelog preamble keeps both paragraphs and drops the old seed line"
+expect_pass sh -c "test \"\$(cat CHANGELOG.md)\" = \"\$(printf '# Release notes\n\nFirst paragraph.\n\nSecond paragraph.')\""
+msg="merge-log: a superseded row takes its who and date from the register's history"
+expect_pass sh -c "grep -qx 'Accepted (Bo, 2026-01-01).' .jig/decisions.md && ! grep -q 'not recorded' .jig/decisions.md && ! echo \"\$0\" | grep -q 'D-002: superseded'" "$out"
+msg="merge-log: no entry's block holds a change line"
+expect_pass nocl
+msg="merge-log: bare change lines get ### Changed above them, in Unreleased and in a release"
+expect_pass sh -c "sed -n '/^## Unreleased/,/^## v1/p' .jig/decisions.md | grep -A2 -x '### Changed' | grep -qx -- '- D-003 later' && sed -n '/^## v1.0.0/,\$p' .jig/decisions.md | grep -A2 -x '### Changed' | grep -qx -- '- D-001, D-002 the first rules'"
+msg="merge-log: the run's output commits unedited"
+expect_pass git commit -qm "TOOL: merge the log"
+$J open rm >/dev/null 2>&1 && git add -A && git commit -qm "open rm" && cd .git/jig/worktrees/rm
+msg="merge-log: a later job removes the superseded D-002, last in its release, by its heading and status line"
+python3 -c "f='.jig/decisions.md'; s=open(f).read(); b='### D-002 b\nAccepted (Bo, 2026-01-01).\n\n'; assert b in s; open(f,'w').write(s.replace(b, ''))" && git add -A
+expect_pass git commit -qm "D-002: removed, D-003 supersedes it"
+git reset -q --hard HEAD~1
+msg="merge-log: removing the release's change lines with it is refused as frozen"
+python3 -c "f='.jig/decisions.md'; s=open(f).read(); b='### D-002 b\nAccepted (Bo, 2026-01-01).\n\n### Changed\n\n- D-001, D-002 the first rules\n'; assert b in s; open(f,'w').write(s.replace(b, ''))" && git add -A
+out=$(git commit -qm "D-002: removed" 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'release v1.0.0 is frozen'" "$out"
+cd "$ML"
+
+msg="merge-log: a row superseded in its only commit converts as not recorded, and the run names it"
+ML1="$T/ml-one"; pcnew "$ML1" && mlchangelog && mlreg 'superseded by D-003' 2026-02-01 && git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
+out=$($UP --apply --merge-log 2>&1)
+expect_pass sh -c "grep -qx 'Accepted (not recorded, 2026-02-01).' .jig/decisions.md && echo \"\$0\" | grep -q '^  D-002: superseded, .* who accepted it or when: check'" "$out"
+msg="merge-log: no converted entry reads not recorded without the run naming it"
+expect_pass sh -c "for i in \$(grep -B1 'not recorded' .jig/decisions.md | sed -n 's/^### \(D-[0-9]*\) .*/\1/p'); do echo \"\$0\" | grep -q \"^  \$i: superseded\" || exit 1; done" "$out"
+
+# A metarepo job: the run's output commits unedited, with no M3 and no M2 asking for Touches.
+MM="$T/ml-meta"; mkdir -p "$MM/.t" && git -C "$JR" archive v0.9.0 plugin/templates | tar -x -C "$MM/.t"
+cd "$MM" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r .t/plugin/templates/jig .jig && cp .t/plugin/templates/AGENTS.md .t/plugin/templates/CLAUDE.md . && rm -rf .t
+git add -A && git commit -qm init && $J init --meta --name mm >/dev/null && git add -A && git commit -qm meta-init
+mlchangelog && mlreg 'accepted (Bo)' 2026-01-01 && git add -A && git -c core.hooksPath=/dev/null commit -qm rows
+mlreg 'superseded by D-003' 2026-02-01 && git add -A && git -c core.hooksPath=/dev/null commit -qm "D-003 supersedes D-002"
+cp "$P/jig/jig.py" .jig/jig.py && git add -A && git commit -qm "TOOL: this jig"
+$UP --apply >/dev/null 2>&1; git add -A && git commit -qm "TOOL: update" >/dev/null 2>&1
+$J open mlj --shares CHANGELOG.md DECISIONS.md >/dev/null 2>&1 && git add -A && git commit -qm "TOOL: open mlj"
+cd .git/jig/worktrees/mlj && $UP --apply --merge-log >/dev/null 2>&1
+msg="merge-log: in a metarepo job, the run's output commits unedited: no M3, no entry asked for its pages"
+out=$(git commit -qm "TOOL: merge the log" 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && ! echo \"\$0\" | grep -q 'M3 ' && ! echo \"\$0\" | grep -q 'names no page it touches'" "$out"
+cd "$MM"
+}
+
+UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches merge_log"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file
