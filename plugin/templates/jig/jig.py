@@ -2169,6 +2169,11 @@ def meta_hidden(root: Path, files: list[str], not_docs: list[str], read) -> list
     return [{"glob": g, "pages": hit} for g in not_docs if (hit := [f for f in md if matches(f, [g])])]
 
 
+# RULES.md sentences jig reworded, as they stood: a copy that froze before the rewording still
+# shares them. A rewording adds the old sentence here in the same commit.
+RETIRED_RULES = ("The tree names the product's own parts, not its files, so a rule that touches several files lives once.",)
+
+
 def doc_homes(root: Path, files: list[str], not_docs: list[str],
               read=None, deep: dict | None = None, docmap=None) -> list[dict]:
     """Every tracked Markdown file with no home, as {path, kind, to, fold, naming, named_at}.
@@ -2183,7 +2188,7 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
     READ maps a path to its text, for update, which judges the files where they will be."""
     read = read or (lambda f: (root / f).read_text(errors="replace") if (root / f).is_file() else "")
     rules_md = Path(__file__).resolve().parent / "RULES.md"
-    rules = re.sub(r"\s+", " ", rules_md.read_text()) if rules_md.exists() else ""
+    rules = " ".join([re.sub(r"\s+", " ", rules_md.read_text()), *RETIRED_RULES]) if rules_md.exists() else ""
     load_genres(root)
     registers = meta_registers(root, files, read)
     deep = deep if isinstance(deep, dict) else {}
