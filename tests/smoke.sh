@@ -2127,7 +2127,8 @@ printf '\n## Invariants\n- Pins are 3.3V\n' >> docs/watch/watch.md
 git add -A && git commit -qm "bare invariant"
 expect_pass hrsurvey "assert 'docs/watch/watch.md' in [e['path'] for e in r['page_contract']], r['page_contract']"
 msg="page contract: the board template, filled in nowhere, is on the contract"
-mkdir -p docs/tmpl && cp "$P/hardware.md" docs/tmpl/tmpl.md && git add -A && git commit -qm tmpl
+# Planted: alone in its folder, which the hook refuses; only its contract is asked here.
+mkdir -p docs/tmpl && cp "$P/hardware.md" docs/tmpl/tmpl.md && git add -A && git -c core.hooksPath=/dev/null commit -qm tmpl
 expect_pass hrsurvey "assert 'docs/tmpl/tmpl.md' not in [e['path'] for e in r['page_contract']], r['page_contract']"
 git rm -rq docs/tmpl && git commit -qm "no tmpl"
 
@@ -3575,7 +3576,7 @@ git add -A && git commit -qm update
 printf 'pdf' > docs/a/d/wiring.pdf && printf '[wiring](wiring.pdf)\n' >> docs/a/d/d.md && git add -A && git commit -qm wiring
 msg="flat: with docs/a/d/wiring.pdf beside it, the folder page isn't reported"
 expect_pass homes "assert r['page_shapes'] == [], r['page_shapes']"
-mkdir -p docs/a/b && printf 'png' > docs/a/b/scope.png && git add -A && git commit -qm "b has a file"
+mkdir -p docs/a/b && printf 'png' > docs/a/b/scope.png && git add -A && git -c core.hooksPath=/dev/null commit -qm "b has a file"  # planted
 msg="flat: a flat page with a folder of its own name is told to move into it"
 expect_pass homes "assert [(e['path'], e['to'], e['into']) for e in r['page_shapes']] == [('docs/a/b.md', 'docs/a/b/b.md', True)], r['page_shapes']"
 git mv docs/a/b.md docs/a/b/b.md && printf '[scope](scope.png)\n' >> docs/a/b/b.md && printf '# E\n\nThe e part.\n' > docs/a/b/e.md
@@ -3724,6 +3725,42 @@ expect_pass sh -c "$J survey | grep -q '^  docs/a/e/e.md: flat at docs/a/e.md'"
 msg="form: a lone unnamed folder page isn't refused; survey says name it in docmap"
 mkdir -p docs/g && printf '# G\n\nNotes.\n' > docs/g/g.md && git add -A && expect_pass git commit -qm unnamed
 expect_pass sh -c "$J survey | grep -q '^  docs/g/g.md: flat at docs/g.md: .*name it in docmap'"
+msg="form: an exception the owner recorded for a page's shape lets a change put it back"
+ipage docs/n/n.md && board "b['docmap']['docs/n/n.md'] = ['src/n/**']; b['findings'] = {'shape:docs/n/n.md': 'exception: schematics land next month'}"
+git add -A && git -c core.hooksPath=/dev/null commit -qm "n, excepted" && git mv docs/n/n.md docs/n.md && git commit -qm "n flat"
+git mv docs/n.md docs/n/n.md && expect_pass git commit -qm "n back"
+msg="form: update's fold of a deep page drafts the move flat of the page it leaves alone, and that commit passes"
+ipage docs/q/q.md && ipage docs/q/r/r.md && ipage docs/q/r/s/s.md && mkf src/q/r/s/y.py
+board "b['docmap'].update({'docs/q/r/r.md': ['src/q/r/*.py'], 'docs/q/r/s/s.md': ['src/q/r/s/**']})"
+git add -A && git -c core.hooksPath=/dev/null commit -qm deep && behind
+out=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -A2 '^      fold docs/q/r/s/s.md into docs/q/r/r.md' | grep -q '^      git mv docs/q/r/r.md docs/q/r.md'" "$out"
+cat docs/q/r/s/s.md >> docs/q/r/r.md && git rm -q docs/q/r/s/s.md && git add -A && git mv docs/q/r/r.md docs/q/r.md
+expect_pass git commit -qm "fold s"
+msg="form: an approved move of a lone folder page lands flat, and its commit passes"
+ipage docs/w/k/k.md && board "b['docmap']['docs/w/k/k.md'] = []" && git add -A && git -c core.hooksPath=/dev/null commit -qm "lone k"
+board "b['findings']['page:docs/w/k/k.md'] = 'approved'" && git commit -qam "k approved" && behind
+$UP --apply >/dev/null 2>&1
+expect_pass sh -c "git diff --cached --name-status | grep -q '^R.*docs/w/k/k.md	docs/k.md' && git commit -qm apply"
+msg="form: a one-page edit in a tree of hundreds of pages is judged in seconds, not minutes"
+# 30 systems of 10 pages, each mapped to code of its own with a README beside it: a stray .md apiece.
+python3 -c "
+import json, os
+b = json.load(open('.jig/config.json'))
+for i in range(30):
+    os.makedirs(f'docs/t{i}', exist_ok=True)
+    for j in range(10):
+        page = f'docs/t{i}/' + (f'p{j}.md' if j else f't{i}.md')
+        open(page, 'w').write('# P\\n\\nPart.\\n\\n## Invariants\\n- x\\n')
+        os.makedirs(f'src/t{i}/p{j}', exist_ok=True)
+        open(f'src/t{i}/p{j}/a.py', 'w').write('x\\n')
+        open(f'src/t{i}/p{j}/README.md', 'w').write('readme\\n')
+        b['docmap'][page] = [f'src/t{i}/p{j}/**']
+json.dump(b, open('.jig/config.json', 'w'), indent=2)"
+git add -A && git -c core.hooksPath=/dev/null commit -qm many && printf -- '- e\n' >> docs/t1/p1.md && git add -A
+start=$(date +%s); $J check --staged >/dev/null 2>&1; took=$(( $(date +%s) - start ))
+expect_pass test "$took" -lt 20
+git reset -q --hard
 msg="form: jig merge of a job that slipped a lone page in stops with the refusal and commits no merge"
 $J open pf --branch b-pf --owns 'docs/**' >/dev/null && git add -A && git commit -qm "TOOL: open pf"
 tip=$(git rev-parse HEAD)
@@ -3732,6 +3769,8 @@ tip=$(git rev-parse HEAD)
 out=$($J merge pf 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'docs/h/h.md: flat at docs/h.md' && test \"\$(git rev-parse HEAD)\" = $tip" "$out"
 git merge --abort 2>/dev/null
+msg="form: the merge's hint says to abort and fix it on the job's branch"
+expect_pass sh -c "echo \"\$0\" | grep -q 'git merge --abort., which puts pf.s entry back, fix it on b-pf'" "$out"
 }
 
 # ---------------------------------------------------------------- update's AGENTS.md lines
@@ -3989,7 +4028,8 @@ printf '# Inv\n\nInv holds keys.\n\n## Invariants\n\n- Keys are sorted — looku
 printf '# After\n\nAfter does things.\n\n## Undefined\n\n- Sync — parked 2026-11-01.\n\n## Notes\n\nmore\n' > docs/after/after.md
 printf '# Nolead\n\n## Part\n\nText.\n' > docs/nolead/nolead.md
 printf '# Misc\n\nMisc is a part.\n\n## Invariants\n\n- A — b; held by review.\n' > docs/misc/x.md
-git add -A && git commit -qm pages
+# Planted: each page alone in its folder, which the hook refuses; only the contract is asked here.
+git add -A && git -c core.hooksPath=/dev/null commit -qm pages
 msg="page contract: survey flags an old-format page as old contract — convert"
 expect_pass pc "assert len(c['docs/old/old.md']) == 1 and c['docs/old/old.md'][0].startswith('old contract — convert'), c"
 msg="page contract: survey flags invariants missing a holder or a why, and passes the one with both"

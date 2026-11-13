@@ -241,8 +241,9 @@ else in it, flat at its parent's (`docs/a/b/b.md`: flat at `docs/a/b.md`); and a
 with a folder of its own name beside it, to move into. The hook refuses a change that puts a
 page in the wrong one of its two forms — it adds or moves a page there, or adds a page's first
 other file or removes its last without the move — and names the move, in survey's words. A page
-already in the wrong form is survey's, and a change that leaves it there isn't refused. A flat page's own file left loose in its
-parent's folder is that folder page's to survey, so review catches it.
+already in the wrong form is survey's, and a change that leaves it there isn't refused. A flat
+page's own file left loose in its parent's folder is that folder page's to survey, so review
+catches it.
 
 A board, a screen, a battery are parts of the product, so each is a system or subsystem like
 any other: `docs/<board>.md`, or `docs/<system>/<board>.md` where the board is part of a larger
