@@ -47,7 +47,8 @@
       "plugin/skills/update/SKILL.md",
       "plugin/templates/jig/RULES.md",
       "plugin/templates/jig/jig.py",
-      "tests/smoke.sh"
+      "tests/smoke.sh",
+      "plugin/skills/retro/SKILL.md"
     ],
     "reserved": {}
   },
