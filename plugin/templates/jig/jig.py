@@ -7242,6 +7242,11 @@ UP_NEXT = "Up next"
 # `(touches docs/a.md, docs/b.md)` at the end of an Up next item or a scope: the pages the
 # work will change, which reading-list and fold-in look items up by.
 TOUCHES = re.compile(r"\s*\(touches\s+([^()]*)\)\s*$")
+# The other section that isn't a phase: work the owner has named and given no phase yet, in no
+# order. Its items name no pages, which keeps it apart from Up next: pages make an item parked
+# work that fold-in asks about. A last phase would be ordered, given a state, and made current.
+NO_PHASE = "No phase"
+RESERVED = (UP_NEXT.lower(), NO_PHASE.lower())
 
 
 def split_touches(what: str) -> tuple[str, list[str]]:
@@ -7255,7 +7260,18 @@ def split_touches(what: str) -> tuple[str, list[str]]:
 
 def parse_up_next(text: str, problems: list[str] | None = None) -> list[dict]:
     """The items under `## Up next`, each {id, what, touches, line}, in file order."""
+    return parse_section(text, UP_NEXT, problems)
+
+
+def parse_no_phase(text: str, problems: list[str] | None = None) -> list[dict]:
+    """The items under `## No phase`, each {id, what, touches, line}, in file order."""
+    return parse_section(text, NO_PHASE, problems)
+
+
+def parse_section(text: str, section: str, problems: list[str] | None = None) -> list[dict]:
+    """A reserved section's items. Up next's must name pages; No phase's must name none."""
     problems = [] if problems is None else problems
+    shape = ("<what is parked> (touches docs/<page>.md)" if section == UP_NEXT else "<what it is>")
     items: list[dict] = []
     inside, fence = False, False
     for n, raw in enumerate(text.splitlines(), 1):
@@ -7266,21 +7282,24 @@ def parse_up_next(text: str, problems: list[str] | None = None) -> list[dict]:
         if fence:
             continue
         if m := re.match(r"##\s+(.+?)$", line):
-            inside = m.group(1).strip().lower() == UP_NEXT.lower()
+            inside = m.group(1).strip().lower() == section.lower()
             continue
         if not inside or not line.strip() or line[0] in " \t":
             continue
         m = SCOPE_LINE.fullmatch(line)
         if not m:
-            problems.append(f"line {n}: not an {UP_NEXT} item (- `<id>`: <what is parked> "
-                            f"(touches docs/<page>.md), unindented): {line.strip()}")
+            problems.append(f"line {n}: not a {section} item (- `<id>`: {shape}, "
+                            f"unindented): {line.strip()}")
             continue
         what, pages = split_touches((m.group(2) or "").strip())
         if any(i["id"] == m.group(1) for i in items):
-            problems.append(f"line {n}: {UP_NEXT} item {m.group(1)} appears twice")
-        if not pages:
+            problems.append(f"line {n}: {section} item {m.group(1)} appears twice")
+        if section == UP_NEXT and not pages:
             problems.append(f"line {n}: {UP_NEXT} item {m.group(1)} names no page: end it with "
                             "(touches docs/<page>.md, …)")
+        if section == NO_PHASE and pages:
+            problems.append(f"line {n}: {NO_PHASE} item {m.group(1)} names pages: work that "
+                            f"touches pages is parked work, an item under ## {UP_NEXT}")
         items.append({"id": m.group(1), "what": what, "touches": pages, "line": n})
     return items
 
@@ -7328,7 +7347,8 @@ def parse_roadmap(text: str, problems: list[str] | None = None) -> list[dict]:
     """Phases in file order, each {name, exit: [(ticked, text)], scopes: [(id, what)]}.
     Anything it can't read is added to PROBLEMS by line, never dropped quietly: a scope lost
     to a typo would read as a phase with less work in it. Fenced code is skipped, so a roadmap
-    that quotes an example doesn't grow phases. `## Up next` is no phase: parse_up_next reads it."""
+    that quotes an example doesn't grow phases. `## Up next` and `## No phase` are no phases:
+    parse_section reads them. A phase's note is the prose before its first list."""
     problems = [] if problems is None else problems
     phases: list[dict] = []
     part, fence, ids, skip = "", False, set(), False
@@ -7340,15 +7360,18 @@ def parse_roadmap(text: str, problems: list[str] | None = None) -> list[dict]:
         if fence:
             continue
         if m := re.match(r"##\s+(.+?)$", line):
-            skip = m.group(1).strip().lower() == UP_NEXT.lower()
+            skip = m.group(1).strip().lower() in RESERVED
             if skip:
                 continue
             if any(p["name"] == m.group(1) for p in phases):
                 problems.append(f"line {n}: phase {m.group(1)} appears twice")
-            phases.append({"name": m.group(1), "exit": [], "scopes": [], "line": n, "headed": False})
+            phases.append({"name": m.group(1), "exit": [], "scopes": [], "line": n, "headed": False,
+                           "note": []})
             part = ""
         elif skip or not phases:
             continue
+        elif not part and not re.fullmatch(r"(?i)(exit when|scopes):", line.strip()):
+            phases[-1]["note"].append(line)
         elif re.fullmatch(r"(?i)exit when:", line.strip()):
             part, phases[-1]["headed"] = "exit", True
         elif re.fullmatch(r"(?i)scopes:", line.strip()):
@@ -7367,9 +7390,11 @@ def parse_roadmap(text: str, problems: list[str] | None = None) -> list[dict]:
             ids.add(sid)
             phases[-1]["scopes"].append((sid, (m.group(2) or "").strip()))
     for p in phases:
+        p["note"] = "\n".join(p["note"]).strip("\n").splitlines()
         if not p["headed"]:
             problems.append(f"line {p['line']}: phase {p['name']} has neither `Exit when:` nor "
-                            f"`Scopes:` (every `## ` heading but ## {UP_NEXT} is a phase)")
+                            f"`Scopes:` (every `## ` heading but ## {UP_NEXT} and ## {NO_PHASE} "
+                            "is a phase)")
     return phases
 
 
@@ -7438,13 +7463,16 @@ def roadmap_state(snap: Snapshot) -> list[dict] | None:
 
 
 def roadmap_view(snap: Snapshot, phases: list[dict]) -> str:
-    """ROADMAP.md as SNAP's roadmap renders it, Up next included."""
-    return render_roadmap(phases, parse_up_next(snap.show(ROADMAP)))
+    """ROADMAP.md as SNAP's roadmap renders it, Up next and No phase included."""
+    text = snap.show(ROADMAP)
+    return render_roadmap(phases, parse_up_next(text), parse_no_phase(text))
 
 
-def render_roadmap(phases: list[dict], up_next: list[dict] | None = None) -> str:
+def render_roadmap(phases: list[dict], up_next: list[dict] | None = None,
+                   no_phase: list[dict] | None = None) -> str:
     """ROADMAP.md: plain Markdown tables, which every forge and previewer renders. Up next
-    follows the phases: parked work, in no order, each item with the pages it touches."""
+    follows the phases: parked work, in no order, each item with the pages it touches. No
+    phase comes last, outside the phase line, so work with no stage never reads as one."""
     line = " → ".join(f"{p['name']} ✓" if p["state"] == "done" else
                       f"**{p['name']}** (current)" if p["state"] == "current" else p["name"]
                       for p in phases)
@@ -7453,6 +7481,8 @@ def render_roadmap(phases: list[dict], up_next: list[dict] | None = None) -> str
            "not this one._", "", line]
     for p in phases:
         out += ["", f"## {p['name']} ({p['state']}{', empty' if p['empty'] else ''})", ""]
+        if p["note"]:
+            out += p["note"] + [""]
         if p["exit"]:
             out += ["Exit when:"] + [f"- [{'x' if t else ' '}] {what}" for t, what in p["exit"]] + [""]
         if not p["scopes"]:
@@ -7467,6 +7497,9 @@ def render_roadmap(phases: list[dict], up_next: list[dict] | None = None) -> str
         out += [f"- **{i['id']}**" + (f": {i['what']}" if i["what"] else "")
                 + (" — touches " + ", ".join(f"[{p}]({p})" for p in i["touches"]) if i["touches"] else "")
                 for i in up_next]
+    if no_phase:
+        out += ["", f"## {NO_PHASE}", "", "_No phase set, in no order._", ""]
+        out += [f"- **{i['id']}**" + (f": {i['what']}" if i["what"] else "") for i in no_phase]
     return "\n".join(out) + "\n"
 
 
@@ -7498,6 +7531,7 @@ def cmd_roadmap(root: Path, args) -> int:
     problems: list[str] = []
     parse_roadmap(snap.show(ROADMAP), problems)
     up_next = parse_up_next(snap.show(ROADMAP), problems)
+    no_phase = parse_no_phase(snap.show(ROADMAP), problems)
     have = set(snap.ls("docs/"))
     problems += [f"{iid} touches {page}, which {trunk} has no page for: re-point it"
                  for iid, page in sorted(dead_touches(snap.show(ROADMAP), have))]
@@ -7506,6 +7540,8 @@ def cmd_roadmap(root: Path, args) -> int:
     for p in phases:
         print(f"{p['name']}  {p['state']}"
               + ("  (empty: no scopes and no exit boxes)" if p["empty"] else ""))
+        for n in p["note"]:
+            print(f"  {n}".rstrip())
         for t, what in p["exit"]:
             print(f"  [{'x' if t else ' '}] {what}")
         for s in p["scopes"]:
@@ -7515,8 +7551,12 @@ def cmd_roadmap(root: Path, args) -> int:
         print(UP_NEXT)
         for i in up_next:
             print(f"  {i['id']:<24} {i['what']}  (touches {', '.join(i['touches']) or 'nothing'})")
+    if no_phase:
+        print(NO_PHASE)
+        for i in no_phase:
+            print(f"  {i['id']:<24} {i['what']}")
     view = git("show", f"{trunk}:{ROADMAP_VIEW}")
-    if view != render_roadmap(phases, up_next).strip():
+    if view != render_roadmap(phases, up_next, no_phase).strip():
         print(f"\n{ROADMAP_VIEW} on {trunk} is {'stale' if view else 'missing'}: "
               f"`jig roadmap --write` in the {trunk} checkout, then commit it")
     return 1 if problems else 0
@@ -7769,6 +7809,7 @@ def roadmap_rules(board: "Board", branch: str, staged: bool, paths: list[str],
         problems: list[str] = []
         parse_roadmap(text, problems)
         parse_up_next(text, problems)
+        parse_no_phase(text, problems)
         out += [f"{ROADMAP} {x}" for x in problems]
     if on_trunk and ROADMAP in guarded:
         dropped = roadmap_scopes(old) - known
