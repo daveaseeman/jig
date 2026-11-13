@@ -342,31 +342,42 @@ entries trunk's roadmap holds.
 
 Each file finding `jig survey` prints, and `jig update` lists under Repo files to review, has
 an id, `<kind>:<path>`, the kind as survey's `--json` gives it (`shape`, `page`, `deep`,
-`contract`, …): `shape:docs/a/b/b.md`. The owner's answer to each is recorded on trunk in
+`contract`, …): `shape:docs/a/b/b.md`. A stray, a metarepo page in no genre, an old board file
+and a page whose only problem is the old contract have no id: `/jig:redocument`'s remap answers
+them. The owner's answer to each is recorded on trunk in
 `config.json`'s `findings`, one entry per id, no globs, trunk-only like the rest of the board
 (R5):
 
 - `"approved"`: do it;
 - `"deferred: <where>"`: later, and where it will be answered (`deferred: redocument`);
 - `"exception: <the owner's reason>"`: the repo differs from this file on purpose. An exception
-  or a deferral with nothing after its colon doesn't count.
+  or a deferral with nothing after its colon doesn't count, and survey lists each entry that
+  doesn't. A deep page's exception is its folder in `deep_subsystems`, with its rationale, never
+  a `deep:` entry here: one finding has one exception record.
 
 jig acts on the recorded entry, never on an answer in chat, so the answers are one commit on
 trunk before anything acts on them. Survey and update print each finding's outcome beside it —
 not answered, approved and not done, the deferral, the exception — and survey's `--json` gives
-`id` and `outcome`. Survey's last line counts the findings not answered and those approved and
-not done, so it never says there is nothing to do while one stands.
+`id` and `outcome`. Survey's last line counts the findings not answered, those approved and
+not done, and the remap rows that contradict it (below), so it never says there is nothing to
+do while one stands.
 
 `jig update --apply` carries out each approved move, whether or not the layout is current: a
 `shape` finding, or a `page` outside the tree that isn't a fold. It makes the `git mv`, renames
-the `docmap` key and `boards` entry naming the old path, and drops the entry; it drops any entry
-whose finding no longer fires. What it can't do — a reference in another file, an edit — it
-prints for the session, and an approved finding it can't carry out stays recorded. The usual
-refusals apply (open jobs, tracked changes), and it commits nothing.
+the `docmap` key and `boards` entry naming the old path, drops the entry, and moves the page's
+other entries (an exception on its `contract` finding) to its new path. It drops any entry
+whose finding no longer fires. What it can't do — a reference in another file, a
+`contract_paths` glob, a `BUFFER.md` row per cached pointer, an edit — it prints for the
+session to make in the same commit, and an approved finding it can't carry out stays recorded.
+The usual refusals apply (open jobs, tracked changes), and it commits nothing. In a metarepo a
+page moves only in a job (M4): `--apply` lists the approved moves as the job's and makes none,
+and each entry drops on trunk's next `--apply` once its move has merged.
 
 `/jig:redocument`'s remap, `.jig/redocument.md`, is read by its table's `Old path(s)` and `New
 path` columns, `same` keeping each old path. The hook refuses a commit that adds or changes it
-while a row keeps a page at a path survey moves it from (a `shape` or `page` finding), unless
+while a row keeps a page at a path survey moves it from (a `shape` or `page` finding), judged on
+the tree the remap leaves — a page alone in its folder today that another row gives company is
+in the right form — unless
 `findings` records the owner's exception for that page; the refusal names the page, survey's
 destination and the entry to record. Survey names such rows in a remap already on trunk.
 

@@ -47,9 +47,12 @@ to where (`redocument`, a later job); or an exception, with the owner's reason i
 A recommendation is not an answer, and no question covers some findings and leaves the rest:
 "apply the update?" answers the layout only. Record the answers on trunk in one commit, as
 `findings` in `.jig/config.json` (`.jig/RULES.md`, Documentation: The findings record):
-`"approved"`, `"deferred: <where>"`, `"exception: <reason>"`. Then run `--apply`: it carries out
+`"approved"`, `"deferred: <where>"`, `"exception: <reason>"`. A deep page's exception is not a
+`findings` entry: it is its folder in `deep_subsystems`, with the rationale. Then run `--apply`: it carries out
 each approved move itself — the `git mv`, the `docmap` key, the `boards` entry, the entry
-dropped — and prints what is left to you, the references in other files. Everything else on
+dropped — and prints what is left to you for the same commit: the references in other files,
+`contract_paths`, the `BUFFER.md` rows. In a metarepo it lists the approved moves as a job's
+(M4): ask the hubnode to open one and make them there. Everything else on
 the list (an edit, a fold, a nest) you make by hand on its yes; jig acts on the record, never
 on an answer in chat.
 

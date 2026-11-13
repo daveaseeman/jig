@@ -4921,46 +4921,56 @@ expect_pass sh -c "grep -qx '### D-003 ids are numbers' .jig/decisions.md && ! g
 # ---------------------------------------------------------------- the findings record
 sec_findings() {
 FR="$T/findings"; pcnew "$FR" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
-mkdir -p docs/a/b docs/a/c src/a src/b src/c && printf '# A\n\nThe a system.\n' > docs/a/a.md
-printf '# B\n\nThe b part.\n' > docs/a/b/b.md && printf '# C\n\nThe c part.\n' > docs/a/c/c.md
+mkdir -p docs/a/b docs/a/c docs/old src/a src/b src/c && printf '# A\n\nThe a system.\n' > docs/a/a.md
+printf '# B\n\n## Part\n\nThe b part, with no lead paragraph.\n' > docs/a/b/b.md && printf '# C\n\nThe c part.\n' > docs/a/c/c.md
+printf '# X\n\nnotes\n' > docs/old/x.md && printf '# App\n\nSee [b](docs/a/b/b.md).\n' > README.md
 printf 'x\n' > src/a/a.rs && printf 'x\n' > src/b/b.rs && printf 'x\n' > src/c/c.rs
 board "b['docmap'] = {'docs/a/a.md': ['src/a/**'], 'docs/a/b/b.md': ['src/b/**'], 'docs/a/c/c.md': ['src/c/**']}"
 git add -A && git commit -qm pages
-msg="findings: survey --json gives b and c their shape ids, outcome null"
+msg="findings: survey --json gives b and c their shape ids, outcome null, and the stray no id"
 expect_pass python3 -c "
 import json, subprocess
 r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 got = sorted((e['id'], e['outcome']) for e in r['page_shapes'])
-assert got == [('shape:docs/a/b/b.md', None), ('shape:docs/a/c/c.md', None)], got"
-msg="findings: survey marks both not answered, and its last line names /jig:update"
+assert got == [('shape:docs/a/b/b.md', None), ('shape:docs/a/c/c.md', None)], got
+assert [('id' in e) for e in r['homeless'] if e['path'] == 'docs/old/x.md'] == [False], r['homeless']"
+msg="findings: survey marks each not answered, and its last line counts only the findings it shows with an id"
 out=$($J survey 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a/b/b.md: flat at docs/a/b.md.*\[shape:docs/a/b/b.md: not answered\]' && echo \"\$0\" | grep -q '^  docs/a/c/c.md: .*not answered' && echo \"\$0\" | tail -1 | grep -q '2 findings not answered: run /jig:update'" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a/b/b.md: flat at docs/a/b.md.*\[shape:docs/a/b/b.md: not answered\]' && echo \"\$0\" | grep -q '^  docs/a/c/c.md: .*not answered' && echo \"\$0\" | grep -q '^  docs/a/b/b.md: .*\[contract:docs/a/b/b.md: not answered\]' && test \$(echo \"\$0\" | grep -c 'not answered\]') = 3 && echo \"\$0\" | tail -1 | grep -q '3 findings not answered: run /jig:update'" "$out"
 msg="findings: with no entry, update --apply leaves both pages where they are"
 $UP --apply >/dev/null 2>&1
 expect_pass sh -c "test -f docs/a/b/b.md && test -f docs/a/c/c.md && test -z \"\$(git status --porcelain)\""
-board "b['findings'] = {'shape:docs/a/b/b.md': 'approved', 'shape:docs/a/c/c.md': 'deferred: redocument'}"
+board "b['findings'] = {'shape:docs/a/b/b.md': 'approved', 'contract:docs/a/b/b.md': 'exception: the lead is the table', 'shape:docs/a/c/c.md': 'deferred: redocument'}"
 git add -A && git commit -qm "findings: b approved, c deferred"
-msg="findings: update --apply carries out the approved move, drops its entry, leaves the deferred one"
+msg="findings: update --apply carries out the approved move, moves b's other entry with it, leaves the deferred one"
 out=$($UP --apply 2>&1)
 renamed docs/a/b/b.md docs/a/b.md; mv_rc=$?
 expect_pass sh -c "test $mv_rc = 0 && test -f docs/a/c/c.md && python3 -c \"
 import json; b = json.load(open('.jig/config.json'))
-assert b['findings'] == {'shape:docs/a/c/c.md': 'deferred: redocument'}, b['findings']
+assert b['findings'] == {'contract:docs/a/b.md': 'exception: the lead is the table', 'shape:docs/a/c/c.md': 'deferred: redocument'}, b['findings']
 assert 'docs/a/b.md' in b['docmap'] and 'docs/a/b/b.md' not in b['docmap'], b['docmap']\"" "$out"
+msg="findings: what the move leaves for the session is printed: README.md names the old path"
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Left for the session/,/^\$/p' | grep -q '^  README.md:3: '" "$out"
 git commit -qm "update: b moved"
-msg="findings: survey prints c deferred to redocument and nothing for b"
+msg="findings: survey prints c deferred to redocument, b's exception at its new path, and no shape line for b"
 out=$($J survey 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a/c/c.md: .*\[shape:docs/a/c/c.md: deferred: redocument\]' && ! echo \"\$0\" | grep -q 'docs/a/b'" "$out"
-remap() { printf '# Redocument: the remap\n\n| # | Old path(s) | New path | Verb | Notes |\n|---|---|---|---|---|\n| 1 | `docs/a/c/c.md` | %s | rewrite | |\n' "$1" > .jig/redocument.md; }
+expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a/c/c.md: .*\[shape:docs/a/c/c.md: deferred: redocument\]' && echo \"\$0\" | grep -q '\[contract:docs/a/b.md: exception: the lead is the table\]' && ! echo \"\$0\" | grep -q 'docs/a/b/b.md'" "$out"
+remap() { printf '# Redocument: the remap\n\n| # | Old path(s) | New path | Verb | Notes |\n|---|---|---|---|---|\n| 1 | `docs/a/c/c.md` | %s | rewrite | |\n%b' "$1" "${2:-}" > .jig/redocument.md; }
 msg="findings: the hook refuses a remap keeping c where survey moves it, naming the path, its destination and findings"
 remap same && git add .jig/redocument.md
 out=$(git commit -qm remap 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'keeps docs/a/c/c.md where it is, and survey moves it to docs/a/c.md' && echo \"\$0\" | grep -q 'findings'" "$out"
 undo
-msg="findings: an exception with no reason still refuses"
-board "b['findings'] = {'shape:docs/a/c/c.md': 'exception: '}" && git add -A && git commit -qm "findings: empty exception"
+msg="findings: a remap keeping c while another row gives its folder company commits: judged on the tree it leaves"
+remap same '| 2 | `docs/old/x.md` | `docs/a/c/x.md` | move | |\n' && git add .jig/redocument.md
+expect_pass git commit -qm "remap: x joins c"
+git rm -q .jig/redocument.md && git commit -qm "remap: gone"
+msg="findings: an exception with no reason still refuses, and survey lists it, and a deep exception, as no answer"
+board "b['findings'] = {'shape:docs/a/c/c.md': 'exception: ', 'deep:docs/a/c/d': 'exception: why not'}" && git add -A && git commit -qm "findings: empty exception"
+out=$($J survey 2>&1)
 remap same && git add .jig/redocument.md
-expect_refuse git commit -qm remap
+out2=$(git commit -qm remap 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | sed -n '/findings entries that count as no answer/,/^\$/p' | grep -q '^  shape:docs/a/c/c.md: nothing after its colon' && echo \"\$0\" | grep -q '^  deep:docs/a/c/d: .*deep_subsystems'" "$out"
 undo
 msg="findings: with the owner's reason recorded, the remap commits, and survey prints the exception"
 board "b['findings'] = {'shape:docs/a/c/c.md': 'exception: the generator reads folder paths'}" && git add -A && git commit -qm "findings: c's exception"
@@ -4971,12 +4981,21 @@ msg="findings: a row that moves c commits with no entry"
 board "del b['findings']" && git add -A && git commit -qm "findings: none"
 remap '`docs/a/c.md`' && git add .jig/redocument.md
 expect_pass git commit -qm "remap: move c"
-msg="findings: survey names a remap on trunk that keeps c, with no exception recorded"
+msg="findings: survey names a remap on trunk that keeps c, and its last line counts it"
 remap same && git add .jig/redocument.md && git -c core.hooksPath=/dev/null commit -qm "remap: keep c, past the hook"
 out=$($J survey 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -q '^Remap rows that keep a page where survey moves it' && echo \"\$0\" | grep -q '^  docs/a/c/c.md: .*survey moves it to docs/a/c.md'" "$out"
-}
+expect_pass sh -c "echo \"\$0\" | grep -q '^Remap rows that keep a page where survey moves it' && echo \"\$0\" | grep -q '^  docs/a/c/c.md: survey moves it to docs/a/c.md' && echo \"\$0\" | tail -1 | grep -q '1 remap row keeping a page survey moves'" "$out"
 
+# A metarepo's pages move in a job (M4): trunk records the yes, and makes no move.
+FM="$T/findings-meta"; mkdir -p "$FM" && cd "$FM" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init
+$J init --meta --no-hooks >/dev/null && git add -A && git commit -qm meta
+mkdir -p docs/g/p docs/g/q && printf '# P\n\nP is a thing.\n' > docs/g/p/p.md && printf '# Q\n\nQ is a thing.\n' > docs/g/q/q.md && git add -A && git commit -qm pages
+msg="findings: in a metarepo, update --apply lists an approved move as a job's and makes none"
+board "b['findings'] = {'shape:docs/g/p/p.md': 'approved'}" && git add -A && git commit -qm "findings: p"
+out=$($UP --apply 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'a job.s in a metarepo (M4)' && echo \"\$0\" | grep -q '^  git mv docs/g/p/p.md docs/g/p.md' && test -f docs/g/p/p.md && ! git diff --cached --name-status | grep -q docs/g" "$out"
+}
 
 UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches findings"
 
