@@ -1,7 +1,7 @@
 {
   "merge-append-conflicts": {
     "spec": ".jig/specs/bug-merge-append-conflicts.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [
       ".jig/specs/bug-merge-append-conflicts.md",
