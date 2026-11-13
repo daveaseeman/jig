@@ -8,6 +8,9 @@
 # check.sh doesn't compare them with their sources: in the gate's checkout they are trunk's.
 # Solo work on trunk runs this by hand and commits what it wrote.
 # A non-zero exit stops the merge before its commit; jig prints how to finish.
+# jig commits every file this writes that git doesn't ignore: write the outputs and nothing
+# else (a Python generator's __pycache__ needs an ignore line). A generator that setup.sh runs
+# moves here: setup.sh must leave tracked files alone.
 set -eu
 cd "$(dirname "$0")/../.."
 

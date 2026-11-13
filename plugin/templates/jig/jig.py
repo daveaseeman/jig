@@ -741,23 +741,28 @@ DERIVE = f"{DIR}/scripts/derive.sh"
 
 
 def unstaged(root: Path) -> set[str]:
-    return set(git("diff", "--name-only", cwd=str(root)).splitlines()) | \
-        set(git("ls-files", "--others", "--exclude-standard", cwd=str(root)).splitlines())
+    # NUL-separated, so a non-ASCII name comes back as a path, not a quoted one.
+    out = git("diff", "--name-only", "-z", cwd=str(root)) + "\0" + \
+        git("ls-files", "--others", "--exclude-standard", "-z", cwd=str(root))
+    return {f for f in out.split("\0") if f}
 
 
-def run_derive(root: Path) -> tuple[int, list[str]]:
+def run_derive(root: Path, before: set[str]) -> tuple[int, list[str]]:
     """Run the repo's derive.sh on the merged tree and stage what it wrote, so the merge commit
     carries the files derived from the whole tree: a branch's copy is derived from its own
-    sources, and two branches' copies merge into a wrong file. Returns its exit code and the
-    files it staged."""
+    sources, and two branches' copies merge into a wrong file. `before` is what was unstaged
+    before setup.sh ran. A tracked file setup.sh changed is staged too: a generator still in
+    setup.sh writes the same file, and leaving it out would leave trunk dirty. What setup.sh
+    made untracked (an install) is left alone. Returns its exit code and the files it staged."""
     script = root / DERIVE
     if not script.exists():
         return 0, []
-    before = unstaged(root)
+    mid = unstaged(root)
+    by_setup = (mid - before) & set(filter(None, git("diff", "--name-only", "-z", cwd=str(root)).split("\0")))
     rc = run_repo_script(root, script)
     if rc:
         return rc, []
-    wrote = sorted(unstaged(root) - before)
+    wrote = sorted((unstaged(root) - mid) | by_setup)
     if wrote:
         git("add", "-A", "--", *wrote, cwd=str(root), check=True)
     return 0, wrote
@@ -766,8 +771,9 @@ def run_derive(root: Path) -> tuple[int, list[str]]:
 def setup_and_derive(root: Path, name: str) -> bool:
     """The merge's last writes before its commit: setup.sh, so derive.sh runs in an environment
     built from the merged manifests, then derive.sh. False when derive.sh failed."""
+    before = unstaged(root)
     run_setup(root)
-    rc, wrote = run_derive(root)
+    rc, wrote = run_derive(root, before)
     if rc:
         print(f"jig: {DERIVE} exited {rc}; the merge isn't committed. Fix it, then "
               f"`jig merge --number` and `git commit`; or `git merge --abort`, which puts "
@@ -1139,8 +1145,14 @@ def cmd_merge(root: Path, args) -> int:
         for f in conflicted:
             print(f"  {f}", file=sys.stderr)
         return 1
+    for line in numbered:
+        print(f"numbered {line}")
     # git runs post-merge only for a merge it commits itself, not this one.
-    if not setup_and_derive(root, name):
+    # A job already in trunk brings no sources, so derive has nothing new to write, and this
+    # commit isn't a merge: a metarepo's M4 would refuse derived files in it.
+    if not merging:
+        run_setup(root)
+    elif not setup_and_derive(root, name):
         return 1
     commit = ["git", "commit", "-q", "--no-edit"] if merging else \
         ["git", "commit", "-q", "-m", f"{msg}: already in {trunk}, entry deleted"]
@@ -1148,8 +1160,6 @@ def cmd_merge(root: Path, args) -> int:
         print(f"the merge isn't committed. Fix what the hook refused, then `git commit`; or "
               f"`git merge --abort`, which puts {name}'s entry back", file=sys.stderr)
         return 1
-    for line in numbered:
-        print(f"numbered {line}")
     print(f"merged {name}; its entry is gone from {JOBS} in the same commit. Sync the clean jobs.")
     return 0
 

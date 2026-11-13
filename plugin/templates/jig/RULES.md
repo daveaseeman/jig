@@ -414,7 +414,8 @@ else stops with the files named, and a person resolves it.
    after its merge of trunk, so the checks run in an environment built from the job's own
    manifests.
    That means a merge runs the merged-in `setup.sh`: review a change to it like any other
-   code, because the next merge executes it.
+   code, because the next merge executes it. The same goes for `derive.sh`, whose output the
+   merge commits.
 3. **The hubnode merges** with `jig merge <job>`, which deletes the job's entry and numbers its
    `D-?<slug>` ids (Decision log) in the merge commit itself, then syncs the clean jobs. A job synced since its note still merges: only
    the job's own commits count as changes since the check, and what a sync's resolution
@@ -429,6 +430,8 @@ else stops with the files named, and a person resolves it.
    Before its commit the merge runs `.jig/scripts/setup.sh`, then `.jig/scripts/derive.sh`,
    and commits what derive wrote in the merge commit. A failing derive stops the merge before
    its commit, as a conflict does: fix it, `jig merge --number`, `git commit`.
+   A hand `git merge` on trunk runs `setup.sh` but not `derive.sh`: run it and commit what it
+   wrote, or the derived files stay stale until the next `jig merge`.
 
 ## Workflow
 

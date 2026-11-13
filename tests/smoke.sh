@@ -4989,6 +4989,24 @@ printf 'both\n' > shared.txt && git add shared.txt && : > "$LOG"
 msg="derive: once resolved, jig merge --number runs setup.sh once and writes INDEX.md; the commit leaves the tree clean"
 out=$($J merge --number 2>&1)
 expect_pass sh -c "test \$(wc -l < '$LOG' | tr -d ' ') = 1 && echo \"\$0\" | grep -qx 'derived: INDEX.md' && git commit -q --no-edit && test -z \"\$(git status --porcelain)\" && grep -qx n.py INDEX.md" "$out"
+
+mdjob H o.py; git merge -q --no-ff --no-edit H 2>/dev/null; touch "$FLAG"
+msg="derive: a job already in trunk merges with no derive run: exit 0, its entry gone, the tree clean"
+out=$($J merge H 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && ! grep -q '\"H\"' .jig/jobs.json && test -z \"\$(git status --porcelain)\" && ! echo \"\$0\" | grep -q '^derived:'" "$out"
+rm "$FLAG"
+
+printf 'cp INDEX.md índice.md\n' >> .jig/scripts/derive.sh && .jig/scripts/derive.sh && git add -A && git commit -qm "derive: a non-ASCII name"
+mdjob U p.py
+msg="derive: a file derive.sh writes under a non-ASCII name is staged and committed with the merge"
+out=$($J merge U 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'derived: INDEX.md, índice.md' && test -z \"\$(git status --porcelain)\" && grep -qx p.py índice.md" "$out"
+
+printf '#!/bin/sh\n.jig/scripts/derive.sh\n' > .jig/scripts/setup.sh && git commit -qam "setup runs the generator too"
+mdjob V q.py
+msg="derive: when setup.sh writes the derived file too, the merge still commits it and leaves trunk clean"
+out=$($J merge V 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q '^derived: INDEX.md' && test -z \"\$(git status --porcelain)\" && grep -qx q.py INDEX.md" "$out"
 }
 
 

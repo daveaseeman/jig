@@ -200,8 +200,9 @@ around jig's commands.
 - Named `after-merge.sh`. Rejected because a name for the moment invites the push and the PR,
   which can't run before the merge commit and are the owner's word. Reason is [assumed].
 - A hubnode skill line only ("run the repo's generator after each merge"). Rejected because a
-  hand step repeated per merge is what became the scripts. Reason is [assumed: the reporter's
-  account; the scripts are deleted].
+  hand step can't land in the merge: `jig merge` commits itself, so the hand step's writes are a
+  separate commit, which a metarepo's M4 refuses on trunk. Reason is [seen: `cmd_merge`,
+  `meta_rules`].
 - A command list in `config.json`. Rejected for `release-publish.md`'s reason: shell steps read
   better as a script in `.jig/scripts/`. Reason is [assumed].
 
