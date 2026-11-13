@@ -1158,10 +1158,20 @@ def cmd_merge(root: Path, args) -> int:
         die(f"git merge {branch}: {(p.stderr or p.stdout).strip()}")
     conflicted = git("diff", "--name-only", "--diff-filter=U").splitlines()
     appends = [f for f in conflicted if matches(f, append_globs(board))]
-    if p.returncode and appends:
-        # The gate resolved these the way sync does; by hand on trunk they could come out
-        # differently. Sync resolves them in the job and stops on the rest; a job whose only
-        # conflicts were appends merges after it with no new handoff.
+    resolved = sync_resolutions(branch, appends) if p.returncode and appends == conflicted else None
+    if resolved:
+        # Taken from a replay of the job's sync, not resolved here: on trunk the job is
+        # `theirs`, and the rows must come out as the sync and the gate order them.
+        for f, text in resolved.items():
+            Path(f).write_text(text)
+            git("add", "--", f, check=True)
+        # --no-edit keeps the comment lines git added for the conflicts it saw; none is left.
+        merge_msg = Path(git("rev-parse", "--path-format=absolute", "--git-path", "MERGE_MSG"))
+        merge_msg.write_text(re.sub(r"\n*# Conflicts:\n(#\t.*\n)*", "\n", merge_msg.read_text()))
+        print(f"resolved {', '.join(appends)} as `jig sync` would: trunk's lines, then {name}'s")
+        p.returncode = 0
+    elif p.returncode and appends:
+        # Anything sync would stop on is the job's to resolve, beside its checks.
         git("merge", "--abort")
         die(f"merging {branch} conflicts in append files ({', '.join(appends)}): "
             f"`jig sync` the job, then merge again")
@@ -1338,38 +1348,70 @@ def blob(rev: str, path: str) -> str:
     return subprocess.run(["git", "show", f"{rev}:{path}"], capture_output=True, text=True).stdout
 
 
+def replay_sync(job: str, trunk: str) -> tuple[str, list[str]] | None:
+    """git's half of `jig sync` merging TRUNK into JOB, written nowhere: the tree, with conflict
+    markers in diff3 style, and the conflicted files. None when git can't (older than 2.38)."""
+    p = subprocess.run(["git", "-c", "merge.conflictStyle=diff3", "merge-tree", "--write-tree",
+                        "--name-only", "--no-messages", job, trunk], capture_output=True, text=True)
+    tree, *conflicted = p.stdout.splitlines() or [""]
+    return (tree, conflicted) if p.returncode in (0, 1) and tree else None
+
+
+def sync_resolutions(job: str, files: list[str]) -> dict[str, str] | None:
+    """FILES as `jig sync` would leave them after merging trunk (HEAD) into JOB, or None if
+    the sync would stop on any of them, or any isn't a conflict where both sides only added: a
+    file one side deleted is conflicted with no markers, and resolving it would keep the file."""
+    replay = replay_sync(job, "HEAD")
+    if not replay:
+        return None
+    tree, conflicted = replay
+    out = {}
+    for f in files:
+        raw = blob(tree, f)
+        text, ok = resolved_appends(raw)
+        if f not in conflicted or not CONFLICT.search(raw) or not ok:
+            return None
+        out[f] = text
+    return out
+
+
 def changed_since(commit: str, branch: str, board: "Board") -> list[str]:
     """What a job did after the commit that was checked: the files its own commits changed,
     and what a merge of trunk carries beyond what `jig sync` makes of that merge. Trunk's
-    changes aren't the job's, a hand edit hidden in a resolution is, and handoff notes are
-    bookkeeping made after the check by design."""
+    changes aren't the job's, a hand edit hidden in a resolution is. Handoff notes, and the
+    DEFERRED.md rows the review's untaken findings get beside them, are bookkeeping made after
+    the check by design: a DEFERRED.md change that deletes no line doesn't count. One that
+    deletes a line rewrites a disposition no one checked, so it does."""
     trunk, appends = board.trunk, append_globs(board)
     out: list[str] = []
+
+    def job_changes(old: str, new: str) -> list[str]:
+        files = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", old, new).splitlines()
+        stat = git("diff", "--numstat", "--no-renames", old, new, "--", DEFERRED) if DEFERRED in files else ""
+        return [f for f in files if f != DEFERRED] if stat.split("\t")[1:2] == ["0"] else files
+
     for line in git("rev-list", "--first-parent", "--parents", f"{commit}..{branch}").splitlines():
         c, *parents = line.split()
         if len(parents) > 1 and subprocess.run(["git", "merge-base", "--is-ancestor", parents[1], trunk],
                                                capture_output=True).returncode == 0:
             # Replay the sync: git's merge, then the append rule, compared with what was committed.
-            p = subprocess.run(["git", "-c", "merge.conflictStyle=diff3", "merge-tree", "--write-tree",
-                                "--name-only", "--no-messages", parents[0], parents[1]],
-                               capture_output=True, text=True)
-            tree, *conflicted = p.stdout.splitlines() or [""]
-            if p.returncode not in (0, 1) or not tree:
+            replay = replay_sync(parents[0], parents[1])
+            if not replay:
                 if git_version() < (2, 38):
                     die(f"comparing a synced job needs git 2.38 or later (`git merge-tree "
                         f"--write-tree`); this is git {'.'.join(map(str, git_version()))}")
                 # No replay to compare with: everything the merge changed counts as the job's.
-                tree, conflicted = parents[0], []
+                replay = (parents[0], [])
+            tree, conflicted = replay
             files = []
-            for f in git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", tree, c).splitlines():
+            for f in job_changes(tree, c):
                 if f in conflicted and matches(f, appends):
                     text, ok = resolved_appends(blob(tree, f))
                     if ok and text == blob(c, f):
                         continue
                 files.append(f)
         else:
-            files = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
-                        parents[0], c).splitlines()
+            files = job_changes(parents[0], c)
         out += [f for f in files if f and not f.startswith(f"{DIR}/handoffs/") and f not in out]
     return out
 
@@ -3761,7 +3803,8 @@ def reviewed_commits() -> set[str]:
 def counts_reviewed(commit: str, done: set[str], board: "Board") -> bool:
     """A commit is reviewed when `jig reviewed` recorded it, or when a recorded commit is its
     first-parent ancestor and nothing of the job's changed since (`changed_since`): `jig
-    handoff` requires the review to be HEAD, so the note is always committed after it."""
+    handoff` requires the review to be HEAD, so the note, and the DEFERRED.md rows beside it,
+    are always committed after it."""
     for c in git("rev-list", "--first-parent", commit).splitlines():
         if c in done:
             return not changed_since(c, commit, board)
