@@ -45,6 +45,9 @@ Report the output, then say what it means in a few lines:
   recorded answer from `findings` in `.jig/config.json`: not answered, approved and not done,
   deferred and where, or an exception with the owner's reason. An answer given in chat and not
   recorded there is not answered. The last line counts the unanswered and the approved-not-done.
+- **Exceptions that answer no finding.** The page moved, by a job or a remap, or no longer
+  breaks the rule. jig never drops an exception: the owner drops it on trunk, or records it
+  again at the page's new path. Not listed while a redocument run's remap is on trunk.
 - **Remap rows that keep a page where survey moves it.** `.jig/redocument.md` on trunk keeps a
   page in a form jig's rule moves it from, and no exception is recorded. Say so plainly: an
   approval left it, silently. The owner moves it in the remap or records the reason.

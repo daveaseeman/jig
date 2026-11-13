@@ -5151,16 +5151,48 @@ expect_pass sh -c "test -f docs/a/x.md && ! git diff --cached --name-status | gr
 import json; b = json.load(open('.jig/config.json'))
 assert not any(k.startswith('shape:') for k in b.get('findings', {})), b.get('findings')\""
 undo
-printf '# Remap\n\n| # | Old path(s) | New path | Verb | Notes |\n|---|---|---|---|---|\n| 1 | `docs/a/b/b.md` | `docs/a/e/e.md` | move | |\n' > .jig/redocument.md
-git add -A && git commit -qm remap && mkdir -p docs/a/e && git mv docs/a/b/b.md docs/a/e/e.md && git commit -qm "the job's move, merged"
-msg="findings: update's review list already tags b's exception at the path the remap moved it to"
-out=$($UP 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -q '\[contract:docs/a/e/e.md: exception: table lead\]'" "$out"
-msg="findings: --apply moves the exception to the one new path the remap row gave the page"
-$UP --apply >/dev/null 2>&1
-expect_pass python3 -c "
-import json; b = json.load(open('.jig/config.json'))
-assert b.get('findings') == {'contract:docs/a/e/e.md': 'exception: table lead'}, b.get('findings')"
+
+# An answer stays where the owner put it: jig moves one only with its own move, and never drops an exception.
+fpages() {  # fpages <dir>: a, and b off the contract with its exception recorded and its shape deferred
+  pcnew "$1" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+  mkdir -p docs/a/b && printf '# A\n\nThe a system.\n' > docs/a/a.md && printf '# B\n\n## Part\n\nB, with no lead.\n' > docs/a/b/b.md
+  board "b['docmap'] = {'docs/a/a.md': ['src/a/**'], 'docs/a/b/b.md': ['src/b/**']}; b['findings'] = {'contract:docs/a/b/b.md': 'exception: table lead', 'shape:docs/a/b/b.md': 'deferred: redocument'}"
+  git add -A && git commit -qm "b and its answers"; }
+H='# Redocument: the remap\n\n| # | Old path(s) | New path | Verb | Notes |\n|---|---|---|---|---|\n'
+recis() { python3 -c "import json,sys; b = json.load(open('.jig/config.json')); assert b.get('findings') == json.loads(sys.argv[1]), b.get('findings')" "$1"; }
+fpages "$T/findings-rename"
+git mv docs/a/b/b.md docs/a/q.md && board "b['docmap'] = {'docs/a/a.md': ['src/a/**'], 'docs/a/q.md': ['src/b/**']}" && git add -A && git commit -qm "a job renames b to q"
+msg="findings: a job's rename leaves b's exception where the owner put it; --apply drops only the deferral"
+$UP --apply >/dev/null 2>&1 && git commit -qm update >/dev/null 2>&1
+expect_pass recis '{"contract:docs/a/b/b.md": "exception: table lead"}'
+msg="findings: survey lists the exception as answering no finding, counts it, and shows q's contract finding not answered"
+out=$($J survey 2>&1)
+expect_pass sh -c "echo \"\$0\" | sed -n '/exceptions that answer no finding/,/^\$/p' | grep -q '^  contract:docs/a/b/b.md: exception: table lead' && echo \"\$0\" | grep -q '\[contract:docs/a/q.md: not answered\]' && echo \"\$0\" | tail -1 | grep -q '1 exception answering no finding'" "$out"
+fpages "$T/findings-merge"
+printf 'n\n' > docs/a/notes.md && printf '[notes](notes.md)\n' >> docs/a/a.md && git add -A && git commit -qm "a has notes"
+printf "$H| 1 | \`docs/a/a.md\` | same | rewrite | |\n| 2 | \`docs/a/b/b.md\` | \`docs/a/a.md\` | merge | into a |\n" > .jig/redocument.md && git add -A && git commit -qm remap
+git rm -q docs/a/b/b.md && board "b['docmap'].pop('docs/a/b/b.md')" && git add -A && git commit -qm "b merged into a"
+msg="findings: a merge keeps b's exception, and survey holds back the unused list while the remap is on trunk"
+$UP --apply >/dev/null 2>&1 && git commit -qm update >/dev/null 2>&1
+out=$($J survey 2>&1)
+expect_pass sh -c "python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['findings'] == {'contract:docs/a/b/b.md': 'exception: table lead'}, b['findings']\" && ! echo \"\$0\" | grep -q 'answer no finding'" "$out"
+fpages "$T/findings-split"
+printf "$H| 1 | \`docs/a/b/b.md\` | \`docs/a/e.md\` | split | first half |\n| 2 | \`docs/a/b/b.md\` | \`docs/a/f.md\` | split | second half |\n" > .jig/redocument.md && git add -A && git commit -qm remap
+printf '# E\n\n## Part\n\nFirst half.\n' > docs/a/e.md && printf '# F\n\n## Part\n\nSecond half.\n' > docs/a/f.md
+git rm -q docs/a/b/b.md && board "b['docmap'] = {'docs/a/a.md': ['src/a/**'], 'docs/a/e.md': ['src/b/x/**'], 'docs/a/f.md': ['src/b/y/**']}" && git add -A && git commit -qm "b split"
+msg="findings: a split puts b's exception on neither half; e and f are not answered"
+$UP --apply >/dev/null 2>&1 && git commit -qm update >/dev/null 2>&1
+out=$($J survey 2>&1)
+expect_pass sh -c "python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['findings'] == {'contract:docs/a/b/b.md': 'exception: table lead'}, b['findings']\" && echo \"\$0\" | grep -q '\[contract:docs/a/e.md: not answered\]' && echo \"\$0\" | grep -q '\[contract:docs/a/f.md: not answered\]'" "$out"
+fpages "$T/findings-redocument"
+printf "$H| 1 | \`docs/a/b/b.md\` | \`docs/a/e.md\` | move | |\n" > .jig/redocument.md
+board "b['findings']['contract:docs/a/e.md'] = 'exception: table lead'" && git add -A && git commit -qm "step 2-3: the remap, b's exception recorded at e"
+printf '# E\n\n## Part\n\nB rewritten, table lead kept.\n' > docs/a/e.md && board "b['docmap']['docs/a/e.md'] = ['src/b/**']" && git add -A && git commit -qm "e's job merged"
+git rm -q docs/a/b/b.md .jig/redocument.md && board "b['docmap'].pop('docs/a/b/b.md'); [b['findings'].pop(k) for k in ('contract:docs/a/b/b.md', 'shape:docs/a/b/b.md')]" && git add -A && git commit -qm "step 6: cleanup"
+msg="findings: by the book, redocument ends with the exception at e, survey showing it, and no exception unused"
+$UP --apply >/dev/null 2>&1; git commit -qm update >/dev/null 2>&1
+out=$($J survey 2>&1)
+expect_pass sh -c "python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['findings'] == {'contract:docs/a/e.md': 'exception: table lead'}, b['findings']\" && echo \"\$0\" | grep -q '\[contract:docs/a/e.md: exception: table lead\]' && ! echo \"\$0\" | grep -q 'answer no finding'" "$out"
 
 # A metarepo's pages move in a job (M4): trunk records the yes, and makes no move.
 FM="$T/findings-meta"; mkdir -p "$FM" && cd "$FM" && git init -q -b main && git config user.email t@t && git config user.name t
@@ -5173,14 +5205,14 @@ out=$($UP --apply 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'a job.s in a metarepo (M4)' && echo \"\$0\" | grep -q '^  git mv docs/g/p/p.md docs/g/p.md' && test -f docs/g/p/p.md && ! git diff --cached --name-status | grep -q docs/g" "$out"
 nohook() { git -c core.hooksPath=/dev/null commit -qm "$1"; }
 git add -A && nohook update
-msg="findings: a page a job moved keeps its exception, under the form it has now"
+msg="findings: in a metarepo, after the job's move merged, --apply drops the approval and keeps the exception where it was"
 printf '# Q\n\n## Part\n\nQ, with no lead.\n' > docs/g/q/q.md
 board "b['findings']['contract:docs/g/q/q.md'] = 'exception: table lead'; b['findings']['shape:docs/g/q/q.md'] = 'approved'; b['docmap'] = {'docs/g/q/q.md': ['x/**']}"
 git add -A && nohook "findings: q" && git mv docs/g/q/q.md docs/g/q.md && nohook "the job's move, merged"
 $UP --apply >/dev/null 2>&1
 expect_pass python3 -c "
 import json; b = json.load(open('.jig/config.json'))
-assert b['findings'] == {'shape:docs/g/p/p.md': 'approved', 'contract:docs/g/q.md': 'exception: table lead'}, b['findings']"
+assert b['findings'] == {'shape:docs/g/p/p.md': 'approved', 'contract:docs/g/q/q.md': 'exception: table lead'}, b['findings']"
 }
 
 # ---------------------------------------------------------------- what --merge-log writes

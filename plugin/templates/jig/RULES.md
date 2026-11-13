@@ -359,23 +359,26 @@ jig acts on the recorded entry, never on an answer in chat, so the answers are o
 trunk before anything acts on them. Survey and update print each finding's outcome beside it —
 not answered, approved and not done, the deferral, the exception — and survey's `--json` gives
 `id` and `outcome`. Survey's last line counts the findings not answered, those approved and
-not done, and the remap rows that contradict it (below), so it never says there is nothing to
-do while one stands.
+not done, the exceptions that answer no finding, and the remap rows that contradict it (below),
+so it never says there is nothing to do while one stands.
+
+An answer stays where the owner put it: it answers the finding with its id, at its path, and
+nothing reads it anywhere else. An entry moves only with jig's own move, below, and jig never
+drops an exception: it is the owner's reason, which no tree can rebuild. When a page moves by
+other means (a job, a remap), its exception is recorded again at the new path, or dropped, on
+trunk. Survey lists each exception that answers no finding, except while `.jig/redocument.md`
+is on trunk.
 
 `jig update --apply` carries out each approved move, whether or not the layout is current: a
 `shape` finding, or a `page` outside the tree that isn't a fold. It makes the `git mv`, renames
 the `docmap` key and `boards` entry naming the old path, drops the entry, and moves the page's
-other entries (an exception on its `contract` finding) to its new path. It drops any entry
-whose finding no longer fires, on today's tree and, while `.jig/redocument.md` is on trunk, on
-the tree the remap leaves. When a page moved by other means (a job, the remap), its other
-entries follow it: to the form it has now, or to the one new path a remap row on trunk moved it
-to alone. Its `shape` or `page` entry doesn't follow and drops: that question is settled, and
-carried over it would answer the opposite move. What it can't do — a reference in another file, a
+other entries (an exception on its `contract` finding) to its new path. It drops an approval or
+a deferral whose finding no longer fires: that question is settled. What it can't do — a reference in another file, a
 `contract_paths` glob, a `BUFFER.md` row per cached pointer, an edit — it prints for the
 session to make in the same commit, and an approved finding it can't carry out stays recorded.
 The usual refusals apply (open jobs, tracked changes), and it commits nothing. In a metarepo a
 page moves only in a job (M4): `--apply` lists the approved moves as the job's and makes none,
-and each entry drops on trunk's next `--apply` once its move has merged.
+and each approval drops on trunk's next `--apply` once its move has merged.
 
 `/jig:redocument`'s remap, `.jig/redocument.md`, is read by its table's `Old path(s)` and `New
 path` columns, `same` keeping each old path. The hook refuses a commit that adds or changes it
