@@ -26,7 +26,8 @@ identical; only the coordination disappears.
 Two files on trunk, written only by the hubnode. `.jig/config.json` holds what rarely
 changes: `name`, `trunk`, `common`, `append_files`, `reserve`, `docmap`, `not_docs`,
 `release`, `reference_files`, `workflow` (optional; see Workflow), `deep_subsystems` and
-`boards` (both optional; see Documentation) and the layout's `version`.
+`boards` (both optional; see Documentation), `derived_files` (optional; globs naming every
+file `.jig/scripts/derive.sh` writes, which `jig merge` commits) and the layout's `version`.
 `.jig/jobs.json` holds the open jobs, nothing else. Per job:
 
 | Key | Meaning |
@@ -98,7 +99,7 @@ Conventions so two jobs rarely meet in one hunk:
 - Scarce numbers come from the board (`--reserve`, `jig reserve`), never from looking at what seems free.
   Two branches that both take migration 17 corrupt the first database that runs both.
 - A file generated from the whole tree (a reference, an index) is written on trunk by
-  `.jig/scripts/derive.sh` at each merge, never on a branch: two branches' copies merge into a
+  `.jig/scripts/derive.sh` at each merge and listed in `derived_files`, never on a branch: two branches' copies merge into a
   wrong file, or conflict.
 
 ## Reserved numbers
@@ -428,8 +429,10 @@ else stops with the files named, and a person resolves it.
    subjects lead with ids: the subject becomes `<ids>: merge <job>`. `: merge <job>` is added
    unless the text already ends with it, so pass the ids and don't write the merge yourself.
    Before its commit the merge runs `.jig/scripts/setup.sh`, then `.jig/scripts/derive.sh`,
-   and commits what derive wrote in the merge commit. A failing derive stops the merge before
-   its commit, as a conflict does: fix it, `jig merge --number`, `git commit`.
+   and commits what the board's `derived_files` globs match in the merge commit, and nothing
+   else it wrote: a tracked file left changed outside them is named and not committed. A failing
+   derive stops the merge before its commit, as a conflict does: fix it, `jig merge --number`,
+   `git commit`.
    A hand `git merge` on trunk runs `setup.sh` but not `derive.sh`: run it and commit what it
    wrote, or the derived files stay stale until the next `jig merge`.
 

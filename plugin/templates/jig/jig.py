@@ -53,6 +53,7 @@ BOARD_DEFAULTS = {
 # Board keys jig reads but never writes: absent means jig's defaults, so update adds none of
 # them. Each new optional key goes here, or update calls it unknown.
 BOARD_OPTIONAL = (
+    "derived_files",       # globs derive.sh writes; jig merge commits what they match
     "workflow",            # overrides WORKFLOW_DEFAULTS
     "deep_subsystems",     # {"docs/<system>/<subsystem>/<folder>": rationale}: owner-approved deeper pages
     "boards",              # ["docs/<board>/<board>.md", "docs/<system>/<board>/<board>.md"]: the pages that are boards, never inferred from a path
@@ -753,64 +754,45 @@ def run_repo_script(root: Path, script: Path) -> int:
 DERIVE = f"{DIR}/scripts/derive.sh"
 
 
-def unstaged(root: Path) -> set[str]:
-    # NUL-separated, so a non-ASCII name comes back as a path, not a quoted one.
-    out = git("diff", "--name-only", "-z", cwd=str(root)) + "\0" + \
+def derived_files(root: Path, board: "Board") -> list[str]:
+    """The paths the board's derived_files globs match, tracked or not, deleted or not."""
+    globs = board.data.get("derived_files", [])
+    if not globs:
+        return []
+    out = git("ls-files", "-z", cwd=str(root)) + "\0" + \
         git("ls-files", "--others", "--exclude-standard", "-z", cwd=str(root))
-    return {f for f in out.split("\0") if f}
+    return sorted({f for f in out.split("\0") if f and matches(f, globs)})
 
 
-def stats(root: Path, files: set[str]) -> dict:
-    def one(f: str):
-        try:
-            st = (root / f).lstat()
-        except OSError:
-            return None
-        return st.st_mtime_ns, st.st_size, st.st_ino
-    return {f: one(f) for f in files}
-
-
-def run_derive(root: Path) -> tuple[int, list[str]]:
-    """Run the repo's derive.sh on the merged tree and stage what it wrote, so the merge commit
-    carries the files derived from the whole tree: a branch's copy is derived from its own
-    sources, and two branches' copies merge into a wrong file. What it wrote is judged by what
-    it touched, not by name: a derived file already unstaged when it starts (a failed run's
-    write, a hand run before `--number`) is rewritten and must be staged too. Returns its exit
-    code and the files it staged."""
+def run_derive(root: Path, board: "Board") -> tuple[int, list[str]]:
+    """Run the repo's derive.sh on the merged tree and stage the paths the board declares
+    derived, as they are now: what the merge commits is a state the repo named, never a guess
+    at what the script touched. Staged even when it fails, so `git merge --abort` resets them.
+    Returns its exit code and the derived files the merge commit changes."""
     script = root / DERIVE
     if not script.exists():
         return 0, []
-    before = stats(root, unstaged(root))
     rc = run_repo_script(root, script)
-    after = stats(root, unstaged(root) | set(before))
-    touched = [f for f, st in after.items() if f not in before or st != before[f]]
-    # Literal, so a name like `[slug].md` or `:x` is a path, not a pattern.
-    lit = ("--literal-pathspecs",)
-    gone = [f for f in touched if after[f] is None]
-    indexed = set(filter(None, git(*lit, "ls-files", "-z", "--", *gone, cwd=str(root)).split("\0"))) \
-        if gone else set()
-    # An untracked file that came and went has nothing to stage; a tracked one it deleted does.
-    wrote = sorted(f for f in touched if after[f] is not None or f in indexed)
-    # Staged even when it failed: nothing is committed then, `git merge --abort` resets it, and
-    # the rerun's identical write would otherwise leave a correct file unstaged.
-    if wrote:
-        git(*lit, "add", "-A", "--", *wrote, cwd=str(root), check=True)
+    files = derived_files(root, board)
+    if files:
+        # Literal and from stdin: a name like `[slug].md` or `:x` is a path, and a long list
+        # never meets the argument limit.
+        p = subprocess.run(["git", "--literal-pathspecs", "add", "-A", "--pathspec-from-file=-",
+                            "--pathspec-file-nul"], cwd=root, input="\0".join(files),
+                           capture_output=True, text=True)
+        if p.returncode:
+            die(f"git add {', '.join(files)}: {p.stderr.strip()}", 2)
+    globs = board.data.get("derived_files", [])
+    wrote = sorted(f for f in git("diff", "--cached", "--name-only", "-z", "HEAD", cwd=str(root)).split("\0")
+                   if f and matches(f, globs))
     return rc, wrote
 
 
-def setup_and_derive(root: Path, name: str) -> bool:
+def setup_and_derive(root: Path, board: "Board", name: str) -> bool:
     """The merge's last writes before its commit: setup.sh, so derive.sh runs in an environment
     built from the merged manifests, then derive.sh. False when derive.sh failed."""
-    def changed() -> set[str]:
-        return set(filter(None, git("diff", "--name-only", "-z", cwd=str(root)).split("\0")))
-    before = changed()
     run_setup(root)
-    # Not committed: a tracked file setup.sh rewrote (a lockfile) is a change nobody reviewed.
-    by_setup = sorted(changed() - before)
-    if by_setup:
-        print(f"jig: {DIR}/scripts/setup.sh changed tracked files ({', '.join(by_setup)}): it "
-              f"must leave them alone. A generated file belongs in {DERIVE}.", file=sys.stderr)
-    rc, wrote = run_derive(root)
+    rc, wrote = run_derive(root, board)
     if rc:
         print(f"jig: {DERIVE} exited {rc}; the merge isn't committed. Fix it, then "
               f"`jig merge --number` and `git commit`; or `git merge --abort`, which puts "
@@ -818,6 +800,13 @@ def setup_and_derive(root: Path, name: str) -> bool:
         return False
     if wrote:
         print(f"derived: {', '.join(wrote)}")
+    # The merge started from a clean tree, so a tracked change left unstaged is setup.sh's or
+    # an output derive_files doesn't name: neither is committed, and both leave trunk dirty.
+    left = sorted(filter(None, git("diff", "--name-only", "-z", cwd=str(root)).split("\0")))
+    if left:
+        print(f"jig: changed and not committed: {', '.join(left)}. {DIR}/scripts/setup.sh must "
+              f"leave tracked files alone; a file {DERIVE} writes goes in {CONFIG}'s derived_files.",
+              file=sys.stderr)
     return True
 
 
@@ -1104,7 +1093,7 @@ def cmd_merge(root: Path, args) -> int:
             die("resolve and `git add` the conflicted files first")
         for line in number_placeholders(root, trunk) or ["nothing to number"]:
             print(f"numbered {line}" if "→" in line else line)
-        return 0 if setup_and_derive(root, "the job") else 1
+        return 0 if setup_and_derive(root, board, "the job") else 1
     if not name:
         die("usage: jig merge <job> [-m msg] [--subject ids], or jig merge --number", 2)
     if git("branch", "--show-current") != trunk:
@@ -1189,7 +1178,7 @@ def cmd_merge(root: Path, args) -> int:
     # commit isn't a merge: a metarepo's M4 would refuse derived files in it.
     if not merging:
         run_setup(root)
-    elif not setup_and_derive(root, name):
+    elif not setup_and_derive(root, board, name):
         return 1
     commit = ["git", "commit", "-q", "--no-edit"] if merging else \
         ["git", "commit", "-q", "-m", f"{msg}: already in {trunk}, entry deleted"]

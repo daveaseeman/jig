@@ -159,7 +159,8 @@ of `jobs.json`.
 
 `jig merge` already wrote the files the repo derives from the whole tree, with
 `.jig/scripts/derive.sh`, in the merge commit. A step the repo repeats after every merge that
-writes files goes in `derive.sh`: propose it to the owner.
+writes files goes in `derive.sh`, its outputs in `derived_files` in `.jig/config.json`:
+propose it to the owner.
 
 Look at the merged job's worktree. If its `git status` is clean, `git worktree remove <it>` and
 `git branch -d <branch>`. Otherwise tell the owner and leave both.

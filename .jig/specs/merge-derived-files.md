@@ -94,12 +94,17 @@ around jig's commands.
   body is commented examples and `exit 0`, so the template is a no-op.
 - **`jig merge`**. After its own writes (the entry, the numbers, the roadmap), it runs
   `setup.sh`, which used to run after the commit, and then `derive.sh` (environment as
-  `run_setup`'s). It stages the tracked files `derive.sh` changed or deleted and the files it
-  made, judged by what it touched (each file's stat), not by name, prints `derived: <files>`,
-  and commits. A tracked file `setup.sh` changed is not committed: jig warns that `setup.sh`
-  must leave tracked files alone. If `derive.sh` exits non-zero, nothing is
+  `run_setup`'s). It stages exactly the paths the board's `derived_files` globs match, tracked
+  or untracked, changed or deleted, literally (`--pathspec-from-file`), even when `derive.sh`
+  fails, so `git merge --abort` resets them. It prints `derived: <files>`, the declared files
+  the merge commit changes, and commits. A tracked change left unstaged (`setup.sh`'s, or an
+  output the globs don't name) is named on stderr as "changed and not committed" and left out.
+  With no `derived_files`, nothing is staged. If `derive.sh` exits non-zero, nothing is
   committed. jig prints the exit code and how to finish: fix it, then `jig merge --number` and
   `git commit`, or `git merge --abort`, which puts the entry back. Exit 1.
+- **`derived_files`** in `config.json` (BOARD_OPTIONAL): globs naming every file `derive.sh`
+  writes, the same shape as `release.artifacts`. The `derive.sh` header, RULES.md (The board,
+  step 3) and the init, update and adopt skills name it.
 - **`jig merge --number`**, the conflict path's last step before the commit, runs `setup.sh` and
   then `derive.sh` the same way. The conflict message drops "then run setup.sh".
 - **`jig update`** adds `derive.sh` from the template where it's missing: a `STEPS` row and an
@@ -148,6 +153,11 @@ around jig's commands.
 - [ ] Smoke: with the template's `derive.sh`, `jig merge` prints no `derived:` line, and its
   merge commit lists the same files as before this change. `worktree_setup`'s "logs the
   checkout that merged, once" still passes.
+- [ ] Smoke, with `derived_files` set where derive writes: a failed run's temp file isn't
+  committed; `git merge --abort` after a failed run leaves the tracked tree clean; a hand run of
+  a write-on-difference derive before `--number` still lands; a tracked file derive writes
+  outside `derived_files` is named ("changed and not committed") and not committed. A tracked
+  file derive deletes, a non-ASCII output, and `setup.sh` writing a derived file each land.
 - [ ] Smoke: after init, `derive.sh` is executable and exits 0. `jig update` on a repo without it
   adds it from the template, staged. The exact `.jig/` file lists in smoke name it.
 - [ ] Text: hubnode SKILL.md's "After a merge" names `.jig/scripts/derive.sh`, `git worktree
@@ -167,8 +177,8 @@ around jig's commands.
   does it after looking: a subnode may still have uncommitted work there.
 - Running `derive.sh` in the gate's scratch checkout. Its tracked changes would make
   `jig mark gated` refuse (`gate_scratch_problem`), and the merge writes them fresh anyway.
-- A board key listing derived files, and a rule refusing a branch that commits one. The merge
-  rewrites them, so a branch's copy never lands.
+- A rule refusing a branch that commits a derived file. The merge rewrites them, so a branch's
+  copy never lands. (The key listing them, `derived_files`, is in: see Decisions.)
 - Report section 1 (append conflicts). Another group's.
 - Daisy's own move: `gen_reference.py` into `derive.sh`, and its AGENTS.md:44 line. That
   happens in Daisy through `/jig:update`.
@@ -189,6 +199,11 @@ around jig's commands.
 - `marketing/FEATURES.md` (main checkout only): a `derive.sh` row, added before the feature.
 
 ## Alternatives considered
+- Infer derive's outputs from the working tree around its run: by name, by stat, staging what
+  a failed run touched. Rejected because the tree also holds the merge, `setup.sh`'s writes, a
+  failed or hand run's output and the hubnode's edits, and what a run touches isn't its output
+  (write-on-change scripts, temp files, deletions). Each of three review rounds found a case
+  the sensor missed. Reason is [seen: the review rounds' repros, the /jig:bug write-up].
 - `setup.sh` runs the generator. Rejected because it runs in every new checkout and after every
   merge: its tracked changes block `jig mark gated` and leave trunk dirty, so the next
   `jig merge` refuses. Reason is [seen: the scratch repo].
@@ -217,6 +232,10 @@ around jig's commands.
   `jig sync`'s hand-resolved path is unchanged.
 - A failing `derive.sh` leaves the merge uncommitted rather than committing stale derived files.
   It finishes the same way a conflict does.
+- The owner, 2026-11-13: derived outputs are declared (`derived_files`), approved after three
+  non-converging rounds.
+- What the merge commits is what `derived_files` matches after `derive.sh` runs, staged even on
+  failure. A tracked change outside it is named and not committed.
 - What `derive.sh` writes is part of the merge commit, so the pre-merge-commit hook judges it
   along with the job's changes (P2 included).
 - Order: this spec builds after `bug-merge-append-conflicts.md` (report section 1). Both change

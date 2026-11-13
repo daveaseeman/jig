@@ -5071,6 +5071,7 @@ mdjob() {
     && pcfold && git add -A && git commit -qm "note $1" )
 }
 fresh() { .jig/scripts/derive.sh && git diff --quiet -- INDEX.md; }
+derived() { python3 -c "import json,sys; f='.jig/config.json'; d=json.load(open(f)); d['derived_files']=sys.argv[1:]; json.dump(d, open(f,'w'), indent=2)" "$@"; }
 parents() { git log -1 --format=%P | wc -w | tr -d ' '; }
 
 mdjob T0 c.py
@@ -5087,7 +5088,7 @@ cd "\$(dirname "\$0")/../.."
 { echo "count: \$(ls src | wc -l | tr -d ' ')"; ls src; } > INDEX.md
 DER
 printf '#!/bin/sh\npwd -P >> "%s"\n' "$LOG" > .jig/scripts/setup.sh
-.jig/scripts/derive.sh && git add -A && git commit -qm "derive INDEX.md"
+derived INDEX.md && .jig/scripts/derive.sh && git add -A && git commit -qm "derive INDEX.md"
 
 mdjob A a.py; mdjob B e.py
 for j in A B; do
@@ -5133,7 +5134,7 @@ out=$($J merge H 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && ! grep -q '\"H\"' .jig/jobs.json && test -z \"\$(git status --porcelain)\" && ! echo \"\$0\" | grep -q '^derived:'" "$out"
 rm "$FLAG"
 
-printf 'cp INDEX.md índice.md\n' >> .jig/scripts/derive.sh && .jig/scripts/derive.sh && git add -A && git commit -qm "derive: a non-ASCII name"
+printf 'cp INDEX.md índice.md\n' >> .jig/scripts/derive.sh && derived INDEX.md índice.md && .jig/scripts/derive.sh && git add -A && git commit -qm "derive: a non-ASCII name"
 mdjob U p.py
 msg="derive: a file derive.sh writes under a non-ASCII name is staged and committed with the merge"
 out=$($J merge U 2>&1); rc=$?
@@ -5150,7 +5151,7 @@ git add -A && git commit -qm "setup rewrites a tracked lockfile on trunk"
 mdjob W r.py
 msg="derive: a tracked file setup.sh rewrote is warned about and left out of the merge commit"
 out=$($J merge W 2>&1); rc=$?
-expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'setup.sh changed tracked files (lock.json): it must leave them alone' && ! echo \"\$0\" | grep '^derived:' | grep -q lock.json && ! git diff --name-only HEAD^1 HEAD | grep -qx lock.json" "$out"
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'changed and not committed: lock.json' && ! echo \"\$0\" | grep '^derived:' | grep -q lock.json && ! git diff --name-only HEAD^1 HEAD | grep -qx lock.json" "$out"
 git checkout -q -- lock.json && printf '#!/bin/sh\nexit 0\n' > .jig/scripts/setup.sh && git commit -qam "setup quiet"
 
 cat > .jig/scripts/derive.sh <<DER
@@ -5166,7 +5167,7 @@ msg="derive: a derived file a failed run already wrote lands: --number and the c
 out=$($J merge --number 2>&1)
 expect_pass sh -c "git commit -q --no-edit && test -z \"\$(git status --porcelain)\" && git show HEAD:INDEX.md | grep -qx s.py && $(declare -f fresh); fresh" "$out"
 
-printf 'old\n' > old.md && printf 'rm -f old.md\n' >> .jig/scripts/derive.sh && git add -A && git commit -qm "derive deletes old.md"
+printf 'old\n' > old.md && printf 'rm -f old.md\n' >> .jig/scripts/derive.sh && derived INDEX.md old.md && git add -A && git commit -qm "derive deletes old.md"
 mdjob Y t.py
 msg="derive: a tracked file derive.sh deletes is staged as deleted: listed, gone from the merge commit, the tree clean"
 out=$($J merge Y 2>&1); rc=$?
@@ -5183,11 +5184,47 @@ cmp -s "\$tmp" INDEX.md && rm -f "\$tmp" || mv "\$tmp" INDEX.md
 rm -rf gen && mkdir gen && : > gen/index.md
 [ ! -e "$FLAG" ] || exit 3
 DER
-.jig/scripts/derive.sh && git add -A && git commit -qm "derive writes on a difference"
+derived INDEX.md "gen/**" && .jig/scripts/derive.sh && git add -A && git commit -qm "derive writes on a difference"
 mdjob Z u.py; touch "$FLAG"; $J merge Z >/dev/null 2>&1; rm "$FLAG"; touch gen/stray.md
 msg="derive: after a failed run, a rerun that finds INDEX.md current and removes an untracked file still commits INDEX.md current and leaves the tree clean"
 out=$($J merge --number 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && git commit -q --no-edit && test -z \"\$(git status --porcelain)\" && git show HEAD:INDEX.md | grep -qx u.py" "$out"
+
+# The final review's two: a failed atomic write's temp file, and a hand run before --number.
+cat > .jig/scripts/derive.sh <<DER
+#!/bin/sh
+set -eu
+cd "\$(dirname "\$0")/../.."
+tmp=\$(mktemp INDEX.md.XXXXXX)
+{ echo "count: \$(ls src | wc -l | tr -d ' ')"; ls src; } > "\$tmp"
+[ ! -e "$FLAG" ] || exit 3
+cmp -s "\$tmp" INDEX.md && rm -f "\$tmp" || mv "\$tmp" INDEX.md
+DER
+derived INDEX.md && git add -A && git commit -qm "derive: atomic, writes on a difference"
+mdjob N1 v.py; touch "$FLAG"; $J merge N1 >/dev/null 2>&1; rm "$FLAG"
+msg="derive: a failed run's temp file is not committed; --number and the commit leave INDEX.md current"
+out=$($J merge --number 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'derived: INDEX.md' && git commit -q --no-edit && ! git diff --name-only HEAD^1 HEAD | grep -q 'INDEX.md\.' && git show HEAD:INDEX.md | grep -qx v.py && test -z \"\$(git status --porcelain --untracked-files=no)\"" "$out"
+rm -f INDEX.md.??????
+msg="derive: after a failed run, git merge --abort leaves the tracked tree clean"
+mdjob N2 w.py; touch "$FLAG"; $J merge N2 >/dev/null 2>&1; rm "$FLAG"
+expect_pass sh -c "git merge --abort && grep -q '\"N2\"' .jig/jobs.json && test -z \"\$(git status --porcelain --untracked-files=no)\""
+rm -f INDEX.md.??????
+
+mdjob N3 x.py
+(cd .git/jig/worktrees/N3 && printf 'job3\n' > shared.txt && git commit -qam "N3: shared" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note N3 again")
+printf 'trunk3\n' > shared.txt && git commit -qam "trunk: shared again"
+$J merge N3 >/dev/null 2>&1; printf 'both3\n' > shared.txt && git add shared.txt && .jig/scripts/derive.sh
+msg="derive: a hand run of a write-on-a-difference derive before --number still lands: INDEX.md current in the commit, the tree clean"
+out=$($J merge --number 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'derived: INDEX.md' && git commit -q --no-edit && test -z \"\$(git status --porcelain)\" && git show HEAD:INDEX.md | grep -qx x.py" "$out"
+
+printf 'echo y > undeclared.md\n' >> .jig/scripts/derive.sh && printf 'n\n' > undeclared.md && git add -A && git commit -qm "derive writes an undeclared tracked file"
+mdjob N4 y.py
+msg="derive: a tracked file derive.sh writes outside derived_files is named and not committed"
+out=$($J merge N4 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'changed and not committed: undeclared.md' && ! git diff --name-only HEAD^1 HEAD | grep -qx undeclared.md && git diff --name-only HEAD^1 HEAD | grep -qx INDEX.md" "$out"
+git checkout -q -- undeclared.md
 }
 
 # ---------------------------------------------------------------- what --merge-log writes
