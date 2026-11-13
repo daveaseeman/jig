@@ -54,9 +54,10 @@ A yes to a finding is recorded on trunk and carried out, and it stays carried ou
 - **The record.** `findings`, an optional key in `.jig/config.json`, trunk-only under R5 like `deep_subsystems`: `{"<id>": "approved" | "deferred: <where>" | "exception: <the owner's reason>"}`. It has one entry per id and no globs. An exception with no reason doesn't count. jig acts on the recorded entry, never on an answer in chat.
 - **Carried out.** `jig update --apply` carries out each `approved` move, whether or not the layout is current. A move is a `shape` finding, or a `page` outside the tree that isn't a fold.
   - It makes the `git mv`, rewrites the board keys that name the old path (`docmap`, `boards`) and drops the entry.
-  - It drops any entry whose finding no longer fires.
+  - It drops an approval or a deferral whose finding no longer fires: that question is settled.
   - What it can't do, it prints for the session as today: references in other files, `contract_paths`, `BUFFER.md` rows, edits. An approved finding it can't carry out stays recorded.
   - The usual update refusals apply (open jobs, tracked changes), and it commits nothing.
+- **Answers stay put.** An entry answers the finding with its id, at its path, and nothing reads it anywhere else. jig changes `findings` only where it acts itself: its own carried-out move (exact: the git mv, docmap and boards, that entry dropped, the page's other entries moved to the new path), and dropping a settled approval or deferral. It never moves an entry by inference and never drops an exception. Survey lists each exception that answers no finding ("drop it on trunk, or record it at the page's new path"), in its print and as `exceptions_unused` in `--json`, and counts them in its last line. The list is held back while `.jig/redocument.md` is on trunk.
 - **State.** Survey and update's review list print each finding's outcome beside it:
   - not answered;
   - approved, not done;
@@ -69,7 +70,8 @@ A yes to a finding is recorded on trunk and carried out, and it stays carried ou
   - Update skill: list the findings with their ids and take one answer each: yes, defer to where, or an exception with the owner's reason. Record the answers on trunk in one commit, then run `--apply`. A recommendation is not an answer, and no one question covers some findings and leaves the rest.
   - Redocument step 1 records each page move it takes as `deferred: redocument`.
   - Redocument step 2 shows a row that keeps a page where survey would move it as an exception to jig's rule, with survey's line beside it. The owner's reason is recorded before the remap is committed. A brief that says jig accepts the form is checked against survey.
-  - Redocument step 6: survey lists no finding unanswered or deferred to redocument.
+  - Redocument step 2 also records, in the remap's commit, an exception for a page the remap moves, merges or splits at the new page's id, on the owner's word.
+  - Redocument step 6: the cleanup removes the old paths' `findings` entries with their docmap keys, and survey lists no finding unanswered or deferred to redocument, and no exception that answers no finding.
 - **Wording.** RULES.md's "Both forms are one page" sentence says it is about naming: a key names a page in the wrong form, and that page still moves.
 
 ## Done when
@@ -87,6 +89,13 @@ A yes to a finding is recorded on trunk and carried out, and it stays carried ou
     - With `"exception: the generator reads folder paths"`, the commit passes, and survey prints c with that exception.
     - A row that moves c to `docs/a/c.md` commits with no entry.
   - With no `findings` entry, `--apply` leaves both pages where they are, as today.
+- [ ] Smoke `findings`, answers stay put. b off the contract carries `contract:docs/a/b/b.md: exception: table lead`.
+  - Rename: a job renames b to `docs/a/q.md`. `--apply` drops only the deferral and keeps the exception at b's id. Survey lists it as answering no finding, counts it in the last line, and shows q's contract finding not answered.
+  - Merge: the remap merges b into a, and b is deleted. `--apply` keeps the exception, and survey holds back the unused list while the remap is on trunk.
+  - Split: the remap splits b into e and f. The exception lands on neither half, and both are not answered.
+  - By the book: the remap moves b to `docs/a/e.md`, the owner's exception is recorded at e in the remap's commit, and the cleanup removes b's entries. Survey ends with e's exception shown and no exception unused.
+  - Metarepo: after the job's move of an approved page merged, trunk's `--apply` drops the approval and keeps the page's exception at the old id.
+  - Kept: an exception the remap check asked for outlives `--apply` while the remap stands, and a page that changed form by hand doesn't carry its move's answer onto the opposite move.
 - [ ] The symptom, on Daisy. In a scratch clone at `df641b1d`, with this `jig.py` as `.jig/jig.py`, `jig survey` names the 24 pages that `.jig/redocument.md` rows 3, 4 and 18 keep in folder form. It reports each as contradicting survey with no exception recorded, so the approval that left them is no longer silent. Daisy itself is not touched.
 - [ ] `grep -n findings plugin/skills/update/SKILL.md plugin/skills/redocument/SKILL.md` shows the record step in each. `grep -n "decline them all" plugin/skills/redocument/SKILL.md` finds nothing.
 - [ ] RULES.md Documentation states the record, its outcomes, the carry-out, the remap check and the naming wording. The command list says `jig update --apply` carries out approved moves.
@@ -121,8 +130,10 @@ A yes to a finding is recorded on trunk and carried out, and it stays carried ou
 - `jig update --apply --move <id>`, where the flag is the yes. Rejected because deferrals and exceptions need a record anyway, and two ways to say yes is the ambiguity this spec removes. Reason is [assumed].
 - Refuse `--apply` until every finding has an outcome. Rejected because Daisy had about 85 findings, and blocking the layout on all of them invites blanket deferrals, the grouping this spec removes. Reason is [assumed].
 - Let redocument's end check catch it. Rejected because the check runs after every job has merged, and Daisy's remap pre-accepted it: "At the end, `jig survey` still lists … That is accepted." Reason is [seen]: Daisy `.jig/redocument.md`.
+- Infer where a moved page's answers went, from a job's `git mv`, the page's other form or the remap's rows, and move or drop them. Rejected after three review rounds that didn't converge: each inference missed an actor (redocument writes the new page and deletes the old, merges and splits have no one destination, a moved page can take the opposite form), and each miss lost or misplaced the owner's exception. An exception is the owner's reason, and no tree can rebuild it. Reason is [seen]: the round 1–3 repros and the /jig:bug write-up.
 
 ## Decisions
+- The owner, 2026-11-13: a recorded answer is never moved or dropped by inference; approved after three non-converging rounds.
 - General: in any repo running update, survey and redocument as RULES.md describes, a long finding list, an agent that groups its asks, or a relayed brief loses a yes the same way. RULES.md promises each move "on the owner's yes", and the record keeps that promise. A repo's deliberate difference becomes a visible exception rather than a finding listed forever. Nobody has to work against jig to hit this.
 - The yes lands on trunk before anything acts on it: the answers are one commit, then `--apply`. A subnode can't record an exception, because R5 keeps `findings` trunk-only.
 - A rename on a recorded yes amends `update.md`'s "never edits the repo's own files" and `flat-pages.md`'s "`--apply` leaves it". A rename is not an edit, and with no entry nothing changes.

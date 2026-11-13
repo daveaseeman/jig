@@ -1,6 +1,6 @@
 ---
 name: update
-description: Bring a repo already running jig to the current layout - move jig's files from old paths, rewrite the board, replace the tool files, reinstall the hooks. Shows the plan and asks before applying; never edits the repo's own files without a yes.
+description: Bring a repo already running jig to the current layout - move jig's files from old paths, rewrite the board, replace the tool files, reinstall the hooks, and carry out the moves the owner approved in the findings record. Shows the plan and asks before applying; never edits the repo's own files without a yes.
 disable-model-invocation: true
 ---
 
@@ -13,7 +13,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" update
 That is a dry run. It changes nothing, and its exit code says what you have:
 
 - **0, "up to date".** Say so. If it lists Repo files to review, show each as below and ask
-  about each; otherwise stop.
+  about each; otherwise stop. If it lists moves approved in `findings`, `--apply` carries them
+  out, layout current or not.
 - **0, a plan.** Show the plan: moves, files written from jig, removals, board edits, git
   state. Say each removal out loud — an old tool's script or rendered board, a merged entry,
   a review ledger's taken rows — since the diff is the only other place it shows. Ask. On a
@@ -38,7 +39,22 @@ That is a dry run. It changes nothing, and its exit code says what you have:
   owner's word, the owner runs `/jig:feedback`. Apply nothing, and stop.
 
 **Repo files to review** are the repo's own files an old convention left behind. Show each
-one's proposed edit and ask about each; make it only on a yes. `--apply` never touches them.
+one's proposed edit and ask about each; make it only on a yes.
+
+**One answer per finding, recorded.** Each finding carries its id, `<kind>:<path>`, and its
+recorded state. List the findings with their ids and take one answer for each: yes; defer, and
+to where (`redocument`, a later job); or an exception, with the owner's reason in their words.
+A recommendation is not an answer, and no question covers some findings and leaves the rest:
+"apply the update?" answers the layout only. Record the answers on trunk in one commit, as
+`findings` in `.jig/config.json` (`.jig/RULES.md`, Documentation: The findings record):
+`"approved"`, `"deferred: <where>"`, `"exception: <reason>"`. A deep page's exception is not a
+`findings` entry: it is its folder in `deep_subsystems`, with the rationale. Then run `--apply`: it carries out
+each approved move itself — the `git mv`, the `docmap` key, the `boards` entry, the entry
+dropped — and prints what is left to you for the same commit: the references in other files,
+`contract_paths`, the `BUFFER.md` rows. In a metarepo it lists the approved moves as a job's
+(M4): ask the hubnode to open one and make them there. Everything else on
+the list (an edit, a fold, a nest) you make by hand on its yes; jig acts on the record, never
+on an answer in chat.
 
 Some of them are survey's home findings. A **rules** file off root: fold what still binds into
 `AGENTS.md` or a page's Invariants, repoint the lines named, delete it — but a package's own rules
@@ -52,7 +68,7 @@ its subsystem's page, unless the owner approves its folder for `deep_subsystems`
 as `.jig/RULES.md` (Documentation) says; that entry lands on trunk on a yes. A page in the
 **wrong shape**: a folder page with nothing else in its folder goes flat beside its parent's
 page, and a flat page with a folder of its own name moves into it, each with its docmap key
-and `boards` entry; ask before each.
+and `boards` entry; ask before each, and record each answer.
 A **holder of the old page contract** (a check of the Now / Rules / Checks headings, a counter
 over numbered headings, an always-loaded line that makes page rules bind or cites a page by
 number) is listed with its fix and never proposed for deletion: it converts with the pages,
