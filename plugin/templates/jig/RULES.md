@@ -193,6 +193,15 @@ bare scope id ("the v1/api endpoint"), a phase name, prose like "phase 3" or "sp
 metarepo's `entry_files`: the roadmap is `.jig/roadmap.md`, and the root `ROADMAP.md` is
 exempt only where `.jig/roadmap.md` exists.
 
+**Docs point only at docs.** The root documents (`README.md`, `AGENTS.md`, `CLAUDE.md`,
+`GEMINI.md`, `CHANGELOG.md`) are for outsiders and for agents: they may point into `docs/`, and
+a page or a decision entry never names one. The hook refuses an added line in a page under
+`docs/` or in `.jig/decisions.md` that names a root document as a path, with or without `§`
+(`README.md § mote`, `../AGENTS.md`), and names the line. Another repo's file
+(`<repo>/README.md`), a folder's own README and a code path are not root documents. Prose
+that names one without a path ("listed in the root README") the hook can't judge; `jig survey`
+lists those lines too.
+
 Every page, in this order (`.jig/docs-page.md`, which `jig update` keeps
 current, is the skeleton):
 
@@ -328,11 +337,21 @@ here; what the code is now and its invariants in `docs/`; a task in flight in
 in `.jig/ledgers/DEFERRED.md`; know-how in the agent's skills; what outsiders need in
 `README.md`; history in git.
 
-A repo's terms are a `## Glossary` section of its root `README.md`, the definitions a document
-opens with: each term a `### <term>` heading of its own, saying what it means and what it is
-not, so `README.md § <term>` names it. No other glossary file is a home: survey lists a root
-`GLOSSARY.md` with `README.md § Glossary` as where it goes, and names each term in the section
-written as a bold word opening a paragraph (`**term** — …`) rather than a heading.
+A repo's terms are its glossary, `docs/glossary.md`: a `# Glossary` title, an optional lead
+line, then the terms, each saying what it means and what it is not, in one of two forms: a
+`## <term>` heading per term, or one table whose first column is the term, a row per term, its
+other columns the repo's own (an owner, what the screen calls it). Either way
+`docs/glossary.md § <term>` names one. The glossary is no system's page: it is not in `docmap`,
+covers no files, and the page contract doesn't apply to it. No other glossary is a home: survey
+and update list a `## Glossary` section of the root `README.md`, or a root `GLOSSARY.md`, with
+`docs/glossary.md` as where it goes, and survey names each term in the glossary written as a
+bold word opening a paragraph (`**term** — …`) rather than a heading or a row.
+`jig update --apply --glossary`, on the owner's yes, moves it: each term in the form it has (a
+README's `### <term>` becomes `## <term>`, a bold-paragraph term gets a heading, a table moves
+as the table), the old section or file removed, and in the same change every pointer to the old
+home rewritten (`README.md § <term>` to `docs/glossary.md § <term>`, a pointer to the
+section itself and `GLOSSARY.md` to `docs/glossary.md`). The dry run lists each line it rewrites, and each pointer
+it can't (a section naming no term, prose naming the README), which it leaves for the session.
 
 `jig survey` also reads each page at home under `docs/`, board pages included, against the
 contract above, and names a page in the old Now, Rules and Checks shape (convert it: fold
@@ -855,8 +874,8 @@ does what that kind of repo needs.
 with its subsystems below it. A genre is a folder directly under `docs/`, a category of the
 ecosystem the metarepo defines (products, features, principles, concepts), so the opposite of a
 code repo holds: genre folders are required here, where a code repo's tree names one product's
-parts. A genre has no page of its own and adds no depth; its term is a `### <genre>` heading in
-`README.md § Glossary`. `meta.json`'s optional `genres` lists them (`jig init --meta --genres
+parts. A genre has no page of its own and adds no depth; its term is a `## <genre>` heading in
+`docs/glossary.md`, the one file directly in `docs/`. `meta.json`'s optional `genres` lists them (`jig init --meta --genres
 a,b,c`, or `--genres product-ecosystem` for those four); without it, any folder under `docs/`
 is one. `jig survey` names a page directly in `docs/`, one in a folder `genres` doesn't declare,
 and every other Markdown file outside `docs/` that isn't a root document or a decision register
@@ -870,16 +889,20 @@ section is checked against the pararepo's trunk and folded into the body or drop
 log line for, and what a pararepo caches. Its entries are globs, matched the way `owns`
 is: a folder of pages goes in as `docs/**/*.md`, and a new page there needs no edit. Nothing
 under `.jig/` counts, whatever the globs say, except `.jig/decisions.md`, which always does.
-`jig init --meta` names `.jig/decisions.md` and `README.md`, whose `## Glossary` holds the terms
-(Documentation). Of `README.md`, pararepos cite only that section: a release's term report reads
-only the `###` headings inside it, and M3 counts a `README.md` change only when it adds, removes
-or changes a line there, so the README's other prose changes without a log line.
+`jig init --meta` names `.jig/decisions.md` and `docs/glossary.md`, which holds the terms
+(Documentation), and writes the glossary. The README is for outsiders and no entry file, so its
+prose changes without a log line. A release's term report reads the glossary's terms, headings
+and table rows alike, and names each term added, removed or reworded; across the release that
+moves a README glossary to `docs/glossary.md`, it reads the older side's README, and names each
+term as moved. The move, in a metarepo, runs in a job's worktree (M4), and rewrites
+`entry_files` in the same change; a pararepo's `<meta>/README.md § <term>` is named at its pin
+bump with the term's new home, `<meta>/docs/glossary.md § <term>`.
 
 | Gate | Refuses |
 |---|---|
 | M1 | a source file outside `.jig/` in the metarepo |
 | M2 | in every repo, a `.jig/decisions.md` entry with a status in its heading, no status line (`Accepted (who, YYYY-MM-DD).`, `Open (YYYY-MM-DD).`, `Proposed (YYYY-MM-DD).`), a supersedes link to no entry in the log or in trunk's history of it, an id used twice, or an open or proposed entry outside `## Open`, or an entry added or changed with no `Touches:` line, or one naming what is no docs page there (Decision log) |
-| M3 | an entry file changed without a line or entry in `.jig/decisions.md` (of `README.md`, only its `## Glossary` section), judged on the branch since it left trunk: a line an earlier commit on the branch added covers this one, and a commit that drops the branch's only line is refused |
+| M3 | an entry file changed without a line or entry in `.jig/decisions.md`, judged on the branch since it left trunk: a line an earlier commit on the branch added covers this one, and a commit that drops the branch's only line is refused |
 | M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted, but not `.jig/decisions.md`: a decision is reviewed work); a detached HEAD at trunk, or behind it, is trunk |
 | M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes and the rows they add to `.jig/ledgers/DEFERRED.md` (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`; on a branch, `D-?store-ro: …`) |
@@ -995,6 +1018,7 @@ jig survey [--json] [--levels]   inventory the repo against the jig shape; --lev
 jig update [--apply]        bring the repo to the current jig layout, and carry out the moves findings approves (dry run without --apply)
 jig update [--apply] --merge-log   on the owner's yes: CHANGELOG.md and the register into .jig/decisions.md
 jig update [--apply] --sweep   on the owner's yes: pages' ## Undefined entries to ## Up next in .jig/roadmap.md
+jig update [--apply] --glossary   on the owner's yes: the README's glossary, or GLOSSARY.md, to docs/glossary.md, its pointers rewritten
 jig staging [resolve|drop <file>]   list staged files, or land / drop one
 jig repos [add repo|meta|para | rename <new>]  where your repos live (user config)
 jig open ... --reserve K    allocate scarce counter K to this job

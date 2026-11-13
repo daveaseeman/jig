@@ -2374,9 +2374,12 @@ def doc_homes(root: Path, files: list[str], not_docs: list[str],
         if (not f.endswith(".md") or f.startswith(TOOL_DIRS) or matches(f, not_docs)
                 or (only is not None and f not in only)):
             continue
+        # The glossary is a docs file but no system's page: it is at home, in a metarepo too.
+        if f == GLOSSARY:
+            continue
         if f == "GLOSSARY.md":
             named = naming_of(f)
-            out.append({"path": f, "kind": "stray", "to": f"README.md § {GLOSSARY_HOME[3:]}",
+            out.append({"path": f, "kind": "stray", "to": GLOSSARY,
                         "fold": False, "naming": sorted(named),
                         "named_at": [f"{n}:{i}" for n in sorted(named) for i in named[n]]})
             continue
@@ -3136,50 +3139,77 @@ def carry_out(root: Path, board: dict, moves: list[dict], gone: list[str]) -> li
     return kept
 
 
-# RULES.md (Documentation): a repo's terms are a section of its README, one heading per term,
-# so `README.md § <term>` names one and sync's term report, which reads headings, sees it.
-GLOSSARY_HOME = "## Glossary"
-GLOSSARY_SEED = (f"{GLOSSARY_HOME}\n\n<!-- One term per ### heading: what it means, and what it "
-                 "is not. -->\n")
+# RULES.md (Documentation): a repo's terms are a docs file, docs/glossary.md, so pages that cite
+# a term point at a doc, never at the README, which is for outsiders. A term is a `## <term>`
+# heading or the first cell of a table row, so `docs/glossary.md § <term>` names it either way.
+GLOSSARY = "docs/glossary.md"
+# The old home, a section of the root README, which update moves out (`--glossary`).
+README_GLOSSARY = "## Glossary"
+GLOSSARY_SEED = ("# Glossary\n\n<!-- One term per ## heading, or one table row per term with the "
+                 "term first: what it means, and what it is not. -->\n")
 # A term written as a bold word opening its paragraph, then a dash or colon on that line:
 # `**mote** — …`, `**operation** (registry op) — …`, `**seam:** …`.
 BOLD_TERM = re.compile(r"^\*\*([^*]+?)(:?)\*\*(.*)$")
 TERM_MARK = re.compile(r"\s[—–-]\s|[—–]|:")
+TABLE_RULE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$")
 
 
-def glossary_section(text: str) -> list[str] | None:
-    """The lines of README's Glossary section, or None when it has none."""
+def readme_glossary(text: str) -> list[str] | None:
+    """The lines of a README's Glossary section, the old home, or None when it has none."""
     lines = text.splitlines()
-    start = next((i for i, l in enumerate(lines) if l.strip() == GLOSSARY_HOME), None)
+    start = next((i for i, l in enumerate(lines) if l.strip() == README_GLOSSARY), None)
     if start is None:
         return None
     end = next((j for j in range(start + 1, len(lines)) if re.match(r"#{1,2}\s", lines[j])), len(lines))
     return lines[start + 1:end]
 
 
-def glossary_unheaded(text: str) -> list[str]:
-    """Terms in README's Glossary section that are bold words in a paragraph, not headings."""
-    lines = glossary_section(text) or []
+def bold_terms(lines: list[str]) -> list[tuple[int, str]]:
+    """(index, term) for each paragraph in LINES that opens with a bold term, not a heading. A
+    paragraph right under a term heading is that term's text, already named; a title is no term."""
     out = []
     for i, line in enumerate(lines):
         starts = i == 0 or not lines[i - 1].strip()
-        m = BOLD_TERM.match(line.strip()) if starts else None
+        above = next((l for l in reversed(lines[:i]) if l.strip()), "")
+        m = BOLD_TERM.match(line.strip()) if starts and not re.match(r"#{2,6}\s", above) else None
         if m and (m.group(2) or TERM_MARK.search(m.group(3))):
-            out.append(m.group(1).strip())
+            out.append((i, m.group(1).strip()))
+    return out
+
+
+def table_terms(lines: list[str]) -> list[tuple[int, str]]:
+    """(index, term) for each body row of the tables in LINES: its first cell, read as a
+    heading's text is. A table is a run of `|` lines whose second is the separator; its first
+    is the header."""
+    out, run = [], []
+    for i, line in enumerate([*lines, ""]):
+        if line.lstrip().startswith("|"):
+            run.append(i)
+            continue
+        if len(run) > 2 and TABLE_RULE.match(lines[run[1]]):
+            out += [(j, t) for j in run[2:] if (t := plain(table_cells(lines[j])[0]))]
+        run = []
     return out
 
 
 def glossary_terms(text: str) -> list[str]:
-    """The ### term headings of README's Glossary section: in a metarepo, the only part of the
-    README that pararepos cite, so the only part a release reports or M3 asks a line for."""
-    return [m.group(1) for l in glossary_section(text) or []
-            if (m := re.match(r"###\s+(.+?)\s*$", l))]
+    """The terms of a glossary file, in order: its `## <term>` headings and its tables' first
+    cells, the two forms a term may take."""
+    lines = text.splitlines()
+    heads = [(i, plain(m.group(1))) for i, l in enumerate(lines) if (m := re.match(r"##\s+(.+?)\s*$", l))]
+    return [t for _, t in sorted(heads + table_terms(lines))]
 
 
-def glossary_text(text: str) -> list[str] | None:
-    """README's Glossary section without its blank lines, which git's output may have trimmed."""
-    section = glossary_section(text)
-    return None if section is None else [l for l in section if l.strip()]
+def glossary_term_in(section: str, terms: list[str]) -> str:
+    """The term of TERMS that SECTION, a pointer's section text, names: the whole of it, or its
+    start up to a word's end, the longest such term. Empty for none."""
+    hits = [t for t in terms if section == t or re.match(rf"{re.escape(t)}(?!\w)", section)]
+    return max(hits, key=len) if hits else ""
+
+
+def glossary_unheaded(text: str) -> list[str]:
+    """Terms in a glossary file that are bold words in a paragraph, not headings or rows."""
+    return [t for _, t in bold_terms(text.splitlines())]
 
 
 def home_fix(h: dict) -> str:
@@ -3453,18 +3483,25 @@ def cmd_survey(root: Path, args) -> int:
     report["not_docs_hiding"] = meta_hidden(root, files, not_docs, read)
     report["decision_placement"] = placement_hints(root, Board.trunk_name(root))
     readme = root / "README.md"
-    report["glossary_unheaded"] = glossary_unheaded(readme.read_text(errors="replace")) \
-        if "README.md" in files and readme.is_file() else []
+    gloss = read(GLOSSARY) if GLOSSARY in files else ""
+    report["glossary_terms"] = glossary_terms(gloss)
+    report["glossary_unheaded"] = glossary_unheaded(gloss)
+    # The old home, which update moves: a repo already on docs/glossary.md has no finding.
+    report["readme_glossary"] = ("README.md" in files and readme.is_file()
+                                 and readme_glossary(readme.read_text(errors="replace")) is not None)
     report["page_contract"] = [
         {"path": f, "problems": probs} for f in md
         if (folder_page(f) or f in flats) and (f not in homes or homes[f]["kind"] == "deep")
-        and not matches(f, not_docs)
+        and not matches(f, not_docs) and f != GLOSSARY
         and (probs := page_problems((root / f).read_text(errors="replace") if (root / f).exists() else ""))]
     product = product_pages(root, md)
     sids = scope_ids(at_rev(Board.trunk_name(root), ROADMAP))
     report["project_in_product"] = [
         {"path": f, "problems": probs} for f in product
         if (probs := (project_sections(read(f)) if f != LOG else []) + project_prose(read(f), sids))]
+    report["root_docs_named"] = [
+        {"path": f, "lines": hits} for f in product if f == LOG or f.startswith("docs/")
+        if (hits := root_doc_mentions(read(f)))]
     rec = findings_record(board)
     report["homeless"] = [tagged(e, rec) for e in report["homeless"]]
     report["page_shapes"] = [tagged(e, rec) for e in report["page_shapes"]]
@@ -3629,11 +3666,21 @@ def cmd_survey(root: Path, args) -> int:
               "\nmatch the code. Map each to the code that targets its board:")
         for f in report["boards_unmapped"]:
             print(f"  {f}")
+    if report["readme_glossary"]:
+        print(f"\nREADME.md has a {README_GLOSSARY} section: the glossary's home is {GLOSSARY}, since "
+              f"pages cite its terms and docs point only at docs ({DIR}/RULES.md, Documentation). "
+              f"`jig update` lists the move, and `jig update --apply --glossary` makes it.")
     if report["glossary_unheaded"]:
         terms = report["glossary_unheaded"]
-        print(f"\nTerms in README.md § Glossary written as bold words, not headings: {len(terms)} "
-              f"({', '.join(terms[:5])}{' …' if len(terms) > 5 else ''}).\nMake each a `### <term>` "
-              f"heading, so `README.md § <term>` names it ({DIR}/RULES.md, Documentation).")
+        print(f"\nTerms in {GLOSSARY} written as bold words, not headings or rows: {len(terms)} "
+              f"({', '.join(terms[:5])}{' …' if len(terms) > 5 else ''}).\nMake each a `## <term>` "
+              f"heading, or a table row, so `{GLOSSARY} § <term>` names it ({DIR}/RULES.md, Documentation).")
+    if report["root_docs_named"]:
+        print(f"\nPages and decision entries that name a root document ({DIR}/RULES.md, Documentation): "
+              f"docs point only at docs; a root document may point into docs/, never the reverse:")
+        for e in report["root_docs_named"]:
+            for n, line in e["lines"]:
+                print(f"  {e['path']}:{n}: {clip(line.strip())}")
     if report["contract_holders"]:
         print(f"\nChecks, counters and lines that hold the old page contract ({DIR}/RULES.md, Documentation):")
         for h in report["contract_holders"]:
@@ -3709,7 +3756,7 @@ def cmd_survey(root: Path, args) -> int:
         homes_line["docs/"] = (
             "the definitions this metarepo holds: docs/<genre>/<name>.md each page, in a genre folder "
             f"({', '.join(GENRES) if GENRES else f'any folder under docs/, until {META} declares genres'}); "
-            "a genre has no page, its term is a ### heading in README.md § Glossary; a page holding "
+            f"a genre has no page, its term is a ## heading in {GLOSSARY}, the one file directly in docs/; a page holding "
             "other files moves into docs/<genre>/<name>/<name>.md; decision registers stay where they are")
     print("\nDoc homes: " + "; ".join(f"{k} = {v}" for k, v in homes_line.items()))
     old = old_board(root)
@@ -3772,7 +3819,7 @@ def cmd_survey(root: Path, args) -> int:
 META = f"{DIR}/meta.json"
 META_DEFAULTS = {
     "name": "",
-    "entry_files": [f"{DIR}/decisions.md", "README.md"],
+    "entry_files": [f"{DIR}/decisions.md", GLOSSARY],
     "tag_pattern": r"^v\d+\.\d+(\.\d+)?$",
     "decision_prefix": "D-",
     "pararepos": [],
@@ -3911,10 +3958,6 @@ def meta_rules(root: Path, board: "Board", meta: dict, staged: bool) -> list[str
                        *(["--cached"] if staged else [])).splitlines()
     record = LOG if by_log else CHANGELOG
     cited = [p for p in branch_paths if p and p != record and is_entry(p, entry)]
-    # A README's prose is the metarepo's own; pararepos cite only its Glossary section.
-    if "README.md" in cited and glossary_text(at_rev(since, "README.md")) == glossary_text(
-            in_index("README.md", staged)):
-        cited.remove("README.md")
     if cited and (record not in branch_paths or not in_index(record, staged)):
         out.append(f"M3 {', '.join(cited)} changed: add a line{' or an entry' if by_log else ''} "
                    f"to {record} under ## Unreleased")
@@ -4038,28 +4081,20 @@ def cmd_meta_init(root: Path, args) -> int:
         path.write_text(json.dumps(data, indent=2) + "\n")
         print(f"genres in {META}: {', '.join(genres)}")
     meta = {**META_DEFAULTS, **json.loads(path.read_text())}
-    # The decision log is every repo's, written by init before this.
-    if "README.md" in meta["entry_files"] and not (root / "README.md").exists():
-        (root / "README.md").write_text(f"# {meta['name'] or root.name}\n")
-        print("wrote README.md")
-    readme = root / "README.md"
-    if "README.md" in meta["entry_files"] and readme.exists() and not glossary_section(readme.read_text()):
-        text = readme.read_text()
-        readme.write_text(text.rstrip("\n") + "\n\n" + GLOSSARY_SEED)
-        print(f"added {GLOSSARY_HOME} to README.md")
+    # The decision log is every repo's, written by init before this. The terms pararepos cite
+    # are the glossary's, a docs file: the README is for outsiders, and no entry file.
+    gloss = root / GLOSSARY
+    if not gloss.exists():
+        gloss.parent.mkdir(parents=True, exist_ok=True)
+        gloss.write_text(GLOSSARY_SEED)
+        print(f"wrote {GLOSSARY}")
     # Each genre is a term of the ecosystem's definition, defined once there: it has no page.
-    if genres and readme.exists() and glossary_section(readme.read_text()) is not None:
-        lines = readme.read_text().splitlines()
-        start = lines.index(GLOSSARY_HOME)
-        end = next((j for j in range(start + 1, len(lines)) if re.match(r"#{1,2}\s", lines[j])), len(lines))
-        have = set(glossary_terms(readme.read_text()))
-        new = [f"### {g}\n\nTODO: what its pages define, and what they are not.\n"
-               for g in genres if g not in have]
-        if new:
-            body = "\n".join(lines[:end]).rstrip("\n") + "\n\n" + "\n".join(new)
-            rest = "\n".join(lines[end:])
-            readme.write_text(body + ("\n" + rest + "\n" if rest else ""))
-            print(f"added a ### heading per genre to README.md {GLOSSARY_HOME}")
+    have = set(glossary_terms(gloss.read_text()))
+    new = [f"## {g}\n\nTODO: what its pages define, and what they are not.\n"
+           for g in genres or [] if g not in have]
+    if new:
+        gloss.write_text(gloss.read_text().rstrip("\n") + "\n\n" + "\n".join(new))
+        print(f"added a ## heading per genre to {GLOSSARY}")
     release_script(root, meta=True)
     print(f"Commit these on {Board.trunk_name(root)}. From then on {Board.trunk_name(root)} "
           "takes only reviewed merges, and only `jig release` tags.")
@@ -5739,11 +5774,12 @@ def terms_changed(loc: Path, old: str, new: str) -> list[str]:
     # Only what a pararepo can read: the entry set release counts and the cache copies. Literal
     # paths, not entry_files globs, since git's `**` misses a file directly under the folder.
     paths = sorted((set(entry_paths(old, str(loc))) | set(entry_paths(new, str(loc)))) - {CHANGELOG})
-    # The README's other headings (Install, Usage) are prose, not terms: only its Glossary counts.
-    readme = "README.md" in paths
+    # The glossary is read term by term, in either home, by glossary_changes; the README's
+    # other headings (Install, Usage) are prose, not terms.
+    gloss = "README.md" in paths or GLOSSARY in paths
     log = LOG in paths
     regs = merged_registers(loc, old, new)
-    paths = [f for f in paths if f not in ("README.md", LOG, *regs)]
+    paths = [f for f in paths if f not in ("README.md", GLOSSARY, LOG, *regs)]
     found = []
     if regs:
         # Across the merge into the log the same decisions changed shape, not meaning: only an
@@ -5778,10 +5814,42 @@ def terms_changed(loc: Path, old: str, new: str) -> list[str]:
         diff = git("--literal-pathspecs", "diff", old, new, "--", *paths, cwd=str(loc))
         found += re.findall(rf"^[+-]\s*\|\s*({decision_ids(loc, new)})\s*\|", diff, re.M)
         found += re.findall(r"^[+-]#{2,3} (.+?)\s*$", diff, re.M)
-    if readme:
-        was, now = (glossary_terms(git("show", f"{r}:README.md", cwd=str(loc))) for r in (old, new))
-        found += [t for t in now if t not in was] + [t for t in was if t not in now]
+    if gloss:
+        found += glossary_changes(loc, old, new)[0]
     return list(dict.fromkeys(found))
+
+
+def term_blocks(lines: list[str], level: int) -> dict[str, list[str]]:
+    """Each term in LINES with its text, blank lines dropped: a table row is its own text, a
+    heading of LEVEL the lines under it. The heading line itself is left out, so a term whose
+    level changed with its home reads the same."""
+    out = {t: [lines[i].strip()] for i, t in table_terms(lines)}
+    for i, line in enumerate(lines):
+        if m := re.match(rf"#{{{level}}}\s+(.+?)\s*$", line):
+            end = next((j for j in range(i + 1, len(lines)) if re.match(rf"#{{1,{level}}}\s", lines[j])), len(lines))
+            out[plain(m.group(1))] = [l for l in lines[i + 1:end] if l.strip()]
+    return out
+
+
+def glossary_at(loc: Path, rev: str) -> tuple[str, dict[str, list[str]]]:
+    """Where REV keeps its glossary, and its terms: docs/glossary.md, or before the move the
+    README's Glossary section, so a release across the move compares the same terms."""
+    text = git("show", f"{rev}:{GLOSSARY}", cwd=str(loc))
+    if text:
+        return GLOSSARY, term_blocks(text.splitlines(), 2)
+    return "README.md", term_blocks(readme_glossary(git("show", f"{rev}:README.md", cwd=str(loc))) or [], 3)
+
+
+def glossary_changes(loc: Path, old: str, new: str) -> tuple[list[str], list[str], str, str]:
+    """(terms added, removed or reworded; terms that moved home; the old home; the new one)
+    between two releases. A term that moved is reported as moved, not as removed and added."""
+    was_home, was = glossary_at(loc, old)
+    now_home, now = glossary_at(loc, new)
+    if was_home != now_home:
+        return ([t for t in now if t not in was] + [t for t in was if t not in now],
+                [t for t in now if t in was], was_home, now_home)
+    return ([t for t in now if was.get(t) != now[t]] + [t for t in was if t not in now],
+            [], was_home, now_home)
 
 
 def proposal_in(loc: Path, branch: str, tag: str) -> bool:
@@ -6013,6 +6081,11 @@ def changes_report(root: Path, loc: Path, old: str, new: str) -> list[str]:
         # An id as a whole word: D-1 is not a use of D-12. A heading's term may be inflected.
         users = used_in(term, bool(re.fullmatch(decision_ids(loc, new), term)))
         out.append(f"  {term}: " + (f"used in {', '.join(users)}" if users else "not used here"))
+    _, moved, was, now = glossary_changes(loc, old, new)
+    for term in moved:
+        users = used_in(term)
+        out.append(f"  {term} (moved: {was} § {term} → {now} § {term}): "
+                   + (f"used in {', '.join(users)}" if users else "not used here"))
     return out
 
 
@@ -6060,6 +6133,7 @@ def meta_citations(root: Path, para: dict, ids: str, loc: Path | None = None) ->
     one = re.compile("|".join(map(re.escape, bare))) if bare else None
     rows = re.compile(rf"(?<!\w)({ids})(?!\w)")
     named = (f"{name.casefold()}/", f"{name.casefold()}:")
+    gloss = glossary_terms((cache / GLOSSARY).read_text(errors="replace")) if (cache / GLOSSARY).is_file() else []
     out = []
     for f, text in head_texts([p for p in small if not p.startswith(f"{DIR}/")
                                or p.startswith((f"{DIR}/specs/", f"{DIR}/ledgers/", LOG))]):
@@ -6097,11 +6171,16 @@ def meta_citations(root: Path, para: dict, ids: str, loc: Path | None = None) ->
                                    + (f": now {name}/{path} § {by}" if by else ""))
                     continue
                 level, _ = pointer_gap(path, section or None, code, body)
+                # A term the README's glossary held is in the glossary file now.
+                moved = (f": now `{name}/{GLOSSARY} § {term}`"
+                         if level and path == "README.md" and section
+                         and (term := glossary_term_in(plain(section), gloss)) else "")
                 if level == NO_FILE:
-                    out.append(f"{f}:{n} cites {name}/{path}, which {name} {pin} doesn't have")
+                    out.append(f"{f}:{n} cites {name}/{path}{f' § {shown_section(plain(section), code)}' if moved else ''}, "
+                               f"which {name} {pin} doesn't have{moved}")
                 elif level == NO_HEADING:
                     out.append(f"{f}:{n} cites {name}/{path} § {shown_section(plain(section), code)}, "
-                               f"which {name} {pin} has no heading for")
+                               f"which {name} {pin} has no heading for{moved}")
             for m in one.finditer(line) if one else ():
                 before, after = line[m.start() - 1:m.start()], line[m.end():m.end() + 1]
                 if not re.match(r"[\w./:-]", before) and not re.match(r"[\w/-]", after):
@@ -6249,6 +6328,9 @@ def pointer_gap(path: str, section: str | None, code: bool, body: str | None) ->
     if not section:
         return RESOLVES, ""
     want, heads = plain(section), [plain(h) for h in HEADING.findall(body)]
+    # A glossary's term may be a table row's first cell instead of a heading.
+    if path.endswith(GLOSSARY):
+        heads += [t for _, t in table_terms(body.splitlines())]
     number = section_number(want)
     if number is not None:
         if number in {section_number(h) for h in heads}:
@@ -7422,6 +7504,22 @@ PROJECT_PATHS = re.compile(r"\.jig/(?:specs|handoffs)/|\.jig/roadmap\.md")
 PLAN_PATHS = re.compile(r"\.jig/(?:specs|handoffs)/|\.jig/roadmap\.md|(?<![\w./-])ROADMAP\.md")
 
 
+# The root documents, which docs never name (RULES.md, Documentation): the README is for
+# outsiders and may point into docs/, and the rules files are agents', so the arrow runs one
+# way. A path, with or without `§`: another repo's (`app/README.md`) or a folder's own README
+# is no root document, so nothing may come before the name but `../`.
+ROOT_DOC_NAMES = r"(?:README|AGENTS|CLAUDE|GEMINI|CHANGELOG)"
+ROOT_DOC_PATH = re.compile(rf"(?<![\w./:-])(?:\.\./)*{ROOT_DOC_NAMES}\.md(?![\w/-])")
+# Prose that names one without a path ("listed in the root README"): a hook can't judge it,
+# so survey lists it.
+ROOT_DOC_WORD = re.compile(rf"(?<![\w/-]){ROOT_DOC_NAMES}\b")
+
+
+def root_doc_mentions(text: str) -> list[tuple[int, str]]:
+    """(line number, line) for each line of TEXT that names a root document."""
+    return [(n, line) for n, line in enumerate(text.splitlines(), 1) if ROOT_DOC_WORD.search(line)]
+
+
 def product_file(path: str, meta: dict | None = None) -> bool:
     """A file that describes the product only: a docs page, the decision log, or a metarepo's
     entry file."""
@@ -7511,6 +7609,12 @@ def boundary_rules(trunk: str, branch: str, staged: bool, paths: list[str],
             out.append(f"{at} line {n} names {hit.group(0)}, the project's: {what} describes the "
                        f"product, and a spec, a handoff or the roadmap cites it, never the other "
                        f"way: {clip(text.strip())}")
+        elif (at == LOG or at.startswith("docs/")) and (hit := ROOT_DOC_PATH.search(text)):
+            what = "the decision log" if at == LOG else "a page"
+            out.append(f"{at} line {n} names {hit.group(0)}, a root document: {what} points only "
+                       f"at docs, and the root documents may point into docs/, never the other way"
+                       + (f"; a term is {GLOSSARY} § <term>" if hit.group(0).endswith("README.md") else "")
+                       + f": {clip(text.strip())}")
     return out
 
 
@@ -8255,11 +8359,14 @@ def files_to_review(root: Path, plan: dict, template: Path | None = None,
         else:
             out.append((".claude/skills/_skill-template/", "differs from the old template, "
                         "so it is the repo's now: left as it is"))
-    if "GLOSSARY.md" in plan["after"] and (root / back.get("GLOSSARY.md", "GLOSSARY.md")).exists():
-        meta = " and replace it in entry_files" if (root / META).exists() else ""
-        out.append(("GLOSSARY.md", f"the glossary's home is README.md § Glossary now ({DIR}/RULES.md, "
-                    f"Documentation): move each term there as a `### <term>` heading, delete the file"
-                    f"{meta}, and repoint what names it"))
+    # The glossary's home is a docs file, which pages may cite; the move rewrites the pointers.
+    gplan = glossary_plan(root)
+    for src in gplan["sources"]:
+        out.append((src, f"the glossary's home is {GLOSSARY} ({DIR}/RULES.md, Documentation): "
+                    + (gplan["blocked"] if gplan["blocked"] else
+                       f"`jig update --glossary` lists the move and the {len(gplan['rewrites'])} pointer "
+                       f"lines it rewrites, `jig update --apply --glossary` makes it")
+                    + (f"; in a metarepo, in a job's worktree (M4)" if (root / META).exists() else "")))
     for f, what in log_sources(root):
         out.append((f, f"{what}: merged into {LOG} on a yes — `jig update --merge-log` shows the "
                        f"log it would write, `jig update --apply --merge-log` writes it and removes "
@@ -8574,6 +8681,8 @@ def cmd_update(root: Path, args) -> int:
         return cmd_merge_log(root, args.apply)
     if getattr(args, "sweep", False):
         return cmd_sweep(root, args.apply)
+    if getattr(args, "glossary", False):
+        return cmd_glossary(root, args.apply)
     here = Path(__file__).resolve().parent
     files = tracked(root)
     board_row = next(olds for new, olds in LAYOUT if new == CONFIG)
@@ -9698,6 +9807,215 @@ def cmd_sweep(root: Path, apply: bool) -> int:
     return 0
 
 
+# ---------------------------------------------------------------- glossary move
+
+# Pointers to the glossary's old homes, which the move rewrites. Nothing but `../` before the
+# name: `app/README.md` is another repo's, `docs/x/README.md` a folder's own.
+OLD_README_POINTER = re.compile(r"(?<![\w./:-])(?P<pre>(?:\.\./)*)README\.md(?P<shut>`?)[ \t]*§[ \t]*(?=(?P<rest>[^\n]*))")
+OLD_README_LINK = re.compile(r"\]\((?P<pre>(?:\.\./)*)README\.md#(?P<anchor>[\w-]+)\)")
+OLD_GLOSSARY_PATH = re.compile(r"(?<![\w./:-])(?P<pre>(?:\.\./)*)GLOSSARY\.md(?![\w/-])")
+
+
+def moved_terms(lines: list[str], demote: bool) -> list[str]:
+    """LINES as the glossary file holds them: each line unchanged, but a term heading one level
+    up when it was a README's `###` (DEMOTE), and a heading added above each bold-paragraph term
+    that no heading names already. A table moves as it is."""
+    bold = dict(bold_terms(lines))
+    out = []
+    for i, line in enumerate(lines):
+        if i in bold:
+            out += [f"## {bold[i]}", ""]
+        if demote and (m := re.match(r"(#{3,6})([ \t].*)$", line)):
+            line = m.group(1)[1:] + m.group(2)
+        out.append(line)
+    while out and not out[0].strip():
+        out.pop(0)
+    while out and not out[-1].strip():
+        out.pop()
+    return out
+
+
+def from_root(f: str, pre: str, name: str) -> bool:
+    """Whether PRE + NAME, written in F, is the root file NAME."""
+    return os.path.normpath(os.path.join(os.path.dirname(f), pre + name)) == name
+
+
+def glossary_pointers(f: str, text: str, terms: list[str], frozen: set[int]) -> tuple[str, list, list]:
+    """TEXT, file F, with its pointers to the old homes rewritten, and (line, was, now) for each
+    line rewritten and (line, why) for each pointer it can't rewrite: a section naming no term,
+    prose naming the README's glossary, a released change line, which is frozen."""
+    lines = text.splitlines(keepends=True)
+    done, left = [], []
+    # A link is relative to its file; a pointer is a path from the root unless written with ../.
+    rel = os.path.relpath(GLOSSARY, os.path.dirname(f) or ".")
+    slugs = {re.sub(r"[^\w -]", "", t.lower()).replace(" ", "-") for t in terms}
+    for n, line in enumerate(lines):
+        if n in frozen:
+            if OLD_README_POINTER.search(line) or OLD_GLOSSARY_PATH.search(line):
+                left.append((n + 1, "a released change line, which is frozen"))
+            continue
+        out, at, missed = [], 0, False
+        for m in OLD_README_POINTER.finditer(line):
+            pre, rest = m.group("pre"), m.group("rest")
+            to = rel if pre else GLOSSARY
+            if re.match(r"Glossary(?!\w)", rest):
+                out += [line[at:m.start()], to, m.group("shut")]
+                at = m.start("rest") + len("Glossary")
+            elif glossary_term_in(plain(rest), terms):
+                out += [line[at:m.start()], to]
+                at = m.start() + len(pre) + len("README.md")
+            else:
+                left.append((n + 1, f"README.md § {shown_section(plain(rest), False)}: names no glossary term"))
+                missed = True
+        new = "".join(out) + line[at:]
+
+        def link(m: re.Match) -> str:
+            nonlocal missed
+            anchor = m.group("anchor")
+            if not from_root(f, m.group("pre"), "README.md"):
+                return m.group(0)
+            if anchor == "glossary":
+                return f"]({rel})"
+            if anchor in slugs:
+                return f"]({rel}#{anchor})"
+            left.append((n + 1, f"README.md#{anchor}: names no glossary term"))
+            missed = True
+            return m.group(0)
+        new = OLD_README_LINK.sub(link, new)
+        new = OLD_GLOSSARY_PATH.sub(lambda m: (rel if m.group("pre") else GLOSSARY)
+                                    if from_root(f, m.group("pre"), "GLOSSARY.md") else m.group(0), new)
+        if new != line:
+            done.append((n + 1, line.strip(), new.strip()))
+        elif not missed and "README" in line and re.search(r"(?i)glossar", line):
+            left.append((n + 1, "prose naming the README's glossary, with no path to rewrite"))
+        lines[n] = new
+    return "".join(lines), done, left
+
+
+def glossary_plan(root: Path) -> dict:
+    """What `jig update --glossary` would do: the glossary file it writes, the files it changes
+    and removes, and the pointers it rewrites and leaves. Empty sources: nothing to move."""
+    files = tracked(root)
+    readme = root / "README.md"
+    rtext = readme.read_text(errors="replace") if "README.md" in files and readme.is_file() else ""
+    section = readme_glossary(rtext)
+    old = root / "GLOSSARY.md"
+    sources = (["README.md"] if section is not None else []) + (["GLOSSARY.md"] if "GLOSSARY.md" in files and old.is_file() else [])
+    plan = {"sources": sources, "write": {}, "remove": [], "rewrites": [], "left": [], "terms": [],
+            "blocked": ""}
+    if not sources:
+        return plan
+    if len(sources) == 2:
+        plan["blocked"] = f"README.md's {README_GLOSSARY} section and GLOSSARY.md both hold terms: fold one into the other first"
+        return plan
+    if GLOSSARY in files or (root / GLOSSARY).exists():
+        plan["blocked"] = (f"{GLOSSARY} exists already: fold {sources[0]}'s terms into it by hand, "
+                           "then remove the old home")
+        return plan
+    if section is not None:
+        body = moved_terms(section, demote=True)
+        lines = rtext.splitlines()
+        start = next(i for i, l in enumerate(lines) if l.strip() == README_GLOSSARY)
+        end = start + 1 + len(section)
+        before, after = lines[:start], lines[end:]
+        while before and not before[-1].strip():
+            before.pop()
+        plan["write"]["README.md"] = "\n".join(before + ([""] + after if after else [])) + "\n"
+    else:
+        lines = old.read_text(errors="replace").splitlines()
+        first = next((i for i, l in enumerate(lines) if l.strip()), 0)
+        body = moved_terms(lines[first + 1:] if lines and lines[first].startswith("# ") else lines, demote=False)
+        plan["remove"].append("GLOSSARY.md")
+    gtext = "# Glossary\n\n" + "\n".join(body) + "\n"
+    plan["write"][GLOSSARY] = gtext
+    plan["terms"] = glossary_terms(gtext)
+    keep = (f"{DIR}/specs/", f"{DIR}/ledgers/", LOG)
+    for f in [*files, GLOSSARY]:
+        if (f in plan["remove"] or (f.startswith(f"{DIR}/") and not f.startswith(keep))
+                or (f != GLOSSARY and not (root / f).is_file())):
+            continue
+        text = plan["write"].get(f)
+        if text is None:
+            if (root / f).stat().st_size > 1 << 20:
+                continue
+            raw = (root / f).read_bytes()
+            if b"\0" in raw:
+                continue
+            text = raw.decode(errors="replace")
+        if "README" not in text and "GLOSSARY" not in text:
+            continue
+        new, done, left = glossary_pointers(f, text, plan["terms"], released_lines(text) if f == LOG else set())
+        if new != text:
+            plan["write"][f] = new
+        plan["rewrites"] += [(f, *d) for d in done]
+        plan["left"] += [(f, *l) for l in left]
+    meta = root / META
+    if meta.is_file():
+        data = json.loads(meta.read_text())
+        entry = [e for e in data.get("entry_files", list(META_DEFAULTS["entry_files"]))
+                 if e not in ("README.md", "GLOSSARY.md")]
+        if not is_entry(GLOSSARY, entry):
+            entry.append(GLOSSARY)
+        if entry != data.get("entry_files"):
+            data["entry_files"] = entry
+            plan["write"][META] = json.dumps(data, indent=2) + "\n"
+    return plan
+
+
+def cmd_glossary(root: Path, apply: bool) -> int:
+    """`jig update --glossary`: the README's Glossary section, or a root GLOSSARY.md, moved to
+    docs/glossary.md in its own form, and every pointer to the old home rewritten in the same
+    change, on the owner's yes. In a metarepo the move is a job's (M4)."""
+    trunk = Board.trunk_name(root)
+    plan = glossary_plan(root)
+    if not plan["sources"]:
+        print(f"no README.md {README_GLOSSARY} section and no root GLOSSARY.md: nothing to move")
+        return 0
+    if plan["blocked"]:
+        die(plan["blocked"], 2)
+    src = plan["sources"][0]
+    print(f"{src}{' § Glossary' if src == 'README.md' else ''} → {GLOSSARY}: {len(plan['terms'])} terms"
+          + (f" ({', '.join(plan['terms'][:6])}{' …' if len(plan['terms']) > 6 else ''})" if plan["terms"] else ""))
+    print(f"  {'remove ' + src if src == 'GLOSSARY.md' else 'README.md: the ## Glossary section removed'}")
+    if META in plan["write"]:
+        print(f"  {META}: entry_files names {GLOSSARY}, not README.md or GLOSSARY.md")
+    if plan["rewrites"]:
+        print("Pointers rewritten:")
+        for f, n, was, now in plan["rewrites"]:
+            print(f"  {f}:{n}: {clip(was)}  →  {clip(now)}")
+    if plan["left"]:
+        print("Pointers left for the session (no mechanical rewrite):")
+        for f, n, why in plan["left"]:
+            print(f"  {f}:{n}: {why}")
+    meta = (root / META).exists()
+    if meta:
+        print(f"Pararepos' citations of `<meta>/README.md § <term>` are not this repo's: each is named, "
+              f"with its new home, at that pararepo's pin bump (`jig sync`).")
+    on_trunk = git("branch", "--show-current") == trunk
+    if not apply:
+        print(f"\nDry run: nothing changed. On the owner's yes: jig update --apply --glossary"
+              + (f", in a job's worktree: a metarepo's {trunk} takes only merges (M4)" if meta else ""))
+        return 0
+    if meta and on_trunk:
+        die(f"a metarepo's {trunk} takes only merges (M4): open a job for the move "
+            f"(`jig open glossary-move --shares README.md GLOSSARY.md {GLOSSARY} …`), and run "
+            "`jig update --apply --glossary` in its worktree", 2)
+    if git("status", "--porcelain", "--untracked-files=no"):
+        die("commit or stash tracked changes first: the move edits files by name", 2)
+    for f, text in plan["write"].items():
+        (root / f).parent.mkdir(parents=True, exist_ok=True)
+        (root / f).write_text(text)
+    if plan["remove"]:
+        git("rm", "-q", "--", *plan["remove"], check=True)
+    git("add", "--", *plan["write"], check=True)
+    print(f"\nWritten {', '.join(plan['write'])}"
+          + (f"; removed {', '.join(plan['remove'])}" if plan["remove"] else "")
+          + ". Staged, nothing committed: commit it here"
+          + (f", with a line under ## Unreleased in {LOG} (`GLOSSARY: moved to {GLOSSARY}`)" if meta else "")
+          + ".")
+    return 0
+
+
 def update_blocked(why: list[str]) -> int:
     print("blocked: the repo would not work after an update, so nothing was changed", file=sys.stderr)
     for w in why:
@@ -9807,6 +10125,7 @@ def main(argv: list[str] | None = None) -> int:
     up.add_argument("--apply", action="store_true", help="make the changes the dry run lists")
     up.add_argument("--merge-log", action="store_true", help=f"on the owner's yes: merge CHANGELOG.md and the decision register into {LOG}")
     up.add_argument("--sweep", action="store_true", help=f"on the owner's yes: move pages' ## Undefined entries to {UP_NEXT} in {ROADMAP}")
+    up.add_argument("--glossary", action="store_true", help=f"on the owner's yes: move the README's glossary, or GLOSSARY.md, to {GLOSSARY}, rewriting what points to it")
     hk = sub.add_parser("hook")
     hk.add_argument("name")
     hk.add_argument("rest", nargs="*")

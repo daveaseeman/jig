@@ -11,7 +11,8 @@ its own, which the rest of the system reaches only through its interfaces, is a 
 gets a page of its own once it has something to say that whoever works on it
 needs and this page doesn't; this section then shrinks to a paragraph and a link. Until then it
 stays a section here. A subsystem's page holds sections, not subsystems, unless the owner approved a deeper
-level.>
+level. Point only at docs: a term as docs/glossary.md § <term>, never the README or another root
+document. The glossary itself is no system's page, and takes none of this skeleton.>
 
 ## Talks to
 
