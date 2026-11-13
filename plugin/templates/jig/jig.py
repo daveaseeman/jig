@@ -2910,11 +2910,13 @@ def approved_moves(root: Path, files: list[str], board: dict,
                 and not e.get("fold") and not (root / e["to"]).exists()):
             continue
         # Two pages approved onto one path: the first goes, the next would find it taken.
-        if e["to"] in dests:
-            held.append(f"{i}: {e['to']} is also {dests[e['to']]}'s destination, which moves first; "
+        # Case folded: on a case-insensitive disk docs/B.md and docs/b.md are one path.
+        dest = e["to"].casefold()
+        if dest in dests:
+            held.append(f"{i}: {e['to']} is also {dests[dest]}'s destination, which moves first; "
                         "this one stays recorded: answer it again once that move is committed")
             continue
-        dests[e["to"]] = i
+        dests[dest] = i
         moves.append(e)
     # jig changes an entry only where it acted itself: its own move (carry_out), or an approval
     # or deferral whose finding no longer fires, which is settled. An exception is the owner's
@@ -2941,14 +2943,22 @@ def move_entries(rec: dict, moves: list[dict]) -> list[str]:
     return kept
 
 
+def settle(rec: dict, moves: list[dict], gone: list[str]) -> list[str]:
+    """The record as --apply leaves it, in REC: each move's own entry and each gone one dropped,
+    then the moved pages' other entries moved. Shared by --apply and its dry run, so the two
+    say the same. Returns the entries left at their old id."""
+    for i in [finding_id(e) for e in moves] + gone:
+        rec.pop(i, None)
+    return move_entries(rec, moves)
+
+
 def carry_out(root: Path, board: dict, moves: list[dict], gone: list[str]) -> list[str]:
     """Make each approved move with git mv, rename the board keys naming it, drop its entry and
     every gone one from BOARD, and move the other entries on its old path to its new one, so an
     exception recorded for the page goes with it. Returns the entries it left at their old id
     because the new one was taken: one answer never overwrites another."""
     rec = board.get("findings") if isinstance(board.get("findings"), dict) else {}
-    for i in [finding_id(e) for e in moves] + gone:
-        rec.pop(i, None)
+    kept = settle(rec, moves, gone)
     for e in moves:
         (root / e["to"]).parent.mkdir(parents=True, exist_ok=True)
         git("mv", e["path"], e["to"], check=True)
@@ -2960,7 +2970,6 @@ def carry_out(root: Path, board: dict, moves: list[dict], gone: list[str]) -> li
             board["docmap"] = {(e["to"] if k == e["path"] else k): v for k, v in board["docmap"].items()}
         if isinstance(board.get("boards"), list):
             board["boards"] = [e["to"] if b == e["path"] else b for b in board["boards"]]
-    kept = move_entries(rec, moves)
     if rec:
         board["findings"] = rec
     else:
@@ -8455,7 +8464,7 @@ def cmd_update(root: Path, args) -> int:
 
     recorded = new_board.get("findings") if isinstance(new_board.get("findings"), dict) else {}
     # What --apply will leave at its old id, said before it runs.
-    kept_ids: list[str] = move_entries(dict(recorded), carried) if carried else []
+    kept_ids: list[str] = settle(dict(recorded), carried, gone_ids) if carried else []
 
     def carried_report(done: bool) -> None:
         if held:

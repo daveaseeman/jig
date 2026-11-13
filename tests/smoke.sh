@@ -5301,6 +5301,22 @@ dry=$($UP 2>&1); out=$($UP --apply 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'held back' && test \$(git diff --cached --name-status | grep -c '^R') = 1 && python3 -c \"
 import json; b = json.load(open('.jig/config.json')); assert len(b['findings']) == 1 and list(b['findings'].values()) == ['approved'], b['findings']\"" "$dry"
 undo
+pcnew "$T/findings-case" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p notes misc docs && printf '# B\n\nThe B system.\n' > notes/B.md && printf '# b\n\nThe b system.\n' > misc/b.md && printf '# A\n\nThe a system.\n' > docs/a.md
+board "b['docmap'] = {'docs/a.md': ['src/a/**'], 'notes/B.md': ['src/b/**'], 'misc/b.md': ['src/c/**']}; b['findings'] = {'page:notes/B.md': 'approved', 'page:misc/b.md': 'approved'}"
+git add -A && git commit -qm "two pages approved onto docs/B.md and docs/b.md"
+msg="findings: destinations differing only in case are one path: --apply moves one and holds the other back"
+out=$($UP --apply 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'held back' && test \$(git diff --cached --name-status | grep -c '^R') = 1" "$out"
+undo
+pcnew "$T/findings-dest" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+mkdir -p notes docs && printf '# B\n\nThe b system.\n' > notes/b.md && printf '# A\n\nThe a system.\n' > docs/a.md
+board "b['docmap'] = {'docs/a.md': ['src/a/**'], 'notes/b.md': ['src/b/**']}; b['findings'] = {'page:notes/b.md': 'approved', 'section:notes/b.md': 'exception: keep', 'section:docs/b.md': 'deferred: later'}"
+git add -A && git commit -qm "a stale deferral at the destination id"
+msg="findings: the dry run and --apply agree when a stale deferral sits on the destination id"
+dry=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+expect_pass sh -c "! echo \"\$0\" | grep -q 'left at its old id' && python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['findings'] == {'section:docs/b.md': 'exception: keep'}, b['findings']\"" "$dry"
+undo
 pcnew "$T/findings-flagged" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 mkdir -p docs/a/b && printf '# A\n\nThe a system.\n' > docs/a/a.md && printf '# B\n\nThe b part.\n' > docs/a/b/b.md
 board "b['docmap'] = {'docs/a/a.md': ['src/a/**'], 'docs/a/b/b.md': ['src/b/**']}; b['findings'] = {'shape:docs/a/b/b.md ': 'approved'}"
