@@ -769,15 +769,20 @@ def run_derive(root: Path) -> tuple[int, list[str]]:
         return 0, []
     before = stats(root, unstaged(root))
     rc = run_repo_script(root, script)
-    if rc:
-        return rc, []
     after = stats(root, unstaged(root) | set(before))
-    wrote = sorted(f for f, st in after.items()
-                   if (f not in before and st is not None) or (f in before and st != before[f]))
+    touched = [f for f, st in after.items() if f not in before or st != before[f]]
+    # Literal, so a name like `[slug].md` or `:x` is a path, not a pattern.
+    lit = ("--literal-pathspecs",)
+    gone = [f for f in touched if after[f] is None]
+    indexed = set(filter(None, git(*lit, "ls-files", "-z", "--", *gone, cwd=str(root)).split("\0"))) \
+        if gone else set()
+    # An untracked file that came and went has nothing to stage; a tracked one it deleted does.
+    wrote = sorted(f for f in touched if after[f] is not None or f in indexed)
+    # Staged even when it failed: nothing is committed then, `git merge --abort` resets it, and
+    # the rerun's identical write would otherwise leave a correct file unstaged.
     if wrote:
-        # Literal, so a name like `[slug].md` or `:x` is a path, not a pattern.
-        git("--literal-pathspecs", "add", "-A", "--", *wrote, cwd=str(root), check=True)
-    return 0, wrote
+        git(*lit, "add", "-A", "--", *wrote, cwd=str(root), check=True)
+    return rc, wrote
 
 
 def setup_and_derive(root: Path, name: str) -> bool:

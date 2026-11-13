@@ -5025,9 +5025,32 @@ cd "\$(dirname "\$0")/../.."
 DER
 git commit -qam "derive writes, then may fail"
 mdjob X s.py; touch "$FLAG"; $J merge X >/dev/null 2>&1; rm "$FLAG"
-msg="derive: a derived file a failed run already wrote is staged by --number's run, and the commit leaves it current and the tree clean"
+msg="derive: a derived file a failed run already wrote lands: --number and the commit leave it current and the tree clean"
 out=$($J merge --number 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -qx 'derived: INDEX.md' && git commit -q --no-edit && test -z \"\$(git status --porcelain)\" && git show HEAD:INDEX.md | grep -qx s.py && $(declare -f fresh); fresh" "$out"
+expect_pass sh -c "git commit -q --no-edit && test -z \"\$(git status --porcelain)\" && git show HEAD:INDEX.md | grep -qx s.py && $(declare -f fresh); fresh" "$out"
+
+printf 'old\n' > old.md && printf 'rm -f old.md\n' >> .jig/scripts/derive.sh && git add -A && git commit -qm "derive deletes old.md"
+mdjob Y t.py
+msg="derive: a tracked file derive.sh deletes is staged as deleted: listed, gone from the merge commit, the tree clean"
+out=$($J merge Y 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'derived: INDEX.md, old.md' && ! git cat-file -e HEAD:old.md 2>/dev/null && test -z \"\$(git status --porcelain)\"" "$out"
+
+# Writes INDEX.md only on a difference, and recreates gen/: a failed run's correct write must
+# still land, and an untracked file it removes has nothing to stage.
+cat > .jig/scripts/derive.sh <<DER
+#!/bin/sh
+set -eu
+cd "\$(dirname "\$0")/../.."
+tmp=\$(mktemp); { echo "count: \$(ls src | wc -l | tr -d ' ')"; ls src; } > "\$tmp"
+cmp -s "\$tmp" INDEX.md && rm -f "\$tmp" || mv "\$tmp" INDEX.md
+rm -rf gen && mkdir gen && : > gen/index.md
+[ ! -e "$FLAG" ] || exit 3
+DER
+.jig/scripts/derive.sh && git add -A && git commit -qm "derive writes on a difference"
+mdjob Z u.py; touch "$FLAG"; $J merge Z >/dev/null 2>&1; rm "$FLAG"; touch gen/stray.md
+msg="derive: after a failed run, a rerun that finds INDEX.md current and removes an untracked file still commits INDEX.md current and leaves the tree clean"
+out=$($J merge --number 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && git commit -q --no-edit && test -z \"\$(git status --porcelain)\" && git show HEAD:INDEX.md | grep -qx u.py" "$out"
 }
 
 
