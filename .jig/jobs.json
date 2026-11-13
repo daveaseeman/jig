@@ -30,7 +30,7 @@
   },
   "release-roadmap-view": {
     "spec": ".jig/specs/bug-release-roadmap-view.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [],
     "shares": [
