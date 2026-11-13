@@ -97,6 +97,9 @@ Conventions so two jobs rarely meet in one hunk:
   your own module; new tests in your own file; a new fixture as a new file.
 - Scarce numbers come from the board (`--reserve`, `jig reserve`), never from looking at what seems free.
   Two branches that both take migration 17 corrupt the first database that runs both.
+- A file generated from the whole tree (a reference, an index) is written on trunk by
+  `.jig/scripts/derive.sh` at each merge, never on a branch: two branches' copies merge into a
+  wrong file, or conflict.
 
 ## Reserved numbers
 
@@ -423,6 +426,9 @@ else stops with the files named, and a person resolves it.
    `--subject <ids>` is the ids the subject leads with, e.g. `D-001, D-002`, for a repo whose
    subjects lead with ids: the subject becomes `<ids>: merge <job>`. `: merge <job>` is added
    unless the text already ends with it, so pass the ids and don't write the merge yourself.
+   Before its commit the merge runs `.jig/scripts/setup.sh`, then `.jig/scripts/derive.sh`,
+   and commits what derive wrote in the merge commit. A failing derive stops the merge before
+   its commit, as a conflict does: fix it, `jig merge --number`, `git commit`.
 
 ## Workflow
 
@@ -914,7 +920,7 @@ jig status                  jobs, states, distance from trunk, dirt
 jig open <name> --spec … --owns … --shares … --after … --reserve schema
 jig mark <name> <state>     claimed|building|ready|gated|parked
 jig merge <name> [-m msg] [--subject text]   merge a job, numbering its D-?<slug> ids; its entry is deleted in the merge commit
-jig merge --number          in a merge stopped on conflicts, once resolved: number the ids it brings in
+jig merge --number          in a merge stopped on conflicts, once resolved: number the ids it brings in, then setup.sh and derive.sh
 jig check [--staged]        run the rules here
 jig job                    this branch's manifest
 jig decision <id>           a decision entry and its supersedes chain

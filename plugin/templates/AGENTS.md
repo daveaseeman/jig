@@ -14,6 +14,7 @@ Risk: R0 — personal prototype, single user, nothing shipped. Optimize for spee
 - run:    `TODO`
 - check:  `.jig/scripts/check.sh` (runs on every stop; must pass before you're done)
 - setup:  `.jig/scripts/setup.sh` (runs itself in new worktrees and after merges; run it after changing dependencies)
+- derive: `.jig/scripts/derive.sh` (writes the files derived from the whole tree; `jig merge` runs it and commits them; branches don't commit them)
 
 ## Workflow
 - Task bigger than a one-sentence diff → write `.jig/specs/<task>.md` first (see /jig:spec). Plan before editing.

@@ -131,7 +131,8 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
    ends with it, so pass the ids and don't write the merge yourself. The merge numbers each
    `D-?<slug>` the job wrote in `.jig/decisions.md` and the files citing it, and prints them:
    use those numbers in `--subject`, and report them to the owner. A merge that stops on
-   conflicts: resolve and `git add` them, then `jig merge --number`, then `git commit`.
+   conflicts: resolve and `git add` them, then `jig merge --number` (it also runs `setup.sh`
+   and `derive.sh`), then `git commit`.
 
 ## A roadmap change
 
@@ -156,7 +157,16 @@ themselves. A synced job needs no new handoff: `jig merge` doesn't count what a 
 A job that needs another number gets it from `jig reserve <job> <counter>`, never a hand edit
 of `jobs.json`.
 
+`jig merge` already wrote the files the repo derives from the whole tree, with
+`.jig/scripts/derive.sh`, in the merge commit. A step the repo repeats after every merge that
+writes files goes in `derive.sh`: propose it to the owner.
+
+Look at the merged job's worktree. If its `git status` is clean, `git worktree remove <it>` and
+`git branch -d <branch>`. Otherwise tell the owner and leave both.
+
 ## Never
 
 Commit on a job's branch. Edit a job's feature files. Hand out a number outside the board.
-Switch the trunk checkout off trunk.
+Switch the trunk checkout off trunk. Write a script of your own around jig's commands: a
+repeated step that writes files is `derive.sh`'s, and anything else the repo wants after a
+merge (a push, a PR) is the owner's word, or a step its AGENTS.md names.

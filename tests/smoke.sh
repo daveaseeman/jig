@@ -265,7 +265,7 @@ msg="init: root holds only AGENTS.md, CLAUDE.md and .jig/"
 expect_pass test "$(ls -A | grep -v '^\.git$' | LC_ALL=C sort | tr '\n' ' ')" = ".jig AGENTS.md CLAUDE.md "
 
 msg="init: .jig/ holds jig.py, RULES.md, docs-page.md, config.json, jobs.json, decisions.md, the five scripts and staging/.gitignore, nothing else"
-expect_pass test "$(find .jig -type f | LC_ALL=C sort | tr '\n' ' ')" = ".jig/RULES.md .jig/config.json .jig/decisions.md .jig/docs-page.md .jig/jig.py .jig/jobs.json .jig/scripts/check.sh .jig/scripts/format.sh .jig/scripts/publish.sh .jig/scripts/release.sh .jig/scripts/setup.sh .jig/staging/.gitignore "
+expect_pass test "$(find .jig -type f | LC_ALL=C sort | tr '\n' ' ')" = ".jig/RULES.md .jig/config.json .jig/decisions.md .jig/docs-page.md .jig/jig.py .jig/jobs.json .jig/scripts/check.sh .jig/scripts/derive.sh .jig/scripts/format.sh .jig/scripts/publish.sh .jig/scripts/release.sh .jig/scripts/setup.sh .jig/staging/.gitignore "
 
 msg="init: the spec template and both ledgers stay in the plugin until first use"
 expect_pass sh -c "test ! -e .jig/specs -a ! -e .jig/ledgers -a ! -e '$P/jig/specs' -a ! -e '$P/jig/ledgers' && test -f '$P/specs/_template.md' -a -f '$P/ledgers/WORKAROUNDS.md' -a -f '$P/ledgers/DEFERRED.md'"
@@ -460,7 +460,7 @@ for layout in "eaec973 dot" "66a044c dot" "62c8d9f jig" "eaec973 aidev" "5d955a2
   expect_pass python3 -c "
 import subprocess
 allowed = {'$board', '.jig/config.json', '.jig/jobs.json', '.aidev/aidev.py', 'jig/jig.py', '.jig/jig.py',
-           '.aidev/RULES.md', 'jig/RULES.md', '.jig/RULES.md', '.jig/docs-page.md', '.gitignore', '.jig/scripts/setup.sh', '.jig/scripts/release.sh', '.jig/scripts/publish.sh', '.jig/staging/.gitignore', '.jig/decisions.md'}
+           '.aidev/RULES.md', 'jig/RULES.md', '.jig/RULES.md', '.jig/docs-page.md', '.gitignore', '.jig/scripts/setup.sh', '.jig/scripts/derive.sh', '.jig/scripts/release.sh', '.jig/scripts/publish.sh', '.jig/staging/.gitignore', '.jig/decisions.md'}
 for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
     status, *paths = line.split('\t')
     assert status == 'R100' or set(paths) <= allowed, line"
@@ -476,6 +476,9 @@ for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-st
 
   msg="update $name: publish.sh is added from the template, TODO line included, and staged"
   expect_pass sh -c "git diff --cached --name-status | grep -q '^A.\.jig/scripts/publish.sh$' && grep -q '^# TODO: publish steps\.' .jig/scripts/publish.sh && test -x .jig/scripts/publish.sh"
+
+  msg="update $name: derive.sh is added from the template, executable, and staged"
+  expect_pass sh -c "cmp -s .jig/scripts/derive.sh '$P/jig/scripts/derive.sh' && test -x .jig/scripts/derive.sh && git diff --cached --name-status | grep -q '^A.\.jig/scripts/derive.sh$'"
 
   if [ -n "$had_setup" ]; then
     msg="update $name: its setup.sh moves to .jig/scripts/ untouched"
@@ -678,7 +681,7 @@ EOF
   expect_pass python3 -c "
 import subprocess, sys
 removed = set(sys.argv[1].split())
-jig = {'.jig/config.json', '.jig/jobs.json', '.jig/jig.py', '.jig/RULES.md', '.jig/docs-page.md', '.jig/scripts/setup.sh', '.jig/scripts/release.sh', '.jig/scripts/publish.sh',
+jig = {'.jig/config.json', '.jig/jobs.json', '.jig/jig.py', '.jig/RULES.md', '.jig/docs-page.md', '.jig/scripts/setup.sh', '.jig/scripts/derive.sh', '.jig/scripts/release.sh', '.jig/scripts/publish.sh',
        '.jig/ledgers/DEFERRED.md', '.jig/staging/.gitignore', '.gitignore', '.jig/decisions.md'}
 for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
     status, *paths = line.split('\t')
@@ -4916,8 +4919,80 @@ out=$($UP --apply --merge-log 2>&1)
 expect_pass sh -c "grep -qx '### D-003 ids are numbers' .jig/decisions.md && ! grep -q '^### D-00[12]' .jig/decisions.md && grep -q 'left out of it: D-001, D-002' .jig/decisions.md && git commit -qm 'TOOL: merge the log'" "$out"
 }
 
+# ---------------------------------------------------------------- derive.sh at jig merge
+sec_merge_derived() {
+MD="$T/derive"; FLAG="$T/derive-fail"; LOG="$T/derive-setup.log"
+pcnew "$MD" && mkdir -p src && for f in b d f h j l; do printf 'x=1\n' > src/$f.py; done
+printf 'base\n' > shared.txt && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+msg="derive: after init, .jig/scripts/derive.sh is executable and exits 0"
+expect_pass sh -c "test -x .jig/scripts/derive.sh && .jig/scripts/derive.sh"
+# mdjob <job> <source> [regen]: a job adding one source, handed off; regen also commits INDEX.md.
+mdjob() {
+  $J open "$1" --owns "src/$2" --shares INDEX.md shared.txt >/dev/null && git add -A && git commit -qm "open $1"
+  ( cd ".git/jig/worktrees/$1" && printf 'x=1\n' > "src/$2" && { [ -z "${3:-}" ] || .jig/scripts/derive.sh; } \
+    && git add -A && git commit -qm "$1: $2" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 \
+    && pcfold && git add -A && git commit -qm "note $1" )
+}
+fresh() { .jig/scripts/derive.sh && git diff --quiet -- INDEX.md; }
+parents() { git log -1 --format=%P | wc -w | tr -d ' '; }
 
-UNITS="rules update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches"
+mdjob T0 c.py
+msg="derive: with the template's derive.sh, jig merge prints no derived: line and commits the job's files and its entry, nothing more"
+out=$($J merge T0 2>&1)
+want=$( { git diff --name-only HEAD^1 HEAD^2; echo .jig/jobs.json; } | sort -u)
+expect_pass sh -c "! echo \"\$0\" | grep -q '^derived:' && test \"\$(git diff --name-only HEAD^1 HEAD | sort)\" = \"\$1\"" "$out" "$want"
+
+cat > .jig/scripts/derive.sh <<DER
+#!/bin/sh
+set -eu
+cd "\$(dirname "\$0")/../.."
+[ ! -e "$FLAG" ] || exit 3
+{ echo "count: \$(ls src | wc -l | tr -d ' ')"; ls src; } > INDEX.md
+DER
+printf '#!/bin/sh\npwd -P >> "%s"\n' "$LOG" > .jig/scripts/setup.sh
+.jig/scripts/derive.sh && git add -A && git commit -qm "derive INDEX.md"
+
+mdjob A a.py; mdjob B e.py
+for j in A B; do
+  msg="derive: jig merge $j, which never touched INDEX.md, exits 0, prints derived: INDEX.md, and commits it current in the merge commit"
+  out=$($J merge $j 2>&1); rc=$?
+  expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'derived: INDEX.md' && test -z \"\$(git status --porcelain)\" && test $(parents) = 2 && git diff --name-only HEAD^1 HEAD | grep -qx INDEX.md && $(declare -f fresh); fresh" "$out"
+done
+
+# The symptom: two jobs regenerate from their own sources; git merges their copies cleanly, wrong.
+mdjob C a0.py regen; mdjob D z9.py regen
+$J merge C >/dev/null 2>&1
+msg="derive: two jobs that each committed a regenerated INDEX.md merge cleanly, and trunk's INDEX.md counts both"
+out=$($J merge D 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && grep -qx 'count: 11' INDEX.md && grep -qx a0.py INDEX.md && grep -qx z9.py INDEX.md && test -z \"\$(git status --porcelain)\"" "$out"
+
+mdjob E k.py; touch "$FLAG"
+msg="derive: a derive.sh that exits 3 stops jig merge before its commit: exit 1, MERGE_HEAD, stderr naming derive.sh, 3 and jig merge --number"
+err=$($J merge E 2>&1 >/dev/null); rc=$?
+expect_pass sh -c "test $rc = 1 && git rev-parse -q --verify MERGE_HEAD && echo \"\$0\" | grep -q '.jig/scripts/derive.sh exited 3' && echo \"\$0\" | grep -q 'jig merge --number'" "$err"
+rm "$FLAG"
+msg="derive: once fixed, jig merge --number and git commit leave INDEX.md current and the tree clean"
+expect_pass sh -c "$J merge --number && git commit -q --no-edit && test -z \"\$(git status --porcelain)\" && grep -qx k.py INDEX.md && $(declare -f fresh); fresh"
+
+mdjob F m.py; touch "$FLAG"; $J merge F >/dev/null 2>&1
+msg="derive: after a failed derive, git merge --abort puts F's entry back"
+expect_pass sh -c "git merge --abort && grep -q '\"F\"' .jig/jobs.json && test -z \"\$(git status --porcelain --untracked-files=no)\""
+rm "$FLAG"
+
+mdjob G n.py
+(cd .git/jig/worktrees/G && printf 'job\n' > shared.txt && git commit -qam "G: shared" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note G again")
+printf 'trunk\n' > shared.txt && git commit -qam "trunk: shared"
+msg="derive: a merge that stops on a source conflict no longer says to run setup.sh after the commit"
+err=$($J merge G 2>&1); rc=$?
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q '^  shared.txt' && ! echo \"\$0\" | grep -q 'then run .*setup.sh'" "$err"
+printf 'both\n' > shared.txt && git add shared.txt && : > "$LOG"
+msg="derive: once resolved, jig merge --number runs setup.sh once and writes INDEX.md; the commit leaves the tree clean"
+out=$($J merge --number 2>&1)
+expect_pass sh -c "test \$(wc -l < '$LOG' | tr -d ' ') = 1 && echo \"\$0\" | grep -qx 'derived: INDEX.md' && git commit -q --no-edit && test -z \"\$(git status --porcelain)\" && grep -qx n.py INDEX.md" "$out"
+}
+
+
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file

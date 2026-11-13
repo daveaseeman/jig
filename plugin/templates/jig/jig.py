@@ -723,14 +723,59 @@ def run_setup(root: Path) -> None:
     if not script.exists():
         return
     print(f"jig: setting up {root} with {DIR}/scripts/setup.sh", file=sys.stderr)
+    rc = run_repo_script(root, script)
+    if rc:
+        print(f"jig: {DIR}/scripts/setup.sh exited {rc} in {root}. Fix it, then run it again "
+              f"in {root}.", file=sys.stderr)
+
+
+def run_repo_script(root: Path, script: Path) -> int:
     # The same script runs from a hook, from sync, or by hand: none of git's hook variables.
     env = {k: v for k, v in os.environ.items()
            if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX")}
     cmd = [str(script)] if os.access(script, os.X_OK) else ["bash", str(script)]
-    rc = subprocess.run(cmd, cwd=root, env=env, stdout=sys.stderr).returncode
+    return subprocess.run(cmd, cwd=root, env=env, stdout=sys.stderr).returncode
+
+
+DERIVE = f"{DIR}/scripts/derive.sh"
+
+
+def unstaged(root: Path) -> set[str]:
+    return set(git("diff", "--name-only", cwd=str(root)).splitlines()) | \
+        set(git("ls-files", "--others", "--exclude-standard", cwd=str(root)).splitlines())
+
+
+def run_derive(root: Path) -> tuple[int, list[str]]:
+    """Run the repo's derive.sh on the merged tree and stage what it wrote, so the merge commit
+    carries the files derived from the whole tree: a branch's copy is derived from its own
+    sources, and two branches' copies merge into a wrong file. Returns its exit code and the
+    files it staged."""
+    script = root / DERIVE
+    if not script.exists():
+        return 0, []
+    before = unstaged(root)
+    rc = run_repo_script(root, script)
     if rc:
-        print(f"jig: {DIR}/scripts/setup.sh exited {rc} in {root}. Fix it, then run it again "
-              f"in {root}.", file=sys.stderr)
+        return rc, []
+    wrote = sorted(unstaged(root) - before)
+    if wrote:
+        git("add", "-A", "--", *wrote, cwd=str(root), check=True)
+    return 0, wrote
+
+
+def setup_and_derive(root: Path, name: str) -> bool:
+    """The merge's last writes before its commit: setup.sh, so derive.sh runs in an environment
+    built from the merged manifests, then derive.sh. False when derive.sh failed."""
+    run_setup(root)
+    rc, wrote = run_derive(root)
+    if rc:
+        print(f"jig: {DERIVE} exited {rc}; the merge isn't committed. Fix it, then "
+              f"`jig merge --number` and `git commit`; or `git merge --abort`, which puts "
+              f"{name}'s entry back.", file=sys.stderr)
+        return False
+    if wrote:
+        print(f"derived: {', '.join(wrote)}")
+    return True
 
 
 def cmd_hook(root: Path, args) -> int:
@@ -1016,7 +1061,7 @@ def cmd_merge(root: Path, args) -> int:
             die("resolve and `git add` the conflicted files first")
         for line in number_placeholders(root, trunk) or ["nothing to number"]:
             print(f"numbered {line}" if "→" in line else line)
-        return 0
+        return 0 if setup_and_derive(root, "the job") else 1
     if not name:
         die("usage: jig merge <job> [-m msg] [--subject ids], or jig merge --number", 2)
     if git("branch", "--show-current") != trunk:
@@ -1089,10 +1134,13 @@ def cmd_merge(root: Path, args) -> int:
         then = f", `jig roadmap --write` and `git add {ROADMAP_VIEW}`" if git("show", f":{ROADMAP}") else ""
         print(f"conflicts merging {branch}; {name}'s entry is already deleted in the index. "
               f"Resolve these, `git add` each{then}, `jig merge --number` (it numbers the job's "
-              f"D-?<slug> ids), `git commit`, then run {DIR}/scripts/setup.sh:",
+              f"D-?<slug> ids and runs setup.sh and derive.sh), then `git commit`:",
               file=sys.stderr)
         for f in conflicted:
             print(f"  {f}", file=sys.stderr)
+        return 1
+    # git runs post-merge only for a merge it commits itself, not this one.
+    if not setup_and_derive(root, name):
         return 1
     commit = ["git", "commit", "-q", "--no-edit"] if merging else \
         ["git", "commit", "-q", "-m", f"{msg}: already in {trunk}, entry deleted"]
@@ -1102,8 +1150,6 @@ def cmd_merge(root: Path, args) -> int:
         return 1
     for line in numbered:
         print(f"numbered {line}")
-    # git runs post-merge only for a merge it commits itself, not this one.
-    run_setup(root)
     print(f"merged {name}; its entry is gone from {JOBS} in the same commit. Sync the clean jobs.")
     return 0
 
@@ -6646,6 +6692,16 @@ def ensure_staging(root: Path) -> None:
         ignore.write_text(f"# Staged files are never committed: see Staging in {DIR}/RULES.md.\n*\n!.gitignore\n")
 
 
+def add_derive(root: Path, here: Path) -> None:
+    dest = root / DERIVE
+    if dest.exists():
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(here / "scripts" / "derive.sh", dest)
+    dest.chmod(0o755)
+    git("add", "--", DERIVE, check=True)
+
+
 def add_release(root: Path, here: Path) -> None:
     if release_script(root, meta=(root / META).exists()):
         git("add", "--", RELEASE, check=True)
@@ -6816,6 +6872,10 @@ STEPS: list = [
     (f"add {SETUP} from the template, TODOs to fill: it runs in every new worktree and after "
      "every merge", lambda root, after: SETUP not in after and not (root / SETUP).exists()
      and (Path(__file__).resolve().parent / "scripts" / "setup.sh").exists(), add_setup),
+    (f"add {DERIVE} from the template, a no-op: `jig merge` runs it and commits the files it "
+     "derives from the whole tree", lambda root, after: DERIVE not in after
+     and not (root / DERIVE).exists()
+     and (Path(__file__).resolve().parent / "scripts" / "derive.sh").exists(), add_derive),
     (f"add {RELEASE} from the template: the repo's release protocol, which /jig:release fills in "
      "on the first `jig release`", lambda root, after: RELEASE not in after
      and not (root / RELEASE).exists()
