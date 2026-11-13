@@ -12,7 +12,7 @@
   },
   "peers-other-log-id": {
     "spec": ".jig/specs/bug-peers-other-log-id.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [],
     "shares": [
@@ -53,7 +53,7 @@
   },
   "derive-candidates": {
     "spec": ".jig/specs/bug-derive-candidates.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [],
     "shares": [
