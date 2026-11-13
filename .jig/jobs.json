@@ -1,7 +1,7 @@
 {
   "glossary-in-docs": {
     "spec": ".jig/specs/glossary-in-docs.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [],
     "shares": [
