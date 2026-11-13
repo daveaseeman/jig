@@ -4189,7 +4189,7 @@ Touches: docs/shared.md' "v0.1.0 - $day" && git add -A; out=$($J check --staged 
 expect_pass sh -c "echo \"\$0\" | grep -q 'M2 .*D-002 is open: release v0.1.0 holds accepted entries only'" "$out"
 msg="decisions: a commit editing a line under ## v0.1.0 is refused"
 sed -i.bak 's/^### D-001 ids are numbers$/### D-001 ids are strings/' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
-out=$(git commit -qm edit 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is frozen'" "$out"
+out=$(git commit -qm edit 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is frozen on main'" "$out"
 msg="decisions: adding [YANKED] to the heading and one line under it is accepted"
 python3 -c "import re; f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(re.sub(r'^(## v0\.1\.0 - \S+)$', r'\1 [YANKED]\n\nIds broke; pin v0.2.0.', s, flags=re.M))"
 git add -A; expect_pass git commit -qm yank
@@ -4300,10 +4300,28 @@ msg="migration: releases keep their lines, re-headed; rows land by status; a not
 expect_pass sh -c "sed -n '/^## v0.1.0 - /,\$p' .jig/decisions.md | grep -qx '### D-001 ids' && sed -n '/^## v0.1.0 - /,\$p' .jig/decisions.md | grep -qx -- '- D-001' && grep -qx '## v0.2.0 - [0-9-]*' .jig/decisions.md && sed -n '/^## Open/,/^## Unreleased/p' .jig/decisions.md | grep -qx '### D-002 which wire format?' && grep -qx 'Proposed (Ann, 2026-11-02).' .jig/decisions.md && sed -n '/^### D-002/,/^## Unreleased/p' .jig/decisions.md | grep -qx 'Source for D-002: the wire thread.' && ! grep -q '^### D-003' .jig/decisions.md && grep -q 'left out of it: D-003' .jig/decisions.md && grep -qx -- '- D-002, D-003' .jig/decisions.md && ! grep -q '^## .*—' .jig/decisions.md"
 msg="migration: the job's commit of it passes, judged by the log's rules since it merges the old files away"
 expect_pass git commit -qm "TOOL: merge the log"
+# The branch is judged from where it left trunk: its own conversion isn't trunk's yet, so a
+# later commit on it may correct what the first got wrong, as the squash would.
+A=$(git rev-parse HEAD)
+restate() { python3 -c "import re; f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(re.sub(r'(?m)^(### D-001 ids\n\w+ \()', r'\1owner, ', s, count=1))"; }
+msg="branch log: a later commit on the job changing a status line in its converted release passes"
+restate && git add -A; expect_pass git commit -qm "D-001: restated"; git reset -q --hard "$A"
+msg="branch log: a later commit on the job adding ### Changed above its converted release's change line passes"
+python3 -c "f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(s.replace('\n- D-002, D-003\n', '\n### Changed\n- D-002, D-003\n', 1))" && git add -A
+expect_pass git commit -qm "TOOL: Changed above a release line"; git reset -q --hard "$A"
+msg="branch log: a later commit on the job retitling a converted entry with no Touches line passes"
+sed -i.bak 's/^### D-002 which wire format?$/### D-002 which wire format, then?/' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
+expect_pass git commit -qm "D-002: retitled"; git reset -q --hard "$A"
+msg="branch log: reverting the conversion, staged and committed, passes with the counter on the register's rows"
+git revert --no-commit HEAD && out=$(git commit -qm "TOOL: revert the log" 2>&1); rc=$?; git reset -q --hard "$A"
+expect_pass sh -c "test $rc = 0" "$out"
 $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note ml" && cd "$OM"
 msg="migration: the job merges into main, and --apply --merge-log there then rewrites only the board: append_files and the counter"
 $J merge ml >/dev/null 2>&1; out=$($UP --apply --merge-log 2>&1)
 expect_pass sh -c "git log -1 --format=%s | grep -qx 'merge ml' && python3 -c \"import json; c=json.load(open('.jig/config.json')); assert 'CHANGELOG.md' not in c['append_files'] and '.jig/decisions.md' in c['append_files'], c; assert c['reserve']['decision']['files']==['.jig/decisions.md'], c\" && git diff --cached --name-only | grep -qx .jig/config.json && git commit -qm 'TOOL: board after the log'" "$out"
+msg="branch log: on trunk after the merge, the status-line edit is refused as frozen on main"
+restate && git add -A; out=$(git commit -qm "D-001: restated" 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is frozen on main'" "$out"
 msg="migration: afterwards a job's entry is numbered above the rejected D-003, the counter agreeing, and the release takes the history"
 $J open o2 >/dev/null && git add -A && git commit -qm "TOOL: open o2"
 (cd .git/jig/worktrees/o2 && ulog '### D-?cache cache off
@@ -4351,7 +4369,7 @@ cd "$DL"
 }
 
 # ---------------------------------------------------------------- a superseded entry is removed
-rment() { python3 -c "import re,sys; f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(re.sub(r'(?ms)^### '+sys.argv[1]+r' .*?(?=^##)', '', s))" "$1"; }
+rment() { python3 -c "import re,sys; f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(re.sub(r'(?ms)^### '+sys.argv[1]+r' .*?(?=^##|\Z)', '', s))" "$1"; }
 sec_supersede() {
 SR="$T/sr"; pcnew "$SR" && git add -A && git commit -qm init && $J init >/dev/null
 sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
@@ -4366,7 +4384,7 @@ rment D-001 && git add -A; out=$(git commit -qm drop 2>&1); undo
 expect_pass sh -c "echo \"\$0\" | grep -q 'D-001 is removed from release v0.1.0, and no entry in the log supersedes it'" "$out"
 msg="supersede: editing a released change line is still refused"
 sed -i.bak 's/^- IDS: Number them\.$/- IDS: Number all./' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
-out=$(git commit -qm edit 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is frozen'" "$out"
+out=$(git commit -qm edit 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is frozen on main'" "$out"
 msg="supersede: a proposed entry naming Supersedes D-001 removes nothing: removing D-001 with it is refused"
 ulog '### D-002 maybe strings
 Proposed (2026-11-02). Supersedes D-001.
@@ -4458,6 +4476,53 @@ cd "$SP" && git -C smclone pull -q 2>/dev/null && setjson .jig/para.json pin v0.
   && git add -A && git commit -qm "meta: sm v0.3.0 → v0.4.0" >/dev/null 2>&1; out=$($J sync 2>&1)
 msg="supersede: a citation two removals back walks the metarepo's history to the entry that holds at the pin"
 expect_pass sh -c "echo \"\$0\" | grep -qF 'has no row for: now sm/.jig/decisions.md § D-003'" "$out"
+
+# A job's branch is judged from where it left trunk, migration or not: a later commit may
+# undo or correct a supersede that trunk never had, with a counter over the log.
+SU="$T/su"; pcnew "$SU" && git add -A && git commit -qm init && $J init >/dev/null
+sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
+printf 'mkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/release.sh && printf 'dist/\n' > .gitignore
+board "b['release']['artifacts'] = ['dist/*.zip']; b['reserve'] = {'decision': {'pattern': r'^### D-(\d+)', 'files': ['.jig/decisions.md']}}"
+ulog '### Added
+- PORTS: Closed.'
+ulog '### D-002 ports stay closed
+Accepted (owner, 2026-11-01).
+Touches: docs/shared.md
+
+### D-001 ids are numbers
+Accepted (owner, 2026-11-01).
+Touches: docs/shared.md' && git add -A && git commit -qm "board, D-001, D-002"; out=$($J release --minor 2>&1)
+msg="branch log: the set-up releases D-001 and D-002 in v0.1.0"
+expect_pass sh -c "git tag | grep -qx v0.1.0" "$out"
+$J open su >/dev/null && git add -A && git commit -qm "open su"
+cd .git/jig/worktrees/su
+ulog '### D-?str ids are strings
+Accepted (owner, 2026-11-02). Supersedes D-001.
+Touches: docs/shared.md' && rment D-001 && git add -A && git commit -qm "D-?str: strings"
+msg="branch log: the job's commit A supersedes D-001 and removes it"
+expect_pass sh -c "! grep -q '^### D-001' .jig/decisions.md && test -z \"\$(git status --porcelain)\""
+msg="branch log: reverting a job's supersede, staged and committed, passes with no R6"
+git revert --no-commit HEAD && out=$(git commit -qm "revert D-?str" 2>&1); rc=$?; git reset -q --hard HEAD~$((rc == 0))
+expect_pass sh -c "test $rc = 0" "$out"
+msg="branch log: correcting a job's supersede to supersede D-002 instead passes with no R6"
+git show HEAD~1:.jig/decisions.md > .jig/decisions.md && ulog '### D-?str ports are open
+Accepted (owner, 2026-11-02). Supersedes D-002.
+Touches: docs/shared.md' && rment D-002 && git add -A
+out=$(git commit -qm "D-?str: D-002 instead" 2>&1); rc=$?; git reset -q --hard HEAD~$((rc == 0))
+expect_pass sh -c "test $rc = 0" "$out"
+msg="branch log: editing an entry trunk released is still refused on the branch, frozen on main"
+sed -i.bak 's/^### D-002 ports stay closed$/### D-002 ports stay shut/' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
+out=$(git commit -qm edit 2>&1); undo; expect_pass sh -c "echo \"\$0\" | grep -q 'release v0.1.0 is frozen on main'" "$out"
+msg="branch log: removing a released entry nothing supersedes is still refused on the branch"
+rment D-002 && git add -A; out=$(git commit -qm drop 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'D-002 is removed from release v0.1.0, and no entry in the log supersedes it'" "$out"
+msg="branch log: deleting a log trunk has is still refused on the branch"
+git rm -q .jig/decisions.md; out=$(git commit -qm gone 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'it is never deleted'" "$out"
+msg="branch log: a new entry with no Touches line is still refused on the branch"
+ulog '### D-?x x
+Accepted (owner, 2026-11-03).' && git add -A; out=$(git commit -qm x 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'D-?x names no page it touches'" "$out"
 cd "$SR"
 }
 
@@ -4547,7 +4612,7 @@ touch_d1 docs/a.md && git add -A; out=$($J check --staged 2>&1); rc=$?; git rese
 expect_pass sh -c "test $rc = 0 && git show HEAD:.jig/decisions.md | grep -q '^## v0.1.0 - '" "$out"
 msg="touches release: the same backfill with the entry's body edited too is refused as frozen"
 touch_d1 docs/a.md 'log everything.' && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
-expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'release v0.1.0 is frozen'" "$out"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'release v0.1.0 is frozen on main'" "$out"
 msg="touches release: a backfill naming no docs page is refused by M2"
 touch_d1 AGENTS.md && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'D-001 touches AGENTS.md' && ! echo \"\$0\" | grep -q frozen" "$out"
