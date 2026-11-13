@@ -4941,34 +4941,50 @@ def touches_problems(old: str, new: str, prefix: str, trunk: str, staged: bool) 
     return out
 
 
-def start_entry(want: str, every: list[dict], names: dict[str, str], unread: list[str]) -> dict:
-    """The entry `--peers` starts from: `<repo>/<id>` in that repo's log; a plain id in this
-    log first, since review asks about the diff's own entries, then in the one other log that
-    holds it. Two other logs holding it is a refusal naming each `<repo>/<id>`."""
-    searched = list(dict.fromkeys([LOG] + [e["label"] for e in every]))
+def start_entry(root: Path, want: str, logs: list[tuple[str, str, str]], every: list[dict],
+                names: dict[str, str], unread: list[str]) -> tuple[dict, str]:
+    """The entry `--peers` starts from, and a line saying it hopped to a successor or ''.
+    `<repo>/<id>` reads that repo's log; a plain id this log first, since review asks about the
+    diff's own entries, then the one other log that holds it. LOGS are (writer, label, text),
+    this repo's first. Two other logs holding it is a refusal naming each `<repo>/<id>`."""
     head, _, rest = want.rpartition("/")
     if head:
         if head.casefold() not in names:
             die(f"no repo {head} here: a `<repo>/<id>` names this repo, its metarepo or a pararepo `jig repos` lists", 1)
         key = names[head.casefold()]
-        every, want = [e for e in every if e["writer"] == key], rest
-        searched = [LOG if key == SELF else f"{head}/{LOG}"]
+        logs, want = [lg for lg in logs if lg[0] == key], rest
+        if not logs:
+            die(f"{head}'s log was not read for peers:" + "".join(f"\nnot read: {u}" for u in unread), 1)
+        every = [e for e in every if e["writer"] == key]
+    searched = [label for _, label, _ in logs]
 
-    def held(entries: list[dict]) -> dict | None:
-        return next((e for e in entries if e["id"] == want), None) or \
-            next((e for e in entries if decision_id(e["id"]) == decision_id(want)), None)
+    def held(writer: str) -> dict | None:
+        es = [e for e in every if e["writer"] == writer]
+        return next((e for e in es if e["id"] == want), None) or \
+            next((e for e in es if decision_id(e["id"]) == decision_id(want)), None)
 
-    if found := held([e for e in every if e["writer"] == SELF]):
-        return found
-    others = {}
-    for e in every:
-        others.setdefault(e["writer"], []).append(e)
-    hits = [h for w, es in others.items() if w != SELF and (h := held(es))]
+    if logs[0][0] == SELF:
+        if found := held(SELF):
+            return found, ""
+        # An id this repo superseded or removed is ours: another log's entry with the same number
+        # is a different decision, so it is refused here as `jig decision` reads it.
+        prefix = log_prefix_of(logs[0][2])
+        if by := holds_now(want, logs[0][2], prefix, "HEAD", str(root)):
+            die(f"{want} was superseded in {LOG}; what holds now is {by}: `jig decision {by} --peers`", 1)
+        if removed_entry(want, prefix, cwd=str(root)):
+            die(f"{want} was removed from {LOG}: `jig decision {want}` reads it", 1)
+    others = [lg for lg in logs if lg[0] != SELF]
+    hits = [(h, "") for w, _, _ in others if (h := held(w))]
+    if not hits:
+        # A superseded entry is removed from its log: start from the entry holding in its place.
+        for w, label, text in others:
+            if (by := holds_now(want, text, log_prefix_of(text))) and (h := next((e for e in every if e["writer"] == w and e["id"] == by), None)):
+                hits.append((h, f"{label} § {want} is superseded; starting from {by}, which holds now."))
     if len(hits) == 1:
         return hits[0]
     if hits:
         die(f"{want} is in more than one log; name one: "
-            + ", ".join(f"{h['label'].removesuffix('/' + LOG)}/{h['id']}" for h in hits), 1)
+            + ", ".join(f"{h['label'].removesuffix('/' + LOG)}/{h['id']}" for h, _ in hits), 1)
     die(f"no live entry {want} in " + ", ".join(searched)
         + "".join(f"\nnot read: {u}" for u in unread), 1)
 
@@ -4978,11 +4994,17 @@ def cmd_peers(root: Path, args) -> int:
     board = Board.load(root)
     prefix = log_prefix(board.trunk)
     path = root / LOG
-    every, unread = touching(root, board.trunk, path.read_text() if path.exists() else "")
-    entry = start_entry(args.id, every, touch_names(root, board.trunk), unread)
+    names = touch_names(root, board.trunk)
+    others, unread = peer_logs(root, board.trunk)
+    logs = [(SELF, LOG, path.read_text() if path.exists() else "")] + others
+    every = [e for w, label, text in logs
+             for e in touching_entries(text, prefix if w == SELF else log_prefix_of(text), w, label, names)]
+    entry, hopped = start_entry(root, args.id, logs, every, names, unread)
     print(f"{entry['id']} {entry['title']}" if entry["writer"] == SELF
           else f"{entry['label']} § {entry['id']} {entry['title']}")
     print(f"  {rule_sentence(entry['block'])}")
+    if hopped:
+        print(hopped)
     if not entry["pointers"]:
         print(f"\n{entry['id']} has no Touches line, so no peers can be found.")
         return 0
