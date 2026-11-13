@@ -7971,12 +7971,12 @@ def parse_register(text: str, prefix: str | None) -> tuple[list[dict], list[list
     header = register_header(lines)
     rows = set(rows_in(text, prefix))
     entries = [row_entry(table_cells(l), header) for l in lines if l.rstrip() in rows]
-    # The decision table's header row and the separator under it: another table in a note
-    # keeps its own.
+    # A decision table's header row and the separator under it, known by the decision row
+    # under them, whatever its header says: a note's own table keeps its lines.
     rule = lambda l: l.lstrip().startswith("|") and all(re.fullmatch(r":?-+:?", c) for c in table_cells(l))
     table = {n for i, l in enumerate(lines)
-             if header and l.lstrip().startswith("|") and table_cells(l) == header
-             and i + 1 < len(lines) and rule(lines[i + 1]) for n in (i + 1, i + 2)}
+             if l.lstrip().startswith("|") and i + 2 < len(lines) and rule(lines[i + 1])
+             and lines[i + 2].rstrip() in rows for n in (i + 1, i + 2)}
     left = [(n, l) for n, l in enumerate(lines, 1)
             if l.strip() and l.rstrip() not in rows and not OLD_SEED.match(l) and n not in table]
     return entries, paragraphs(left)

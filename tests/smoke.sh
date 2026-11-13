@@ -4923,7 +4923,7 @@ expect_pass sh -c "grep -qx '### D-003 ids are numbers' .jig/decisions.md && ! g
 mlreg() {  # mlreg <D-002's status cell> <its date>: the register, D-002 as given
   printf '# Cross-product decisions\n\nWhat binds every product.\n\n| Id | Decision | Status | Date |\n|---|---|---|---|\n| D-001 | a | accepted (Ann) | 2026-01-01 |\n| D-002 | b | %s | %s |\n| D-003 | c | accepted (Cy) | 2026-02-01 |\n\nA note naming no row.\n\n## Glossary mapping\n\n| Term | Meaning |\n|---|---|\n| foo | bar |\n' "$1" "$2" > DECISIONS.md; }
 mlchangelog() {
-  printf '# Release notes\n\nFirst paragraph.\n\nEvery change to an entry file adds a line here; `jig release` turns Unreleased into the next version.\n\nSecond paragraph.\n\n## Unreleased\n- D-003 later\n\n## v1.0.0 — 2026-01-01\n- D-001, D-002 the first rules\n' > CHANGELOG.md; }
+  printf '# Release notes\n\nFirst paragraph.\n\nEvery change to an entry file adds a line here; `jig release` turns Unreleased into the next version.\n\nSecond paragraph.\n\n## Unreleased\n- D-003 later\n\n## v1.0.0 — 2026-01-01\n- D-001, D-002 the first rules\n\n## v0.9.0 — 2025-12-01\n- an older line\n' > CHANGELOG.md; }
 nocl() { python3 -c "
 import sys, importlib.util as u
 s = u.spec_from_file_location('j', '.jig/jig.py'); m = u.module_from_spec(s); s.loader.exec_module(m)
@@ -4946,6 +4946,8 @@ msg="merge-log: no entry's block holds a change line"
 expect_pass nocl
 msg="merge-log: bare change lines get ### Changed above them, in Unreleased and in a release"
 expect_pass sh -c "sed -n '/^## Unreleased/,/^## v1/p' .jig/decisions.md | grep -A2 -x '### Changed' | grep -qx -- '- D-003 later' && sed -n '/^## v1.0.0/,\$p' .jig/decisions.md | grep -A2 -x '### Changed' | grep -qx -- '- D-001, D-002 the first rules'"
+msg="merge-log: each release keeps its own change lines"
+expect_pass sh -c "sed -n '/^## v1.0.0/,/^## v0.9.0/p' .jig/decisions.md | grep -qx -- '- D-001, D-002 the first rules' && ! sed -n '/^## v1.0.0/,/^## v0.9.0/p' .jig/decisions.md | grep -q 'older line' && sed -n '/^## v0.9.0/,\$p' .jig/decisions.md | grep -qx -- '- an older line'"
 msg="merge-log: the run's output commits unedited"
 expect_pass git commit -qm "TOOL: merge the log"
 $J open rm >/dev/null 2>&1 && git add -A && git commit -qm "open rm" && cd .git/jig/worktrees/rm
@@ -4971,6 +4973,14 @@ ML2="$T/ml-prop"; pcnew "$ML2" && mlchangelog && mlreg 'proposed (Bo)' 2026-01-0
 mlreg 'superseded by D-003' 2026-02-01 && git add -A && git commit -qm sup && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
 out=$($UP --apply --merge-log 2>&1)
 expect_pass sh -c "grep -qx 'Accepted (not recorded, 2026-02-01).' .jig/decisions.md && ! grep -q 'Bo' .jig/decisions.md && echo \"\$0\" | grep -q '^  D-002: superseded, .* or when: check'" "$out"
+
+msg="merge-log: a second decision table with its own header, and one headed No., leave no header or separator behind"
+ML3="$T/ml-tables"; pcnew "$ML3" && mlchangelog
+printf '# Register\n\nKept.\n\n## Current\n\n| Id | Decision | Status | Date |\n|---|---|---|---|\n| D-001 | a | accepted (Ann) | 2026-01-01 |\n\n## Retired\n\n| Id | Decision | Status | Date | Why |\n|---|---|---|---|---|\n| D-002 | b | rejected | 2026-01-01 | too slow |\n' > DECISIONS.md
+mkdir -p sub && printf '# Sub register\n\nKept too.\n\n| No. | Decision | Status | Date |\n|---|---|---|---|\n| D-003 | c | accepted (Cy) | 2026-02-01 |\n' > sub/DECISIONS.md
+git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
+$UP --apply --merge-log >/dev/null 2>&1
+expect_pass sh -c "grep -qx 'Kept.' DECISIONS.md && grep -qx '## Retired' DECISIONS.md && grep -qx 'Kept too.' sub/DECISIONS.md && ! grep -q '^|' DECISIONS.md sub/DECISIONS.md"
 
 # A metarepo job: the run's output commits unedited, with no M3 and no M2 asking for Touches.
 MM="$T/ml-meta"; mkdir -p "$MM/.t" && git -C "$JR" archive v0.9.0 plugin/templates | tar -x -C "$MM/.t"
