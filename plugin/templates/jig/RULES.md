@@ -613,6 +613,8 @@ line and date, an accepted entry's who, supersedes links that resolve (to an ent
 or in trunk's history of it; a shallow clone, which can't say, passes them), one entry per id,
 that a release or `## Unreleased` holds accepted entries only, and that an entry added or
 changed has a `Touches:` line whose every page is there (M2); and the released sections.
+On a branch, the log is judged from where the branch left trunk, as M3 is, so a later commit
+may correct an earlier one as their squash would: a section is frozen once trunk has it.
 `jig release` renames `## Unreleased` to the version's heading and adds an empty one above it.
 A repo that never releases just grows Unreleased.
 

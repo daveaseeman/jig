@@ -1,16 +1,4 @@
 {
-  "branch-log-old-side": {
-    "spec": ".jig/specs/bug-branch-log-old-side.md",
-    "state": "gated",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh"
-    ],
-    "reserved": {}
-  },
   "merge-derived-files": {
     "spec": ".jig/specs/merge-derived-files.md",
     "state": "claimed",

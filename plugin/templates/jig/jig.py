@@ -271,6 +271,16 @@ def base(trunk: str) -> str:
     return "HEAD"
 
 
+def since_trunk(trunk: str) -> str:
+    """Where a branch's log and numbers are judged from: where it left trunk, so a branch is judged
+    as its squash would be and a later commit may correct an earlier one. On trunk, on a detached
+    HEAD (the gate's scratch merge), or finishing a merge of trunk, it is base()."""
+    b = base(trunk)
+    if b != "HEAD" or git("branch", "--show-current") in (trunk, ""):
+        return b
+    return git("merge-base", trunk, "HEAD") or b
+
+
 def changed_paths(trunk: str, staged: bool, removed: bool = False) -> list[str]:
     """What the change writes: a rename shows under its new path only, and a delete not at all,
     which is what a rule on content judges. With REMOVED, every path it adds, edits or removes,
@@ -459,6 +469,9 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
                 now = in_index(LOG, staged)
                 if now and not outside_open_deleted(at_rev(since, LOG), now):
                     continue
+                # A log the branch added and then removed was never trunk's.
+                if not now and not at_rev(since, LOG):
+                    continue
                 out.append(f"R3 {LOG}: a job adds to the log, and changes lines in place only "
                            f"under ## Open")
                 continue
@@ -534,7 +547,7 @@ def reserved_refusals(root: Path, board: "Board", holds: dict[str, set[int]],
                 if isinstance(v, dict) and v.get("pattern") and (takes or v.get("unique"))}
     if not counters:
         return out
-    at = base(board.trunk)
+    at = since_trunk(board.trunk)
     touched = git("diff", "--name-only", "--no-renames", at,
                   *(["--cached"] if staged else [])).splitlines()
     tree = git("ls-tree", "-r", "--name-only", at).splitlines()
@@ -3395,13 +3408,15 @@ def touches_dropped(lines: list[str], keep: bool = False) -> list[str]:
     return out
 
 
-def frozen_problems(old: str, new: str) -> list[str]:
+def frozen_problems(old: str, new: str, trunk: str, only: set[str] | None = None) -> list[str]:
     """A commit may remove a superseded entry from a released section, in the commit adding the
     entry superseding it, or a struck one, in the commit adding a ### Removed line naming it; add or change an entry's Touches line (M2 checks its pages); and add
     ` [YANKED]` to a release heading with one line under it saying why. Anything else in a
-    released section, its change lines above all, is frozen."""
+    released section, its change lines above all, is frozen. ONLY: judge those releases alone."""
     out: list[str] = []
     old, bare = removed_entries(old, new)
+    if only is not None:
+        bare = [e for e in bare if e["section"] in only]
     out += [f"{LOG}: {e['id']} is removed from release {e['section']}, and no entry in the log "
             f"supersedes it: an entry is removed only by the commit adding the accepted one "
             f"that says `Supersedes {e['id']}.`, or, struck as project scope, by the commit adding "
@@ -3411,9 +3426,11 @@ def frozen_problems(old: str, new: str) -> list[str]:
     have = {id_number(e["id"], prefix) for e in log_entries(new, prefix)}
     out += [f"{LOG}: the ### Removed line for {prefix}{n:03d} strikes an entry the log still has: "
             f"remove the entry in the same commit, or drop the line"
-            for n in sorted(struck_ids(old, new, prefix) & have)]
+            for n in sorted(struck_ids(old, new, prefix) & have) if only is None]
     after = release_sections(new)
     for version, (day, yanked, body) in release_sections(old).items():
+        if only is not None and version not in only:
+            continue
         if version not in after:
             out.append(f"{LOG}: release {version} is gone; a released section is never edited or removed")
             continue
@@ -3424,7 +3441,7 @@ def frozen_problems(old: str, new: str) -> list[str]:
         if yanked2 and not yanked and now and not now[0].startswith("#"):
             now = trimmed(now[1:])
         if day2 != day or (yanked and not yanked2) or was != now:
-            out.append(f"{LOG}: release {version} is frozen: add a new accepted entry that "
+            out.append(f"{LOG}: release {version} is frozen on {trunk}: add a new accepted entry that "
                        f"supersedes what changed and remove the old one; a release's change lines stay, and only "
                        f"` [YANKED]` and its one line, or an entry's Touches line, may be added to a release")
     return out
@@ -3452,11 +3469,22 @@ def log_rules(trunk: str, staged: bool, trunk_side: bool = False) -> list[str]:
     """M2 and the released sections, in every repo, whenever a change touches the log. On trunk
     an id is a number: a D-?<slug> that got there would be released as one."""
     new = in_index(LOG, staged)
-    old = at_rev(base(trunk), LOG)
+    since = since_trunk(trunk)
+    old = at_rev(since, LOG)
+    # A branch can hold trunk commits its local trunk lacks (made from origin's, or pulled):
+    # a release HEAD has beyond the merge base is trunk's too. Only the releases `--merge-log`
+    # writes from the merge base's CHANGELOG.md, before the base had a log, are the branch's.
+    head = at_rev("HEAD", LOG) if since != "HEAD" else old
+    converted = set() if old else converted_versions(trunk, since)
+    beyond = set(release_sections(head)) - set(release_sections(old)) - converted
     if not new:
-        return [f"{LOG} is the repo's decision log: it is never deleted"] if old else []
+        if old or (head and (beyond or not unconverting(trunk, since, staged))):
+            return [f"{LOG} is the repo's decision log: it is never deleted"]
+        return []
     prefix = log_prefix(trunk)
-    out = log_problems(new, prefix, trunk) + frozen_problems(old, new)
+    out = log_problems(new, prefix, trunk) + frozen_problems(old, new, trunk)
+    if beyond:
+        out += frozen_problems(head, new, trunk, only=beyond)
     out += touches_problems(old, new, prefix, trunk, staged)
     if trunk_side:
         out += [f"M2 {LOG}:{e['line']} {e['id']} isn't numbered, and {trunk} takes numbers only: "
@@ -3863,19 +3891,59 @@ def migrating_log(trunk: str, staged: bool) -> bool:
     were there before it, and are gone after it."""
     meta = load_meta(trunk)
     prefix = (meta or {}).get("decision_prefix")
-    was = base(trunk)
-    olds = [f for f in git("ls-tree", "-r", "--name-only", was).splitlines()
-            if f == CHANGELOG or (f.endswith(".md") and not f.startswith(f"{DIR}/"))]
-    return (any(holds_old_log(at_rev(was, f), f, prefix) for f in olds)
-            and not any(holds_old_log(in_index(f, staged), f, prefix) for f in olds))
+    return bool(olds := merged_files_at(since_trunk(trunk), meta)) and not any(
+        holds_old_log(in_index(f, staged), f, prefix) for f in olds)
+
+
+def merged_files_at(at: str, meta: dict | None) -> list[str]:
+    """The files at AT `--merge-log` merges: CHANGELOG.md with its sections, and a register with
+    rows (an entry file, or one named decisions.md). Not every table in a page is a register."""
+    entry, prefix = (meta or {}).get("entry_files", []), (meta or {}).get("decision_prefix")
+    return [f for f in git("ls-tree", "-r", "--name-only", at).splitlines()
+            if (f == CHANGELOG or (f.endswith(".md") and not f.startswith(f"{DIR}/")
+                                   and (f in entry or Path(f).name.lower() == "decisions.md")))
+            and holds_old_log(at_rev(at, f), f, prefix)]
+
+
+def converted_versions(trunk: str, since: str) -> set[str]:
+    """The releases this branch's `--merge-log` wrote: in SINCE's CHANGELOG.md, and in the log as
+    the commit adding it wrote it. A release trunk made later, under a version it reused, isn't;
+    nor is anything when a remote's trunk has that commit, since then trunk converted."""
+    added = git("log", "--diff-filter=A", "--format=%H", "--reverse", f"{since}..HEAD", "--", LOG).split()
+    if not added:
+        return set()
+    remotes = [r for r in git("for-each-ref", "--format=%(refname)", "refs/remotes").split()
+               if r.endswith(f"/{trunk}")]
+    if any(subprocess.run(["git", "merge-base", "--is-ancestor", added[0], r],
+                          capture_output=True).returncode == 0 for r in remotes):
+        return set()
+    was = {f"v{m.group(1)}" for l in at_rev(since, CHANGELOG).splitlines() if (m := OLD_RELEASE.match(l))}
+    return was & set(release_sections(at_rev(added[0], LOG)))
+
+
+def unconverting(trunk: str, since: str, staged: bool) -> bool:
+    """Removing the log undoes the branch's `--merge-log`: every file it merged is back as it was."""
+    olds = merged_files_at(since, load_meta(trunk))
+    return bool(olds) and all(in_index(f, staged).strip() == at_rev(since, f).strip() for f in olds)
+
+
+def migrated_ids(trunk: str, prefix: str | None) -> set[str]:
+    """The ids of the register rows where the branch left trunk: the entries `--merge-log`
+    writes from them, which may lack Touches."""
+    was = since_trunk(trunk)
+    rx = re.compile(r"^\s*\|\s*([A-Z][A-Z0-9]*-\d+)\s*\|")
+    return {m.group(1) for f in merged_files_at(was, load_meta(trunk))
+            for row in rows_in(at_rev(was, f), prefix) if (m := rx.match(row))}
 
 
 def touches_problems(old: str, new: str, prefix: str, trunk: str, staged: bool) -> list[str]:
     """M2: an entry added or changed names the pages it touches, and each is a docs page. An
     entry as trunk has it is left alone until it changes. `jig update --merge-log` converting a
-    register writes entries decided before Touches; they are backfilled from update's list."""
+    register writes entries decided before Touches; they are backfilled from update's list. Only
+    those: an entry a later commit on the branch adds names its pages."""
     root = Path.cwd()
     migrating = not log_entries(old, prefix) and migrating_log(trunk, staged)
+    converted = migrated_ids(trunk, (load_meta(trunk) or {}).get("decision_prefix")) if migrating else set()
     names = touch_names(root, trunk)
     para, meta = load_para(trunk), load_meta(trunk)
     cache, _ = meta_cache(root, para) if para else (None, "")
@@ -3883,7 +3951,7 @@ def touches_problems(old: str, new: str, prefix: str, trunk: str, staged: bool) 
     was = {e["id"]: e["block"] for e in log_entries(old, prefix)}
     out = []
     for e in log_entries(new, prefix):
-        if was.get(e["id"]) == e["block"] or (migrating and "?" not in e["id"]):
+        if was.get(e["id"]) == e["block"] or e["id"] in converted:
             continue
         at = f"{LOG}:{e['line']} {e['id']}"
         ptrs = entry_touches(e["block"])
