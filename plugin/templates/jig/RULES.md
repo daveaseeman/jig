@@ -99,9 +99,13 @@ Conventions so two jobs rarely meet in one hunk:
   your own module; new tests in your own file; a new fixture as a new file.
 - Scarce numbers come from the board (`--reserve`, `jig reserve`), never from looking at what seems free.
   Two branches that both take migration 17 corrupt the first database that runs both.
-- A file generated from the whole tree (a reference, an index) is written on trunk by
-  `.jig/scripts/derive.sh` at each merge and listed in `derived_files`, never on a branch: two branches' copies merge into a
-  wrong file, or conflict.
+- A file generated from several sources that separate jobs change (an index of a folder, a
+  reference built from every module) is written on trunk by `.jig/scripts/derive.sh` at each
+  merge and listed in `derived_files`, never on a branch: each job's copy differs, and two
+  branches' copies merge into a wrong file, or conflict. Not such a file: one built from a
+  single source, regenerated in the job that changes that source (`check.sh` may compare it);
+  one the merge can't rebuild (made by hand, on special hardware, or too slow for every merge);
+  and jig's own `ROADMAP.md`.
 
 ## Reserved numbers
 

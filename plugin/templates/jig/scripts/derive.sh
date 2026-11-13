@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Writes the files this repo derives from the whole tree (a generated reference, an index),
-# in the checkout it runs in. It takes no arguments and must be safe to run twice.
+# Writes the files this repo derives from several sources that separate jobs change (an index
+# of a folder, a reference built from every module), in the checkout it runs in.
+# .jig/RULES.md (Keeping merges mechanical) says which files those are, and which aren't.
+# It takes no arguments and must be safe to run twice.
 # List every file this writes in `derived_files` in .jig/config.json (globs): jig commits
 # exactly what they match, as it is after this runs, and nothing else this writes.
 # `jig merge` runs it on trunk, after setup.sh, and commits what `derived_files` matches in the

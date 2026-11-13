@@ -180,11 +180,18 @@ with nothing answering them. Each offers one `BUFFER.md` row: add it only on a y
    If it added `.jig/scripts/release.sh`, leave the TODO: `/jig:release` fills it on the first
    release. If it added `.jig/scripts/publish.sh`, leave its TODO too: `/jig:release` asks what
    a release publishes on the next release.
-   If it added `.jig/scripts/derive.sh`, ask whether the repo regenerates tracked files after
-   merges (a reference, an index). If it does, fill `derive.sh` with that, list the files it
-   writes in `derived_files` in `.jig/config.json`, and offer to remove
-   the hand-run step it replaces. A generator in `setup.sh` moves to `derive.sh`: `setup.sh`
-   must leave tracked files alone.
+   If it added `.jig/scripts/derive.sh`, don't ask the owner whether the repo regenerates
+   files: look. Find the tracked files that are generated: a "generated" or "do not edit"
+   header, a `linguist-generated` line in `.gitattributes`, an output path in a tracked script
+   or build file, a file `check.sh` rebuilds and compares. Read each one's generator and judge
+   it by the test in `.jig/RULES.md` (Keeping merges mechanical): built from several sources
+   that separate jobs change, and rebuildable at every merge. Show each file with its verdict
+   and the reason, such as "one source each: regenerated in its job" or "rendered by hand: the
+   merge can't rebuild it". For the files that pass, propose filling `derive.sh`, listing
+   them in `derived_files` in `.jig/config.json`, and removing the hand-run step it replaces;
+   a file `check.sh` compares with its sources loses that comparison when it moves. Make it on
+   a yes. If no file passes, say so in one line, leave the template, and ask nothing. A
+   generator in `setup.sh` moves to `derive.sh`: `setup.sh` must leave tracked files alone.
 3. Commit on trunk. The hooks read trunk's `.jig/jig.py`. Coming from `jig/`, `.aidev/` or
    claude-lane's `.claude/claude-lane/`, it exists only once this commit lands, so this one
    commit goes unchecked. Coming from the
