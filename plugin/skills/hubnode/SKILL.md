@@ -23,13 +23,15 @@ handoff or when blocked.
    a feature request is interpreted into a spec as it says).
 5. In a pararepo (`.jig/para.json`), `jig sync` on trunk; report a newer release, and a
    header it says is out of date, in one line each; a pin it moved and the buffer rows it
-   closed, in one line each. Each file it names as not a contract path is a question for the
+   closed, in one line each. A proposal it says carries no Open row goes to the owner: withdraw
+   it (`jig propose --withdraw`) only on a yes. Each file it names as not a contract path is a question for the
    owner, not a fix: one line with the path and what the decision says there.
    In a metarepo (`.jig/meta.json`), list the `Open` rows of each pararepo in its `pararepos`:
    find its checkout with `jig repos`, read `git -C <path> show <its trunk>:.jig/ledgers/BUFFER.md`,
    and report each row's id and claim. Beside them, name this repo's unreleased buffer
    proposals (`git branch --no-merged <trunk> --list 'propose/<pararepo>-*'`) and the rows each
-   carries (the `## Buffer rows` of the pararepo's spec that names the branch). Read-only: rows
+   carries (the `## Buffer rows` of the pararepo's spec that names the branch). One that spec
+   marks `withdrawn` isn't listed: name it as a branch to delete, on the owner's word. Read-only: rows
    reach this repo only as a proposal.
 6. `jig workflow`, and read `${CLAUDE_PLUGIN_ROOT}/tiers.json`. Say what you run on:
    `running <model> at <effort>`, from your own system prompt. If that is below the `spec`
