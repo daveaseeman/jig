@@ -137,14 +137,14 @@ into a folder named for it, `docs/<system>/<system>.md`, with that company besid
 change that adds the first of them. Both forms are one page, and that is about naming only: a
 `docmap` key or `boards` entry written in either names it in either, so a branch grows the
 folder with a `git mv` alone, and the key on trunk may be rewritten later or never. A key that
-names a page in the wrong form doesn't make that form right: the page still moves. The tree names the product's own parts, not its files, so a rule that touches several
+names a page in the wrong form doesn't make that form right: the page still moves. The tree names the product's systems, not its files, so a rule that touches several
 files lives once.
 
 In a folder that has a page, another `.md` is a flat page when `docmap` or `boards` names it, or it
 has an Invariants section (or a retired `## Undefined`); anything else there is one of the folder page's files.
 
-A **subsystem** is a part of a system that works independently of the rest of it. It has files
-of its own, which the system's other parts don't edit, and the rest of the system reaches it
+A **subsystem** is a system inside a system: it works independently of the rest of it. It has files
+of its own, which the rest of its system doesn't edit, and the rest of the system reaches it
 only through the interfaces between them. A car's cooling system is separate from its
 suspension and its drivetrain, even where they touch. A section with no files of its own stays
 a section, however long it gets.
@@ -156,6 +156,16 @@ from its folder to that rationale: `{"docs/power/battery/cells": "own firmware m
 rig; independent of pack thermal"}`. An entry with an empty rationale doesn't count, and each
 deeper level needs an entry of its own. `jig survey` lists any other deeper page to fold into
 its subsystem's page or to propose.
+
+`jig survey` works out each page's level from evidence, never its path: the files it owns
+(its docmap globs' files that no page but those above it covers), the repo's structure maps
+and manifests, and with `--levels` its imports. A page below a system whose docmap globs cover no file
+is a section of the page above it; one whose every file another page covers is that page's
+subsystem, or a seam; each folds on the owner's yes. It also lists the repo's own files that
+still hold the old page shape — a check of the Now / Rules / Checks headings, a counter over
+numbered page headings, an always-loaded line that makes page rules bind or cites a page by
+number — and the files that declare the docs structure beside the docmap. Those convert with
+the pages; jig never edits them.
 
 A page describes what is built: what is true of its system on trunk today, in present-tense
 prose. It is not a rulebook; this file holds the rules about documentation, and no page
@@ -182,7 +192,7 @@ Every page, in this order (`.jig/docs-page.md`, which `jig update` keeps
 current, is the skeleton):
 
 1. **A lead paragraph**, with no heading of its own: what the system is and why it exists.
-2. **Body sections**, named for the system's own parts — the nouns its code has (Schema,
+2. **Body sections**, named for what its code has — its nouns (Schema,
    Renderer, Sync) — never for a lifecycle or a genre (Overview, Notes, Misc, Changes). A
    subsystem gets a page of its own, beside its system's, once it has something to say that
    whoever works on it needs and its system's page doesn't; the parent's section then shrinks
@@ -955,7 +965,7 @@ jig prints the command to run it again and exits 1.
 jig init [--trunk main]     config.json, jobs.json, git hooks
 jig init --meta | --para <metarepo> --contract <globs>   ... as a metarepo / pararepo
 jig release [--major|--minor|--patch|--version X.Y.Z] [--force]   the repo's release protocol, then tag, then publish
-jig survey [--json]         inventory the repo against the jig shape
+jig survey [--json] [--levels]   inventory the repo against the jig shape; --levels: each page's level and its evidence
 jig update [--apply]        bring the repo to the current jig layout, and carry out the moves findings approves (dry run without --apply)
 jig update [--apply] --merge-log   on the owner's yes: CHANGELOG.md and the register into .jig/decisions.md
 jig update [--apply] --sweep   on the owner's yes: pages' ## Undefined entries to ## Up next in .jig/roadmap.md

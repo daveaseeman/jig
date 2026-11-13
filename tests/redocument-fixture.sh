@@ -54,6 +54,10 @@ Sync pulls from the server, then pushes.
 - 2.1 test_sync_order
 EOF
   printf 'Ideas for later: a dark theme, maybe.\n' > docs/ideas.md
+  # A check of the old shape, and a page below store that covers no file: a holder and a section.
+  mkdir -p tests && printf 'HEADS = ["Now", "Rules", "%s"]\n' Checks > tests/test_docs.py
+  printf '# Cache\n\nThe cache keeps recent rows.\n\n## Rows\n\nx\n' > docs/store/cache.md
+  python3 -c "import json; f='.jig/config.json'; b=json.load(open(f)); b.setdefault('docmap', {}).update({'docs/store/store.md': ['src/store/**'], 'docs/store/cache.md': []}); json.dump(b, open(f, 'w'), indent=2)"
   git add -A && git commit -qm 'old docs'
 }
 
@@ -88,18 +92,28 @@ if pathlib.Path(".jig/para.json").exists():
         for m in ptr.finditer(f.read_text()):
             cited.setdefault(m[1], []).append(f"§ {m[2].strip()}" if m[2] else "(path)")
 cite = lambda p: ", ".join(cited.get(p, []))
-print("| Old path(s) | New path | Verb | Notes | Cited |\n|---|---|---|---|---|")
+levels = {e["path"]: e for e in r["levels"]}
+# A system's page is docs/<x>.md or docs/<x>/<x>.md; survey gives a level only below one.
+system = lambda p: p.count("/") == 1 or (p.count("/") == 2 and p.split("/")[1] == pathlib.Path(p).stem)
+level = lambda p: levels[p]["level"] if p in levels else "system" if system(p) else ""
+print("| Old path(s) | New path | Verb | Level | Notes | Cited |\n|---|---|---|---|---|---|")
+# The holders first: the run's first job, so the checks pass on converted pages.
+for h in r["contract_holders"]:
+    print(f"| `{h['label']}` | `{h['path']}` | convert | | {h['fix']} | |")
 for e in r["page_contract"]:
     if any(p.startswith("old contract") for p in e["problems"]):
-        print(f"| `{e['path']}` | `{e['path']}` | rewrite | old contract at home: in place, the job owns it | {cite(e['path'])} |")
+        print(f"| `{e['path']}` | `{e['path']}` | rewrite | {level(e['path'])} | old contract at home: in place, the job owns it | {cite(e['path'])} |")
+for e in r["levels"]:
+    if e["level"] == "section":
+        print(f"| `{e['path']}` | `{e['into']}` | merge | section | covers no file: a section of {e['into']} | {cite(e['path'])} |")
 # A page outside the docs tree is update's move (the skill runs /jig:update first); shown here
 # as the row it becomes when update has not run yet.
 for h in r["homeless"]:
     if h["kind"] == "page":
-        print(f"| `{h['path']}` | `{h['to']}` | move | outside the docs tree; survey's destination — ask whether it nests as a subsystem | {cite(h['path'])} |")
+        print(f"| `{h['path']}` | `{h['to']}` | move | {level(h['path'])} | outside the docs tree; survey's destination — ask whether it nests as a subsystem | {cite(h['path'])} |")
 for h in r["homeless"]:
     if h["kind"] == "stray" and h["path"].startswith("docs/"):
-        print(f"| `{h['path']}` | — | drop | stray, {h['inbound']} inbound — owner's call: drop, or fold into a page | {cite(h['path'])} |")
+        print(f"| `{h['path']}` | — | drop | | stray, {h['inbound']} inbound — owner's call: drop, or fold into a page | {cite(h['path'])} |")
 EOF
 }
 
@@ -107,7 +121,12 @@ echo "== fixture: old page at home, old page in docs/notes/, a stray"
 repo "$T/fixture" && old_pages
 echo "-- jig survey"; $J survey
 echo "-- before starting"; start
-echo "-- remap seed (step 1), proposed to the owner as the step 2 table"; seed
+echo "-- remap seed (step 1), proposed to the owner as the step 2 table"; seed | tee "$T/seed.md"
+# The holder rows come first, and the page that covers no file is a section.
+if sed -n 3p "$T/seed.md" | grep -q '^| `tests/test_docs.py:1` | .* | convert |' \
+   && grep -q '^| `docs/store/cache.md` | `docs/store/store.md` | merge | section |' "$T/seed.md"; then
+  echo "seed: holder rows first, docs/store/cache.md a section"
+else echo "FAIL: the seed's holder rows or levels" >&2; exit 1; fi
 
 echo; echo "== refusal: no page to convert"
 repo "$T/clean"
