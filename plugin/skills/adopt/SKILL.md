@@ -136,6 +136,7 @@ the plan and never assume it calls anything a job. What matters is whether it ha
 | branches not merged into trunk | jobs to adopt |
 | a homebrew board with owners and states | the board |
 | a step that links or installs into each new worktree | `.jig/scripts/setup.sh` |
+| a step run on trunk after each merge that regenerates tracked files | `.jig/scripts/derive.sh`, its outputs in `derived_files` |
 
 If any of those are present, the plan's first stages are the migration stages in step 6.
 
