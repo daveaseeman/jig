@@ -62,7 +62,9 @@ Its job is to find the reason this change is wrong. Its questions:
    line that is the project (a priority order, a delivery queue, a phase, build status, "not
    built yet", parked work) is blocking: it goes to `.jig/roadmap.md` (`## Up next` for parked
    work, naming its pages), and the page or entry keeps only what the product does today
-   (`.jig/RULES.md`, Documentation, Product and project). "Demo priorities: A, then B" is the
+   (`.jig/RULES.md`, Documentation, Product and project). Judge by what it says, never by a
+   heading or a word: a `## Status` section describing a status call, or a motor's three
+   phases, is the product. "Demo priorities: A, then B" is the
    roadmap's, never an entry. The hook catches paths and scope ids; prose is yours to catch.
 
 A file in `.jig/staging/` is not decided; a finding that rests on one says so.

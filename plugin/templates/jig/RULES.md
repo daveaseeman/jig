@@ -223,14 +223,16 @@ current, is the skeleton):
    `- Rows are at least 44px — the touch-target minimum; held by test_touch_targets.` An
    entry without a why and a holder is description, and goes in the body or nowhere.
 
-A page has no `## Undefined`, `## Status`, `## Current state` or `## Roadmap` section: each holds
-the project. Work parked mid-build is an item under `## Up next` in `.jig/roadmap.md`, naming
-the pages it will touch (Roadmap), written only on the owner's word. An open product question
-is an `## Open` entry in `.jig/decisions.md`, which the page may cite. Review findings not taken
-go in `.jig/ledgers/DEFERRED.md`. `jig survey` lists a `## Undefined` heading, jig's own
-retired one, with where its content goes; the other three may name the product's own thing (a
-status call), so it doesn't search for them. A page that still carries one works as before
-until it is moved.
+A page has no `## Undefined` section, and no section that holds the project: build status
+(done, pending, not built yet), or when and in what order work will happen. What the section
+says decides, not its heading: a `## Status` or `## Current state` describing the product's own
+thing (a status call, a state machine's states) is product. Work parked mid-build is an item
+under `## Up next` in `.jig/roadmap.md`, naming the pages it will touch (Roadmap), written only
+on the owner's word. An open product question is an `## Open` entry in `.jig/decisions.md`,
+which the page may cite. Review findings not taken go in `.jig/ledgers/DEFERRED.md`. `jig
+survey` lists a `## Undefined` heading, jig's own retired one, with where its content goes;
+it searches no other heading, since a heading's word alone says nothing. A page that still
+carries a project section works as before until it is moved.
 
 Trunk's code is reality. A page that disagrees with the code is a stale page, and gets fixed.
 An invariant the code breaks is a finding the handoff surfaces for a person to rule on, never

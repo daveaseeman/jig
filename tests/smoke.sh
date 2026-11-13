@@ -4535,7 +4535,9 @@ b = p['docs/b.md']
 assert '\"phase-1/screen\"' in b and '## Undefined is the project' in b and 'Up next' in b, b
 assert 'phase 3' not in b and 'spec step' not in b and '## Status' not in b, b
 assert 'docs/a.md' not in p and '.jig/decisions.md' not in p and '\".jig/specs/\"' in p['docs/older.md'], p"
-expect_pass sh -c "$J survey | grep -q '^  docs/b.md: ## Undefined is the project' && ! $J survey | grep -q 'Status is the project'"
+s=$($J survey 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/b.md: ## Undefined is the project' && ! echo \"\$0\" | grep -q 'Status is the project'" "$s"
+msg="boundary: update lists the old quoted scope id under Repo files to review, and not phase 3"
+out=$($J update 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/b.md: line 5: \"phase-1/screen\" names the plan' && ! echo \"\$0\" | grep -q '\"phase 3\"'" "$out"
 msg="boundary: with the project in its pages, survey's verdict isn't nothing to do"
 expect_pass sh -c "$J survey | tail -1 | grep -q 'move the project listed above'"
 msg="boundary: a page still carrying ## Undefined is edited and committed as before"
@@ -5347,7 +5349,7 @@ out=$($UP 2>&1)
 msg="sweep: update lists each ## Undefined entry as the Up next item it would be, naming the page"
 expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/p.md: ## Undefined entry → .jig/roadmap.md ## Up next.*- .p-sync-over-ble.: Sync over BLE; stops at the GATT table; parked 2026-11-01 (touches docs/p.md)' && echo \"\$0\" | grep -q 'Dark theme; stops at the palette; parked 2026-11-02 (touches docs/p.md)'" "$out"
 msg="sweep: a page line naming a spec is under Repo files to review; phase 3, Phase 5 and ## Status sections aren't, in update or survey"
-expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/p.md: line 5: \".jig/specs/\" names the plan' && ! echo \"\$0\" | grep -qi 'phase [35]\\|Status is the project' && ! $J survey | grep -qi 'phase [35]\\|Status is the project'" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/p.md: line 5: \".jig/specs/\" names the plan' && ! echo \"\$0\" | grep -qi 'phase [35]\\|Status is the project' && echo \"\$1\" | grep -q '^  docs/p.md: line 5: \".jig/specs/\" names the plan' && ! echo \"\$1\" | grep -qi 'phase [35]\\|Status is the project'" "$out" "$($J survey 2>&1)"
 msg="sweep: tracked TODO.md and FEATURES.md are each listed with their destination"
 expect_pass sh -c "echo \"\$0\" | grep -q '^  TODO.md: the project.s plan: its items go to .jig/roadmap.md' && echo \"\$0\" | grep -q '^  FEATURES.md: the product: each feature goes to its system.s page'" "$out"
 msg="sweep: --sweep alone is a dry run that changes nothing"
@@ -5378,7 +5380,7 @@ The launch base is a TEE; the motor driver commutates three phases; a demo mode 
 Accepted (owner, 2026-11-01).
 Touches: docs/p.md' && git add -A && git commit -qm "D-001, D-002, D-003" && $J release --minor >/dev/null
 msg="sweep: no released entry is listed by its words, launch, phases and demo included, in update or survey"
-out=$($UP 2>&1); expect_pass sh -c "! echo \"\$0\" | grep -q 'project scope\\|D-00[123]' && ! $J survey | grep -q 'D-00[123]'" "$out"
+out=$($UP 2>&1); expect_pass sh -c "! echo \"\$0\" | grep -q 'project scope\\|D-00[123]' && echo \"\$1\" | grep -q '^  docs/p.md: line 5: \".jig/specs/\" names the plan' && ! echo \"\$1\" | grep -q 'D-00[123]'" "$out" "$($J survey 2>&1)"
 msg="sweep: removing released D-001 with no ### Removed line naming it is refused"
 rment D-001 && git add -A; out=$(git commit -qm drop 2>&1); undo
 expect_pass sh -c "echo \"\$0\" | grep -q 'D-001 is removed from release v0.1.0.*### Removed.*in the same commit'" "$out"
