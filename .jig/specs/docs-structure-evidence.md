@@ -303,8 +303,8 @@ page, with its level and evidence, and `--json` carries `levels`.
     and 50.
   - Of the 13 pages that the approved remap folds by hand (rows 5–15), `--levels` names the 3
     with empty keys (prompt, cloud, local) as sections and the 10 keyless deep pages as
-    unmapped, and default survey gives all 13 a fold answer and no deep_subsystems choice. It gives each of the 22
-    row-4 pages a level and its evidence, so none is judged by depth.
+    unmapped, and default survey gives all 13 a fold answer and no deep_subsystems choice.
+    It gives each of the 22 row-4 pages a level and its evidence, so none is judged by depth.
   - It lists `docs/owners.json` as declaring the docmap's files, and names `gen_reference.py`,
     `reading_list.py` and `test_docs.py`.
   - Daisy itself is not touched.
