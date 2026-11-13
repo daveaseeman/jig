@@ -4139,6 +4139,15 @@ cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git c
 printf '## a\nScopes:\n- `x`: y\n' > .jig/roadmap.md && git add -A && git commit -qm "GLOSSARY: roadmap"
 msg="roadmap: in a metarepo, M4 lets ROADMAP.md be committed on trunk where a roadmap exists"
 $J roadmap --write >/dev/null && git add -A; expect_pass git commit -qm "GLOSSARY: roadmap view"
+git init -q --bare "$T/rm-meta-remote.git" && git remote add origin "$T/rm-meta-remote.git"
+msg="roadmap: in a metarepo, release accepts that trunk commit of ROADMAP.md as M4 did, and tags"
+out=$(mrel); expect_pass sh -c "echo \"\$0\" | grep -q 'released v0.1.0' && git tag | grep -qx v0.1.0" "$out"
+msg="roadmap: and pre-push passes it"
+expect_pass git push -q origin main
+msg="roadmap: in a metarepo with no roadmap at that commit, a ROADMAP.md commit made with hooks off is still refused by release"
+git rm -q .jig/roadmap.md && git commit -qm "GLOSSARY: drop roadmap" && printf 'hand\n' > ROADMAP.md && git add -A \
+  && git -c core.hooksPath=/dev/null commit -qm "GLOSSARY: hand view" && c=$(git rev-parse --short=12 HEAD)
+out=$(mrel); expect_pass sh -c "echo \"\$0\" | grep -q \"$c is on main without a reviewed merge\"" "$out"
 
 NR="$T/no-roadmap"; pcnew "$NR" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 msg="roadmap: with no .jig/roadmap.md, jig roadmap says there is none"
