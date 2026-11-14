@@ -3366,7 +3366,8 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'open job A'" "$out"
 PO="$T/po"; mkdir -p "$PO/.t" && git -C "$JR" archive v0.6.0 plugin/templates | tar -x -C "$PO/.t"
 cd "$PO" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r .t/plugin/templates/jig .jig && cp .t/plugin/templates/AGENTS.md .t/plugin/templates/CLAUDE.md . && rm -rf .t
-mkf api/a.py api/b.py api/c.py api/d.py api/e.py api/f.py && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+# main/ beside trunk main (firmware's layout): update's contract_removals reads trunk by name.
+mkf api/a.py api/b.py api/c.py api/d.py api/e.py api/f.py main/app.c && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 $J init --para rm --location "$RM" --pin v0.1.0 --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
 msg="removals: under v0.6.0's hook a move, a drop, an answered drop and a rowed drop all commit (the bug)"
 mkdir -p lib .jig/specs .jig/ledgers
@@ -6458,7 +6459,8 @@ expect_pass sh -c "\$0 2>&1 | grep -F 'reserve.section' | grep -qF \"refuses a p
 # ---------------------------------------------------------------- cheaper rounds
 # After a job's first full review, each later touch costs what it changed.
 sec_cheaper_rounds() {
-CR="$T/cr"; pcnew "$CR" && mkdir -p docs nums .jig/ledgers && printf '# A\n' > docs/a.md && printf '# B\n' > docs/b.md && printf 'x\n' > shared.txt \
+# A main/ folder beside trunk main, as firmware has: job_chain, changed_since and deferred_deleted must not read trunk as a path.
+CR="$T/cr"; pcnew "$CR" && mkdir -p docs nums main .jig/ledgers && printf 'x\n' > main/x.txt && printf '# A\n' > docs/a.md && printf '# B\n' > docs/b.md && printf 'x\n' > shared.txt \
   && cp "$P/ledgers/DEFERRED.md" .jig/ledgers/ && printf '| 2026-11-01 | base | f0 | should-fix | deferred | r |\n' >> .jig/ledgers/DEFERRED.md \
   && git add -A && git commit -qm init && $J init >/dev/null
 board "b['reserve'] = {'section': {'pattern': r'^## (\\d+) ', 'files': ['nums/**']}}"
@@ -6692,7 +6694,8 @@ expect_pass sh -c "echo \"\$0\" | grep -q 'proposal propose/pa-one (.jig/specs/o
 
 # ---------------------------------------------------------------- check levels: --full, jig checked, batches, the Stop hook's skip
 sec_check_levels() {
-CL="$T/cl"; pcnew "$CL" && printf 'dist/\n' > .gitignore && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+# A main/ folder beside trunk main, as firmware has: release finds trunk's last complete check (last_checked_on) by name.
+CL="$T/cl"; pcnew "$CL" && printf 'dist/\n' > .gitignore && mkf main/app.c && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 msg="check levels: the template check.sh runs only its quick part with no argument"
 out=$(bash .jig/scripts/check.sh 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -qx 'check: quick' && ! echo \"\$0\" | grep -q 'check: full'" "$out"

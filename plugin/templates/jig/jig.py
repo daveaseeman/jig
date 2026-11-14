@@ -1384,7 +1384,9 @@ def checked_records() -> list[dict]:
 def last_checked_on(rev: str) -> str | None:
     """The newest commit on REV's first-parent line that has a complete check recorded."""
     have = {r["commit"] for r in checked_records()}
-    for c in git("rev-list", "--first-parent", rev).splitlines():
+    # `--` on every call naming trunk: a branch named like a folder (firmware's main/) is
+    # otherwise ambiguous to git, which fails, and git() reads that as nothing found.
+    for c in git("rev-list", "--first-parent", rev, "--").splitlines():
         if c in have:
             return c
     return None
@@ -1396,7 +1398,7 @@ def batch_merges(trunk: str) -> list[tuple[str, str]]:
     since = last_checked_on(trunk)
     out = []
     for line in git("log", "--first-parent", "--merges", "--reverse", "--format=%H%x09%s%x09%(trailers:key=Check,valueonly,separator=%x2C)",
-                    f"{since}..{trunk}" if since else trunk).splitlines():
+                    f"{since}..{trunk}" if since else trunk, "--").splitlines():
         c, subject, check = (line.split("\t") + ["", ""])[:3]
         if check.strip() == "batch":
             out.append((c, subject))
@@ -1852,13 +1854,14 @@ def job_chain(head: str, board: "Board") -> list[str]:
     branch = git("branch", "--show-current")
     name, _ = board.job_for_branch(branch)
     if name and branch != board.trunk:
-        return git("rev-list", "--first-parent", head, f"^{board.trunk}").splitlines()
+        # `--`: a trunk named like a folder (firmware's main/) is otherwise ambiguous to git.
+        return git("rev-list", "--first-parent", head, f"^{board.trunk}", "--").splitlines()
     # HEAD's own note doesn't end its chain: a handoff from the note commit is the same task.
     # A merge bringing trunk's notes in, or a note renamed, ended no task.
     ended = git("log", "--first-parent", "--no-merges", "-M", "--diff-filter=A", "--format=%H",
                 "-1", f"{head}^", "--", f"{DIR}/handoffs/") if git("rev-parse", "-q", "--verify",
                                                                     f"{head}^") else ""
-    return git("rev-list", "--first-parent", head, *([f"^{ended}"] if ended else [])).splitlines()
+    return git("rev-list", "--first-parent", head, *([f"^{ended}"] if ended else []), "--").splitlines()
 
 
 def last_review(chain: list[str], kind: str | None = None) -> tuple[str, dict] | None:
@@ -6210,7 +6213,7 @@ def job_of_change(board: "Board", branch: str) -> dict | None:
             continue
         exact = [n for n, t in tips.items() if t == c]
         own = exact or [n for n, t in tips.items() if t and c in
-                        git("rev-list", "--first-parent", t, f"^{board.trunk}").split()]
+                        git("rev-list", "--first-parent", t, f"^{board.trunk}", "--").split()]
         return board.jobs[own[0]] if len(own) == 1 else None
     return None
 
@@ -7214,7 +7217,7 @@ def brought_by(trunk: str) -> dict[str, str]:
     """Which first-parent merge on TRUNK brought each commit in."""
     if trunk not in _BROUGHT:
         out: dict[str, str] = {}
-        for m in reversed(git("rev-list", "--first-parent", "--merges", trunk).splitlines()):
+        for m in reversed(git("rev-list", "--first-parent", "--merges", trunk, "--").splitlines()):
             for c in git("rev-list", f"{m}^1..{m}^2").splitlines():
                 out.setdefault(c, m)
         _BROUGHT[trunk] = out
@@ -7309,7 +7312,7 @@ def contract_removals(root: Path, trunk: str) -> list[str]:
     except ValueError:
         today = []
     out = []
-    for line in git("log", "--no-merges", "-M", "--diff-filter=DR", "--format=%H %h %s", trunk).splitlines():
+    for line in git("log", "--no-merges", "-M", "--diff-filter=DR", "--format=%H %h %s", trunk, "--").splitlines():
         commit, short, subject = (line.split(" ", 2) + [""])[:3]
         raw = next((b for p in para_at if (b := at_rev(f"{commit}^", p))), "")
         try:
