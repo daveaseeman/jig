@@ -3311,7 +3311,8 @@ sec_removals() {
 RM="$T/rm"; pcnew "$RM" && git add -A && git commit -qm init && $J init --meta --name rm >/dev/null
 printf '\n## Pointers\nThe old app: `po/api/e.py`.\n' >> docs/glossary.md
 ulog '- GLOSSARY: Pointers' && git add -A && git commit -qm "GLOSSARY: Pointers" && $J release >/dev/null
-RP="$T/rp"; pcnew "$RP" && mkf api/a.py api/b.py && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+# main/ beside trunk main (firmware's layout): contract_removals and brought_by read trunk by name.
+RP="$T/rp"; pcnew "$RP" && mkf api/a.py api/b.py main/app.c && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 $J init --para rm --location "$RM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
 msg="removals P2: git mv api/a.py lib/a.py is refused, naming P2 api/a.py"
 mkdir -p lib && git mv api/a.py lib/a.py; out=$(git commit -qm "mv a" 2>&1); rc=$?; undo
@@ -6693,7 +6694,8 @@ expect_pass sh -c "echo \"\$0\" | grep -q 'proposal propose/pa-one (.jig/specs/o
 
 # ---------------------------------------------------------------- check levels: --full, jig checked, batches, the Stop hook's skip
 sec_check_levels() {
-CL="$T/cl"; pcnew "$CL" && printf 'dist/\n' > .gitignore && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+# A main/ folder beside trunk main, as firmware has: release's owed-batch refusal reads trunk's merges by name.
+CL="$T/cl"; pcnew "$CL" && printf 'dist/\n' > .gitignore && mkf main/app.c && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 msg="check levels: the template check.sh runs only its quick part with no argument"
 out=$(bash .jig/scripts/check.sh 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -qx 'check: quick' && ! echo \"\$0\" | grep -q 'check: full'" "$out"
