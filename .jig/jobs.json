@@ -82,7 +82,7 @@
   },
   "roadmap-no-phase": {
     "spec": ".jig/specs/bug-roadmap-no-phase.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
