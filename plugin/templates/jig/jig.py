@@ -7,6 +7,7 @@ rules it is judged by. Stdlib only.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import difflib
 import fnmatch
 import hashlib
@@ -68,6 +69,9 @@ WORKFLOW_DEFAULTS = {
     "bug":     {"tier": 2, "effort": 1},   # a /jig:bug investigation, before any diff exists
     "execute": {"tier": 2, "effort": 3},   # and fix, in the session that executed
     "review":  {"tier": 2, "effort": 1},   # always in a fresh context
+    # A later round's review of what changed since the last recorded one. Left unset, it is
+    # whatever review is, so a repo that moves review moves recheck with it.
+    "recheck": {"tier": 2, "effort": 1},
     "check":   {"tier": 3, "effort": 4},   # gate check, release run, survey: fixed commands
 }
 
@@ -248,6 +252,9 @@ def workflow_steps(config: dict) -> tuple[dict, list[str]]:
                 bad.append(f"workflow.{step}.{k}: {v!r} is not a whole number from {least} up")
             else:
                 steps[step][k] = v
+    for k in ("tier", "effort"):
+        if k not in (over.get("recheck") or {}):
+            steps["recheck"][k] = steps["review"][k]
     # A raised spec raises bug with it: an investigation that writes a spec never gets less.
     for k in ("tier", "effort"):
         if k not in (over.get("bug") or {}):
@@ -494,6 +501,20 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     common = board.data.get("common", [])
     owns, shares = job.get("owns", []), job.get("shares", [])
     others = {n: l for n, l in board.open_jobs().items() if n != name}
+
+    # A note's pair lines are answered when committed, not first at the gate: the gate is
+    # the costliest place to find a blank. Only this job's own notes: a sync brings in other
+    # jobs' notes, which this job can't fix.
+    own = re.compile(rf"{re.escape(file_safe(name))}-\d{{4}}-\d{{2}}-\d{{2}}(?:-\d+)?\.md")
+    if staged:
+        for p in git("-c", "core.quotePath=false", "diff", "--cached", "--name-only",
+                     "--diff-filter=AM", "--", f"{DIR}/handoffs/").splitlines():
+            if not own.fullmatch(Path(p).name):
+                continue
+            sec = re.search(r"^## Fold-in\n(.*?)(?=^## |\Z)", in_index(p, staged), re.S | re.M)
+            for l in (sec.group(1).splitlines() if sec else []):
+                if why := pair_problem(l):
+                    out.append(f"{p}: fold-in line `{l.strip()}`: {why}")
 
     for p in guarded:
         if p.startswith(f"{DIR}/handoffs/"):
@@ -1053,7 +1074,10 @@ def cmd_open(root: Path, args) -> int:
     print(f"\n--- kickoff ---\nJob: {args.name}\nBranch: {branch}\nWorktree: {worktree}\n"
           f"Spec: {args.spec or '(see board)'}\n"
           f"Owns: {', '.join(owns) or '-'}\nShares: {', '.join(args.shares or []) or '-'}\n"
-          f"{merges}Read {DIR}/RULES.md, then `python3 {DIR}/jig.py check`.")
+          f"{merges}Read {DIR}/RULES.md, then `python3 {DIR}/jig.py check`.\n"
+          f"When you write or change a Proposed entry in {LOG}, or meet a question only the "
+          "owner can answer, message the hubnode then, with the rule sentence and the "
+          "alternative you rejected, and keep building.")
     return 0
 
 
@@ -1512,6 +1536,18 @@ def cmd_merge(root: Path, args) -> int:
         git("merge", "--abort")
         die(f"merging {branch} conflicts in append files ({', '.join(appends)}): "
             f"`jig sync` the job, then merge again")
+    # A job holding a later number of a counter this one used lands after it: its numbers
+    # were reserved past this one's, and syncing first shows it what trunk now holds.
+    used = held_numbers(board.jobs[name])
+    later = []
+    for on, ol in board.jobs.items():
+        if on == name:
+            continue
+        for k, nums in held_numbers(ol).items():
+            if used.get(k) and any(n > max(used[k]) for n in nums):
+                later.append(f"job {on} holds {k} {', '.join(map(str, sorted(nums)))}, after "
+                             f"{name}'s {', '.join(map(str, sorted(used[k])))}: it syncs before "
+                             "its next handoff")
     del board.jobs[name]
     board.save()
     git("add", "--", JOBS, check=True)
@@ -1545,6 +1581,8 @@ def cmd_merge(root: Path, args) -> int:
               file=sys.stderr)
         for f in conflicted:
             print(f"  {f}", file=sys.stderr)
+        for l in later:
+            print(l)
         return 1
     for line in numbered:
         print(f"numbered {line}")
@@ -1570,6 +1608,8 @@ def cmd_merge(root: Path, args) -> int:
               file=sys.stderr)
         return 1
     print(f"merged {name}; its entry is gone from {JOBS} in the same commit. Sync the clean jobs.")
+    for l in later:
+        print(l)
     return 0
 
 
@@ -1726,15 +1766,19 @@ def changed_since(commit: str, branch: str, board: "Board") -> list[str]:
     and what a merge of trunk carries beyond what `jig sync` makes of that merge. Trunk's
     changes aren't the job's, a hand edit hidden in a resolution is. Handoff notes, and the
     DEFERRED.md rows the review's untaken findings get beside them, are bookkeeping made after
-    the check by design: a DEFERRED.md change that deletes no line doesn't count. One that
-    deletes a line rewrites a disposition no one checked, so it does."""
+    the check by design. DEFERRED.md is judged by its net change over the whole range, not
+    commit by commit: a row edited and restored later deleted nothing. A line the job's net
+    change deletes rewrites a disposition no one checked, so it counts; one trunk deleted,
+    brought in by a sync, is trunk's."""
     trunk, appends = board.trunk, append_globs(board)
     out: list[str] = []
+    deferred = False
 
     def job_changes(old: str, new: str) -> list[str]:
+        nonlocal deferred
         files = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", old, new).splitlines()
-        stat = git("diff", "--numstat", "--no-renames", old, new, "--", DEFERRED) if DEFERRED in files else ""
-        return [f for f in files if f != DEFERRED] if stat.split("\t")[1:2] == ["0"] else files
+        deferred |= DEFERRED in files
+        return [f for f in files if f != DEFERRED]
 
     for line in git("rev-list", "--first-parent", "--parents", f"{commit}..{branch}").splitlines():
         c, *parents = line.split()
@@ -1759,7 +1803,20 @@ def changed_since(commit: str, branch: str, board: "Board") -> list[str]:
         else:
             files = job_changes(parents[0], c)
         out += [f for f in files if f and not f.startswith(f"{DIR}/handoffs/") and f not in out]
+    if deferred and deferred_deleted(commit, branch, trunk):
+        out.append(DEFERRED)
     return out
+
+
+def deferred_deleted(commit: str, branch: str, trunk: str) -> bool:
+    """Whether the job's net change to DEFERRED.md from COMMIT to BRANCH deletes a line: one
+    COMMIT had that BRANCH lacks, unless trunk deleted it between the two syncs."""
+    def rows(rev: str) -> Counter:
+        return Counter(l for l in blob(rev, DEFERRED).splitlines() if l.strip()) if rev else Counter()
+    gone = rows(commit) - rows(branch)
+    if gone:
+        gone -= rows(git("merge-base", commit, trunk)) - rows(git("merge-base", branch, trunk))
+    return bool(gone)
 
 
 # ---------------------------------------------------------- review + handoff
@@ -1771,21 +1828,74 @@ def review_marker(root: Path) -> Path:
     return d / (git("branch", "--show-current") or "detached").replace("/", "%")
 
 
+def review_log() -> list[tuple[str, dict]]:
+    """Every `jig reviewed` record in this clone, oldest first: the commit, and what it ran at
+    with its kind. A line written before records carried data is the commit alone."""
+    log = git_common() / "jig" / "reviewed.log"
+    out = []
+    for line in (log.read_text().splitlines() if log.exists() else []):
+        sha, _, rest = line.strip().partition(" ")
+        if not sha:
+            continue
+        try:
+            data = json.loads(rest) if rest else {}
+        except ValueError:
+            data = {}
+        out.append((sha, data if isinstance(data, dict) else {}))
+    return out
+
+
+def job_chain(head: str, board: "Board") -> list[str]:
+    """HEAD's first-parent commits, newest first, that belong to this piece of work, so a
+    review of other work is never taken for it: on a job, those trunk doesn't hold; working
+    alone, those since the last commit that added a handoff note, which ended the last task."""
+    branch = git("branch", "--show-current")
+    name, _ = board.job_for_branch(branch)
+    if name and branch != board.trunk:
+        return git("rev-list", "--first-parent", head, f"^{board.trunk}").splitlines()
+    # HEAD's own note doesn't end its chain: a handoff from the note commit is the same task.
+    # A merge bringing trunk's notes in, or a note renamed, ended no task.
+    ended = git("log", "--first-parent", "--no-merges", "-M", "--diff-filter=A", "--format=%H",
+                "-1", f"{head}^", "--", f"{DIR}/handoffs/") if git("rev-parse", "-q", "--verify",
+                                                                    f"{head}^") else ""
+    return git("rev-list", "--first-parent", head, *([f"^{ended}"] if ended else [])).splitlines()
+
+
+def last_review(chain: list[str], kind: str | None = None) -> tuple[str, dict] | None:
+    """The newest record on CHAIN, of KIND when given ("full" or "recheck"); the newest record
+    of a commit wins, so a commit reviewed twice reads as its later review."""
+    # Per kind too: a recheck recorded on the full review's own commit mustn't hide it.
+    recs: dict[tuple[str, str | None], dict] = {}
+    for sha, data in review_log():
+        recs[(sha, None)] = recs[(sha, data.get("kind", "full"))] = data
+    for c in chain:
+        if (c, kind) in recs:
+            return c, recs[(c, kind)]
+    return None
+
+
 def cmd_reviewed(root: Path, args) -> int:
     """Record that HEAD has had its adversarial review, and what it ran at. Called by the
-    review skill."""
+    review skill. A recheck reviews only what changed since the last recorded review, so it
+    needs a full review of the job under it."""
     if (args.tier is None) != (args.effort is None):
         die("give --tier and --effort together")
     if args.tier is not None and (args.tier < 1 or args.effort < 0):
         die("tier counts from 1, effort from 0")
     head = git("rev-parse", "HEAD")
+    if args.recheck and not last_review(job_chain(head, Board.load(root)), "full"):
+        die("no full review of this job on HEAD's first-parent chain: a recheck reviews what "
+            "changed since one. Run the full review, then `jig reviewed` without --recheck")
     ran = {k: v for k, v in (("tier", args.tier), ("effort", args.effort), ("ran", args.ran))
            if v is not None}
+    if args.recheck:
+        ran["kind"] = "recheck"
     review_marker(root).write_text(head + "\n" + (json.dumps(ran) + "\n" if ran else ""))
-    # Every review ever, for a metarepo's gate: a merge's second parent must be one of them.
+    # Every review ever, for a metarepo's gate (a merge's second parent must be one of them)
+    # and for a recheck's handoff, which reads the full review's settings back from here.
     with open(git_common() / "jig" / "reviewed.log", "a") as log:
-        log.write(head + "\n")
-    print(f"recorded review of {head[:12]}")
+        log.write(head + (" " + json.dumps(ran, separators=(",", ":")) if ran else "") + "\n")
+    print(f"recorded {'recheck' if args.recheck else 'review'} of {head[:12]}")
     return 0
 
 
@@ -1953,11 +2063,30 @@ def cmd_handoff(root: Path, args) -> int:
     if git("status", "--porcelain"):
         die("commit everything first: a handoff names one commit")
     head = git("rev-parse", "HEAD")
-    marker = review_marker(root)
-    lines = marker.read_text().splitlines() if marker.exists() else []
-    if not lines or lines[0].strip() != head:
+    # The review needn't be HEAD itself: a clean `jig sync` merge of a reviewed commit, or the
+    # bookkeeping after it, adds nothing of the job's that a reviewer didn't see.
+    chain = job_chain(head, board)
+    found = last_review(chain)
+    since = changed_since(found[0], head, board) if found else []
+    if not found or since:
+        if found:
+            die(f"{', '.join(since[:5])} changed since the review of {found[0][:12]}: a fix or a "
+                f"hand-resolved sync is rechecked. Review `git diff {found[0][:12]}..HEAD` (a sync: "
+                f"`git show --remerge-diff <merge>` and what follows it), then: "
+                f"python3 {DIR}/jig.py reviewed --recheck --tier N --effort N (the recheck step's)")
         die("no adversarial review on record for this commit.\n"
             f"  Review {head[:12]}, then: python3 {DIR}/jig.py reviewed")
+    reviewed, ran = found
+    if not ran:
+        # A record written before the log carried data: the marker holds what it ran at.
+        marker = review_marker(root)
+        lines = marker.read_text().splitlines() if marker.exists() else []
+        if lines and lines[0].strip() == reviewed and len(lines) > 1 and lines[1].strip():
+            ran = json.loads(lines[1])
+    recheck = ran if ran.get("kind") == "recheck" else None
+    if recheck:
+        full = last_review(chain[chain.index(reviewed):], "full")
+        ran = full[1] if full else {}
     (root / DIR / "handoffs").mkdir(parents=True, exist_ok=True)
     # handoff_notes reads these names back in order; a change here changes its pattern.
     path = root / DIR / "handoffs" / f"{file_safe(name)}-{date.today().isoformat()}.md"
@@ -1965,7 +2094,6 @@ def cmd_handoff(root: Path, args) -> int:
     while path.exists():
         path = root / DIR / "handoffs" / f"{file_safe(name)}-{date.today().isoformat()}-{i}.md"
         i += 1
-    ran = json.loads(lines[1]) if len(lines) > 1 and lines[1].strip() else {}
     # The roadmap matches a note to its spec by path from the repo root, so that is what is
     # written; a job's spec on the board stands in for a bare `jig handoff`.
     spec = args.spec or (job or {}).get("spec") or ""
@@ -1979,6 +2107,11 @@ def cmd_handoff(root: Path, args) -> int:
                  else "Review: tier and effort not recorded\n")
     if ran.get("ran"):
         ran_lines += f"Ran: {ran['ran']}\n"
+    if recheck:
+        ran_lines += (f"Recheck: tier {recheck['tier']}, effort {recheck['effort']}\n" if "tier" in recheck
+                      else "Recheck: tier and effort not recorded\n")
+        if recheck.get("ran"):
+            ran_lines += f"Recheck ran: {recheck['ran']}\n"
     path.write_text(NOTE.format(job=name, head=head, today=date.today().isoformat(),
                                 spec=spec or "(none)", ran=ran_lines,
                                 partial="Partial: yes\n" if args.partial else "",
@@ -2060,16 +2193,34 @@ def review_shortfall(root: Path, branch: str, name: str, note: str) -> str:
         if text:
             break
     sec = re.search(r"^## Workflow\n(.*?)(?=^## |\Z)", text, re.S | re.M)
-    asked = re.search(r"\breview: tier (\d+), effort (\d+)", sec.group(1)) if sec else None
-    if not asked:
-        return ""
-    want = f"the spec asks for tier {asked.group(1)}, effort {asked.group(2)}"
-    got = re.search(r"^Review: tier (\d+), effort (\d+)", note, re.M)
-    if not got:
-        return f"the review's tier and effort are not recorded; {want}"
-    if int(got.group(1)) > int(asked.group(1)) or int(got.group(2)) > int(asked.group(2)):
-        return f"review ran at tier {got.group(1)}, effort {got.group(2)}; {want}"
-    return ""
+    out = []
+    # A spec written before recheck existed has no line for it: recheck defaults to review's.
+    for step, label in (("review", "Review"), ("recheck", "Recheck")):
+        if label == "Recheck" and not re.search(r"^Recheck:", note, re.M):
+            break
+        asked = None
+        for want_step in (step, "review"):
+            asked = asked or (re.search(rf"\b{want_step}: tier (\d+), effort (\d+)", sec.group(1), re.M)
+                              if sec else None)
+        if not asked:
+            continue
+        want = f"the spec asks for tier {asked.group(1)}, effort {asked.group(2)}"
+        got = re.search(rf"^{label}: tier (\d+), effort (\d+)", note, re.M)
+        if not got:
+            out.append(f"the {step}'s tier and effort are not recorded; {want}")
+        elif int(got.group(1)) > int(asked.group(1)) or int(got.group(2)) > int(asked.group(2)):
+            out.append(f"{step} ran at tier {got.group(1)}, effort {got.group(2)}; {want}")
+    return "; ".join(out)
+
+
+def proposed_added(trunk: str, commit: str) -> list[dict]:
+    """The decision entries COMMIT adds or changes beyond trunk that are still Proposed: a
+    ruling the owner hasn't made, which the hubnode sends up while the job builds."""
+    since = git("merge-base", trunk, commit)
+    prefix = log_prefix(trunk)
+    before = {e["id"]: e["block"] for e in log_entries(at_rev(since, LOG), prefix)} if since else {}
+    return [e for e in log_entries(at_rev(commit, LOG), prefix)
+            if e["status"].startswith("Proposed") and before.get(e["id"]) != e["block"]]
 
 
 def cmd_gate(root: Path, args) -> int:
@@ -2155,6 +2306,9 @@ def cmd_gate(root: Path, args) -> int:
     weak = review_shortfall(root, branch, name, body)
     if weak:
         print(f"warning: {weak}", file=sys.stderr)
+    for e in proposed_added(trunk, commit):
+        print(f"warning: {LOG} § {e['id']} {e['title']} is Proposed: it merges unruled unless "
+              "the owner said to gate it as proposed", file=sys.stderr)
     # The commit the note names, never the job's live worktree, which may have moved on; and
     # trunk merged in the way `jig sync` merges it, so the gate checks the merge a sync makes.
     scratch = gate_scratch(name)
@@ -2184,8 +2338,12 @@ def cmd_gate(root: Path, args) -> int:
     unmet = gate_pairs(where, trunk, sec.group(1) if sec else "")
     if unmet:
         gone = remove_checkout(where)
-        print(f"{trunk} moved since the handoff, and the note doesn't answer these pairs: "
-              f"`jig sync`, then hand off again" + ("." if gone else
+        # The merge itself went through, so answering is all the job owes: no sync, no new
+        # review, no new handoff. The note is bookkeeping a merge doesn't count as a change.
+        print(f"{trunk} moved since the handoff, and the note doesn't answer these pairs: add "
+              f"each to the fold-in of {note} on {branch}, ticked and answered agrees, narrows: <how> or "
+              f"conflicts: <resolution>, commit it, and gate again. `jig sync` only when the "
+              f"merge itself needs a hand" + ("." if gone else
               f". Remove the checkout: git worktree remove --force {scratch}"), file=sys.stderr)
         for l in unmet:
             print(f"  {l}", file=sys.stderr)
@@ -4219,16 +4377,14 @@ def load_meta(trunk: str) -> dict | None:
 
 
 def reviewed_commits() -> set[str]:
-    """Every commit `jig reviewed` has recorded in this clone, on any branch."""
-    log = git_common() / "jig" / "reviewed.log"
-    return set(log.read_text().split()) if log.exists() else set()
+    """Every commit `jig reviewed` has recorded in this clone, on any branch, rechecks too."""
+    return {sha for sha, _ in review_log()}
 
 
 def counts_reviewed(commit: str, done: set[str], board: "Board") -> bool:
     """A commit is reviewed when `jig reviewed` recorded it, or when a recorded commit is its
-    first-parent ancestor and nothing of the job's changed since (`changed_since`): `jig
-    handoff` requires the review to be HEAD, so the note, and the DEFERRED.md rows beside it,
-    are always committed after it."""
+    first-parent ancestor and nothing of the job's changed since (`changed_since`): the note, and the DEFERRED.md rows
+    beside it, are committed after the review, and a clean sync may be too."""
     for c in git("rev-list", "--first-parent", commit).splitlines():
         if c in done:
             return not changed_since(c, commit, board)
@@ -10949,6 +11105,8 @@ def main(argv: list[str] | None = None) -> int:
     rv.add_argument("--tier", type=int, help="the model tier the review ran at")
     rv.add_argument("--effort", type=int, help="the effort it ran at")
     rv.add_argument("--ran", help="what it ran on, in the tool's own words")
+    rv.add_argument("--recheck", action="store_true",
+                    help="a review of what changed since the job's last recorded review")
     sub.add_parser("workflow", help="the steps in effect: each one's model tier and effort")
     h = sub.add_parser("handoff", help="write the handoff note for HEAD")
     h.add_argument("--spec", help="path to the spec this delivers")

@@ -90,6 +90,14 @@ instead (a proposal card, or the brief to paste), and never run the step in this
   step's settings to run it and report the output; you read the report. Its brief says to
   wait on a long run as `/jig:verify` says: background, exit notice or pid, never a match.
   The push and publish stay yours, on the owner's word.
+- **recheck**: after a job's first full review, a fix or a sync resolved by hand gets a
+  recheck, not a second full review: the same dispatch at the `recheck` step's settings, on
+  the delta since the last recorded review (`/jig:review`, Recheck). Record it with
+  `jig reviewed --recheck --tier N --effort N --ran "..."`. A clean sync needs none.
+- **Rulings.** A subnode messages you when it writes a `Proposed` entry or meets a question
+  only the owner can answer. Batch those to the owner while the job builds, and send each
+  ruling back before the job's review. Mark no job ready while its own `Proposed` entry has no
+  ruling, unless the owner said to gate it as proposed; `jig gate` warns of each one.
 - **Decide.** Read the review. Blocking findings go back to the session that executed, as
   a fix, at execute's settings — a new one only when that session is gone. Count the
   rounds. After a third fix that leaves a blocking finding, don't start a fourth: run
@@ -131,6 +139,9 @@ cloud only if the owner asks and the repo has a remote.
    Not the job's worktree — the subnode may still be building there. It reports the exit
    code and output; you read it. `jig gate` warns when the review ran weaker than the spec's
    Workflow section: say so to the owner before the merge.
+   A refusal naming pairs the note doesn't answer goes back to the subnode as: add each line
+   to the note's fold-in, ticked and answered, and commit the note alone. No sync, no new
+   review, no new handoff, unless the gate's merge itself needed a hand.
    Its brief says: in any throwaway repo, set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched. Smoke runs need no waiting on each
    other; each uses only its own temp folder. The run's output always goes to
    `$(git rev-parse --git-common-dir)/jig/gate-<name>.out`, named after the scratch checkout
@@ -153,7 +164,9 @@ cloud only if the owner asks and the repo has a remote.
    subject becomes `<ids>: merge <name>`. `: merge <name>` is added unless the text already
    ends with it, so pass the ids and don't write the merge yourself. The merge numbers each
    `D-?<slug>` the job wrote in `.jig/decisions.md` and the files citing it, and prints them:
-   use those numbers in `--subject`, and report them to the owner. A merge that stops on
+   use those numbers in `--subject`, and report them to the owner. It also names each open
+   job holding a later number of a counter the merged job used: tell that job to sync before
+   its next handoff. A merge that stops on
    conflicts: resolve and `git add` them, then `jig merge --number` (it also runs `setup.sh`
    and `derive.sh`), then `git commit`.
 
@@ -200,6 +213,23 @@ Run /jig:review on <base>..<commit> in <worktree>, with only the diff, the spec 
 AGENTS.md. Rerun no check the builder's report shows for the same commit: <report>.
 Run only the narrowest check a specific finding needs.
 ```
+
+**recheck**
+```
+running <model> at <effort>
+If your own model differs from this line, reply with only your running line and stop.
+Run /jig:review (Recheck) on job <name> in <worktree>: only the delta <delta>, against the
+previous review's findings: <findings>. Inputs: that delta, the spec <spec> and AGENTS.md.
+Does it fix what the findings named, and does it break anything they didn't? If it changes
+anything the findings didn't name, stop and say it needs a full review.
+Rerun no check the builder's report shows for the same commit: <report>.
+Run only the narrowest check a specific finding needs.
+```
+Its `<model> at <effort>` are the `recheck` step's (`jig workflow`), not review's: they
+match only until a repo sets them apart. `<delta>` is `git diff <last recorded review>..<commit>`
+for a fix; for a sync resolved by hand, `git show --remerge-diff <merge>` and
+`git diff <merge>..<commit>`, never trunk's work the merge brought in. A recheck that says it
+needs a full review gets the **review** brief, at review's settings.
 
 **check**
 ```

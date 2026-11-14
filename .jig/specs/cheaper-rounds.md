@@ -81,6 +81,10 @@ the owner while the job builds, and the note's form is checked at commit, not at
   hard-coded; the gate's pair message changes; DEFERRED net judging; the clean-sync allowance.
 - Interpreted: a recheck is a `jig reviewed` record with a kind, in the same marker and log, so
   `counts_reviewed` and the metarepo's gate read it with no new file.
+- Interpreted (hubnode accepted, 2026-11-13): the gate's Proposed warning covers entries the
+  job adds or changes that are still Proposed, since the subnode rule covers changed ones too.
+- Interpreted (hubnode accepted, 2026-11-13): a spec with no `recheck:` Workflow line is judged
+  against its `review:` line, since recheck defaults to review's settings.
 - Interpreted: a hand-resolved sync takes a recheck of the resolution, which is what this
   session did by hand three times (`--ran "(hubnode read of the conflict resolution only)"`).
 
