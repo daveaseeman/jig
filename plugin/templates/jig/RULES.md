@@ -535,7 +535,8 @@ else stops with the files named, and a person resolves it.
    change since the check. A job may hand off several times.
    The review needn't be HEAD itself. A clean `jig sync` of a reviewed commit hands off with
    no new `jig reviewed`: the merge carries nothing a reviewer didn't see. A fix, or a sync
-   resolved by hand, is refused, naming the files, until it is rechecked (Workflow).
+   resolved by hand, is refused, naming the files, until it is rechecked (Workflow; working
+   alone, a fix after a committed note gets a full review).
 2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it sets
    up a **detached scratch checkout of the commit the note names**, with trunk merged in the
    way `jig sync` merges it, and prints the check to run there. It never runs
@@ -619,7 +620,8 @@ spec (a spec without a `recheck:` line is read against `review:`). A recheck wid
 full review when the diff changes anything the findings didn't name. What needs no new review at
 all: a clean `jig sync` of a reviewed commit, and DEFERRED.md rows whose net change deletes
 no line (Handoff, gate, merge). Working alone, a recheck leans only on a full review made
-since the last handoff note: a new task gets a full review.
+since the last handoff note: history can't tell a new task from a fix after a note, so either
+gets a full review.
 
 A `Proposed` entry the job adds or changes is a ruling the owner still owes. The job tells the
 hubnode when it writes one, the hubnode sends it up while the job builds, and `jig gate` warns,

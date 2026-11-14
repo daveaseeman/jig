@@ -6572,8 +6572,12 @@ printf 'a\n' > a.txt && git add -A && git commit -qm A && $J reviewed --tier 2 -
 msg="cheaper rounds: a recheck on the full review's own commit keeps the full review's line"
 $J reviewed --recheck --tier 2 --effort 3 >/dev/null
 expect_pass sh -c "$J handoff >/dev/null && grep -qx 'Review: tier 2, effort 1' .jig/handoffs/main-*.md && grep -qx 'Recheck: tier 2, effort 3' .jig/handoffs/main-*.md"
-foldin && git add -A && git commit -qm "note A" && printf 'b\n' > b.txt && git add -A && git commit -qm B
-msg="cheaper rounds: working alone, a new task's recheck against the last task's review is refused"
+foldin && git add -A && git commit -qm "note A"
+msg="cheaper rounds: working alone, handoff from the note commit itself still finds the task's review"
+expect_pass sh -c "$J handoff >/dev/null && rm .jig/handoffs/main-*-2.md"
+printf 'c\n' > c.txt && git add -A && git commit -qm C && $J reviewed --tier 2 --effort 1 >/dev/null && $J handoff >/dev/null && foldin && git add -A && git commit -qm "note C"
+printf 'b\n' > b.txt && git add -A && git commit -qm B
+msg="cheaper rounds: working alone, a new task's recheck against the last task's full review is refused"
 expect_refuse $J reviewed --recheck --tier 2 --effort 1
 cd "$CR"
 msg="cheaper rounds: the kickoff jig open prints says to message the hubnode on a Proposed entry"
