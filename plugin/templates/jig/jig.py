@@ -8101,8 +8101,8 @@ STEPS: list = [
      "every merge", lambda root, after: SETUP not in after and not (root / SETUP).exists()
      and (Path(__file__).resolve().parent / "scripts" / "setup.sh").exists(), add_setup),
     (f"add {DERIVE} from the template, a no-op: `jig merge` runs it and commits the files it "
-     "derives from the whole tree", lambda root, after: DERIVE not in after
-     and not (root / DERIVE).exists()
+     "builds from several sources that separate jobs change",
+     lambda root, after: DERIVE not in after and not (root / DERIVE).exists()
      and (Path(__file__).resolve().parent / "scripts" / "derive.sh").exists(), add_derive),
     (f"add {RELEASE} from the template: the repo's release protocol, which /jig:release fills in "
      "on the first `jig release`", lambda root, after: RELEASE not in after
