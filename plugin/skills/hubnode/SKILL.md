@@ -144,7 +144,8 @@ A scope a spec still takes is re-pointed in that commit: the hook names the spec
 `jig staging resolve <file>`, which looks for that line in a trunk commit to the roadmap.
 
 Parked work is an item under `## Up next` in `.jig/roadmap.md`, naming the pages it will
-touch, proposed the same way. A roadmap change asks for no decision entry and no change line.
+touch, proposed the same way. Work with no phase yet is an item under `## No phase`, naming
+no pages. A roadmap change asks for no decision entry and no change line.
 
 `jig merge` rewrites `ROADMAP.md` in the merge commit, and removes from `.jig/roadmap.md` each
 Up next item the note's fold-in answers built. After solo work on trunk, `jig roadmap` says

@@ -237,12 +237,13 @@ A page has no `## Undefined` section, and no section that holds the project: bui
 (done, pending, not built yet), or when and in what order work will happen. What the section
 says decides, not its heading: a `## Status` or `## Current state` describing the product's own
 thing (a status call, a state machine's states) is product. Work parked mid-build is an item
-under `## Up next` in `.jig/roadmap.md`, naming the pages it will touch (Roadmap), written only
-on the owner's word. An open product question is an `## Open` entry in `.jig/decisions.md`,
-which the page may cite. Review findings not taken go in `.jig/ledgers/DEFERRED.md`. `jig
-survey` lists a `## Undefined` heading, jig's own retired one, with where its content goes;
-it searches no other heading, since a heading's word alone says nothing. A page that still
-carries a project section works as before until it is moved.
+under `## Up next` in `.jig/roadmap.md`, naming the pages it will touch, and named work with no
+phase yet an item under `## No phase` (Roadmap), each written only on the owner's word. An open
+product question is an `## Open` entry in `.jig/decisions.md`, which the page may cite. Review
+findings not taken go in `.jig/ledgers/DEFERRED.md`. `jig survey` lists a `## Undefined`
+heading, jig's own retired one, with where its content goes; it searches no other heading,
+since a heading's word alone says nothing. A page that still carries a project section works as
+before until it is moved.
 
 Trunk's code is reality. A page that disagrees with the code is a stale page, and gets fixed.
 An invariant the code breaks is a finding the handoff surfaces for a person to rule on, never
@@ -601,19 +602,27 @@ Optional: a repo with no `.jig/roadmap.md` has no roadmap, and nothing here appl
 The product is the repo, so there is one roadmap and no product level in it.
 
 - **The source**, `.jig/roadmap.md`: phases as `## <phase>` headings, in order (no dates: order
-  is file order); every `## ` heading but `## Up next` is a phase. Each has an `Exit when:` checklist of what
+  is file order); every `## ` heading but `## Up next` and `## No phase` is a phase. Each has an `Exit when:` checklist of what
   the owner checks, a `Scopes:` list of `` - `<scope>`: <what it is> `` (unindented, the name
   with no space or `/`), or both. A scope's id is `<phase>/<scope>`. "Every scope is done" is
   implied, never written as a box. A duplicate phase or scope id, a phase with neither list,
   or a line under `Scopes:` that isn't a scope is refused by the hook, by line, and reported
   by `jig roadmap`. A scope may end with `(touches docs/<page>.md, …)`, the pages it will change.
-- **Up next**, the one reserved section that isn't a phase: work parked mid-build, in no order,
+- **Up next**, a reserved section that isn't a phase: work parked mid-build, in no order,
   on the owner's word. Each item reads
   `` - `<id>`: <what is parked>; stops at <where>; parked <YYYY-MM-DD> (touches docs/<page>.md, …) ``,
   unindented, and names the pages it will touch; the hook refuses one that names none, or a
   duplicate id, by line. `jig reading-list` prints, after each page, the Up next items and the
   scopes not yet done that name it, and fold-in asks about them (Fold-in). An item answered
   built leaves the roadmap in the merge commit.
+- **No phase**, the other reserved section that isn't a phase: work the owner has named and
+  given no phase yet, in no order. Each item reads `` - `<id>`: <what it is> ``, unindented, and
+  names no pages: an item with `(touches …)` is parked work, which is Up next's. The hook refuses
+  one, a duplicate id, or a line that isn't an item, by line. A spec can't take one: when its work
+  starts, the owner moves it to a phase's `Scopes:`. It has no state, sits in no phase line, and
+  is never current, so work with no stage never reads as a stage.
+- **A phase's note** is the prose under its heading before `Exit when:` or `Scopes:`. The view
+  shows it under the phase's heading.
 - **A touched page exists**, in either form. `jig roadmap` reports one that doesn't; on trunk
   the hook refuses a commit that leaves an item or a scope touching no page, so a page renamed
   or deleted there is re-pointed in the same commit; and `jig merge` re-points each page the job
@@ -630,9 +639,9 @@ The product is the repo, so there is one roadmap and no product level in it.
   no scopes and no boxes is *empty*, and never done. The first phase not done is *current*,
   the rest *next*.
 - **The view**, `ROADMAP.md` at the root, generated from tracked files and never edited by hand: a line of the
-  phases with their states, then per phase its exit boxes and a board, a table with Open, Taken
+  phases with their states, then per phase its note, its exit boxes and a board, a table with Open, Taken
   and Done columns holding its scopes, each with its specs linked, then Up next, each item with
-  its pages. Plain Markdown, so it renders
+  its pages, then No phase, each item with what it is. Plain Markdown, so it renders
   anywhere. `jig merge` rewrites it in the merge commit, when states change; after solo work on
   trunk, `jig roadmap --write` rewrites it, and `jig roadmap` says when it is stale.
 - **R5** covers both files: they change on trunk only. In a metarepo, M4 lets the hubnode

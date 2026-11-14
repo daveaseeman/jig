@@ -13,21 +13,6 @@
     ],
     "reserved": {}
   },
-  "roadmap-no-phase": {
-    "spec": ".jig/specs/bug-roadmap-no-phase.md",
-    "state": "gated",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/skills/hubnode/SKILL.md",
-      "plugin/templates/jig/RULES.md",
-      "plugin/templates/jig/jig.py",
-      "tests/smoke.sh",
-      "plugin/skills/review/SKILL.md",
-      "plugin/skills/spec/SKILL.md"
-    ],
-    "reserved": {}
-  },
   "touches-abstract": {
     "spec": ".jig/specs/bug-touches-abstract.md",
     "state": "gated",
