@@ -5352,14 +5352,14 @@ expect_pass grep -qxF -- '- [ ] D-?id-lock vs hub/.jig/decisions.md § D-033 (hu
 git add -A && git -c core.hooksPath=/dev/null commit -qm "TOOL: note lock" && cd "$TQ"
 msg="touches gate: the pair line unanswered is refused"
 expect_refuse gate_ok lock
-cd .git/jig/worktrees/b-lock && sed -i.bak -e 's/^- \[ \]/- [x]/' -e 's/: ___$/: conflicts/' -e 's/___/smoke/g' .jig/handoffs/*.md && rm .jig/handoffs/*.bak \
 # Hook off: this stands for a note the commit hook never checked (it refuses it now, sec_cheaper_rounds); the gate is the backstop.
+cd .git/jig/worktrees/b-lock && sed -i.bak -e 's/^- \[ \]/- [x]/' -e 's/: ___$/: conflicts/' -e 's/___/smoke/g' .jig/handoffs/*.md && rm .jig/handoffs/*.bak \
   && git add -A && git -c core.hooksPath=/dev/null commit -qm "TOOL: answer lock" && cd "$TQ"
 msg="touches gate: conflicts with no resolution is refused"
 out=$($J gate lock 2>&1); git worktree remove --force .git/jig/worktrees/gate-lock 2>/dev/null
 expect_pass sh -c "echo \"\$0\" | grep -q 'conflicts needs its resolution'" "$out"
-cd .git/jig/worktrees/b-lock && sed -i.bak 's/ (hub\/docs\/features\/gestures.md): conflicts$/: agrees/' .jig/handoffs/*.md && rm .jig/handoffs/*.bak \
 # Hook off: this stands for a note the commit hook never checked (it refuses it now, sec_cheaper_rounds); the gate is the backstop.
+cd .git/jig/worktrees/b-lock && sed -i.bak 's/ (hub\/docs\/features\/gestures.md): conflicts$/: agrees/' .jig/handoffs/*.md && rm .jig/handoffs/*.bak \
   && git add -A && git -c core.hooksPath=/dev/null commit -qm "TOOL: reshape lock" && cd "$TQ"
 msg="touches gate: a pair line reshaped by hand is refused"
 expect_refuse gate_ok lock
