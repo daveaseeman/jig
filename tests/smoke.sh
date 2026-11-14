@@ -200,6 +200,17 @@ msg="R7: the marker in a string is accepted"
 printf 'msg = "adds a WORKAROUND: comment"\n' > src/s.py; git add -A; expect_pass git commit -qm t
 msg="R7: ; before a string with the marker is accepted"
 printf 'a(); log("WORKAROUND: x")\n' > src/s.js; git add -A; expect_pass git commit -qm t
+msg="R7: a code file holding a Latin-1 byte commits"
+printf '/* caf\xe9 */\nint x;\n' > src/l1.h; git add -A; expect_pass git commit -qm l1
+msg="R7: the marker beside a Latin-1 byte is still refused, by R7"
+printf '/* %s caf\xe9 */\n' "$W" > src/l2.c; git add -A; out=$(git commit -qm t 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'R7 the diff adds' && ! echo \"\$0\" | grep -q Traceback" "$out"; undo
+msg="R7: the marker after a lone CR on an added line is still refused"
+printf 'int x;\r/* %s y */\n' "$W" > src/cr.c; git add -A; expect_refuse git commit -qm t; undo
+msg="survey: a citation after a form feed on its line counts as inbound"
+printf '# Notes\n\nbody\n' > notes.md && printf 'see\x0cnotes.md\n' > src/cite.txt && git add -A && git commit -qm cite >/dev/null 2>&1
+expect_pass hrsurvey "assert [m['inbound'] for m in r['markdown'] if m['path'] == 'notes.md'] == [1], r['markdown']"
+git rm -q notes.md src/cite.txt && git commit -qm uncite >/dev/null 2>&1
 msg="R7: // in a URL before a string with the marker is accepted"
 printf 'u = "http://h"; s = "WORKAROUND: y"\n' > src/u.py; git add -A; expect_pass git commit -qm t
 msg="R7: jig's own R7 message line, outside the exempt checker, is accepted"
@@ -1330,6 +1341,12 @@ cd "$PR" && printf 'D-001 is how ids work\n' > api/ids.md && git add api/ids.md 
 msg="sync on a pararepo trunk: after a release it reports the change in this repo's terms, its BUFFER rows and specs included, and proposes the bump; the pin stays"
 out=$($J sync 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'docs v0.2.0 is out' && echo \"\$0\" | grep -qF 'D-001: used in .jig/ledgers/BUFFER.md, .jig/specs/buffer-v0.1.1.md, api/ids.md' && echo \"\$0\" | grep -q 'meta: docs v0.1.0 → v0.2.0' && grep -q '\"pin\": \"v0.1.0\"' .jig/para.json" "$out"
+msg="sync on a pararepo trunk: a tracked file not in UTF-8, or with a form feed or a lone CR on the matching line, is named, not a crash"
+mkdir -p notes && printf 'caf\xe9 D-001\n' > notes/latin1.txt && printf 'D-001 is\x0chow\n' > notes/ff.txt && printf 'D-001 is\rhow\n' > notes/cr.txt
+git add notes && git commit -qm "notes: encodings" >/dev/null 2>&1
+out=$($J sync 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -F 'D-001: used in' | grep -F notes/cr.txt | grep -F notes/ff.txt | grep -qF notes/latin1.txt" "$out"
+git rm -rq notes && git commit -qm "notes: gone" >/dev/null 2>&1
 
 msg="repos: lists each repo and flags a path that no longer exists"
 mv mrclone ../mrclone-away; out=$($J repos 2>&1); mv ../mrclone-away mrclone
@@ -2794,6 +2811,24 @@ out=$(PATH="$SHIM:$PATH" $J merge N 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'needs git 2.38'" "$out"
 msg="merge: once synced, N merges with no new handoff"
 expect_pass sh -c "$J merge N && ! grep -q '\"N\"' .jig/jobs.json && grep -q '^- K' CHANGELOG.md && grep -q '^- N' CHANGELOG.md"
+
+# An append file holding bytes that aren't UTF-8: merge and sync write them back unchanged.
+FE="$T/fu-bytes"; pcnew "$FE" && printf '# Changelog\n' > CHANGELOG.md && git add -A && git commit -qm init \
+  && $J init >/dev/null && board "b['append_files'].append('CHANGELOG.md')" && git add -A && git commit -qm board
+for j in Q R S; do $J open $j --shares CHANGELOG.md >/dev/null; done; git add -A && git commit -qm "open Q R S"
+for j in Q R S; do
+  ( cd "$FE/.git/jig/worktrees/$j" && printf -- '- %s caf\xe9\n' "$j" >> CHANGELOG.md && git add -A && git commit -qm "$j" \
+    && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $j" )
+done
+$J merge Q >/dev/null 2>&1
+msg="merge: R, unsynced, appended a Latin-1 line: the merged CHANGELOG.md has Q's bytes, then R's, unchanged"
+out=$($J merge R 2>&1); rc=$?
+printf '# Changelog\n- Q caf\xe9\n- R caf\xe9\n' > "$T/fu-bytes.want"
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'resolved CHANGELOG.md' && git show HEAD:CHANGELOG.md | cmp -s - '$T/fu-bytes.want'" "$out"
+msg="sync: S, which appended a Latin-1 line, resolves CHANGELOG.md with every line's bytes unchanged"
+(cd "$FE/.git/jig/worktrees/S" && $J sync >/dev/null 2>&1); rc=$?
+printf '# Changelog\n- Q caf\xe9\n- R caf\xe9\n- S caf\xe9\n' > "$T/fu-bytes.want"
+expect_pass sh -c "test $rc = 0 && git -C '$FE/.git/jig/worktrees/S' show HEAD:CHANGELOG.md | cmp -s - '$T/fu-bytes.want'"
 
 # DEFERRED.md rows: two jobs' rows merge back to back; rows added beside the note don't count.
 FD="$T/fu-defer"; pcnew "$FD" && git add -A && git commit -qm init && $J init >/dev/null \
