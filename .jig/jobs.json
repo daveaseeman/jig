@@ -1,7 +1,7 @@
 {
   "rounds-fix": {
     "spec": "Fix the 7 smoke failures the batch check found on 25aafa4 (sections rules/hardware, homes): jig handoff writes no note there after the cheaper-rounds merge; see .git/jig/gate-batch.out",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
