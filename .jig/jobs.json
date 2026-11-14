@@ -97,7 +97,7 @@
   },
   "touches-abstract": {
     "spec": ".jig/specs/bug-touches-abstract.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
