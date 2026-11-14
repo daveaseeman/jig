@@ -1,7 +1,7 @@
 {
   "cheaper-rounds": {
     "spec": ".jig/specs/cheaper-rounds.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [
       "checks-and-briefs"
     ],
