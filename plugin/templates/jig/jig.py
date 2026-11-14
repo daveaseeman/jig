@@ -1852,13 +1852,14 @@ def job_chain(head: str, board: "Board") -> list[str]:
     branch = git("branch", "--show-current")
     name, _ = board.job_for_branch(branch)
     if name and branch != board.trunk:
-        return git("rev-list", "--first-parent", head, f"^{board.trunk}").splitlines()
+        # `--`: a trunk named like a folder (firmware's main/) is otherwise ambiguous to git.
+        return git("rev-list", "--first-parent", head, f"^{board.trunk}", "--").splitlines()
     # HEAD's own note doesn't end its chain: a handoff from the note commit is the same task.
     # A merge bringing trunk's notes in, or a note renamed, ended no task.
     ended = git("log", "--first-parent", "--no-merges", "-M", "--diff-filter=A", "--format=%H",
                 "-1", f"{head}^", "--", f"{DIR}/handoffs/") if git("rev-parse", "-q", "--verify",
                                                                     f"{head}^") else ""
-    return git("rev-list", "--first-parent", head, *([f"^{ended}"] if ended else [])).splitlines()
+    return git("rev-list", "--first-parent", head, *([f"^{ended}"] if ended else []), "--").splitlines()
 
 
 def last_review(chain: list[str], kind: str | None = None) -> tuple[str, dict] | None:

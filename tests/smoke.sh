@@ -6458,7 +6458,8 @@ expect_pass sh -c "\$0 2>&1 | grep -F 'reserve.section' | grep -qF \"refuses a p
 # ---------------------------------------------------------------- cheaper rounds
 # After a job's first full review, each later touch costs what it changed.
 sec_cheaper_rounds() {
-CR="$T/cr"; pcnew "$CR" && mkdir -p docs nums .jig/ledgers && printf '# A\n' > docs/a.md && printf '# B\n' > docs/b.md && printf 'x\n' > shared.txt \
+# A main/ folder beside trunk main, as firmware has: every git call naming trunk must not read it as a path.
+CR="$T/cr"; pcnew "$CR" && mkdir -p docs nums main .jig/ledgers && printf 'x\n' > main/x.txt && printf '# A\n' > docs/a.md && printf '# B\n' > docs/b.md && printf 'x\n' > shared.txt \
   && cp "$P/ledgers/DEFERRED.md" .jig/ledgers/ && printf '| 2026-11-01 | base | f0 | should-fix | deferred | r |\n' >> .jig/ledgers/DEFERRED.md \
   && git add -A && git commit -qm init && $J init >/dev/null
 board "b['reserve'] = {'section': {'pattern': r'^## (\\d+) ', 'files': ['nums/**']}}"
