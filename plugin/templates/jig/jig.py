@@ -2071,7 +2071,8 @@ def cmd_handoff(root: Path, args) -> int:
     if not found or since:
         if found:
             die(f"{', '.join(since[:5])} changed since the review of {found[0][:12]}: a fix or a "
-                f"hand-resolved sync is rechecked. Review `git diff {found[0][:12]}..HEAD`, then: "
+                f"hand-resolved sync is rechecked. Review `git diff {found[0][:12]}..HEAD` (a sync: "
+                f"`git show --remerge-diff <merge>` and what follows it), then: "
                 f"python3 {DIR}/jig.py reviewed --recheck --tier N --effort N (the recheck step's)")
         die("no adversarial review on record for this commit.\n"
             f"  Review {head[:12]}, then: python3 {DIR}/jig.py reviewed")

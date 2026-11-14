@@ -629,8 +629,9 @@ config changed after the spec was written; it can't see a review that actually r
 than it was set to.
 
 The first review of a job is always full. After it, a round costs what it changed: a fix, or a
-sync resolved by hand, takes a **recheck**, a fresh review of `git diff <last recorded
-review>..HEAD` against the previous findings, at the `recheck` step's settings. Unset,
+sync resolved by hand, takes a **recheck**, a fresh review of the delta against the previous findings, at the
+`recheck` step's settings: `git diff <last recorded review>..HEAD` for a fix, and for a sync
+resolved by hand `git show --remerge-diff <merge>` and what follows it, never trunk's work. Unset,
 `recheck` is whatever `review` is, so a repo that moves review moves recheck with it; a
 `recheck` override wins. `jig reviewed --recheck --tier N --effort N` records it, refused
 unless a full review of the job is on HEAD's first-parent chain. The note carries a

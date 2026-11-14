@@ -218,14 +218,18 @@ Run only the narrowest check a specific finding needs.
 ```
 running <model> at <effort>
 If your own model differs from this line, reply with only your running line and stop.
-Recheck job <name>: review only `git diff <last recorded review>..<commit>` in <worktree>,
-against the previous review's findings: <findings>. Inputs: that diff, the spec <spec> and
-AGENTS.md. Does the delta fix what the findings named, and does it break anything they didn't?
-Widen to a full review if it changes anything the findings didn't name, and say so.
+Run /jig:review (Recheck) on job <name> in <worktree>: only the delta <delta>, against the
+previous review's findings: <findings>. Inputs: that delta, the spec <spec> and AGENTS.md.
+Does it fix what the findings named, and does it break anything they didn't? If it changes
+anything the findings didn't name, stop and say it needs a full review.
 Rerun no check the builder's report shows for the same commit: <report>.
+Run only the narrowest check a specific finding needs.
 ```
 Its `<model> at <effort>` are the `recheck` step's (`jig workflow`), not review's: they
-match only until a repo sets them apart.
+match only until a repo sets them apart. `<delta>` is `git diff <last recorded review>..<commit>`
+for a fix; for a sync resolved by hand, `git show --remerge-diff <merge>` and
+`git diff <merge>..<commit>`, never trunk's work the merge brought in. A recheck that says it
+needs a full review gets the **review** brief, at review's settings.
 
 **check**
 ```

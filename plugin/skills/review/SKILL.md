@@ -83,11 +83,13 @@ A reviewer that runs jig to test a finding does it in a throwaway repo. There, s
 
 The first review of a job is full. After it, a fix or a sync resolved by hand is rechecked:
 run the subagent at the `recheck` step's settings (`jig workflow`'s `recheck` line), as
-Dispatch says, and give it `git diff <last recorded review>..HEAD` (the commit `jig handoff`
-named when it refused), the previous review's findings, the spec and `AGENTS.md`. It asks:
-does the delta fix what the findings named, and does it break anything they didn't? When the
-diff changes anything the findings didn't name, it widens to a full review at the review
-step's settings, recorded without `--recheck`. A clean `jig sync` needs neither:
+Dispatch says, and give it the delta, the previous review's findings, the spec and
+`AGENTS.md`. The delta of a fix is `git diff <last recorded review>..HEAD` (the commit `jig
+handoff` named when it refused); of a sync resolved by hand, `git show --remerge-diff <merge>`
+and `git diff <merge>..HEAD`, never trunk's work the merge brought in. It asks: does the delta
+fix what the findings named, and does it break anything they didn't? When the delta changes
+anything the findings didn't name, the recheck stops and says so, and a full review runs at
+the review step's settings, recorded without `--recheck`. A clean `jig sync` needs neither:
 `jig handoff` accepts it as it is.
 
 ## What counts
