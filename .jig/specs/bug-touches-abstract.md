@@ -1,7 +1,6 @@
 # bug-touches-abstract
 
-Source: maige-ecosystem hubnode session / 2026-11-13 / Dave (staged as
-feedback-maige-ecosystem-2026-11-13-touches-abstract-entries.md): "`Touches:` has no value for
+Source: maige-ecosystem hubnode session / 2026-11-13 / Dave (staged as feedback-maige-ecosystem-2026-11-13-touches-abstract-entries.md): "`Touches:` has no value for
 an entry about something more abstract than a page … Some decisions rule on no page." Dave:
 "/jig:feedback needs an option for when it applies to something more abstract, cite three
 examples (a whole repo, how we name products, etc)".

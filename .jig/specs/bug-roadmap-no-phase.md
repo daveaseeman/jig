@@ -1,6 +1,6 @@
 # Bug: a roadmap has no place for work with no stage, and its view drops each phase's note
 
-Source: Maige-Familiar hubnode session / 2026-11-13 / Dave with Claude (staged as feedback-Maige-Familiar-2026-11-13-roadmap-no-stage.md): "A roadmap has no place for an item with no stage." and "The view also leaves out each phase's note, so the note saying it is not a stage never reaches a reader of ROADMAP.md."
+Source: jig hubnode session, staged on Dave's word ("go ahead and stage it now") / 2026-11-13 / Dave with Claude (staged as feedback-Maige-Familiar-2026-11-13-roadmap-no-stage.md): "A roadmap has no place for an item with no stage." and "The view also leaves out each phase's note, so the note saying it is not a stage never reaches a reader of ROADMAP.md."
 
 The report's `jig_version` (a8a32d1dbb7e) is `git hash-object` of v0.12.1's
 `plugin/templates/jig/jig.py`. `parse_roadmap`, `parse_up_next` and `render_roadmap` are

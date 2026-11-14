@@ -1,7 +1,7 @@
 # bug-project-sweep-noise
 
-Source: Maige-Lite hubnode session, 2026-11-13 (staged as feedback-Maige-Lite-2026-11-13-survey-status-heading.md): `jig survey` and `jig update` both print `docs/hal.md: ## Status is the project's: what is built → the body, in the present tense; what isn't → .jig/roadmap.md`, for a section that documents the `hal_status` call.
-Source: maige-ecosystem hubnode session, 2026-11-13 (staged as feedback-maige-ecosystem-2026-11-13-scope-sweep-over-flags.md): `jig update` and `jig survey` list, on every run, accepted entries as "reads as project scope ("launch"): strike, split or keep", and README lines as `"Phase 5" names the plan`.
+Source: Maige-Lite hubnode session / 2026-11-13 / Dave with Claude (staged as feedback-Maige-Lite-2026-11-13-survey-status-heading.md): `jig survey` and `jig update` both print `docs/hal.md: ## Status is the project's: what is built → the body, in the present tense; what isn't → .jig/roadmap.md`, for a section that documents the `hal_status` call.
+Source: maige-ecosystem hubnode session / 2026-11-13 / Dave (staged as feedback-maige-ecosystem-2026-11-13-scope-sweep-over-flags.md): `jig update` and `jig survey` list, on every run, accepted entries as "reads as project scope ("launch"): strike, split or keep", and README lines as `"Phase 5" names the plan`.
 
 Owner's direction (maige-ecosystem report): "separating product from scope is having grave
 consequences by over-flagging. pull back on the searching docs to find issues and focus on
