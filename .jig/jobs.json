@@ -1,7 +1,7 @@
 {
   "checks-and-briefs": {
     "spec": ".jig/specs/checks-and-briefs.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/scripts/check.sh",
