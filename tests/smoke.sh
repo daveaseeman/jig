@@ -6502,6 +6502,13 @@ out=$($J consolidate 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'no waiting specs overlap'" "$out"
 rm .jig/specs/e.md .jig/specs/f.md .jig/handoffs/f-2026-01-01.md
 
+msg="consolidate: a job opened as ./.jig/specs/x.md names that spec; a folder ending in / covers what is under it; an indented Kept separate line answers"
+cspec x 'app/' && $J open X --spec ./.jig/specs/x.md --owns 'app/**' >/dev/null 2>&1
+cspec y 'app/src/x.ts' && cspec z 'app/src/' && cspec w 'app/src/x.ts' $'  - Kept separate from y: later\n  - Kept separate from z: later'
+out=$($J consolidate 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'group 1: 2 specs' && echo \"\$0\" | grep -q 'y and z share: app/src/x.ts' && ! echo \"\$0\" | grep -qE '(x|w)\.md|group 2'" "$out"
+git checkout -q -- .jig/jobs.json && git worktree remove --force .git/jig/worktrees/X && git branch -q -D X && rm .jig/specs/[xyzw].md
+
 msg="open: a Touches path in neither owns, shares nor common is warned about, by name; a § term counts as its page"
 cspec g 'app/src/x.ts' && cspec h 'lib/a.py § Load' 'Kept separate from g: no overlap' && git add -A && git commit -qm "specs g h"
 out=$($J open G --spec .jig/specs/g.md --shares 'docs/**' 2>&1)

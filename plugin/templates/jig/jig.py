@@ -973,7 +973,7 @@ def cmd_open(root: Path, args) -> int:
             "for their handoff notes and gate checkout: pick another name")
     branch = args.branch or args.name
     owns = args.owns or []
-    spec_file = root / args.spec if args.spec and args.spec.endswith(".md") else None
+    spec_file = root / spec_key(root, args.spec) if args.spec and args.spec.endswith(".md") else None
     spec_text = spec_file.read_text(errors="replace") if spec_file and spec_file.is_file() else ""
     # Overlapping specs get one answer before any becomes a job: one job, or kept apart on purpose.
     if spec_text and (group := group_of(root, board, args.spec)):
@@ -1083,7 +1083,10 @@ def touches_spans(text: str) -> list[str]:
     out = []
     for span in re.findall(r"`([^`\n]+)`", m.group(1) if m else ""):
         page = span.split("§")[0].strip()
-        if page and not re.search(r"\s", page) and ("/" in page or re.search(r"\.\w+$", page)):
+        # A folder is everything under it; a skill's /name is a command, not a path.
+        page = page + "**" if page.endswith("/") else page
+        if page and not page.startswith("/") and not re.search(r"\s", page) \
+                and ("/" in page or re.search(r"\.\w+$", page)):
             out.append(f"{page} § {span.split('§', 1)[1].strip()}" if "§" in span else page)
     return out
 
@@ -1098,6 +1101,14 @@ def touches_meet(a: str, b: str) -> bool:
     return pa == pb or matches(pa, [pb]) or matches(pb, [pa])
 
 
+def spec_key(root: Path, spec: str) -> str:
+    """One spelling per spec: `./.jig/specs/a.md`, an absolute path and `.jig/specs/a.md` are one."""
+    p = Path(spec)
+    if p.is_absolute() and p.is_relative_to(root):
+        p = p.relative_to(root)
+    return os.path.normpath(p.as_posix())
+
+
 def release_tag(trunk: str) -> str:
     """The newest release on trunk: a vX.Y.Z tag `jig release` made."""
     tags = [t for t in git("tag", "--merged", trunk).splitlines() if re.fullmatch(r"v\d+(\.\d+)*", t)]
@@ -1108,10 +1119,11 @@ def waiting_specs(root: Path, board: "Board") -> dict[str, str]:
     """Specs no job has taken yet, path → text: no open job names it, no handoff note's
     `Spec:` line names it, and the newest release doesn't hold it. The tag bounds it, so a
     spec whose solo work merged long ago, with no note, isn't waiting."""
-    named = {j.get("spec", "") for j in board.jobs.values()}
+    named = {spec_key(root, j["spec"]) for j in board.jobs.values() if j.get("spec")}
     notes = root / HANDOFFS
     for n in notes.glob("*.md") if notes.is_dir() else []:
-        named |= set(re.findall(r"^Spec:[ \t]*(\S+)", n.read_text(errors="replace"), re.M))
+        named |= {spec_key(root, s) for s in
+                  re.findall(r"^Spec:[ \t]*(\S+)", n.read_text(errors="replace"), re.M)}
     tag = release_tag(board.trunk)
     out = {}
     for f in sorted((root / SPECS).glob("*.md")):
@@ -1128,7 +1140,7 @@ def kept_separate(text: str) -> set[str]:
     """The specs this one is kept apart from, by a `Kept separate from <spec>: <reason>` line,
     as stems, so a path, a file name and a bare name are one spec."""
     return {Path(m.group(1).strip("`")).stem for m in
-            re.finditer(r"^[-*]?[ \t]*Kept separate from (\S+?):[ \t]*\S", text, re.M)}
+            re.finditer(r"^[ \t]*(?:[-*][ \t]*)?Kept separate from (\S+?):[ \t]*\S", text, re.M)}
 
 
 def overlap_groups(root: Path, board: "Board") -> list[tuple[list[str], dict]]:
@@ -1143,7 +1155,7 @@ def overlap_groups(root: Path, board: "Board") -> list[tuple[list[str], dict]]:
         for b in names[i + 1:]:
             if Path(b).stem in kept[a] or Path(a).stem in kept[b]:
                 continue
-            shared = [x for x in touches[a] if any(touches_meet(x, y) for y in touches[b])]
+            shared = list(dict.fromkeys(x for x in touches[a] if any(touches_meet(x, y) for y in touches[b])))
             shared += [y for y in touches[b] if y not in shared
                        and any(touches_meet(x, y) for x in touches[a]) and y not in touches[a]]
             if shared:
@@ -1166,7 +1178,7 @@ def overlap_groups(root: Path, board: "Board") -> list[tuple[list[str], dict]]:
 
 
 def group_of(root: Path, board: "Board", spec: str) -> tuple[list[str], dict] | None:
-    want = Path(spec).as_posix()
+    want = spec_key(root, spec)
     return next((g for g in overlap_groups(root, board) if want in g[0]), None)
 
 
