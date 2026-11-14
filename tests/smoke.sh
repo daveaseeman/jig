@@ -5202,6 +5202,24 @@ cd .git/jig/worktrees/b-lock && sed -i.bak 's/§ D-033: agrees$/§ D-033 (hub\/d
 msg="touches gate: answered narrows, with parentheses in the answer, it passes"
 expect_pass gate_ok lock
 
+# --peers starts from an entry in any log it reads: here, the metarepo's at the pin.
+cd .git/jig/worktrees/b-lock
+msg="touches: --peers in a pararepo starts from the metarepo's entry this log lacks, with its peers here"
+out=$($J decision D-033 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'hub/.jig/decisions.md § D-033 gestures count as activity' && echo \"\$0\" | grep -qxF '  .jig/decisions.md § D-?id-lock the lock ignores gestures (docs/features/gestures.md)'" "$out"
+ulog '### D-033 lock own rule
+Accepted (owner, 2026-11-02).
+Touches: docs/identity.md
+
+When the lock is own, it holds.'
+msg="touches: with an id in both logs, the plain id starts from this repo's entry"
+out=$($J decision D-033 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | head -1 | grep -qx 'D-033 lock own rule'" "$out"
+msg="touches: with an id in both logs, <meta>/<id> starts from the metarepo's"
+out=$($J decision hub/D-033 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | head -1 | grep -qx 'hub/.jig/decisions.md § D-033 gestures count as activity'" "$out"
+git checkout -q -- .jig/decisions.md && cd "$TQ"
+
 # Two jobs ruling on one page at once meet at the gate of the second, after the first merges.
 for j in one two; do
   $J open $j --branch b-$j >/dev/null && git add -A && git commit -qm "TOOL: open $j"
@@ -5241,6 +5259,39 @@ Touches: pa/docs/x.md'
 msg="touches: --peers in a metarepo reads the pararepos, and names one it can't find"
 out=$($J decision D-001 --peers 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'pa/.jig/decisions.md § D-001' && echo \"\$0\" | grep -q 'pb/.jig/decisions.md § D-001' && echo \"\$0\" | grep -q 'not read: pc'" "$out"
+for r in pa pb; do (cd "$T/$r" && printf '\n### D-007 %s on y\nAccepted (owner, 2026-11-03).\nTouches: house/docs/features/y.md\n\nWhen y runs, %s yields.\n' $r $r >> .jig/decisions.md && git commit -qam "D-007"); done
+msg="touches: --peers in a metarepo refuses an id two pararepos hold, naming both <repo>/<id>"
+out=$($J decision D-007 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'pa/D-007' && echo \"\$0\" | grep -q 'pb/D-007'" "$out"
+msg="touches: --peers pa/D-007 starts from pa's entry, with peers here and in pb"
+out=$($J decision pa/D-007 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | head -1 | grep -qx 'pa/.jig/decisions.md § D-007 pa on y' && echo \"\$0\" | grep -qF '  .jig/decisions.md § D-001 y rules' && echo \"\$0\" | grep -qF '  pb/.jig/decisions.md § D-007 pb on y'" "$out"
+msg="touches: --peers on an id in no log is refused naming the logs searched and the one not read"
+out=$($J decision D-099 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'no live entry D-099 in .jig/decisions.md, pa/.jig/decisions.md, pb/.jig/decisions.md' && echo \"\$0\" | grep -q 'not read: pc'" "$out"
+msg="touches: --peers on <repo>/<id> whose log wasn't read says so, not that the entry is missing"
+out=$($J decision pc/D-001 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF \"pc's log was not read for peers\" && echo \"\$0\" | grep -q 'not read: pc' && ! echo \"\$0\" | grep -q 'no live entry'" "$out"
+ulog '### D-002 z one way
+Accepted (owner, 2026-11-03).
+Touches: docs/features/y.md
+
+When z runs, it runs fast.' && git add -A && git -c core.hooksPath=/dev/null commit -qm "D-002"
+python3 -c "import re; f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(re.sub(r'### D-002 .*?(?=\n### |\n## |\Z)', '', s, flags=re.S))"
+ulog '### D-003 z another way
+Accepted (owner, 2026-11-04). Supersedes D-002.
+Touches: docs/features/y.md
+
+When z runs, it runs slow.' && git add -A && git -c core.hooksPath=/dev/null commit -qm "D-003 supersedes D-002"
+(cd "$T/pa" && printf '\n### D-002 pa on z\nAccepted (owner, 2026-11-03).\nTouches: house/docs/features/y.md\n\nWhen z runs, pa waits.\n' >> .jig/decisions.md && git commit -qam "D-002")
+msg="touches: --peers on an id this repo superseded refuses, naming what holds now, not another log's same number"
+out=$($J decision D-002 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'D-002 was superseded in .jig/decisions.md; what holds now is D-003' && ! echo \"\$0\" | grep -q 'pa/'" "$out"
+(cd "$T/pb" && printf '\n### D-008 pb on w\nAccepted (owner, 2026-11-03).\nTouches: house/docs/features/y.md\n\nWhen w runs, pb waits.\n' >> .jig/decisions.md && git commit -qam "D-008" \
+  && python3 -c "f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(s.replace('### D-008 pb on w\nAccepted (owner, 2026-11-03).', '### D-009 pb on w again\nAccepted (owner, 2026-11-04). Supersedes D-008.'))" && git commit -qam "D-009 supersedes D-008")
+msg="touches: --peers on an id another log superseded starts from its successor, and says so"
+out=$($J decision D-008 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | head -1 | grep -qx 'pb/.jig/decisions.md § D-009 pb on w again' && echo \"\$0\" | grep -qF 'pb/.jig/decisions.md § D-008 is superseded; starting from D-009, which holds now.'" "$out"
 
 # A metarepo named docs: a bare docs/… path is the pararepo's own page; the metarepo's is docs:<path>.
 TD="$T/td"; pcnew "$TD" && git add -A && git commit -qm init && $J init --meta --name docs --genres features >/dev/null
