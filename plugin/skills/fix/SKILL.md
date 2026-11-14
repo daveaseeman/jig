@@ -28,8 +28,10 @@ investigation. Elsewhere, stop and say where to run it. If `jig staging` refuses
      suggestion.
    - **a correction**: write the spec through `/jig:spec`, carrying the line
      `Source: <source> (staged as <file name>): <symptom>` for every report in the group, the
-     symptom copied from the report in its words. Then
-     `jig staging resolve <file>` for each.
+     symptom copied from the report in its words. Once every group's spec is written, run
+     `jig consolidate`, answer each group it lists (`/jig:consolidate`, or a
+     `Kept separate from <spec>: <reason>` line per pair), then `jig staging resolve <file>`
+     for each: `resolve` refuses while a report's spec is in an unanswered group.
    - **a workaround for one repo** (`/jig:bug` step 4): `jig staging drop <file>`, saying why and what that repo
      should do instead.
    - **already fixed**: `jig staging drop <file>`, naming the commit that fixed it.
