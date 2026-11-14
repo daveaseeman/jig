@@ -96,6 +96,8 @@ empty or missing resolves with `jig workflow`'s lines in it, or is refused while
   sentence, ask the owner one question first; for an update, add to the amended spec's Intent,
   don't replace it); and lists under that spec's Decisions each thing it filled in that the request didn't say, starting `Interpreted:`.
   Show the spec; `resolve` once the owner accepts it. It refuses until a spec carries the mark.
+- A story's, request's or report's `resolve` refuses while its spec overlaps another waiting
+  spec unanswered: run `jig consolidate`, then `/jig:consolidate` or a `Kept separate` line.
 - **feedback**: work through it with `/jig:fix` in the jig repo. Elsewhere, `resolve` forwards it
   there.
 - **another repo's**: `resolve` forwards it into that repo's `.jig/staging/`; it is resolved

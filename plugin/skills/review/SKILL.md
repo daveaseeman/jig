@@ -11,12 +11,15 @@ scope, so that is the scope at which these questions can be answered.
 Run the subagent at the `review` step's settings: `jig workflow` gives its tier and effort,
 `${CLAUDE_PLUGIN_ROOT}/tiers.json` maps them to a model and an effort level. A number with no
 entry there is refused: say so and stop. Its prompt starts with `running <model> at
-<effort>`, and so must the first line of its reply, read from its own settings; a value it
-can't read, it reports as `unknown`. The prompt also says: "if your own model or effort
-differs from this line, reply with only your `running` line and stop". At a mismatch in model
-or effort, retry once, then ask the owner; never use the mismatched run's output. Only a value
-it read and that differs is a mismatch: an `unknown` gets no retry, record it as `unknown`
-(`--ran "<model> at unknown"`) and tell the owner once.
+<effort>`, the configured settings. The first line of its reply is `running <model>`, the
+model read from its own settings, and no effort: a self-read effort is too often wrong to act
+on. Check the effort with the host's readout of that session where the host has one (the Claude
+app shows each session's), and record the configured numbers either way. A self-read the host
+contradicts is never a mismatch. The prompt also says: "if your own model differs from this
+line, reply with only your `running` line and stop". At a mismatch in model, retry once, then
+ask the owner; never use the mismatched run's output. A model it can't read, it reports as
+`unknown`: no retry, record it as `unknown` (`--ran "unknown at <effort>"`) and tell the owner
+once.
 
 Give a subagent exactly this and nothing else: the diff since the last handoff
 (`git diff <last-handoff-commit>..HEAD`, or `git diff <trunk>...HEAD` for the first one; the
@@ -70,8 +73,8 @@ Its job is to find the reason this change is wrong. Its questions:
 
 A file in `.jig/staging/` is not decided; a finding that rests on one says so.
 
-Don't rerun the full checks: the author ran them and showed the output, and the gate runs them
-again. Never rerun a check the builder's report shows for the same commit. Run only the narrowest check a specific finding needs (one smoke section, one command),
+Rerun no check the builder's report shows for the same commit: the author ran it and showed
+the output, and the gate's check step runs the complete check. Run only the narrowest check a specific finding needs (one smoke section, one command),
 and say which one and why.
 
 A reviewer that runs jig to test a finding does it in a throwaway repo. There, set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched.
@@ -114,8 +117,8 @@ When no blocking findings remain, with everything committed:
 python3 .jig/jig.py reviewed --tier N --effort N --ran "<model> at <effort>"
 ```
 
-The tier and effort the review ran at, from `jig workflow`'s `review` line, and what its
-first line said it ran on. A recheck records `--recheck` and the `recheck` line's numbers. `jig gate` warns when they fall short of the spec's Workflow
+The tier and effort the review ran at, from `jig workflow`'s `review` line, and the model its
+first line said it ran on, with the effort from the host's readout or the configured one. A recheck records `--recheck` and the `recheck` line's numbers. `jig gate` warns when they fall short of the spec's Workflow
 section.
 
 `jig handoff` refuses without a record for that commit, or for one under it that only a

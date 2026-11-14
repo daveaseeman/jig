@@ -947,6 +947,11 @@ def cmd_status(root: Path, args) -> int:
     for k, v in (board.data.get("reserve") or {}).items():
         if isinstance(v, dict) and v.get("pattern"):
             print(f"reserve {k}: next free {next_number(board, k, v)}")
+    # What a complete check costs here, so a plan for parallel jobs knows its price.
+    recs = checked_records()
+    if recs:
+        print(f"last complete check: {recs[-1]['seconds']}s on {recs[-1]['date']} "
+              f"({recs[-1]['commit'][:12]})")
     return 0
 
 
@@ -994,6 +999,11 @@ def cmd_open(root: Path, args) -> int:
             "for their handoff notes and gate checkout: pick another name")
     branch = args.branch or args.name
     owns = args.owns or []
+    spec_file = root / spec_key(root, args.spec) if args.spec and args.spec.endswith(".md") else None
+    spec_text = spec_file.read_text(errors="replace") if spec_file and spec_file.is_file() else ""
+    # Overlapping specs get one answer before any becomes a job: one job, or kept apart on purpose.
+    if spec_text and (group := group_of(root, board, args.spec)):
+        die(group_refusal(group, args.spec))
     # R4 pre-check: a file another open job already changed is shared, never owned
     conflicts = []
     for p in owns:
@@ -1052,10 +1062,19 @@ def cmd_open(root: Path, args) -> int:
     print(f"job {args.name} {verb}. worktree: {worktree}  state: {state}")
     if reserve:
         print("reserved: " + ", ".join(f"{k}={v}" for k, v in reserve.items()))
+    # A warning, not a refusal: Touches is prose, and the hubnode may have meant to leave a path out.
+    if missed := uncovered_touches(board, spec_text, owns, args.shares or []):
+        print(f"warning: the spec's Touches names what {args.name} can't change, in neither owns, "
+              f"shares nor common: {', '.join(missed)}. `jig share {args.name} <path>…` adds them.")
+    proposals = proposal_branches(spec_text)
+    # Synced first: a merge in a job is judged against trunk, and a new job's branch doesn't
+    # hold the commit that opened it, so the board would read as the job's change.
+    merges = (f"Run `jig sync`, then merge each proposal into {branch} in this order: "
+              f"{', '.join(proposals)}.\n" if proposals else "")
     print(f"\n--- kickoff ---\nJob: {args.name}\nBranch: {branch}\nWorktree: {worktree}\n"
           f"Spec: {args.spec or '(see board)'}\n"
           f"Owns: {', '.join(owns) or '-'}\nShares: {', '.join(args.shares or []) or '-'}\n"
-          f"Read {DIR}/RULES.md, then `python3 {DIR}/jig.py check`.\n"
+          f"{merges}Read {DIR}/RULES.md, then `python3 {DIR}/jig.py check`.\n"
           f"When you write or change a Proposed entry in {LOG}, or meet a question only the "
           "owner can answer, message the hubnode then, with the rule sentence and the "
           "alternative you rejected, and keep building.")
@@ -1081,6 +1100,177 @@ def cmd_reserve(root: Path, args) -> int:
     reserved[args.counter] = n if had is None else [*(had if isinstance(had, list) else [had]), n]
     board.save()
     print(f"job {args.name}: {args.counter} {n} reserved. Commit {JOBS} on {board.trunk}.")
+    return 0
+
+
+# ---------------------------------------------------------------- consolidate
+
+def touches_spans(text: str) -> list[str]:
+    """The backticked paths in a spec's `## Touches`, a `<page> § <term>` kept whole. A span
+    with neither a slash nor an extension is a function or a flag, not a path."""
+    m = re.search(r"^## Touches[ \t]*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+    out = []
+    for span in re.findall(r"`([^`\n]+)`", m.group(1) if m else ""):
+        page = span.split("§")[0].strip()
+        # A folder is everything under it; a skill's /name is a command, not a path.
+        page = page + "**" if page.endswith("/") else page
+        if page and not page.startswith("/") and not re.search(r"\s", page) \
+                and ("/" in page or re.search(r"\.\w+$", page)):
+            out.append(f"{page} § {span.split('§', 1)[1].strip()}" if "§" in span else page)
+    return out
+
+
+def touches_meet(a: str, b: str) -> bool:
+    """Two Touches entries name one place: one path, a glob covering the other's path, or the
+    same `<page> § <term>`. A whole page meets any term on it; two terms on one page don't."""
+    pa, _, ta = a.partition(" § ")
+    pb, _, tb = b.partition(" § ")
+    if ta and tb:
+        return pa == pb and ta == tb
+    return pa == pb or matches(pa, [pb]) or matches(pb, [pa])
+
+
+def spec_key(root: Path, spec: str) -> str:
+    """One spelling per spec: `./.jig/specs/a.md`, an absolute path and `.jig/specs/a.md` are one."""
+    p = Path(spec)
+    if p.is_absolute() and p.is_relative_to(root):
+        p = p.relative_to(root)
+    return os.path.normpath(p.as_posix())
+
+
+def release_tag(trunk: str) -> str:
+    """The newest release on trunk: a vX.Y.Z tag `jig release` made."""
+    tags = [t for t in git("tag", "--merged", trunk).splitlines() if re.fullmatch(r"v\d+(\.\d+)*", t)]
+    return latest_tag(tags)
+
+
+def waiting_specs(root: Path, board: "Board") -> dict[str, str]:
+    """Specs no job has taken yet, path → text: no open job names it, no handoff note's
+    `Spec:` line names it, and the newest release doesn't hold it. The tag bounds it, so a
+    spec whose solo work merged long ago, with no note, isn't waiting."""
+    named = {spec_key(root, j["spec"]) for j in board.jobs.values() if j.get("spec")}
+    notes = root / HANDOFFS
+    for n in notes.glob("*.md") if notes.is_dir() else []:
+        named |= {spec_key(root, s) for s in
+                  re.findall(r"^Spec:[ \t]*(\S+)", n.read_text(errors="replace"), re.M)}
+    tag = release_tag(board.trunk)
+    out = {}
+    for f in sorted((root / SPECS).glob("*.md")):
+        rel = f.relative_to(root).as_posix()
+        if not is_spec(rel) or rel in named:
+            continue
+        if tag and git("cat-file", "-t", f"{tag}:{rel}"):
+            continue
+        out[rel] = f.read_text(errors="replace")
+    return out
+
+
+def kept_separate(text: str) -> set[str]:
+    """The specs this one is kept apart from, by a `Kept separate from <spec>: <reason>` line,
+    as stems, so a path, a file name and a bare name are one spec."""
+    return {Path(m.group(1).strip("`")).stem for m in
+            re.finditer(r"^[ \t]*(?:[-*][ \t]*)?Kept separate from (\S+?):[ \t]*\S", text, re.M)}
+
+
+def overlap_groups(root: Path, board: "Board") -> list[tuple[list[str], dict]]:
+    """Unanswered groups of waiting specs: specs joined by an overlap no `Kept separate` line
+    answers, with the shared Touches per pair. A merged spec answers by replacing its inputs."""
+    specs = waiting_specs(root, board)
+    touches = {s: touches_spans(t) for s, t in specs.items()}
+    kept = {s: kept_separate(t) for s, t in specs.items()}
+    names = sorted(specs)
+    edges: dict[tuple[str, str], list[str]] = {}
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            if Path(b).stem in kept[a] or Path(a).stem in kept[b]:
+                continue
+            shared = list(dict.fromkeys(x for x in touches[a] if any(touches_meet(x, y) for y in touches[b])))
+            shared += [y for y in touches[b] if y not in shared
+                       and any(touches_meet(x, y) for x in touches[a]) and y not in touches[a]]
+            if shared:
+                edges[(a, b)] = shared
+    groups, seen = [], set()
+    for s in names:
+        if s in seen or not any(s in e for e in edges):
+            continue
+        group, todo = [], [s]
+        while todo:
+            x = todo.pop()
+            if x in seen:
+                continue
+            seen.add(x)
+            group.append(x)
+            todo += [b if a == x else a for a, b in edges if x in (a, b)]
+        group.sort()
+        groups.append((group, {e: v for e, v in edges.items() if e[0] in group}))
+    return groups
+
+
+def group_of(root: Path, board: "Board", spec: str) -> tuple[list[str], dict] | None:
+    want = spec_key(root, spec)
+    return next((g for g in overlap_groups(root, board) if want in g[0]), None)
+
+
+def group_refusal(group: tuple[list[str], dict], what: str) -> str:
+    specs, edges = group
+    return (f"{what} is in a group of waiting specs whose Touches overlap: {', '.join(specs)}. "
+            "Answer it first: merge them into one spec (/jig:consolidate), or add "
+            "`Kept separate from <spec>: <reason>` to one spec of each pair. `jig consolidate` lists it.")
+
+
+def cmd_consolidate(root: Path, args) -> int:
+    board = Board.load(root, working_tree=True)
+    groups = overlap_groups(root, board)
+    if not groups:
+        print("no waiting specs overlap: each can open as its own job")
+        return 0
+    for n, (specs, edges) in enumerate(groups, 1):
+        print(f"group {n}: {len(specs)} specs, proposed as one job")
+        for s in specs:
+            print(f"  {s}")
+        for (a, b), shared in edges.items():
+            print(f"    {Path(a).stem} and {Path(b).stem} share: {', '.join(shared)}")
+    print("\nAnswer each group before opening any of it: /jig:consolidate merges a group into one "
+          "spec, or one spec of a pair says `Kept separate from <spec>: <reason>`.")
+    return 0
+
+
+def uncovered_touches(board: "Board", spec_text: str, owns: list[str], shares: list[str]) -> list[str]:
+    """Touches paths the job could not change: in neither its owns, its shares, nor common.
+    A glob in Touches is covered when it is listed as is."""
+    lists = [*owns, *shares, *(board.data.get("common") or [])]
+    out = []
+    for t in touches_spans(spec_text):
+        page = t.partition(" § ")[0]
+        if page not in lists and not matches(page, lists) and page not in out:
+            out.append(page)
+    return out
+
+
+def proposal_branches(text: str) -> list[str]:
+    """The metarepo proposals a consolidated spec takes in, in its `## Proposals` order."""
+    m = re.search(r"^## Proposals[ \t]*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+    return re.findall(r"`(propose/[^`\s]+)`", m.group(1)) if m else []
+
+
+def cmd_share(root: Path, args) -> int:
+    """Add paths to an open job's shares: what its Touches needed and its kickoff left out."""
+    board = Board.load(root, working_tree=True)
+    if git("branch", "--show-current") != board.trunk:
+        die(f"share from {board.trunk} (the hubnode's checkout)")
+    job = board.jobs.get(args.name)
+    if job is None:
+        die(f"no open job {args.name}")
+    taken = [f"{p} (owned by open job {n})" for p in args.paths for n, j in board.jobs.items()
+             if n != args.name and any(p == o or matches(p, [o]) or matches(o, [p]) for o in j.get("owns") or [])]
+    if taken:
+        die("these are another job's to change; that job shares them first, or they wait:\n  "
+            + "\n  ".join(taken))
+    shares = job.setdefault("shares", [])
+    added = [p for p in args.paths if p not in shares]
+    shares += added
+    board.save()
+    print(f"job {args.name}: shares {', '.join(added) or 'unchanged'}. Commit {JOBS} on {board.trunk}.")
     return 0
 
 
@@ -1143,12 +1333,126 @@ def cmd_mark(root: Path, args) -> int:
         die(f"a job is merged by `jig merge {args.name}`, which deletes its entry in the merge commit")
     if args.state not in STATES:
         die(f"state must be one of {', '.join(STATES)}")
-    if args.state == "gated":
-        # Gated means the checks ran: the checkout they ran in is spent.
+    if args.batch and args.state != "gated":
+        die("--batch goes with gated: `jig mark <job> gated --batch`")
+    if args.state == "gated" and args.batch:
+        # Its check is owed by the batch: one complete run on trunk once the batch has merged.
+        board.jobs[args.name]["check"] = "batch"
+        remove_gate_scratch(args.name, f"`jig mark {args.name} gated --batch`")
+    elif args.state == "gated":
+        # Gated means the complete check passed on the commit the gate checked out, and
+        # `jig checked` there said so: the checkout it ran in is then spent.
+        scratch = gate_scratch(args.name)
+        where = main_root() / scratch
+        git("worktree", "prune")
+        if not where.exists():
+            die(f"no gate checkout for {args.name}: `jig gate {args.name}`, run the complete "
+                f"check it prints there, then `jig checked` there")
+        problem = gate_scratch_problem(where, scratch)
+        if problem:
+            die(f"{problem}, and `jig mark {args.name} gated` again")
+        head = git("rev-parse", "HEAD", cwd=str(where))
+        if not any(r["commit"] == head for r in checked_records()):
+            die(f"no complete check is recorded for {head[:12]} in {scratch}: run the check "
+                f"`jig gate {args.name}` printed there, then `jig checked` there")
         remove_gate_scratch(args.name, f"`jig mark {args.name} gated`")
+        board.jobs[args.name].pop("check", None)
     board.jobs[args.name]["state"] = args.state
     board.save()
     print(f"{args.name}: {args.state}")
+    return 0
+
+
+def checked_log() -> Path:
+    """Where `jig checked` records each complete check: shared by every worktree, so a record
+    made in the gate's checkout is read from trunk's, and never committed."""
+    return Path(git("rev-parse", "--path-format=absolute", "--git-common-dir")) / "jig" / "checked.log"
+
+
+def checked_records() -> list[dict]:
+    """Every recorded complete check, oldest first."""
+    log = checked_log()
+    out = []
+    for line in (log.read_text().splitlines() if log.exists() else []):
+        f = line.split("\t")
+        if len(f) == 5 and all(x.isdigit() for x in f[1:4]):
+            out.append({"commit": f[0], "tier": int(f[1]), "effort": int(f[2]),
+                        "seconds": int(f[3]), "date": f[4]})
+    return out
+
+
+def last_checked_on(rev: str) -> str | None:
+    """The newest commit on REV's first-parent line that has a complete check recorded."""
+    have = {r["commit"] for r in checked_records()}
+    for c in git("rev-list", "--first-parent", rev).splitlines():
+        if c in have:
+            return c
+    return None
+
+
+def batch_merges(trunk: str) -> list[tuple[str, str]]:
+    """The first-parent merges on TRUNK since its last complete check whose job's check was
+    owed by the batch (`Check: batch`), oldest first, as (commit, subject)."""
+    since = last_checked_on(trunk)
+    out = []
+    for line in git("log", "--first-parent", "--merges", "--reverse", "--format=%H%x09%s%x09%(trailers:key=Check,valueonly,separator=%x2C)",
+                    f"{since}..{trunk}" if since else trunk).splitlines():
+        c, subject, check = (line.split("\t") + ["", ""])[:3]
+        if check.strip() == "batch":
+            out.append((c, subject))
+    return out
+
+
+def check_levels_review(root: Path) -> list[tuple[str, str]]:
+    """A check.sh with one level runs everything on every stop, the complete suite included:
+    the repo's to split, since only it knows which of its tests are quick."""
+    path = f"{DIR}/scripts/check.sh"
+    f = root / path
+    if not f.is_file() or "--full" in f.read_text(errors="replace"):
+        return []
+    return [(path, "never reads --full: split it into a quick part (lint, type-check, unit "
+             "tests: what runs on every stop) and a complete part run only with --full (the "
+             "full suite, slow or end-to-end tests: what the gate's check step runs)")]
+
+
+def cmd_checked(root: Path, args) -> int:
+    """Record that the complete check passed on HEAD; with --trace, how to find the merge that
+    broke trunk since its last recorded one. jig records and prints; it never runs a check."""
+    if args.trace is not None:
+        trunk = Board.load(root).trunk
+        if git("branch", "--show-current") != trunk:
+            die(f"--trace reads {trunk}'s history: run it on {trunk}")
+        good = last_checked_on("HEAD")
+        rng = f"{good}..HEAD" if good else "HEAD"
+        merges = git("log", "--first-parent", "--merges", "--reverse", "--format=%h %s", rng).splitlines()
+        print(f"merges since the last complete check ({good[:12] if good else 'none recorded'}), oldest first:")
+        for m in merges or ["(none)"]:
+            print(f"  {m}")
+        if not good:
+            print(f"no complete check is recorded on {trunk}: bisect needs a known good commit")
+            return 1
+        # Through sh -c, so a command with `&&` or `cd` is run whole at each step.
+        cmd = f"sh -c {shlex.quote(args.trace)}" if args.trace else "<the failing command>"
+        # --first-parent steps over merges only, so each step costs one run of one command.
+        print("\nFind the merge that broke it, running only the failing command at each step:")
+        print(f"  git bisect start --first-parent HEAD {good}")
+        print(f"  git bisect run {cmd}")
+        print("  git bisect reset")
+        return 0
+    if args.tier is None or args.effort is None or args.seconds is None:
+        die("usage: jig checked --tier N --effort N --seconds S, or jig checked --trace [command]", 2)
+    head = git("rev-parse", "HEAD")
+    if not head:
+        die("no commit to record")
+    log = checked_log()
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("a") as f:
+        f.write(f"{head}\t{args.tier}\t{args.effort}\t{args.seconds}\t{date.today().isoformat()}\n")
+    print(f"checked {head[:12]}: tier {args.tier}, effort {args.effort}, {args.seconds}s")
+    step = workflow_steps(Board.load(root).data)[0]["check"]
+    if (args.tier, args.effort) != (step["tier"], step["effort"]):
+        print(f"warning: recorded tier {args.tier}, effort {args.effort}; the check step is "
+              f"tier {step['tier']}, effort {step['effort']}", file=sys.stderr)
     return 0
 
 
@@ -1205,6 +1509,9 @@ def cmd_merge(root: Path, args) -> int:
     if not re.search(rf"(?:^|: )merge {re.escape(name)}$", subject):
         subject = (f"{subject}: " if subject else "") + f"merge {name}"
     msg = subject + (f"\n\n{args.message}" if args.message else "")
+    # Trunk's history is the record of a check the batch owes: `jig release` reads it there.
+    if board.jobs[name].get("check") == "batch":
+        msg += "\n\nCheck: batch"
     p = subprocess.run(["git", "merge", "--no-ff", "--no-commit", "-m", msg, branch],
                        capture_output=True, text=True, errors="replace")
     merging = bool(git("rev-parse", "-q", "--verify", "MERGE_HEAD"))
@@ -2045,7 +2352,13 @@ def cmd_gate(root: Path, args) -> int:
     # As the hooks run it: itself when executable (any language), through bash when not.
     check = f"./{DIR}/scripts/check.sh"
     # A subshell: a shell left inside the checkout would sit in a deleted folder once it's removed.
-    print(f"  (cd {scratch} && {'' if os.access(where / check, os.X_OK) else 'bash '}{check})")
+    # The complete level: the gate is the check step's, the one place it runs per job.
+    print(f"  (cd {scratch} && {'' if os.access(where / check, os.X_OK) else 'bash '}{check} --full)")
+    step = workflow_steps(board.data)[0]["check"]
+    print(f"\nThe check step runs it: tier {step['tier']}, effort {step['effort']}. When it passes, "
+          f"record it there, with the seconds it took:")
+    print(f"  (cd {scratch} && python3 {DIR}/jig.py checked --tier {step['tier']} "
+          f"--effort {step['effort']} --seconds <s>)")
     print()
     if job is not None:
         print(f"Then: jig mark {name} gated, which removes {scratch}, and on the owner's word: "
@@ -5429,6 +5742,14 @@ def cmd_release(root: Path, args) -> int:
     left = release_waits_for()
     if not args.force:
         problems += staged_refusal("the release")
+        # A batch's jobs merged on a check owed by one complete run on the trunk they made.
+        owed = batch_merges(trunk)
+        if owed:
+            problems.append(
+                f"{len(owed)} merge{'s' if len(owed) > 1 else ''} since the last complete check on "
+                f"{trunk} owe{'' if len(owed) > 1 else 's'} the batch's check ("
+                + ", ".join(f"{c[:12]} {s}" for c, s in owed)
+                + f"): run `{DIR}/scripts/check.sh --full` on {trunk}, then `jig checked`")
     # Released, a D-?<slug> would be frozen under its version and never get its number.
     log_now = (root / LOG).read_text() if (root / LOG).exists() else ""
     problems += [f"{LOG}:{e['line']} {e['id']} isn't numbered: a merge numbers it (`jig merge "
@@ -7463,6 +7784,12 @@ def cmd_staging(root: Path, args) -> int:
             die(f"destination {rel!r} is outside this repo: give a path relative to its root", 2)
         return out
 
+    def unanswered(spec: str) -> None:
+        """A report resolves once its spec has its overlap answered: resolving is where the
+        hubnode moves on, so an overlap left here would reach `jig open` unread."""
+        if group := group_of(root, Board.load(root, working_tree=True), spec):
+            die(group_refusal(group, f"{spec}, which carries `{mark}`,"), 1)
+
     def landed(rel: str) -> bool:
         f = inside(rel)
         return f.exists() and mark in f.read_text(errors="replace")
@@ -7482,6 +7809,7 @@ def cmd_staging(root: Path, args) -> int:
         if not landed(dest):
             die(f"a request resolves into a spec: amend {dest}, the spec it names, from it, "
                 f"carrying `{mark}`, then resolve again", 1)
+        unanswered(dest)
         return done(f"carried by {dest}")
     if kind in ("user-story", "feature-request", "feedback"):
         specs = [s for s in (root / DIR / "specs").glob("*.md") if mark in s.read_text()]
@@ -7490,6 +7818,8 @@ def cmd_staging(root: Path, args) -> int:
             what = {"user-story": "a story", "feature-request": "a request"}.get(kind, "a report")
             die(f"{what} resolves into a spec: {how} under {DIR}/specs/ from it, carrying "
                 f"`{mark}`, then resolve again", 1)
+        for s in specs:
+            unanswered(s.relative_to(root).as_posix())
         return done(f"carried by {specs[0].relative_to(root)}")
     if kind in ("spec", "doc") and not bare_path(dest):
         die(f"destination {dest!r} isn't a path yet: find the page, put its path in the header, "
@@ -9485,6 +9815,7 @@ def cmd_update(root: Path, args) -> int:
     review += [(LOG, f"{e} has no Touches line: add one under its status line, naming the pages "
                 f"it touches, a term as `{GLOSSARY} § <term>`, or {NONE_FORM} ({DIR}/RULES.md, Decision log)") for e in untouched_entries(root, trunk)]
     review += superseded_kept(root)
+    review += check_levels_review(root)
     review += project_review(root, files, [f for f, _ in review])
     have_ignores = {l.strip() for l in ignore.read_text().splitlines()} if ignore.exists() else set()
     if (new_board.get("reference_files") == "ignore" and not ref_line
@@ -10738,12 +11069,22 @@ def main(argv: list[str] | None = None) -> int:
     o.add_argument("--worktree", help="adopting: where the branch is already checked out")
     o.add_argument("--state", choices=STATES, help="adopting: its state (default building)")
 
+    sub.add_parser("consolidate", help="hubnode: waiting specs whose Touches overlap, to answer before opening")
+    sh = sub.add_parser("share", help="hubnode: add paths to an open job's shares")
+    sh.add_argument("name")
+    sh.add_argument("paths", nargs="+")
     rs = sub.add_parser("reserve", help="hubnode: give an open job another number of a counter")
     rs.add_argument("name")
     rs.add_argument("counter")
     m = sub.add_parser("mark", help="hubnode: set a job's state")
     m.add_argument("name")
     m.add_argument("state")
+    m.add_argument("--batch", action="store_true", help="gated, its complete check owed by one run on trunk after the batch merges")
+    ck = sub.add_parser("checked", help="record that the complete check passed on HEAD")
+    ck.add_argument("--tier", type=int)
+    ck.add_argument("--effort", type=int)
+    ck.add_argument("--seconds", type=int)
+    ck.add_argument("--trace", nargs="?", const="", metavar="COMMAND", help="on trunk: the merges since the last complete check, and the bisect that finds the one breaking COMMAND")
     mg = sub.add_parser("merge", help="hubnode: merge a job and delete its entry in that commit")
     mg.add_argument("name", nargs="?")
     mg.add_argument("--number", action="store_true", help="in a merge in progress, its conflicts resolved: number the D-?<slug> ids it brings in")
@@ -10825,7 +11166,7 @@ def main(argv: list[str] | None = None) -> int:
     load_genres(root)
     fn = {
         "init": cmd_init, "install-hooks": cmd_install_hooks, "status": cmd_status,
-        "open": cmd_open, "reserve": cmd_reserve, "mark": cmd_mark, "merge": cmd_merge, "check": cmd_check, "decision": cmd_decision,
+        "open": cmd_open, "reserve": cmd_reserve, "consolidate": cmd_consolidate, "share": cmd_share, "mark": cmd_mark, "merge": cmd_merge, "check": cmd_check, "checked": cmd_checked, "decision": cmd_decision,
         "job": cmd_job, "sync": cmd_sync, "reviewed": cmd_reviewed,
         "handoff": cmd_handoff, "gate": cmd_gate, "hook": cmd_hook,
         "workflow": cmd_workflow,

@@ -1809,6 +1809,7 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '$s has tracked chang
 git -C $s checkout -q -- K.py
 msg="mark: jig mark K gated removes the gate checkout, untracked files and all"
 mkdir -p $s/venv && printf 'x\n' > $s/venv/x
+( cd $s && $J checked --tier 3 --effort 4 --seconds 1 >/dev/null 2>&1 )
 expect_pass sh -c "$J mark K gated >/dev/null 2>&1 && test ! -e $s && ! git worktree list | grep -q gate-K"
 git commit -qam "K gated"
 msg="open: a job name starting with gate- is refused"
@@ -6585,7 +6586,275 @@ expect_pass sh -c "$J open k2 2>&1 | grep -q 'When you write or change a Propose
 git checkout -q -- .jig/jobs.json 2>/dev/null
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings cheaper_rounds"
+sec_consolidate() {
+export JIG_CONFIG="$T/repos.json"     # never the user's real list
+CO="$T/co"; pcnew "$CO" && mkdir -p docs app/src lib && printf '# Shared\n' > docs/shared.md
+printf 'x\n' > app/src/x.ts && printf 'x\n' > lib/a.py && mkdir -p .jig/specs
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+cspec() {  # cspec <name> <touches> [extra line]: a spec whose ## Touches is that one backticked path
+  printf '# %s\n\nSource: chat %s\n\n## Touches\n- `%s` (the page) and `cmd_x`\n%s\n' "$1" "$1" "$2" "${3:-}" > ".jig/specs/$1.md"; }
+
+msg="consolidate: with no specs waiting it says so and exits 0"
+out=$($J consolidate 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'no waiting specs overlap'" "$out"
+
+cspec a 'docs/shared.md' && cspec b 'docs/**' && cspec c 'app/src/x.ts' && git add -A && git commit -qm specs
+msg="consolidate: three specs, two sharing a page, list as one group of two, with the shared paths"
+out=$($J consolidate 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'group 1: 2 specs' && echo \"\$0\" | grep -q 'a and b share: docs/shared.md, docs/\*\*' && ! echo \"\$0\" | grep -q 'c.md' && ! echo \"\$0\" | grep -q 'group 2'" "$out"
+
+msg="open: a spec in an unanswered group is refused, naming the group and jig consolidate, and nothing is opened"
+out=$($J open A --spec .jig/specs/a.md --owns 'docs/**' 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '.jig/specs/a.md, .jig/specs/b.md' && echo \"\$0\" | grep -q 'jig consolidate' && ! grep -q '\"A\"' .jig/jobs.json" "$out"
+
+msg="consolidate: a Kept separate line on either spec of the pair answers it"
+printf 'Kept separate from a: b rewrites the page after a ships\n' >> .jig/specs/b.md
+out=$($J consolidate 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'no waiting specs overlap' && $J open A --spec .jig/specs/a.md --owns 'docs/**' >/dev/null && git checkout -q -- .jig/jobs.json && git worktree remove --force .git/jig/worktrees/A && git branch -q -D A" "$out"
+git checkout -q -- .jig/specs/b.md
+
+msg="consolidate: one spec carrying both Source lines, the inputs deleted, answers the group"
+git rm -q .jig/specs/a.md .jig/specs/b.md
+printf '# ab\n\nSource: chat a\nSource: chat b\n\n## Touches\n- `docs/shared.md`\n' > .jig/specs/ab.md
+git add -A && git commit -qm "specs: ab from a and b"
+out=$($J consolidate 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'no waiting specs overlap'" "$out"
+
+msg="staging resolve: a report whose spec is in an unanswered group is refused, naming the group"
+mkdir -p .jig/staging && printf -- '---\nstaged: true\ntarget: this\nkind: feedback\nfrom: elsewhere\nchange: new\ndestination: x\nsource: chat r\nstatus: staged\n---\nbody\n' > .jig/staging/r.md
+cspec d 'docs/shared.md § Intro' 'Source: chat r (staged as r.md)'
+out=$($J staging resolve r.md 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '.jig/specs/ab.md, .jig/specs/d.md' && test -f .jig/staging/r.md" "$out"
+msg="staging resolve: with the pair answered it resolves"
+printf -- '- Kept separate from .jig/specs/ab.md: d only renames the term\n' >> .jig/specs/d.md
+expect_pass sh -c "$J staging resolve r.md && test ! -f .jig/staging/r.md"
+git add -A && git commit -qm "spec d"
+
+msg="consolidate: a spec the newest release holds, or a job or note names, isn't waiting"
+git tag v0.1.0 && cspec e 'docs/shared.md' && mkdir -p .jig/handoffs && printf '# Handoff: f\n\nSpec: .jig/specs/f.md\n' > .jig/handoffs/f-2026-01-01.md
+cspec f 'docs/shared.md'
+out=$($J consolidate 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'no waiting specs overlap'" "$out"
+rm .jig/specs/e.md .jig/specs/f.md .jig/handoffs/f-2026-01-01.md
+
+msg="consolidate: a job opened as ./.jig/specs/x.md names that spec; a folder ending in / covers what is under it; an indented Kept separate line answers"
+cspec x 'app/' && $J open X --spec ./.jig/specs/x.md --owns 'app/**' >/dev/null 2>&1
+cspec y 'app/src/x.ts' && cspec z 'app/src/' && cspec w 'app/src/x.ts' $'  - Kept separate from y: later\n  - Kept separate from z: later'
+out=$($J consolidate 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'group 1: 2 specs' && echo \"\$0\" | grep -q 'y and z share: app/src/x.ts' && ! echo \"\$0\" | grep -qE '(x|w)\.md|group 2'" "$out"
+git checkout -q -- .jig/jobs.json && git worktree remove --force .git/jig/worktrees/X && git branch -q -D X && rm .jig/specs/[xyzw].md
+
+msg="open: a Touches path in neither owns, shares nor common is warned about, by name; a § term counts as its page"
+cspec g 'app/src/x.ts' && cspec h 'lib/a.py § Load' 'Kept separate from g: no overlap' && git add -A && git commit -qm "specs g h"
+out=$($J open G --spec .jig/specs/g.md --shares 'docs/**' 2>&1)
+out2=$($J open H --spec .jig/specs/h.md --owns 'lib/**' 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep 'warning' | grep -q 'app/src/x.ts' && ! echo \"\$0\" | grep 'warning' | grep -q cmd_x && ! echo \"\$1\" | grep -q warning" "$out" "$out2"
+git add -A && git commit -qm "open G H"
+printf 'y\n' >> .git/jig/worktrees/G/app/src/x.ts    # jig check judges the change not yet committed
+msg="share: a path another open job owns is refused, the board unchanged"
+expect_refuse $J share G lib/a.py
+msg="share: adds the path to the job's shares, and jig check in the job then passes"
+before=$(cd .git/jig/worktrees/G && $J check >/dev/null 2>&1; echo $?)
+$J share G app/src/x.ts >/dev/null && git add -A && git commit -qm "share G" >/dev/null
+expect_pass sh -c "test $before != 0 && grep -q 'app/src/x.ts' .jig/jobs.json && cd .git/jig/worktrees/G && $J check"
+
+# Metarepo: two pararepo proposals, consolidated into one job there, merged and released.
+PM="$T/pm"; pcnew "$PM" && git add -A && git commit -qm init
+$J init --meta --name pm >/dev/null && git add -A && git commit -qm meta-init && $J release >/dev/null
+PA="$T/pa"; pcnew "$PA" && mkdir -p api && printf 'x=1\n' > api/a.py
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para pm --location "$PM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
+mkdir -p .jig/specs && for s in one two; do printf '# %s\n\n## Decisions\n' $s > .jig/specs/$s.md && $J propose .jig/specs/$s.md $s >/dev/null; done
+git add -A && git commit -qm "specs: one two"
+cd "$PM"
+for s in one two; do
+  git switch -q propose/pa-$s && mkdir -p docs/products && printf '# %s\n' $s > docs/products/$s.md \
+    && git add -A && git commit -qm "PRODUCTS: $s" && $J reviewed >/dev/null && git switch -q main
+done
+# A release needs an entry file changed: proposal one also adds a glossary term and its line.
+git switch -q propose/pa-one && printf '\n### one\n' >> README.md && ulog '- one' \
+  && git add -A && git commit -qm "GLOSSARY: one" && $J reviewed >/dev/null && git switch -q main
+mkdir -p .jig/specs && printf '# m\n\nSource: pa one\nSource: pa two\n\n## Touches\n- `docs/products/**`\n\n## Proposals\n- `propose/pa-two`\n- `propose/pa-one`\n' > .jig/specs/m.md
+git add -A && git commit -qm "TOOL: spec m"
+msg="metarepo: open on a spec listing proposals: the kickoff says to merge each into the job's branch, in the spec's order"
+out=$($J open M --spec .jig/specs/m.md --owns 'docs/products/**' 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'Run .jig sync., then merge each proposal into M in this order: propose/pa-two, propose/pa-one'" "$out"
+git add -A && git commit -qm "TOOL: open M"
+(cd .git/jig/worktrees/M && $J sync && git merge -q --no-ff --no-edit propose/pa-two && git merge -q --no-ff --no-edit propose/pa-one \
+  && $J reviewed >/dev/null) >/dev/null 2>&1
+git merge -q --no-ff --no-edit M >/dev/null 2>&1 && $J release >/dev/null 2>&1
+git branch -q -D propose/pa-one propose/pa-two
+cd "$PA"
+msg="metarepo: after the release, the pararepo's sync reports both proposals released"
+out=$($J sync 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'proposal propose/pa-one (.jig/specs/one.md): released by v0.2.0' && echo \"\$0\" | grep -q 'proposal propose/pa-two (.jig/specs/two.md): released by v0.2.0'" "$out"
+}
+
+# ---------------------------------------------------------------- check levels: --full, jig checked, batches, the Stop hook's skip
+sec_check_levels() {
+CL="$T/cl"; pcnew "$CL" && printf 'dist/\n' > .gitignore && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+msg="check levels: the template check.sh runs only its quick part with no argument"
+out=$(bash .jig/scripts/check.sh 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -qx 'check: quick' && ! echo \"\$0\" | grep -q 'check: full'" "$out"
+msg="check levels: with --full it runs the quick part, then the complete one"
+out=$(bash .jig/scripts/check.sh --full 2>&1)
+expect_pass sh -c "test \"\$(echo \"\$0\" | tr '\n' ' ')\" = 'check: quick check: full '" "$out"
+msg="check levels: the template's header no longer says jig gate runs the suite"
+expect_refuse grep -q 'jig gate. runs it' .jig/scripts/check.sh
+$J open K >/dev/null && git add -A && git commit -qm "open K"
+( cd .git/jig/worktrees/K && printf 'x=1\n' > k.py && git add -A && git commit -qm k && $J reviewed >/dev/null \
+  && $J handoff >/dev/null 2>&1 && foldin && git add -A && git commit -qm "note K" )
+s=.git/jig/worktrees/gate-K
+msg="mark: gated with no gate checkout at all is refused, naming jig gate and jig checked"
+out=$($J mark K gated 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'no gate checkout for K: .jig gate K.*jig checked' && grep -q '\"state\": \"claimed\"' .jig/jobs.json" "$out"
+msg="gate: prints check.sh --full in the scratch checkout, the check step's tier and effort, jig checked and jig mark gated"
+out=$($J gate K 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -qF '(cd $s && ./.jig/scripts/check.sh --full)' && echo \"\$0\" | grep -q 'check step runs it: tier 3, effort 4' && echo \"\$0\" | grep -qF 'checked --tier 3 --effort 4 --seconds <s>' && echo \"\$0\" | grep -q 'jig mark K gated'" "$out"
+msg="gate: a repo override of the check step shows its numbers"
+setwf '{"check": {"tier": 2, "effort": 3}}'
+out=$($J gate K 2>&1); git checkout -q -- .jig/config.json
+expect_pass sh -c "echo \"\$0\" | grep -q 'tier 2, effort 3' && echo \"\$0\" | grep -qF 'checked --tier 2 --effort 3'" "$out"
+msg="mark: gated with no jig checked record for the gate checkout's commit is refused, naming jig checked"
+out=$($J mark K gated 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig checked' && test -d $s" "$out"
+msg="mark: a record for another (older) commit is refused too"
+$J checked --tier 3 --effort 4 --seconds 1 >/dev/null 2>&1
+expect_refuse $J mark K gated
+msg="checked: records HEAD, the numbers, the seconds and the date in the common git dir's jig/checked.log"
+h=$(git -C $s rev-parse HEAD)
+( cd $s && $J checked --tier 3 --effort 4 --seconds 7 >/dev/null 2>&1 )
+expect_pass grep -qx "$h	3	4	7	$(date +%Y-%m-%d)" .git/jig/checked.log
+msg="checked: numbers that differ from the check step's warn, naming both"
+out=$(cd $s && $J checked --tier 2 --effort 4 --seconds 7 2>&1 >/dev/null)
+expect_pass sh -c "echo \"\$0\" | grep -q 'warning: recorded tier 2, effort 4; the check step is tier 3, effort 4'" "$out"
+msg="mark: after jig checked in the checkout, gated passes and removes the checkout"
+expect_pass sh -c "$J mark K gated >/dev/null 2>&1 && test ! -e $s"
+msg="status: prints the last complete check's seconds and date"
+out=$($J status 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q \"last complete check: 7s on $(date +%Y-%m-%d)\"" "$out"
+git add -A && git commit -qm "K gated" && $J merge K >/dev/null 2>&1
+msg="merge: a job gated with its own check has no Check trailer"
+expect_refuse sh -c "git log -1 --format=%B | grep -q '^Check:'"
+$J checked --tier 3 --effort 4 --seconds 2 >/dev/null 2>&1      # trunk, checked after K
+# A release protocol, so jig release gets as far as its refusals.
+sed -i.bak '/^# TODO: release protocol/d' .jig/scripts/release.sh && rm .jig/scripts/release.sh.bak
+printf 'mkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/release.sh
+board "b['release'] = {'artifacts': ['dist/app-*.zip']}" && git add -A && git commit -qm "release protocol"
+$J checked --tier 3 --effort 4 --seconds 2 >/dev/null 2>&1
+for j in L M N; do $J open $j >/dev/null; done; git add -A && git commit -qm "open L M N"
+for j in L M N; do
+  ( cd .git/jig/worktrees/$j && printf 'x=1\n' > $j.py && { [ $j != M ] || printf 'x\n' > broken; } && git add -A && git commit -qm $j \
+    && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && foldin && git add -A && git commit -qm "note $j" )
+done
+msg="mark: gated --batch passes with no record and writes check: batch to the job's entry"
+expect_pass sh -c "$J mark L gated --batch >/dev/null 2>&1 && python3 -c \"import json,sys; sys.exit(json.load(open('.jig/jobs.json'))['L'].get('check') != 'batch')\""
+git add -A && git commit -qm "L gated" && $J merge L >/dev/null 2>&1
+msg="merge: a job gated --batch merges with a Check: batch trailer"
+expect_pass sh -c "git log -1 --format='%(trailers:key=Check,valueonly)' | grep -qx batch"
+for j in M N; do $J mark $j gated --batch >/dev/null && git add -A && git commit -qm "$j gated" && $J merge $j >/dev/null 2>&1; done
+msg="release: refuses while merges since the last checked trunk commit carry Check: batch, naming them"
+out=$($J release --version 1.0.0 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"3 merges since the last complete check.*merge L.*merge M.*merge N.*check.sh --full\" && ! git tag | grep -q ." "$out"
+msg="checked --trace: lists the merges since the last checked trunk commit, oldest first"
+out=$($J checked --trace 'test ! -f broken' 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -A3 'oldest first' | sed -n '2,4p' | sed 's/^ *[0-9a-f]* //' | tr '\n' ' ' | grep -qx 'merge L merge M merge N '" "$out"
+msg="checked --trace: the printed first-parent bisect, running only the failing command, names the second merge"
+bis=$(echo "$out" | sed -n 's/^  \(git bisect .*\)$/\1/p' | grep -v reset)
+first_bad=$(eval "$bis" 2>&1 | sed -n 's/^\([0-9a-f]\{40\}\) is the first bad commit$/\1/p'); git bisect reset >/dev/null 2>&1
+expect_pass sh -c "git log -1 --format=%s $first_bad | grep -qx 'merge M'"
+msg="release: after check.sh --full and jig checked on trunk HEAD, it passes"
+bash .jig/scripts/check.sh --full >/dev/null && $J checked --tier 3 --effort 4 --seconds 3 >/dev/null 2>&1
+expect_pass sh -c "$J release --version 1.0.0 >/dev/null 2>&1 && git tag | grep -qx v1.0.0"
+msg="release: --force still overrides the batch's owed check"
+$J open O >/dev/null; git add -A && git commit -qm "open O"
+( cd .git/jig/worktrees/O && printf 'x=1\n' > O.py && git add -A && git commit -qm O && $J reviewed >/dev/null \
+  && $J handoff >/dev/null 2>&1 && foldin && git add -A && git commit -qm "note O" )
+$J mark O gated --batch >/dev/null && git add -A && git commit -qm "O gated" && $J merge O >/dev/null 2>&1
+expect_refuse $J release --version 1.1.0
+expect_pass sh -c "$J release --version 1.1.0 --force >/dev/null 2>&1 && git tag | grep -qx v1.1.0"
+
+# The Stop hook, against a check that counts its own runs.
+HK="$T/cl-hook"; pcnew "$HK" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+printf '#!/bin/sh\nprintf x >> "%s"\n' "$T/cl-runs" > .jig/scripts/check.sh && git add -A && git commit -qm "counting check"
+stop() { CLAUDE_PROJECT_DIR="$HK" bash "$P/../scripts/check.sh" </dev/null >/dev/null 2>&1; }
+runs() { wc -c < "$T/cl-runs" 2>/dev/null | tr -d ' ' || echo 0; }
+printf 'staged\n' > s.txt && git add s.txt && printf 'unstaged\n' >> s.txt
+before=$(git diff --cached; git ls-files -s)
+msg="stop hook: two stops with no change between them run the check once"
+stop; stop
+expect_pass test "$(runs)" = 1
+msg="stop hook: the real index is left as it was"
+expect_pass test "$(git diff --cached; git ls-files -s)" = "$before"
+msg="stop hook: a touched file runs it again, an untracked one too"
+printf 'more\n' >> s.txt; stop; printf 'new\n' > u.txt; stop
+expect_pass test "$(runs)" = 3
+msg="stop hook: the pass is keyed under the worktree's git dir"
+expect_pass test -s .git/jig/check-passed
+msg="stop hook: each run's level, seconds and exit code are appended to the git dir's jig/check.log"
+expect_pass sh -c "test \"\$(wc -l < .git/jig/check.log | tr -d ' ')\" = 3 && tail -1 .git/jig/check.log | grep -qE '	quick	[0-9]+	0\$'"
+git add -A && git commit -qm "all in"; rm -f .git/jig/check-passed
+msg="stop hook: a change to only .jig/jobs.json or .jig/staging/ runs nothing"
+printf '{"x": {}}\n' > .jig/jobs.json && printf 'x\n' > .jig/staging/f.md; stop
+expect_pass test "$(runs)" = 3
+git checkout -q -- .jig/jobs.json; rm .jig/staging/f.md
+msg="stop hook: a failing check blocks the stop and records no pass, so the next stop runs it again"
+printf '#!/bin/sh\nprintf x >> "%s"\nexit 2\n' "$T/cl-runs" > .jig/scripts/check.sh
+CLAUDE_PROJECT_DIR="$HK" bash "$P/../scripts/check.sh" </dev/null >/dev/null 2>&1; rc=$?; stop
+expect_pass sh -c "test $rc = 2 && test \"\$(wc -c < '$T/cl-runs' | tr -d ' ')\" = 5 && tail -1 .git/jig/check.log | grep -qE '	2\$'"
+git checkout -q -- .jig/scripts/check.sh
+msg="stop hook: in a linked worktree, the pass is keyed under that worktree's own git dir"
+wt "$T/cl-hook-wt" -b side && stop_wt() { CLAUDE_PROJECT_DIR="$T/cl-hook-wt" bash "$P/../scripts/check.sh" </dev/null >/dev/null 2>&1; }
+stop_wt; stop_wt
+expect_pass sh -c "test -s .git/worktrees/cl-hook-wt/jig/check-passed && test \"\$(cat .git/worktrees/cl-hook-wt/jig/check-passed)\" != \"\$(cat .git/jig/check-passed 2>/dev/null)\" && test \"\$(wc -c < '$T/cl-runs' | tr -d ' ')\" = 6"
+msg="stop hook: an edit inside a submodule is a change: it runs again"
+SUB="$T/cl-sub"; mkdir -p "$SUB" && (cd "$SUB" && git init -q -b main && git config user.email t@t && git config user.name t && printf 'a\n' > a.c && git add -A && git commit -qm sub)
+git -c protocol.file.allow=always submodule add -q "$SUB" lib >/dev/null 2>&1 && git commit -qm "lib" >/dev/null 2>&1
+n0=$(wc -c < "$T/cl-runs" | tr -d ' '); stop; stop; printf 'broken\n' >> lib/a.c; stop
+expect_pass test "$(wc -c < "$T/cl-runs" | tr -d ' ')" = "$((n0 + 2))"
+
+msg="update: lists a .jig/scripts/check.sh that never reads --full as a repo file to review"
+UQ="$T/cl-up"; pcnew "$UQ" && printf '#!/bin/sh\nexit 0\n' > .jig/scripts/check.sh && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+out=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '.jig/scripts/check.sh: never reads --full: split it into a quick part'" "$out"
+msg="update: the template's check.sh, which reads --full, is not listed"
+cp "$P/jig/scripts/check.sh" .jig/scripts/check.sh && git commit -qam "two levels"
+expect_refuse sh -c "$UP 2>&1 | grep -q 'never reads --full'"
+}
+
+# ---------------------------------------------------------------- the SessionStart role line
+sec_role_line() {
+SS="$P/../scripts/session-start.sh"
+# role <dir>: the hook's output for each source, one per line; fails on any nonzero exit
+role() { for src in startup resume compact; do
+  printf '{"source": "%s"}' "$src" | CLAUDE_PROJECT_DIR="$1" bash "$SS" || echo "EXIT $?"; done; }
+fsnap() { (cd "$1" && git status --porcelain --ignored; find .git -type f | sort | xargs shasum 2>/dev/null); }
+mkdir -p "$T/rl-none" && (cd "$T/rl-none" && git init -q -b main)
+msg="role line: a repo with no .jig/ prints nothing, from every source"
+expect_pass test -z "$(role "$T/rl-none")"
+RO="$T/rl"; pcnew "$RO" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+msg="role line: no open job and nothing staged prints nothing"
+expect_pass test -z "$(role "$RO")"
+printf -- '---\nstaged: true\n---\n' > .jig/staging/x.md
+msg="role line: on trunk with a staged file, one line naming /jig:hubnode, from every source"
+out=$(role "$RO")
+expect_pass sh -c "test \"\$(echo \"\$0\" | grep -c 'Run /jig:hubnode before anything else')\" = 3 && ! echo \"\$0\" | grep -q EXIT" "$out"
+rm .jig/staging/x.md
+$J open K >/dev/null && git add -A && git commit -qm "open K"
+msg="role line: on trunk with an open job, it names /jig:hubnode"
+out=$(role "$RO")
+expect_pass sh -c "test \"\$(echo \"\$0\" | grep -c '1 open job: this session is the hubnode. Run /jig:hubnode before anything else.')\" = 3" "$out"
+msg="role line: in the job's worktree, it names /jig:subnode and the job"
+out=$(role "$RO/.git/jig/worktrees/K")
+expect_pass sh -c "test \"\$(echo \"\$0\" | grep -c 'subnode for job K. Run /jig:subnode before anything else.')\" = 3" "$out"
+msg="role line: it writes no file, in the trunk checkout or the worktree"
+b=$(fsnap "$RO"); role "$RO" >/dev/null; role "$RO/.git/jig/worktrees/K" >/dev/null
+expect_pass test "$(fsnap "$RO")" = "$b"
+msg="role line: the hook is registered for startup, resume and compact"
+expect_pass sh -c "python3 -c \"import json,sys; h=json.load(open('$P/../hooks/hooks.json'))['hooks']['SessionStart'][0]; sys.exit(not (h['matcher']=='startup|resume|compact' and 'session-start.sh' in h['hooks'][0]['command']))\""
+}
+
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file
