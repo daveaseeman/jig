@@ -4633,15 +4633,19 @@ def cmd_decision(root: Path, args) -> int:
 
 SELF = "."     # this repo, in a page key
 META_KEY = "meta"   # a pararepo's metarepo, in a page key
-# The page in parentheses holds no blank or parenthesis, so an answer may hold both.
-PAIR_LINE = re.compile(r"^- \[[ xX]\] (\S+) vs (\S+) § (\S+) \(([^()\s]+)\): (.*)$")
+# The pointer in parentheses is a path with no blank or parenthesis, then for a glossary term
+# ` § <term>` with no parenthesis, so an answer may hold both.
+PAIR_LINE = re.compile(r"^- \[[ xX]\] (\S+) vs (\S+) § (\S+) \(([^()\s]+(?: § [^()]+)?)\): (.*)$")
 PAIR_SHAPED = re.compile(r"^- \[.\] \S+ vs \S+ § ")
 UNREAD = "not read for peers"
 
 
 # `Touches: none — <reason>`: an entry that rules on no page or term, such as a rule for the whole
-# repo. The whole line, so a reason may hold commas; it peers with nothing.
-TOUCHES_NONE = re.compile(r"none\b\s*[—–-]?\s*(.*)$")
+# repo. The whole line, so a reason may hold commas; it peers with nothing. A line that starts
+# with the word none in any other shape is an attempt at it, refused with this form.
+NONE_ATTEMPT = re.compile(r"`?none\b", re.I)
+TOUCHES_NONE = re.compile(r"none (?:—|-) (\S.*)$")
+NONE_FORM = "`Touches: none — <reason>`"
 
 
 def touches_line(block: str) -> str | None:
@@ -4653,22 +4657,41 @@ def touches_line(block: str) -> str | None:
 
 
 def touches_none(block: str) -> str | None:
-    """An entry's reason when its Touches line is `none — <reason>` (empty when it gives none);
-    None for any other line, or no line."""
+    """An entry's reason when its Touches line starts with the word none: the reason of
+    `none — <reason>`, or empty when the line has any other shape. None for any other line."""
     line = touches_line(block)
-    m = TOUCHES_NONE.match(line.strip("`").strip()) if line is not None else None
-    return m.group(1).strip().rstrip(".").strip() if m else None
+    if line is None or not NONE_ATTEMPT.match(line):
+        return None
+    m = TOUCHES_NONE.match(line)
+    return m.group(1).strip().rstrip(".").strip() if m else ""
+
+
+def pointer_shaped(piece: str) -> bool:
+    """Whether a comma-separated piece of a Touches line is a pointer: a path, no blank in it,
+    ending .md, then perhaps ` § <term>`."""
+    page, _ = pointer_term(piece.strip().strip("`").strip())
+    return bool(page) and " " not in page and page.endswith(".md")
 
 
 def entry_touches(block: str) -> list[str] | None:
     """The pointers on an entry's `Touches:` line, the line right under its status line; None
-    when it has no such line, and none for `Touches: none — <reason>`."""
+    when it has no such line, and none for a line starting with the word none. A term may hold
+    a comma: a piece after a term's that is no pointer joins it. A term's pointer is written
+    `<page> § <term>`, the form a pair line names it in."""
     line = touches_line(block)
     if line is None:
         return None
     if touches_none(block) is not None:
         return []
-    return [p for p in (x.strip().strip("`").strip().rstrip(".") for x in line.split(",")) if p]
+    out: list[str] = []
+    for x in line.split(","):
+        x = x.strip().strip("`").strip()
+        if out and "§" in out[-1] and x and not pointer_shaped(x) and not NONE_ATTEMPT.match(x):
+            out[-1] += ", " + x
+        else:
+            out.append(x)
+    out = [p.rstrip(".").strip() for p in out if p]
+    return [f"{pg} § {t}" if "§" in p else p for p in out for pg, t in [pointer_term(p)]]
 
 
 def pointer_term(path: str) -> tuple[str, str]:
@@ -4939,6 +4962,9 @@ def touched_term(path: str, term: str, repo: str, cache: Path | None, staged: bo
         return f"names {repo[1:]}, which is no repo jig knows here"
     if path != GLOSSARY or not term:
         return f"is no glossary term: § names a term of {GLOSSARY}, `{GLOSSARY} § <term>`"
+    if "(" in term or ")" in term:
+        # A pair line names the pointer in parentheses: a term holding one can't be read back.
+        return "is a term with a parenthesis, which a pointer can't name: name the page"
     if repo == META_KEY:
         if cache is None:
             return ""
@@ -4974,10 +5000,10 @@ def touches_problems(old: str, new: str, prefix: str, trunk: str, staged: bool) 
         reason = touches_none(e["block"])
         if reason is not None:
             if not re.search(r"\w", reason):
-                out.append(f"M2 {at} touches none and says no why: `Touches: none — <reason>` "
-                           f"({DIR}/RULES.md, Decision log)")
-            elif re.search(r"(^|[\s,])[\w./:-]+\.md\b", reason):
-                out.append(f"M2 {at} mixes none with pages: `none — <reason>` is the whole line, "
+                out.append(f"M2 {at} touches none in no shape jig reads: write it {NONE_FORM}, "
+                           f"an em dash or ` - ` before the reason ({DIR}/RULES.md, Decision log)")
+            elif any(pointer_shaped(x) for x in reason.split(",")):
+                out.append(f"M2 {at} mixes none with pages: {NONE_FORM} is the whole line, "
                            f"or name only the pages")
             continue
         if not ptrs:
@@ -4990,8 +5016,8 @@ def touches_problems(old: str, new: str, prefix: str, trunk: str, staged: bool) 
             repo, path = split_pointer(p, names)
             path, term = pointer_term(path)
             docs = path.startswith("docs/") and path.endswith(".md")
-            if TOUCHES_NONE.match(p) and not docs:
-                why = "is no docs page: `none — <reason>` is the whole line, never one of its pointers"
+            if NONE_ATTEMPT.match(p) and not docs:
+                why = f"is no docs page: {NONE_FORM} is the whole line, never one of its pointers"
             elif term or "§" in p:
                 why = touched_term(path, term, repo, cache, staged)
             elif repo.startswith("?"):
@@ -8960,7 +8986,7 @@ def cmd_update(root: Path, args) -> int:
     review = files_to_review(root, plan, here.parent / "AGENTS.md", arriving)
     review += home_findings(root, plan, new_board, board_at, [f for f, _ in review])
     review += [(LOG, f"{e} has no Touches line: add one under its status line, naming the pages "
-                f"it touches ({DIR}/RULES.md, Decision log)") for e in untouched_entries(root, trunk)]
+                f"it touches, a term as `{GLOSSARY} § <term>`, or {NONE_FORM} ({DIR}/RULES.md, Decision log)") for e in untouched_entries(root, trunk)]
     review += superseded_kept(root)
     review += project_review(root, files, [f for f, _ in review])
     have_ignores = {l.strip() for l in ignore.read_text().splitlines()} if ignore.exists() else set()

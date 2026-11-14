@@ -659,9 +659,11 @@ lists each one to backfill.
 Not every decision rules on a page. One that rules on a term, such as how products are named,
 names it in the glossary: `docs/glossary.md § <term>` (`<meta>/docs/glossary.md § <term>` from
 a pararepo), the term a `## <term>` heading or a table row there, matched whole. A genre's
-term is its glossary heading. `§` names a glossary term only, never a heading of another page.
-One that rules on no page and no term, such as a rule for the whole repo, says so as the
-whole line: `Touches: none — <reason>`. The review reads the reason.
+term is its glossary heading. `§` names a glossary term only, never a heading of another page,
+and a term holding a parenthesis can't be named. A term may hold a comma: what follows it up
+to the next pointer is the term's. One that rules on no page and no term, such as a rule for
+the whole repo, says so as the whole line: `Touches: none — <reason>`, with an em dash or
+` - `. The review reads the reason.
 
 **The rule sentence.** The body opens with what the decision rules, as *When <situation>,
 <outcome>.*, or *Always, <outcome>.* Two entries that contradict each other govern one
@@ -735,7 +737,7 @@ entry an older log still holds, to remove.
 line and date, an accepted entry's who, supersedes links that resolve (to an entry in the log,
 or in trunk's history of it; a shallow clone, which can't say, passes them), one entry per id,
 that a release or `## Unreleased` holds accepted entries only, and that an entry added or
-changed has a `Touches:` line whose every page is there (M2); and the released sections.
+changed has a `Touches:` line whose every page and glossary term is there, or `none — <reason>` (M2); and the released sections.
 On a branch, the log is judged from where the branch left trunk, as M3 is, so a later commit
 may correct an earlier one as their squash would: a section is frozen once trunk has it.
 `jig release` renames `## Unreleased` to the version's heading and adds an empty one above it.
@@ -918,7 +920,7 @@ bump with the term's new home, `<meta>/docs/glossary.md § <term>`.
 | Gate | Refuses |
 |---|---|
 | M1 | a source file outside `.jig/` in the metarepo |
-| M2 | in every repo, a `.jig/decisions.md` entry with a status in its heading, no status line (`Accepted (who, YYYY-MM-DD).`, `Open (YYYY-MM-DD).`, `Proposed (YYYY-MM-DD).`), a supersedes link to no entry in the log or in trunk's history of it, an id used twice, or an open or proposed entry outside `## Open`, or an entry added or changed with no `Touches:` line, or one naming what is no docs page there, a `§` that is no term of that glossary, or `none` with no reason or beside pages (Decision log) |
+| M2 | in every repo, a `.jig/decisions.md` entry with a status in its heading, no status line (`Accepted (who, YYYY-MM-DD).`, `Open (YYYY-MM-DD).`, `Proposed (YYYY-MM-DD).`), a supersedes link to no entry in the log or in trunk's history of it, an id used twice, or an open or proposed entry outside `## Open`, or an entry added or changed with no `Touches:` line, or one naming what is no docs page there, a `§` that is no term of that glossary, or a `none` line not written `none — <reason>`, or beside pages (Decision log) |
 | M3 | an entry file changed without a line or entry in `.jig/decisions.md` (of a `README.md` still listed, only its `## Glossary` section), judged on the branch since it left trunk: a line an earlier commit on the branch added covers this one, and a commit that drops the branch's only line is refused |
 | M4 | a commit on trunk that isn't a merge (jig's own files under `.jig/` excepted, but not `.jig/decisions.md`: a decision is reviewed work); a detached HEAD at trunk, or behind it, is trunk |
 | M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes and the rows they add to `.jig/ledgers/DEFERRED.md` (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |

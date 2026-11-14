@@ -5265,6 +5265,28 @@ msg="touches terms M2: a missing page is still refused"
 expect_refuse m2 '### D-001 points
 Accepted (owner, 2026-11-13).
 Touches: docs/features/gone.md'
+msg="touches terms M2: a reason may name a file in prose"
+expect_pass m2 '### D-001 points
+Accepted (owner, 2026-11-13).
+Touches: none — how each index.md is laid out'
+msg="touches terms M2: a reason naming a root document is no page beside none (the root-document check still names it)"
+ulog '### D-001 points
+Accepted (owner, 2026-11-13).
+Touches: none — how AGENTS.md is written' && git add -A; out=$($J check --staged 2>&1); git reset -q; git checkout -q -- .jig/decisions.md
+expect_pass sh -c "! echo \"\$0\" | grep -q '^M2 ' && echo \"\$0\" | grep -q 'names AGENTS.md, a root document'" "$out"
+msg="touches terms M2: none in another shape is refused, naming the form"
+for t in 'none: whole repo' '`none` — x' 'None — x'; do
+  ulog "### D-001 points
+Accepted (owner, 2026-11-13).
+Touches: $t" && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
+  expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'write it \`Touches: none — <reason>\`'" "$out"
+done
+msg="touches terms M2: a term holding a comma is one term, and the pointer after it another"
+printf '\n## red, green\n\nTwo colours.\n' >> docs/glossary.md
+expect_pass m2 '### D-001 colours
+Accepted (owner, 2026-11-13).
+Touches: docs/glossary.md § red, green, docs/features/pay.md'
+git checkout -q -- docs/glossary.md
 git switch -q main && ulog '### D-006 old
 Accepted (owner, 2026-11-13).
 
@@ -5298,10 +5320,10 @@ expect_pass sh -c "echo \"\$0\" | grep -qx 'No peers.'" "$out"
 msg="touches terms: --peers on a none entry says it touches no page, and why"
 out=$($J decision D-005 --peers 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -qF 'D-005 touches no page (the whole repo, really), so it has no peers.'" "$out"
-msg="touches terms update: lists the entry with no line, not the one that touches none"
+msg="touches terms update: lists the entry with no line, not the one that touches none, nor those on a term"
 out=$($UP 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -q 'D-006 old has no Touches line' && ! echo \"\$0\" | grep -q 'D-005'" "$out"
-$J open tj --branch b-tj >/dev/null && git add -A && git -c core.hooksPath=/dev/null commit -qm "TOOL: open tj"
+expect_pass sh -c "echo \"\$0\" | grep -q 'D-006 old has no Touches line' && ! echo \"\$0\" | grep -qE 'D-00[1-5]'" "$out"
+for j in tj tk; do $J open $j --branch b-$j >/dev/null && git add -A && git -c core.hooksPath=/dev/null commit -qm "TOOL: open $j"; done
 cd .git/jig/worktrees/b-tj && ulog '### D-?nz none rules
 Accepted (owner, 2026-11-13).
 Touches: none — another repo-wide rule
@@ -5313,8 +5335,21 @@ Touches: docs/glossary.md § products
 Always, product names are short.' && git add -A && git commit -qm "D-?ny, D-?nz: names" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
 note=$(ls .jig/handoffs/*.md)
 msg="touches terms fold-in: an entry on a term gets a pair line with each entry on it, and the none entry gets none"
-expect_pass sh -c "grep -qxF -- '- [ ] D-?ny vs .jig/decisions.md § D-001 (docs/glossary.md § products): ___' '$note' && grep -qF 'D-?ny vs .jig/decisions.md § D-002' '$note' && ! grep -qF 'D-?nz vs' '$note' && ! grep -qF '§ D-004' '$note'" 
+expect_pass sh -c "grep -qxF -- '- [ ] D-?ny vs .jig/decisions.md § D-001 (docs/glossary.md § products): ___' '$note' && grep -qF 'D-?ny vs .jig/decisions.md § D-002' '$note' && ! grep -qF 'D-?nz vs' '$note' && ! grep -qF '§ D-004' '$note'"
+pcfold && git add -A && git commit -qm "TOOL: note tj"
+cd "$TA/.git/jig/worktrees/b-tk" && ulog '### D-?nk product length
+Accepted (owner, 2026-11-13).
+Touches: docs/glossary.md § products
+
+Always, a product name fits a button.' && git add -A && git commit -qm "D-?nk: length" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 \
+  && pcfold && git add -A && git commit -qm "TOOL: note tk"
 cd "$TA"
+msg="touches terms gate: term pair lines answered agrees pass the gate"
+expect_pass gate_ok tj
+$J merge tj >/dev/null 2>&1
+msg="touches terms gate: a term pair with an entry trunk took after the handoff is refused, naming it"
+out=$($J gate tk 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-tk 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"doesn't answer these pairs\" && echo \"\$0\" | grep -qF 'D-?nk vs .jig/decisions.md § D-00' && echo \"\$0\" | grep -qF '(docs/glossary.md § products)'" "$out"
 TB="$T/tb"; pcnew "$TB" && mkdir -p docs && printf '# Own\n' > docs/own.md && git add -A && git commit -qm init \
   && $J init >/dev/null && git add -A && git commit -qm board
 $J init --para ta --location "$TA" >/dev/null 2>&1 && git add -A && git commit -qm "init --para" && git switch -q -c x
