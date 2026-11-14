@@ -3311,8 +3311,7 @@ sec_removals() {
 RM="$T/rm"; pcnew "$RM" && git add -A && git commit -qm init && $J init --meta --name rm >/dev/null
 printf '\n## Pointers\nThe old app: `po/api/e.py`.\n' >> docs/glossary.md
 ulog '- GLOSSARY: Pointers' && git add -A && git commit -qm "GLOSSARY: Pointers" && $J release >/dev/null
-# main/ beside trunk main (firmware's layout): contract_removals and brought_by read trunk by name.
-RP="$T/rp"; pcnew "$RP" && mkf api/a.py api/b.py main/app.c && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+RP="$T/rp"; pcnew "$RP" && mkf api/a.py api/b.py && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 $J init --para rm --location "$RM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
 msg="removals P2: git mv api/a.py lib/a.py is refused, naming P2 api/a.py"
 mkdir -p lib && git mv api/a.py lib/a.py; out=$(git commit -qm "mv a" 2>&1); rc=$?; undo
@@ -3367,7 +3366,8 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'open job A'" "$out"
 PO="$T/po"; mkdir -p "$PO/.t" && git -C "$JR" archive v0.6.0 plugin/templates | tar -x -C "$PO/.t"
 cd "$PO" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r .t/plugin/templates/jig .jig && cp .t/plugin/templates/AGENTS.md .t/plugin/templates/CLAUDE.md . && rm -rf .t
-mkf api/a.py api/b.py api/c.py api/d.py api/e.py api/f.py && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+# main/ beside trunk main (firmware's layout): update's contract_removals reads trunk by name.
+mkf api/a.py api/b.py api/c.py api/d.py api/e.py api/f.py main/app.c && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 $J init --para rm --location "$RM" --pin v0.1.0 --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
 msg="removals: under v0.6.0's hook a move, a drop, an answered drop and a rowed drop all commit (the bug)"
 mkdir -p lib .jig/specs .jig/ledgers
@@ -6694,7 +6694,7 @@ expect_pass sh -c "echo \"\$0\" | grep -q 'proposal propose/pa-one (.jig/specs/o
 
 # ---------------------------------------------------------------- check levels: --full, jig checked, batches, the Stop hook's skip
 sec_check_levels() {
-# A main/ folder beside trunk main, as firmware has: release's owed-batch refusal reads trunk's merges by name.
+# A main/ folder beside trunk main, as firmware has: release finds trunk's last complete check (last_checked_on) by name.
 CL="$T/cl"; pcnew "$CL" && printf 'dist/\n' > .gitignore && mkf main/app.c && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 msg="check levels: the template check.sh runs only its quick part with no argument"
 out=$(bash .jig/scripts/check.sh 2>&1)
