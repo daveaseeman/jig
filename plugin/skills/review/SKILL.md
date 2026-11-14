@@ -71,10 +71,21 @@ Its job is to find the reason this change is wrong. Its questions:
 A file in `.jig/staging/` is not decided; a finding that rests on one says so.
 
 Don't rerun the full checks: the author ran them and showed the output, and the gate runs them
-again. Run only the narrowest check a specific finding needs (one smoke section, one command),
+again. Never rerun a check the builder's report shows for the same commit. Run only the narrowest check a specific finding needs (one smoke section, one command),
 and say which one and why.
 
 A reviewer that runs jig to test a finding does it in a throwaway repo. There, set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched.
+
+## Recheck
+
+The first review of a job is full. After it, a fix or a sync resolved by hand is rechecked:
+run the subagent at the `recheck` step's settings (`jig workflow`'s `recheck` line), as
+Dispatch says, and give it `git diff <last recorded review>..HEAD` (the commit `jig handoff`
+named when it refused), the previous review's findings, the spec and `AGENTS.md`. It asks:
+does the delta fix what the findings named, and does it break anything they didn't? When the
+diff changes anything the findings didn't name, it widens to a full review at the review
+step's settings, recorded without `--recheck`. A clean `jig sync` needs neither:
+`jig handoff` accepts it as it is.
 
 ## What counts
 
@@ -104,8 +115,9 @@ python3 .jig/jig.py reviewed --tier N --effort N --ran "<model> at <effort>"
 ```
 
 The tier and effort the review ran at, from `jig workflow`'s `review` line, and what its
-first line said it ran on. `jig gate` warns when they fall short of the spec's Workflow
+first line said it ran on. A recheck records `--recheck` and the `recheck` line's numbers. `jig gate` warns when they fall short of the spec's Workflow
 section.
 
-`jig handoff` refuses without a record for that exact commit. Only record a review you
+`jig handoff` refuses without a record for that commit, or for one under it that only a
+clean sync or the note's bookkeeping follows. Only record a review you
 actually ran, and carry its findings into the note's Review heading.

@@ -81,6 +81,14 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
   step's settings to run it and report the output; you read the report. Its brief says to
   wait on a long run as `/jig:verify` says: background, exit notice or pid, never a match.
   The push and publish stay yours, on the owner's word.
+- **recheck**: after a job's first full review, a fix or a sync resolved by hand gets a
+  recheck, not a second full review: the same dispatch at the `recheck` step's settings, on
+  the delta since the last recorded review (`/jig:review`, Recheck). Record it with
+  `jig reviewed --recheck --tier N --effort N --ran "..."`. A clean sync needs none.
+- **Rulings.** A subnode messages you when it writes a `Proposed` entry or meets a question
+  only the owner can answer. Batch those to the owner while the job builds, and send each
+  ruling back before the job's review. Mark no job ready while its own `Proposed` entry has no
+  ruling, unless the owner said to gate it as proposed; `jig gate` warns of each one.
 - **Decide.** Read the review. Blocking findings go back to the session that executed, as
   a fix, at execute's settings — a new one only when that session is gone. Count the
   rounds. After a third fix that leaves a blocking finding, don't start a fourth: run
@@ -111,6 +119,9 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
    Not the job's worktree — the subnode may still be building there. It reports the exit
    code and output; you read it. `jig gate` warns when the review ran weaker than the spec's
    Workflow section: say so to the owner before the merge.
+   A refusal naming pairs the note doesn't answer goes back to the subnode as: add each line
+   to the note's fold-in, ticked and answered, and commit the note alone. No sync, no new
+   review, no new handoff, unless the gate's merge itself needed a hand.
    Its brief says: in any throwaway repo, set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched. Smoke runs need no waiting on each
    other; each uses only its own temp folder. The run's output always goes to
    `$(git rev-parse --git-common-dir)/jig/gate-<name>.out`, named after the scratch checkout
@@ -132,7 +143,9 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
    subject becomes `<ids>: merge <name>`. `: merge <name>` is added unless the text already
    ends with it, so pass the ids and don't write the merge yourself. The merge numbers each
    `D-?<slug>` the job wrote in `.jig/decisions.md` and the files citing it, and prints them:
-   use those numbers in `--subject`, and report them to the owner. A merge that stops on
+   use those numbers in `--subject`, and report them to the owner. It also names each open
+   job holding a later number of a counter the merged job used: tell that job to sync before
+   its next handoff. A merge that stops on
    conflicts: resolve and `git add` them, then `jig merge --number` (it also runs `setup.sh`
    and `derive.sh`), then `git commit`.
 

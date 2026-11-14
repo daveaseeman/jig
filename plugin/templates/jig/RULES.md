@@ -506,8 +506,13 @@ It is answered **agrees**, **narrows: <how>** (one is an exception the other all
 **conflicts: <resolution>**. jig picks the pairs and never judges one; the gate refuses a line
 unanswered, reshaped, answered with another word, or answered conflicts or narrows with nothing
 after it. A peer log jig couldn't read gets a line too, answered by reading it or saying why not.
+The commit hook refuses a note whose pair line has none of the three answers, naming the line,
+so a blank is found when the note is committed, not at the gate.
 The gate finds the pairs again on its merge of trunk, and refuses one the note doesn't answer:
-a job merged since the handoff ruled on the same page, so the job syncs and hands off again.
+a job merged since the handoff ruled on the same page. The job adds each pair it names to the
+note's fold-in, ticked and answered, and commits the note alone: no sync, no new review and no
+new handoff, since the note is bookkeeping the merge doesn't count as a change. It syncs only
+when the gate's merge itself needed a hand.
 
 ## Sync
 
@@ -524,8 +529,13 @@ else stops with the files named, and a person resolves it.
    working alone, pass `--spec`. A chunk that doesn't finish its spec hands off with
    `--partial`. Fill every heading, commit the note with the work, tell the hubnode the job
    and the commit. The note and the review's `.jig/ledgers/DEFERRED.md` rows may be one
-   commit after the reviewed one: a change there that deletes no line doesn't count as a
+   commit after the reviewed one. DEFERRED.md is judged by its net change from the reviewed
+   commit to the branch, not commit by commit: a row edited and restored later deleted
+   nothing, and only a line the net change deletes, one trunk didn't delete, counts as a
    change since the check. A job may hand off several times.
+   The review needn't be HEAD itself. A clean `jig sync` of a reviewed commit hands off with
+   no new `jig reviewed`: the merge carries nothing a reviewer didn't see. A fix, or a sync
+   resolved by hand, is refused, naming the files, until it is rechecked (Workflow).
 2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it sets
    up a **detached scratch checkout of the commit the note names**, with trunk merged in the
    way `jig sync` merges it, and prints the check to run there. It never runs
@@ -550,7 +560,9 @@ else stops with the files named, and a person resolves it.
    2.38 or later), and the job's branch is left as it was. Any other conflict in an append
    file, or one beside a conflict elsewhere, is refused with "`jig sync` the job, then merge":
    the sync resolves the appends as the gate did and stops on anything else. A job whose only
-   conflicts were appends needs no new handoff after it. What the merge touched in shared files goes in that commit's message (`-m`).
+   conflicts were appends needs no new handoff after it. The merge prints each open job
+   holding a later number of a counter the merged job used: that job syncs before its next
+   handoff. What the merge touched in shared files goes in that commit's message (`-m`).
    `--subject <ids>` is the ids the subject leads with, e.g. `D-001, D-002`, for a repo whose
    subjects lead with ids: the subject becomes `<ids>: merge <job>`. `: merge <job>` is added
    unless the text already ends with it, so pass the ids and don't write the merge yourself.
@@ -576,6 +588,7 @@ itself.
 | `bug`: a bug investigation | a fresh context it starts | 2 | 1 | tier no worse than spec's; effort no lower |
 | `execute`: execute, fix | a subnode it starts | 2 | 3 | tier no better than spec's; effort lower |
 | `review` | a subnode, always a fresh context | 2 | 1 | tier no worse than execute's; any effort |
+| `recheck`: a later round's review | a fresh context | review's | review's | nothing |
 | `check`: gate check, release run, survey | a subnode it starts | 3 | 4 | nothing: fixed commands |
 
 Tier 1 is the best model the tool has; a higher number is a lesser model. Effort 0 is the
@@ -593,7 +606,23 @@ records the review step's configured settings (`jig reviewed --tier N --effort N
 "..."`), the handoff note carries them, and `jig gate` warns when they are a worse tier or a
 lower effort than the spec asks. So the warning catches a review recorded without them, or a
 config changed after the spec was written; it can't see a review that actually ran weaker
-than it was set to. A fix goes back to the session that executed. A third round that doesn't converge is a
+than it was set to.
+
+The first review of a job is always full. After it, a round costs what it changed: a fix, or a
+sync resolved by hand, takes a **recheck**, a fresh review of `git diff <last recorded
+review>..HEAD` against the previous findings, at the `recheck` step's settings. Unset,
+`recheck` is whatever `review` is, so a repo that moves review moves recheck with it; a
+`recheck` override wins. `jig reviewed --recheck --tier N --effort N` records it, refused
+unless a full review of the job is on HEAD's first-parent chain. The note carries a
+`Recheck:` line beside `Review:`, and `jig gate` warns when either is below its line in the
+spec (a spec without a `recheck:` line is read against `review:`). A recheck widens to a
+full review when the diff changes anything the findings didn't name.
+
+A `Proposed` entry the job adds or changes is a ruling the owner still owes. The job tells the
+hubnode when it writes one, the hubnode sends it up while the job builds, and `jig gate` warns,
+naming each, but never refuses: the owner may say to gate a job as proposed.
+
+A fix goes back to the session that executed. A third round that doesn't converge is a
 bug in the spec or the approach: investigate it, don't start a fourth.
 
 ## Roadmap
@@ -1100,7 +1129,7 @@ jig check [--staged]        run the rules here
 jig job                    this branch's manifest
 jig decision <id>           a decision entry and its supersedes chain
 jig sync                    merge trunk in, append rule applied; on a pararepo's trunk, the metarepo
-jig reviewed [--tier N --effort N] [--ran text]   record that HEAD has been reviewed, and at what
+jig reviewed [--recheck] [--tier N --effort N] [--ran text]   record that HEAD has been reviewed (or rechecked), and at what
 jig workflow                each step's model tier and effort in effect
 jig handoff [--spec path] [--partial]   write the note for HEAD; --partial: it doesn't finish the spec
 jig roadmap [--write]       the roadmap's states on trunk; --write regenerates ROADMAP.md

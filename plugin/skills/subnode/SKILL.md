@@ -29,6 +29,9 @@ say so and stop: the owner set them, and the hubnode raises a session before bri
   `.jig/decisions.md` (`.jig/RULES.md`, Decision log), which any job may add to. Write a new
   decision as `### D-?<slug> <title>`; `jig merge` numbers it. To change an accepted entry
   trunk has, supersede it with a new accepted entry and remove the old one in the same commit.
+- When you write or change a `Proposed` entry, or meet a question only the owner can answer,
+  message the hubnode then, with the rule sentence and the alternative you rejected, and keep
+  building. A ruling that waits for the gate costs a round.
 - Keep merges mechanical: append rather than edit shared prose; new routes in your own
   handler registered by one line; new tests in your own file; a new fixture as a new file.
 - Commit often. The hook runs the rules; when it refuses, fix the cause. Never `--no-verify`.
@@ -44,7 +47,8 @@ is done.
 2. Have the diff adversarially reviewed. If a hubnode started you, report the commit and
    wait: it runs the review at the review step's settings and sends blocking findings back
    here as fixes. Working alone, `/jig:review`. Fix anything blocking.
-3. `jig handoff --spec .jig/specs/<task>.md`. A chunk that doesn't finish its spec hands off
+3. `jig handoff --spec .jig/specs/<task>.md`. A clean `jig sync` since the review needs no new
+   one; a fix or a hand-resolved sync is rechecked (`/jig:review`, Recheck) first. A chunk that doesn't finish its spec hands off
    with `--partial`, so the roadmap doesn't count the spec complete. The review is already recorded: by the hubnode
    when it ran it, by `/jig:review` when you did. Never run a bare `jig reviewed` after the
    hubnode's review — it overwrites the tier and effort the hubnode recorded.
