@@ -54,7 +54,7 @@
   },
   "derive-candidates": {
     "spec": ".jig/specs/bug-derive-candidates.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
