@@ -24,7 +24,7 @@
   },
   "buffer-row-close": {
     "spec": ".jig/specs/bug-buffer-row-close.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
