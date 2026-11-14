@@ -188,8 +188,10 @@ not. The hook refuses an added line in a page under `docs/`, in `.jig/decisions.
 metarepo's entry file that names `.jig/specs/`, `.jig/handoffs/` or `.jig/roadmap.md`, or a
 scope id the roadmap has in code quotes (`` `alpha/screen` ``), and names the line; a moved
 page's old lines aren't new. What can be product text too, it can't judge: `ROADMAP.md`, a
-bare scope id ("the v1/api endpoint"), a phase name, prose like "phase 3" or "spec step 6".
-`jig survey` lists those. The hook also refuses a `roadmap.md` under `docs/` or matching a
+bare scope id ("the v1/api endpoint"), a phase name, prose like "phase 3" or "spec step 6", a
+`## Status` heading. Nothing searches for those, at commit or after: words like these are often
+the product's own (a status call, a three-phase motor, a launch configuration), so whoever
+writes the line judges it, and the spec, fold-in and review ask. The hook also refuses a `roadmap.md` under `docs/` or matching a
 metarepo's `entry_files`: the roadmap is `.jig/roadmap.md`, and the root `ROADMAP.md` is
 exempt only where `.jig/roadmap.md` exists.
 
@@ -221,12 +223,16 @@ current, is the skeleton):
    `- Rows are at least 44px — the touch-target minimum; held by test_touch_targets.` An
    entry without a why and a holder is description, and goes in the body or nowhere.
 
-A page has no `## Undefined`, `## Status`, `## Current state` or `## Roadmap` section: each holds
-the project. Work parked mid-build is an item under `## Up next` in `.jig/roadmap.md`, naming
-the pages it will touch (Roadmap), written only on the owner's word. An open product question
-is an `## Open` entry in `.jig/decisions.md`, which the page may cite. Review findings not taken
-go in `.jig/ledgers/DEFERRED.md`. `jig survey` lists each such heading with where its content
-goes; a page that still carries one works as before until it is moved.
+A page has no `## Undefined` section, and no section that holds the project: build status
+(done, pending, not built yet), or when and in what order work will happen. What the section
+says decides, not its heading: a `## Status` or `## Current state` describing the product's own
+thing (a status call, a state machine's states) is product. Work parked mid-build is an item
+under `## Up next` in `.jig/roadmap.md`, naming the pages it will touch (Roadmap), written only
+on the owner's word. An open product question is an `## Open` entry in `.jig/decisions.md`,
+which the page may cite. Review findings not taken go in `.jig/ledgers/DEFERRED.md`. `jig
+survey` lists a `## Undefined` heading, jig's own retired one, with where its content goes;
+it searches no other heading, since a heading's word alone says nothing. A page that still
+carries a project section works as before until it is moved.
 
 Trunk's code is reality. A page that disagrees with the code is a stale page, and gets fixed.
 An invariant the code breaks is a finding the handoff surfaces for a person to rule on, never
@@ -364,16 +370,15 @@ contract above, and names a page in the old Now, Rules and Checks shape (convert
 what it says into description, delete what no longer holds, keep as Invariants only what
 passes the test), an Invariants entry with no why (` — `) or no holder (`held by`), and a
 page whose first line of text after its title is a heading rather than a lead paragraph. It
-lists, apart, the project in the product: a `## Status`, `## Current state`, `## Roadmap` or
-`## Undefined` heading on a page or a metarepo's entry file, and plan prose ("phase 3", "spec
-step 6") on a page or in the decision log, each with where it goes. `jig update --apply` brings this file; it
+lists, apart, the project in the product: an `## Undefined` heading on a page or a metarepo's
+entry file, and what the hook refuses on an added line (a `.jig/specs/`, `.jig/handoffs/` or
+`.jig/roadmap.md` path, a scope id in code quotes) in old text on a page or in the decision
+log, each with where it goes. It searches no words that may be the product's. `jig update --apply` brings this file; it
 changes a page only by `--sweep`, below, on the owner's yes, and reshaping a repo's pages is a job of its own there.
 
 `jig update` sweeps a repo onto the boundary, each move on the owner's yes. Under Repo files to
 review it lists each page's `## Undefined` entry as the `## Up next` item it would become, the
-project headings and plan prose above, each decision entry (or, before the log, register row or
-section) whose words read as scope (priorities, phases, milestones, a demo, a launch, a
-delivery queue, a sprint, "first, then"), and the repo's plan and register files with where
+project paths and quoted scope ids above, and the repo's plan and register files with where
 each one's content goes: `TODO.md`, `BACKLOG.md`, `STATUS.md`, `PLAN.md` and a hand-written
 `ROADMAP.md` to `.jig/roadmap.md`; `FEATURES.md` to its systems' pages and decision entries;
 `RULES.md`, `CONVENTIONS.md` and `CONTRIBUTING.md` to `AGENTS.md` or a skill. It judges none of

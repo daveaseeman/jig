@@ -23,7 +23,7 @@ Then read `## Up next` in `.jig/roadmap.md`, if the repo keeps one:
 - An item the code now does → it was built without its fold-in: put its content in the body of the pages it touches, and propose removing the item (the roadmap changes on trunk, on the owner's word).
 - An item that has sat unclaimed for months → a delete candidate. Propose it; delete only on the owner's word, as it was written on the owner's word.
 - An item that is really a review finding → it belongs in `.jig/ledgers/DEFERRED.md`, not both.
-- A page still carrying `## Undefined`, `## Status` or `## Roadmap` (`jig survey` lists them) → each entry is an Up next item or an `## Open` question to propose, and the section goes.
+- A page still carrying `## Undefined` (`jig survey` lists it) → each entry is an Up next item or an `## Open` question to propose, and the section goes. A `## Status` or `## Roadmap` section that says what is built or when is the same; one that describes the product's own thing (a status call, a state machine) stays.
 
 In a pararepo: the same cross-repo confusion twice is a glossary entry, a term in the metarepo's `docs/glossary.md`, proposed to the metarepo with `jig propose`.
 

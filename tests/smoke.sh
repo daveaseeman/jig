@@ -4544,6 +4544,10 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'docs/a.md line 4 nam
 msg="boundary: words that may be the product's pass: a quoted phase name, a bare scope id, ROADMAP.md"
 printf 'Returns `1` on success. The v1/api endpoint answers. Values 1/screen are scaled. See ROADMAP.md.\n' >> docs/a.md && git add -A
 expect_pass git commit -qm words
+msg="boundary: a page line saying phase 3 and a ## Status heading commit, and the hook says nothing about them"
+printf '\nLands in phase 3.\n\n## Status\n\n`a_status` returns bits.\n' >> docs/a.md && git add -A
+out=$(git commit -qm status 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && ! echo \"\$0\" | grep -q 'jig'" "$out"
 msg="boundary: the hook refuses a decision-log line naming a spec or a quoted scope"
 ulog '- The panel ships, per .jig/specs/x.md.' && git add -A && refused log1
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '.jig/decisions.md line .* names .jig/specs/'" "$out"
@@ -4555,18 +4559,20 @@ expect_pass git commit -qm spec
 msg="boundary: a git mv of a page holding an old spec path commits: its lines aren't new"
 printf '# Old\n\nOld is.\n\nOnce cited .jig/specs/x.md.\n' > docs/old.md && git add -A && git -c core.hooksPath=/dev/null commit -qm planted
 git mv docs/old.md docs/older.md && expect_pass git commit -qm moved
-msg="boundary: survey lists plan prose, paths and scope ids on a page and in the log, and project headings"
-printf '# B\n\nB is.\n\nThe gesture lands in phase 3, after spec step 6.\n\n## Status\n\nhalf done\n\n## Undefined\n\n- sync — parked 2026-11-01.\n' > docs/b.md
+msg="boundary: survey lists old spec paths, quoted scope ids and ## Undefined, and no words: phase 3, ## Status, bare ids, ROADMAP.md"
+printf '# B\n\nB is.\n\nThe gesture lands in phase 3, after spec step 6, in `phase-1/screen`.\n\n## Status\n\nhalf done\n\n## Undefined\n\n- sync — parked 2026-11-01.\n' > docs/b.md
 ulog '- Demo priorities: A in phase 2, then B.' && git add -A && git -c core.hooksPath=/dev/null commit -qm b
 expect_pass python3 -c "
 import json, subprocess
 r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 p = {e['path']: ' | '.join(e['problems']) for e in r['project_in_product']}
 b = p['docs/b.md']
-assert '\"phase 3\"' in b and '\"spec step 6\"' in b and '## Status is the project' in b and '## Undefined is the project' in b and 'Up next' in b, b
-assert '\"v1/api\"' in p['docs/a.md'] and '\"ROADMAP.md\"' in p['docs/a.md'] and '\".jig/specs/\"' in p['docs/older.md'], p
-assert '\"phase 2\"' in p['.jig/decisions.md'], p"
-expect_pass sh -c "$J survey | grep -q '^  docs/b.md: ## Status is the project'"
+assert '\"phase-1/screen\"' in b and '## Undefined is the project' in b and 'Up next' in b, b
+assert 'phase 3' not in b and 'spec step' not in b and '## Status' not in b, b
+assert 'docs/a.md' not in p and '.jig/decisions.md' not in p and '\".jig/specs/\"' in p['docs/older.md'], p"
+s=$($J survey 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/b.md: ## Undefined is the project' && ! echo \"\$0\" | grep -q 'Status is the project'" "$s"
+msg="boundary: update lists the old quoted scope id under Repo files to review, and not phase 3"
+out=$($J update 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/b.md: line 5: \"phase-1/screen\" names the plan' && ! echo \"\$0\" | grep -q '\"phase 3\"'" "$out"
 msg="boundary: with the project in its pages, survey's verdict isn't nothing to do"
 expect_pass sh -c "$J survey | tail -1 | grep -q 'move the project listed above'"
 msg="boundary: a page still carrying ## Undefined is edited and committed as before"
@@ -5422,12 +5428,14 @@ SW="$T/sweep"; pcnew "$SW" && mkdir -p docs && printf "# Q\n\nQ is.\n" > docs/q.
 UP="python3 $P/jig/jig.py update"
 printf '# P\n\nP keeps the list.\n\nBuilt as .jig/specs/x.md says, in phase 3.\n\n## Status\n\nhalf done\n\n## Undefined\n\n- Sync over BLE — stops at the GATT table; parked 2026-11-01.\n- Dark theme — stops at the palette;\n  parked 2026-11-02.\n' > docs/p.md
 printf -- '- [ ] ship it\n' > TODO.md && printf '| Feature | Why |\n| x | y |\n' > FEATURES.md
+printf '# HAL\n\nThe HAL is the board API.\n\n## Status\n\n`hal_status` returns `EVT_*` bits.\n' > docs/hal.md
+printf '# R\n\nR is.\n\nIn Phase 5 the wallet is a TEE.\n' > docs/r.md
 git add -A && git -c core.hooksPath=/dev/null commit -qm planted
 out=$($UP 2>&1)
 msg="sweep: update lists each ## Undefined entry as the Up next item it would be, naming the page"
 expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/p.md: ## Undefined entry → .jig/roadmap.md ## Up next.*- .p-sync-over-ble.: Sync over BLE; stops at the GATT table; parked 2026-11-01 (touches docs/p.md)' && echo \"\$0\" | grep -q 'Dark theme; stops at the palette; parked 2026-11-02 (touches docs/p.md)'" "$out"
-msg="sweep: a page line naming a spec, one saying phase 3, and a ## Status section are under Repo files to review"
-expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/p.md: line 5: \".jig/specs/\" names the plan' && echo \"\$0\" | grep -q '^  docs/p.md: line 5: \"phase 3\"' && echo \"\$0\" | grep -q '^  docs/p.md: ## Status is the project'" "$out"
+msg="sweep: a page line naming a spec is under Repo files to review; phase 3, Phase 5 and ## Status sections aren't, in update or survey"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/p.md: line 5: \".jig/specs/\" names the plan' && ! echo \"\$0\" | grep -qi 'phase [35]\\|Status is the project' && echo \"\$1\" | grep -q '^  docs/p.md: line 5: \".jig/specs/\" names the plan' && ! echo \"\$1\" | grep -qi 'phase [35]\\|Status is the project'" "$out" "$($J survey 2>&1)"
 msg="sweep: tracked TODO.md and FEATURES.md are each listed with their destination"
 expect_pass sh -c "echo \"\$0\" | grep -q '^  TODO.md: the project.s plan: its items go to .jig/roadmap.md' && echo \"\$0\" | grep -q '^  FEATURES.md: the product: each feature goes to its system.s page'" "$out"
 msg="sweep: --sweep alone is a dry run that changes nothing"
@@ -5450,11 +5458,15 @@ printf 'mkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/r
 board "b['release']['artifacts'] = ['dist/*.zip']" && printf 'dist/\n' > .gitignore
 ulog '### D-002 ids are numbers
 Accepted (owner, 2026-11-01).
-Touches: docs/p.md' && ulog '### D-001 Demo priorities: A, then B
+Touches: docs/p.md' && ulog '### D-003 Wallet base
 Accepted (owner, 2026-11-01).
-Touches: docs/p.md' && git add -A && git commit -qm "D-001, D-002" && $J release --minor >/dev/null
-msg="sweep: a released D-001 Demo priorities is listed as a project candidate, D-002 isn't"
-out=$($UP 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '^  .jig/decisions.md: D-001 Demo priorities: A, then B reads as project scope.*strike, split or keep' && ! echo \"\$0\" | grep -q 'D-002 ids'" "$out"
+Touches: docs/p.md
+
+The launch base is a TEE; the motor driver commutates three phases; a demo mode loops the screens.' && ulog '### D-001 Demo priorities: A, then B
+Accepted (owner, 2026-11-01).
+Touches: docs/p.md' && git add -A && git commit -qm "D-001, D-002, D-003" && $J release --minor >/dev/null
+msg="sweep: no released entry is listed by its words, launch, phases and demo included, in update or survey"
+out=$($UP 2>&1); expect_pass sh -c "! echo \"\$0\" | grep -q 'project scope\\|D-00[123]' && echo \"\$1\" | grep -q '^  docs/p.md: line 5: \".jig/specs/\" names the plan' && ! echo \"\$1\" | grep -q 'D-00[123]'" "$out" "$($J survey 2>&1)"
 msg="sweep: removing released D-001 with no ### Removed line naming it is refused"
 rment D-001 && git add -A; out=$(git commit -qm drop 2>&1); undo
 expect_pass sh -c "echo \"\$0\" | grep -q 'D-001 is removed from release v0.1.0.*### Removed.*in the same commit'" "$out"
@@ -5466,12 +5478,12 @@ ulog '### Removed
 - D-001: project scope, not a product decision.' && rment D-001 && git add -A
 expect_pass sh -c "git commit -qm 'D-001: struck' && ! grep -q '^### D-001' .jig/decisions.md && grep -qx '### D-002 ids are numbers' .jig/decisions.md"
 
-# Before --merge-log: a register's priority row and a Pending delivery section are listed, and a struck row is left out.
+# Before --merge-log: nothing is listed by its words, and a struck row is left out.
 SR2="$T/sweep-reg"; pcnew "$SR2" && printf '# Decisions\n\n| Id | Decision | Status | Date |\n|---|---|---|---|\n| D-001 | ids are numbers | accepted | 2026-11-01 |\n| D-002 | Demo priorities: 1) radio 2) screen | accepted | 2026-11-02 |\n\n## Pending delivery to the app\n\n- the radio patch\n' > DECISIONS.md
 git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
 out=$($UP 2>&1)
-msg="sweep: before --merge-log, update lists the register's priority row and its Pending delivery section, not the ids row"
-expect_pass sh -c "echo \"\$0\" | grep -q '^  DECISIONS.md: row D-002 Demo priorities.*reads as project scope' && echo \"\$0\" | grep -q '^  DECISIONS.md: lines .* .## Pending delivery to the app. read as project scope' && ! echo \"\$0\" | grep -q 'row D-001'" "$out"
+msg="sweep: before --merge-log, update lists neither the register's priority row nor its Pending delivery section"
+expect_pass sh -c "! echo \"\$0\" | grep -q 'project scope'" "$out"
 msg="sweep: a row whose Status says struck is left out of the log --merge-log writes, its number named"
 sed -i.bak 's/| accepted | 2026-11-02 |/| struck | 2026-11-02 |/' DECISIONS.md && rm DECISIONS.md.bak && git add -A && git commit -qm "D-002: struck"
 out=$($UP --apply --merge-log 2>&1)
@@ -5540,8 +5552,8 @@ $J open o1 --shares DECISIONS.md CHANGELOG.md >/dev/null && git add -A && git co
   && printf -- '- D-001, D-002, D-003\n' >> CHANGELOG.md && git add -A && git commit -qm "D-001, D-002, D-003: rows" && $J reviewed >/dev/null \
   && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note o1")
 $J merge o1 >/dev/null 2>&1
-msg="sweep: old-shape metarepo: update lists the priority row before --merge-log"
-out=$($UP 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '^  DECISIONS.md: row D-002 Demo priorities.*reads as project scope'" "$out"
+msg="sweep: old-shape metarepo: update doesn't list the priority row by its words before --merge-log"
+out=$($UP 2>&1); expect_pass sh -c "! echo \"\$0\" | grep -q 'reads as project scope'" "$out"
 $J open ml --shares DECISIONS.md CHANGELOG.md README.md >/dev/null && git add -A && git commit -qm "TOOL: open ml"
 cd .git/jig/worktrees/ml
 msg="sweep: old-shape metarepo: a row struck with no CHANGELOG.md line is refused (M3)"

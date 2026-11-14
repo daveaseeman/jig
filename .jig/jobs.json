@@ -13,22 +13,6 @@
     ],
     "reserved": {}
   },
-  "project-sweep-noise": {
-    "spec": ".jig/specs/bug-project-sweep-noise.md",
-    "state": "gated",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/skills/review/SKILL.md",
-      "plugin/skills/survey/SKILL.md",
-      "plugin/skills/update/SKILL.md",
-      "plugin/templates/jig/RULES.md",
-      "plugin/templates/jig/jig.py",
-      "tests/smoke.sh",
-      "plugin/skills/retro/SKILL.md"
-    ],
-    "reserved": {}
-  },
   "derive-candidates": {
     "spec": ".jig/specs/bug-derive-candidates.md",
     "state": "gated",

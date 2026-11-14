@@ -49,10 +49,10 @@ Report the output, then say what it means in a few lines:
   other. `--levels` prints every page's level with its evidence (own files, maps, CODEOWNERS,
   manifests, imports); the owner approves a level, survey only proposes it.
 - **The project in the product.** A page or a decision entry says what the product does
-  today; phases, order and parked work are `.jig/roadmap.md`'s. Survey names a `## Status`,
-  `## Current state`, `## Roadmap` or `## Undefined` heading on a page or an entry file, and
-  prose like "phase 3" or "spec step 6" on a page or in the log, each with where it goes. Ask
-  of each: is this about the product, or about when and in what order we build it?
+  today; phases, order and parked work are `.jig/roadmap.md`'s. Survey names an
+  `## Undefined` heading on a page or an entry file, and a spec, handoff or roadmap path or a
+  quoted scope id on a page or in the log, each with where it goes. It searches no words that
+  may be the product's ("phase 3", `## Status`, "launch"): leave those unless the owner asks.
 - **Each finding's state.** A file finding carries its id, `<kind>:<path>`, and the owner's
   recorded answer from `findings` in `.jig/config.json`: not answered, approved and not done,
   deferred and where, or an exception with the owner's reason. An answer given in chat and not

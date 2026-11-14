@@ -1995,36 +1995,29 @@ def page_problems(text: str) -> list[str]:
     return out
 
 
-# Headings that hold the project on a product page, and where what is under each goes.
-def project_heads() -> dict[str, str]:
-    built = f"what is built → the body, in the present tense; what isn't → {ROADMAP}"
-    return {"undefined": f"parked work → an item under ## {UP_NEXT} in {ROADMAP} naming this page; "
-                         f"an open question → an ## Open entry in {LOG}",
-            "status": built, "current state": built, "roadmap": ROADMAP}
-
-
-# Prose naming the project's plan: a hook can't judge it, since "phase" has product meanings
-# too, so survey lists it for a person.
-PROJECT_PROSE = re.compile(r"(?i)\b(?:spec\s+(?:phase|step)\s+\d+|phases?\s+\d+(?:\s*(?:and|,|-|–)\s*\d+)*)\b")
-
-
+# The one project heading survey and update list: jig's own retired `## Undefined`, which no
+# product names. `## Status` or `## Roadmap` may be the product's own word (a status call, a
+# state machine), so old text is not searched for them: whoever writes a page judges it.
 def project_sections(text: str) -> list[str]:
-    heads = project_heads()
-    return [f"## {name} is the project's: {heads[name.lower()]}"
-            for name, _ in page_sections(text)[1:] if name.lower() in heads]
+    where = (f"parked work → an item under ## {UP_NEXT} in {ROADMAP} naming this page; "
+             f"an open question → an ## Open entry in {LOG}")
+    return [f"## {name} is the project's: {where}"
+            for name, _ in page_sections(text)[1:] if name.lower() == "undefined"]
 
 
 def project_prose(text: str, sids: list[str] = ()) -> list[str]:
-    """Lines naming the plan, outside fenced code: a phase or a spec's step in prose, a spec,
-    handoff or roadmap path, or a scope id SIDS holds, quoted or not."""
+    """Lines naming the plan, outside fenced code, by what the hook refuses on an added line: a
+    spec, handoff or roadmap path, or a scope id SIDS holds in code quotes. Old text predates
+    the hook, and these are never product text; words that may be ("phase 3", a bare id,
+    ROADMAP.md) aren't searched for."""
     out, fence = [], False
-    finds = [PROJECT_PROSE, PLAN_PATHS, *scope_bare(list(sids))]
+    finds = [PROJECT_PATHS, *scope_quoted(list(sids))]
     for n, line in enumerate(text.splitlines(), 1):
         if line.lstrip().startswith(("```", "~~~")):
             fence = not fence
         elif not fence:
-            out += [f'line {n}: "{m.group(0)}" names the plan: say what the product does today, '
-                    f"and leave when to {ROADMAP}" for r in finds for m in r.finditer(line)]
+            out += [f'line {n}: "{m.group(0).strip("`")}" names the plan: say what the product does '
+                    f"today, and leave when to {ROADMAP}" for r in finds for m in r.finditer(line)]
     return out
 
 
@@ -7597,10 +7590,9 @@ def cmd_roadmap(root: Path, args) -> int:
 
 # The project's files: a page or a decision entry that names one goes stale whenever the plan
 # moves, and is released to pararepos as if it were the product (RULES.md, Documentation).
-# These are never product text, so the hook refuses them; ROADMAP.md may be a product's own
-# word, so only survey lists it.
+# These are never product text, so the hook refuses them, and survey lists them in old text;
+# ROADMAP.md may be a product's own word, so nothing searches for it.
 PROJECT_PATHS = re.compile(r"\.jig/(?:specs|handoffs)/|\.jig/roadmap\.md")
-PLAN_PATHS = re.compile(r"\.jig/(?:specs|handoffs)/|\.jig/roadmap\.md|(?<![\w./-])ROADMAP\.md")
 
 
 # The root documents, which docs never name (RULES.md, Documentation): the README is for
@@ -7652,12 +7644,8 @@ def scope_ids(text: str) -> list[str]:
 
 def scope_quoted(sids: list[str]) -> list[re.Pattern]:
     """A scope id in code quotes, which no product sentence writes: `alpha/screen`. Bare, the
-    words may be the product's ("the v1/api endpoint"), so survey lists those."""
+    words may be the product's ("the v1/api endpoint"), so nothing searches for those."""
     return [re.compile(rf"`{re.escape(sid)}`") for sid in sids]
-
-
-def scope_bare(sids: list[str]) -> list[re.Pattern]:
-    return [re.compile(rf"(?<![\w./-]){re.escape(sid)}(?![\w/-])") for sid in sids]
 
 
 def added_lines(trunk: str, staged: bool, files: list[str]) -> list[tuple[str, int, str]]:
@@ -9691,10 +9679,6 @@ def cmd_merge_log(root: Path, apply: bool) -> int:
 
 # ---------------------------------------------------------------- project sweep
 
-# Words that mark a decision as the project's: an order, a phase, a delivery queue. Words only,
-# since "phase" and "launch" have product meanings too: update lists, and the owner sorts.
-SCOPE_WORDS = re.compile(r"(?i)\bprioriti|\bphases?\b|\bmilestones?\b|\bdemo\b|\blaunch|"
-                         r"\buntil\b[^.]*\bpasses\b|\bpending delivery\b|\bsprints?\b|\bfirst,? then\b")
 # Plan and register files a repo kept before jig, by name, and where what each holds goes.
 PLAN_FILES = {
     **{n: f"the project's plan: its items go to {ROADMAP}, parked work under ## {UP_NEXT} "
@@ -9742,37 +9726,11 @@ def plan_files(root: Path, files: list[str], reviewed: list[str]) -> list[tuple[
     return out
 
 
-def scope_candidates(root: Path) -> list[tuple[str, str]]:
-    """Decision entries, or before --merge-log a register's rows and notes, whose text reads as
-    the project's. The owner sorts each: strike, split or keep."""
-    ask = "strike, split or keep (/jig:update says how)"
-    out = []
-    text = (root / LOG).read_text(errors="replace") if (root / LOG).is_file() else ""
-    for e in log_entries(text, log_prefix_of(text)):
-        if m := SCOPE_WORDS.search(e["block"]):
-            out.append((LOG, f"{e['id']} {e['title']} reads as project scope (\"{m.group(0)}\"): {ask}"))
-    for f, _ in log_sources(root):
-        if f == CHANGELOG:
-            continue
-        entries, notes = parse_register((root / f).read_text(errors="replace"), old_prefix(root))
-        for e in entries:
-            body = " ".join([e["title"], *e["rest"]])
-            if e["word"] not in ("rejected", "struck") and (m := SCOPE_WORDS.search(body)):
-                out.append((f, f"row {e['id']} {clip(e['title'])} reads as project scope "
-                            f"(\"{m.group(0)}\"): {ask}; a struck row's Status cell says Struck, "
-                            "and --merge-log leaves it out"))
-        for para in notes:
-            if m := SCOPE_WORDS.search(" ".join(l for _, l in para)):
-                out.append((f, f"lines {para[0][0]}–{para[-1][0]} `{clip(para[0][1].strip())}` read as "
-                            f"project scope (\"{m.group(0)}\"): to {ROADMAP}, or delete them, before "
-                            "--merge-log"))
-    return out
-
-
 def project_review(root: Path, files: list[str], reviewed: list[str]) -> list[tuple[str, str]]:
     """The project in the product, for update's Repo files to review: each page's Undefined
-    entry as the Up next item `--sweep` would write, project sections and plan prose on pages,
-    decision entries that read as scope, and the repo's plan and register files."""
+    entry as the Up next item `--sweep` would write, the paths and quoted scope ids the hook
+    refuses in old text, and the repo's plan and register files. Words that may be the
+    product's (a heading, "phase 3", "launch") aren't searched for."""
     sids = scope_ids(at_rev(Board.trunk_name(root), ROADMAP))
     out = []
     for s in undefined_sweep(root, files, at_rev(Board.trunk_name(root), ROADMAP)):
@@ -9784,9 +9742,8 @@ def project_review(root: Path, files: list[str], reviewed: list[str]) -> list[tu
         if not (root / f).is_file():
             continue
         text = (root / f).read_text(errors="replace")
-        heads = [] if f == LOG else [p for p in project_sections(text) if not p.startswith("## Undefined")]
-        out += [(f, p) for p in heads + project_prose(text, sids)]
-    return out + scope_candidates(root) + plan_files(root, files, reviewed)
+        out += [(f, p) for p in project_prose(text, sids)]
+    return out + plan_files(root, files, reviewed)
 
 
 def undefined_sections(text: str) -> list[tuple[int, int]]:
