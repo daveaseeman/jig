@@ -76,8 +76,8 @@ WORKFLOW_DEFAULTS = {
 
 def git(*args: str, check: bool = False, cwd: str | None = None) -> str:
     # A tracked file may be in any encoding, and git hands its bytes back as they are. jig only
-    # matches ASCII ids, paths and headings, and some callers write what they read, so a byte
-    # it can't decode becomes U+FFFD rather than a crash (surrogateescape can't be written back).
+    # matches ASCII ids, paths and headings here, so a byte it can't decode becomes U+FFFD
+    # rather than a crash. Text jig writes back into a file is read with git_raw instead.
     p = subprocess.run(["git", *args], capture_output=True, text=True, errors="replace", cwd=cwd)
     if check and p.returncode:
         die(f"git {' '.join(args)}: {p.stderr.strip()}", 2)
@@ -88,9 +88,24 @@ def grep_hits(*args: str, cwd: str | Path | None = None) -> list[tuple[str, str,
     """`git grep -n --null ARGS` as (path, line number, line text). Read as bytes and split on
     newlines only: text mode turns a lone CR into a line break, and splitlines() also breaks on
     form feeds and other separators a matched line may hold."""
-    raw = subprocess.run(["git", "grep", "-n", "--null", *args], capture_output=True,
-                         cwd=cwd).stdout.decode(errors="replace")
+    raw = git_raw("grep", "-n", "--null", *args, cwd=cwd)
     return [tuple(h.split("\0", 2)) for h in raw.split("\n") if h.count("\0") >= 2]
+
+
+def git_raw(*args: str, errors: str = "replace", cwd: str | Path | None = None) -> str:
+    """git's stdout as it is: no newline translation (text mode turns a lone CR or a CRLF into
+    a line break) and nothing stripped. errors="surrogateescape" keeps bytes that aren't UTF-8,
+    for text that write_raw puts back into a file unchanged."""
+    return subprocess.run(["git", *args], capture_output=True, cwd=cwd).stdout.decode(errors=errors)
+
+
+def read_raw(path: Path) -> str:
+    """PATH's text for jig to edit and write back with write_raw: its bytes and line endings kept."""
+    return path.read_bytes().decode(errors="surrogateescape")
+
+
+def write_raw(path: Path, text: str) -> None:
+    path.write_bytes(text.encode(errors="surrogateescape"))
 
 
 def die(msg: str, code: int = 1) -> None:
@@ -416,7 +431,8 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     # which may match the marker anywhere, judges every update of it.
     code = [p for p in paths if (p.endswith(CODE_EXT) or Path(p).name == "Kconfig")
             and p != f"{DIR}/jig.py"]
-    diff = git("diff", "-U0", base(trunk), *(["--cached"] if staged else []), "--", *code) if code else ""
+    # Raw, so a lone CR can't split one added line into a "+" line and an unmarked one.
+    diff = git_raw("diff", "-U0", base(trunk), *(["--cached"] if staged else []), "--", *code) if code else ""
     if re.search(r"^\+(?:.*(?:#|//|/\*)|\s*\*)\s*WORKAROUND:", diff, re.M) and WORKAROUNDS not in paths:
         # The ledger is made by its first row, so the refusal says where that row goes.
         out.append(f"R7 the diff adds a WORKAROUND: comment but {WORKAROUNDS} is not staged: "
@@ -1176,7 +1192,7 @@ def cmd_merge(root: Path, args) -> int:
         # Taken from a replay of the job's sync, not resolved here: on trunk the job is
         # `theirs`, and the rows must come out as the sync and the gate order them.
         for f, text in resolved.items():
-            Path(f).write_text(text)
+            write_raw(Path(f), text)
             git("add", "--", f, check=True)
         # --no-edit keeps the comment lines git added for the conflicts it saw; none is left.
         merge_msg = Path(git("rev-parse", "--path-format=absolute", "--git-path", "MERGE_MSG"))
@@ -1200,10 +1216,10 @@ def cmd_merge(root: Path, args) -> int:
     built = built_up_next(git("show", f"{branch}:{notes[-1]}"))
     roadmap = main_root() / ROADMAP
     if roadmap.is_file():
-        text = roadmap.read_text()
+        text = read_raw(roadmap)
         kept = retarget_touches(remove_up_next(text, built), page_moves("HEAD"))
         if kept != text:
-            roadmap.write_text(kept)
+            write_raw(roadmap, kept)
             git("add", "--", ROADMAP, check=True)
             if built & {i["id"] for i in parse_up_next(text)}:
                 print(f"removed from {ROADMAP}, built: {', '.join(sorted(built))}")
@@ -1279,7 +1295,7 @@ def cmd_job(root: Path, args) -> int:
 # --------------------------------------------------------------- sync + merge
 
 CONFLICT = re.compile(
-    r"^<<<<<<< .*?\n(?P<ours>.*?)^\|\|\|\|\|\|\| .*?\n(?P<base>.*?)^=======\n"
+    r"^<<<<<<< .*?\n(?P<ours>.*?)^\|\|\|\|\|\|\| .*?\n(?P<base>.*?)^=======\r?\n"
     r"(?P<theirs>.*?)^>>>>>>> .*?\n",
     re.S | re.M,
 )
@@ -1287,8 +1303,8 @@ CONFLICT = re.compile(
 
 def resolve_appends(path: Path) -> bool:
     """Resolve conflicts where both sides only added at the same spot. True if clean."""
-    text, ok = resolved_appends(path.read_text())
-    path.write_text(text)
+    text, ok = resolved_appends(read_raw(path))
+    write_raw(path, text)
     return ok
 
 
@@ -1362,7 +1378,8 @@ def git_version() -> tuple[int, ...]:
 
 
 def blob(rev: str, path: str) -> str:
-    return subprocess.run(["git", "show", f"{rev}:{path}"], capture_output=True, text=True, errors="replace").stdout
+    """PATH at REV, its bytes kept: a merge writes the resolution built from it into the file."""
+    return git_raw("show", f"{rev}:{path}", errors="surrogateescape")
 
 
 def replay_sync(job: str, trunk: str) -> tuple[str, list[str]] | None:
@@ -4002,7 +4019,7 @@ def check_subject(msg_file: str, meta: dict) -> list[str]:
     """M6, from the commit-msg hook. Merge commits are exempt: their branches carry the ids."""
     if merging_commits() or os.environ.get("GIT_REFLOG_ACTION", "").startswith("merge"):
         return []
-    lines = [l for l in Path(msg_file).read_text().splitlines() if l and not l.startswith("#")]
+    lines = [l for l in Path(msg_file).read_text(errors="replace").splitlines() if l and not l.startswith("#")]
     subject = lines[0] if lines else ""
     if SUBJECT_IDS.match(subject):
         return []
@@ -5514,6 +5531,8 @@ def fill_cache(root: Path, loc: Path, pin: str) -> None:
         shutil.rmtree(cache)
     cache.mkdir(parents=True)
     for f in dict.fromkeys([*entry_paths(pin, str(loc)), CHANGELOG]):
+        # A derived, gitignored copy for reading: a byte git() couldn't decode is U+FFFD here,
+        # and the metarepo keeps the original.
         body = git("show", f"{pin}:{f}", cwd=str(loc))
         if body:
             (cache / f).parent.mkdir(parents=True, exist_ok=True)
@@ -9811,7 +9830,7 @@ def cmd_sweep(root: Path, apply: bool) -> int:
         die("run `jig update --apply` first: the sweep runs on the current layout", 2)
     trunk = Board.trunk_name(root)
     on_trunk_now = git("branch", "--show-current") == trunk
-    roadmap = at_rev(trunk, ROADMAP)
+    roadmap = git_raw("show", f"{trunk}:{ROADMAP}", errors="surrogateescape").strip()  # written back below
     found = undefined_sweep(root, tracked(root), roadmap)
     if not found:
         print("no ## Undefined section on any page: nothing to sweep")
@@ -9843,7 +9862,7 @@ def cmd_sweep(root: Path, apply: bool) -> int:
             die(f"{ROADMAP_VIEW} is the repo's own, and with {ROADMAP} it would be jig's generated "
                 f"view: move what it holds into {ROADMAP} first (`jig update` lists it)", 2)
         text = roadmap or "# Roadmap\n"
-        (root / ROADMAP).write_text(with_up_next(text, [i["line"] for i in new]))
+        write_raw(root / ROADMAP, with_up_next(text, [i["line"] for i in new]))
         written.append(ROADMAP)
     if pages_here:
         # Every span is a line range of the page as read, so a page's sections go in one write.
