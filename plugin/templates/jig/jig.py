@@ -926,6 +926,11 @@ def cmd_status(root: Path, args) -> int:
     for k, v in (board.data.get("reserve") or {}).items():
         if isinstance(v, dict) and v.get("pattern"):
             print(f"reserve {k}: next free {next_number(board, k, v)}")
+    # What a complete check costs here, so a plan for parallel jobs knows its price.
+    recs = checked_records()
+    if recs:
+        print(f"last complete check: {recs[-1]['seconds']}s on {recs[-1]['date']} "
+              f"({recs[-1]['commit'][:12]})")
     return 0
 
 
@@ -1119,12 +1124,126 @@ def cmd_mark(root: Path, args) -> int:
         die(f"a job is merged by `jig merge {args.name}`, which deletes its entry in the merge commit")
     if args.state not in STATES:
         die(f"state must be one of {', '.join(STATES)}")
-    if args.state == "gated":
-        # Gated means the checks ran: the checkout they ran in is spent.
+    if args.batch and args.state != "gated":
+        die("--batch goes with gated: `jig mark <job> gated --batch`")
+    if args.state == "gated" and args.batch:
+        # Its check is owed by the batch: one complete run on trunk once the batch has merged.
+        board.jobs[args.name]["check"] = "batch"
+        remove_gate_scratch(args.name, f"`jig mark {args.name} gated --batch`")
+    elif args.state == "gated":
+        # Gated means the complete check passed on the commit the gate checked out, and
+        # `jig checked` there said so: the checkout it ran in is then spent.
+        scratch = gate_scratch(args.name)
+        where = main_root() / scratch
+        git("worktree", "prune")
+        if not where.exists():
+            die(f"no gate checkout for {args.name}: `jig gate {args.name}`, run the complete "
+                f"check it prints there, then `jig checked` there")
+        problem = gate_scratch_problem(where, scratch)
+        if problem:
+            die(f"{problem}, and `jig mark {args.name} gated` again")
+        head = git("rev-parse", "HEAD", cwd=str(where))
+        if not any(r["commit"] == head for r in checked_records()):
+            die(f"no complete check is recorded for {head[:12]} in {scratch}: run the check "
+                f"`jig gate {args.name}` printed there, then `jig checked` there")
         remove_gate_scratch(args.name, f"`jig mark {args.name} gated`")
+        board.jobs[args.name].pop("check", None)
     board.jobs[args.name]["state"] = args.state
     board.save()
     print(f"{args.name}: {args.state}")
+    return 0
+
+
+def checked_log() -> Path:
+    """Where `jig checked` records each complete check: shared by every worktree, so a record
+    made in the gate's checkout is read from trunk's, and never committed."""
+    return Path(git("rev-parse", "--path-format=absolute", "--git-common-dir")) / "jig" / "checked.log"
+
+
+def checked_records() -> list[dict]:
+    """Every recorded complete check, oldest first."""
+    log = checked_log()
+    out = []
+    for line in (log.read_text().splitlines() if log.exists() else []):
+        f = line.split("\t")
+        if len(f) == 5 and all(x.isdigit() for x in f[1:4]):
+            out.append({"commit": f[0], "tier": int(f[1]), "effort": int(f[2]),
+                        "seconds": int(f[3]), "date": f[4]})
+    return out
+
+
+def last_checked_on(rev: str) -> str | None:
+    """The newest commit on REV's first-parent line that has a complete check recorded."""
+    have = {r["commit"] for r in checked_records()}
+    for c in git("rev-list", "--first-parent", rev).splitlines():
+        if c in have:
+            return c
+    return None
+
+
+def batch_merges(trunk: str) -> list[tuple[str, str]]:
+    """The first-parent merges on TRUNK since its last complete check whose job's check was
+    owed by the batch (`Check: batch`), oldest first, as (commit, subject)."""
+    since = last_checked_on(trunk)
+    out = []
+    for line in git("log", "--first-parent", "--merges", "--reverse", "--format=%H%x09%s%x09%(trailers:key=Check,valueonly,separator=%x2C)",
+                    f"{since}..{trunk}" if since else trunk).splitlines():
+        c, subject, check = (line.split("\t") + ["", ""])[:3]
+        if check.strip() == "batch":
+            out.append((c, subject))
+    return out
+
+
+def check_levels_review(root: Path) -> list[tuple[str, str]]:
+    """A check.sh with one level runs everything on every stop, the complete suite included:
+    the repo's to split, since only it knows which of its tests are quick."""
+    path = f"{DIR}/scripts/check.sh"
+    f = root / path
+    if not f.is_file() or "--full" in f.read_text(errors="replace"):
+        return []
+    return [(path, "never reads --full: split it into a quick part (lint, type-check, unit "
+             "tests: what runs on every stop) and a complete part run only with --full (the "
+             "full suite, slow or end-to-end tests: what the gate's check step runs)")]
+
+
+def cmd_checked(root: Path, args) -> int:
+    """Record that the complete check passed on HEAD; with --trace, how to find the merge that
+    broke trunk since its last recorded one. jig records and prints; it never runs a check."""
+    if args.trace is not None:
+        trunk = Board.load(root).trunk
+        if git("branch", "--show-current") != trunk:
+            die(f"--trace reads {trunk}'s history: run it on {trunk}")
+        good = last_checked_on("HEAD")
+        rng = f"{good}..HEAD" if good else "HEAD"
+        merges = git("log", "--first-parent", "--merges", "--reverse", "--format=%h %s", rng).splitlines()
+        print(f"merges since the last complete check ({good[:12] if good else 'none recorded'}), oldest first:")
+        for m in merges or ["(none)"]:
+            print(f"  {m}")
+        if not good:
+            print(f"no complete check is recorded on {trunk}: bisect needs a known good commit")
+            return 1
+        # Through sh -c, so a command with `&&` or `cd` is run whole at each step.
+        cmd = f"sh -c {shlex.quote(args.trace)}" if args.trace else "<the failing command>"
+        # --first-parent steps over merges only, so each step costs one run of one command.
+        print("\nFind the merge that broke it, running only the failing command at each step:")
+        print(f"  git bisect start --first-parent HEAD {good}")
+        print(f"  git bisect run {cmd}")
+        print("  git bisect reset")
+        return 0
+    if args.tier is None or args.effort is None or args.seconds is None:
+        die("usage: jig checked --tier N --effort N --seconds S, or jig checked --trace [command]", 2)
+    head = git("rev-parse", "HEAD")
+    if not head:
+        die("no commit to record")
+    log = checked_log()
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("a") as f:
+        f.write(f"{head}\t{args.tier}\t{args.effort}\t{args.seconds}\t{date.today().isoformat()}\n")
+    print(f"checked {head[:12]}: tier {args.tier}, effort {args.effort}, {args.seconds}s")
+    step = workflow_steps(Board.load(root).data)[0]["check"]
+    if (args.tier, args.effort) != (step["tier"], step["effort"]):
+        print(f"warning: recorded tier {args.tier}, effort {args.effort}; the check step is "
+              f"tier {step['tier']}, effort {step['effort']}", file=sys.stderr)
     return 0
 
 
@@ -1181,6 +1300,9 @@ def cmd_merge(root: Path, args) -> int:
     if not re.search(rf"(?:^|: )merge {re.escape(name)}$", subject):
         subject = (f"{subject}: " if subject else "") + f"merge {name}"
     msg = subject + (f"\n\n{args.message}" if args.message else "")
+    # Trunk's history is the record of a check the batch owes: `jig release` reads it there.
+    if board.jobs[name].get("check") == "batch":
+        msg += "\n\nCheck: batch"
     p = subprocess.run(["git", "merge", "--no-ff", "--no-commit", "-m", msg, branch],
                        capture_output=True, text=True, errors="replace")
     merging = bool(git("rev-parse", "-q", "--verify", "MERGE_HEAD"))
@@ -1888,7 +2010,13 @@ def cmd_gate(root: Path, args) -> int:
     # As the hooks run it: itself when executable (any language), through bash when not.
     check = f"./{DIR}/scripts/check.sh"
     # A subshell: a shell left inside the checkout would sit in a deleted folder once it's removed.
-    print(f"  (cd {scratch} && {'' if os.access(where / check, os.X_OK) else 'bash '}{check})")
+    # The complete level: the gate is the check step's, the one place it runs per job.
+    print(f"  (cd {scratch} && {'' if os.access(where / check, os.X_OK) else 'bash '}{check} --full)")
+    step = workflow_steps(board.data)[0]["check"]
+    print(f"\nThe check step runs it: tier {step['tier']}, effort {step['effort']}. When it passes, "
+          f"record it there, with the seconds it took:")
+    print(f"  (cd {scratch} && python3 {DIR}/jig.py checked --tier {step['tier']} "
+          f"--effort {step['effort']} --seconds <s>)")
     print()
     if job is not None:
         print(f"Then: jig mark {name} gated, which removes {scratch}, and on the owner's word: "
@@ -5274,6 +5402,14 @@ def cmd_release(root: Path, args) -> int:
     left = release_waits_for()
     if not args.force:
         problems += staged_refusal("the release")
+        # A batch's jobs merged on a check owed by one complete run on the trunk they made.
+        owed = batch_merges(trunk)
+        if owed:
+            problems.append(
+                f"{len(owed)} merge{'s' if len(owed) > 1 else ''} since the last complete check on "
+                f"{trunk} owe{'' if len(owed) > 1 else 's'} the batch's check ("
+                + ", ".join(f"{c[:12]} {s}" for c, s in owed)
+                + f"): run `{DIR}/scripts/check.sh --full` on {trunk}, then `jig checked`")
     # Released, a D-?<slug> would be frozen under its version and never get its number.
     log_now = (root / LOG).read_text() if (root / LOG).exists() else ""
     problems += [f"{LOG}:{e['line']} {e['id']} isn't numbered: a merge numbers it (`jig merge "
@@ -9330,6 +9466,7 @@ def cmd_update(root: Path, args) -> int:
     review += [(LOG, f"{e} has no Touches line: add one under its status line, naming the pages "
                 f"it touches, a term as `{GLOSSARY} § <term>`, or {NONE_FORM} ({DIR}/RULES.md, Decision log)") for e in untouched_entries(root, trunk)]
     review += superseded_kept(root)
+    review += check_levels_review(root)
     review += project_review(root, files, [f for f, _ in review])
     have_ignores = {l.strip() for l in ignore.read_text().splitlines()} if ignore.exists() else set()
     if (new_board.get("reference_files") == "ignore" and not ref_line
@@ -10589,6 +10726,12 @@ def main(argv: list[str] | None = None) -> int:
     m = sub.add_parser("mark", help="hubnode: set a job's state")
     m.add_argument("name")
     m.add_argument("state")
+    m.add_argument("--batch", action="store_true", help="gated, its complete check owed by one run on trunk after the batch merges")
+    ck = sub.add_parser("checked", help="record that the complete check passed on HEAD")
+    ck.add_argument("--tier", type=int)
+    ck.add_argument("--effort", type=int)
+    ck.add_argument("--seconds", type=int)
+    ck.add_argument("--trace", nargs="?", const="", metavar="COMMAND", help="on trunk: the merges since the last complete check, and the bisect that finds the one breaking COMMAND")
     mg = sub.add_parser("merge", help="hubnode: merge a job and delete its entry in that commit")
     mg.add_argument("name", nargs="?")
     mg.add_argument("--number", action="store_true", help="in a merge in progress, its conflicts resolved: number the D-?<slug> ids it brings in")
@@ -10668,7 +10811,7 @@ def main(argv: list[str] | None = None) -> int:
     load_genres(root)
     fn = {
         "init": cmd_init, "install-hooks": cmd_install_hooks, "status": cmd_status,
-        "open": cmd_open, "reserve": cmd_reserve, "mark": cmd_mark, "merge": cmd_merge, "check": cmd_check, "decision": cmd_decision,
+        "open": cmd_open, "reserve": cmd_reserve, "mark": cmd_mark, "merge": cmd_merge, "check": cmd_check, "checked": cmd_checked, "decision": cmd_decision,
         "job": cmd_job, "sync": cmd_sync, "reviewed": cmd_reviewed,
         "handoff": cmd_handoff, "gate": cmd_gate, "hook": cmd_hook,
         "workflow": cmd_workflow,

@@ -9,9 +9,10 @@ One job, one branch, one worktree. You never commit on trunk, never push trunk, 
 
 ## Check in
 
-The first line of your first reply is `running <model> at <effort>`: the model id and the
-effort your session runs at, from your own settings. If the kickoff named different ones,
-say so and stop: the owner set them, and the hubnode raises a session before briefing it.
+The first line of your first reply is `running <model>`: the model id your session runs on,
+from your own settings. No effort: the hubnode reads it from the host. If the kickoff named a
+different model, say so and stop: the owner set it, and the hubnode raises a session before
+briefing it.
 
 1. Find your job on the board: `jig job`. If this branch is on no job, stop and ask
    the hubnode to open one. Never create a job branch yourself.
@@ -21,6 +22,9 @@ say so and stop: the owner set them, and the hubnode raises a session before bri
 4. Say in three lines: the job, its reserved numbers, what you will build first.
 
 ## Build
+
+While working, run `.jig/scripts/check.sh` and the parts of the suite your change touched,
+never `check.sh --full`: the complete check is the check step's, once per gate or batch.
 
 - Your files are your `owns`, your `shares`, `common`, and anything new you create. If you
   need another, ask the hubnode to add it to `shares` and build elsewhere meanwhile.
@@ -38,7 +42,8 @@ say so and stop: the owner set them, and the hubnode raises a session before bri
 A handoff is a mergeable chunk, not the whole job — hand off as often as a coherent piece
 is done.
 
-1. Run the project's checks (`.jig/scripts/check.sh`, plus whatever `/jig:verify` calls for).
+1. Run the project's quick checks (`.jig/scripts/check.sh` and the parts your change touched,
+   plus whatever `/jig:verify` calls for), and report the commands with their output.
    A check that can outlast your shell's foreground limit is waited on as `/jig:verify` says:
    background, output to a file, its exit notice or its pid, never a match.
 2. Have the diff adversarially reviewed. If a hubnode started you, report the commit and
