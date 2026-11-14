@@ -3784,9 +3784,16 @@ board "b['docmap'].update({'docs/q/r/r.md': ['src/q/r/*.py'], 'docs/q/r/s/s.md':
 git add -A && git -c core.hooksPath=/dev/null commit -qm deep && behind
 out=$($UP 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -A2 '^      fold docs/q/r/s/s.md into docs/q/r/r.md' | grep -q '^      git mv docs/q/r/r.md docs/q/r.md'" "$out"
-# A fold joins the two pages' Invariants sections: one page holds each heading once.
+cat docs/q/r/s/s.md >> docs/q/r/r.md && git rm -q docs/q/r/s/s.md && git add -A && git mv docs/q/r/r.md docs/q/r.md
+out=$(git commit -qm "fold s" 2>&1); rc=$?; git reset -q --hard
+msg="form: a fold that appends the page whole is refused for its second ## Invariants"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'has \`Invariants\` 2 times'" "$out"
+msg="form: update's fold of a deep page drafts the move flat of the page it leaves alone, and that commit passes"
+# A fold joins sections of one name: s's Invariants entries go under r's.
 sed '1,/^## Invariants/d' docs/q/r/s/s.md >> docs/q/r/r.md && git rm -q docs/q/r/s/s.md && git add -A && git mv docs/q/r/r.md docs/q/r.md
 expect_pass git commit -qm "fold s"
+msg="form: the joined fold holds one ## Invariants with both pages' entries"
+expect_pass sh -c "test \"\$(grep -c '^## Invariants' docs/q/r.md)\" = 1 && test \"\$(grep -c '^- rows stay sorted' docs/q/r.md)\" = 2"
 msg="form: an approved move of a lone folder page lands flat, and its commit passes"
 ipage docs/w/k/k.md && board "b['docmap']['docs/w/k/k.md'] = []" && git add -A && git -c core.hooksPath=/dev/null commit -qm "lone k"
 board "b['findings']['page:docs/w/k/k.md'] = 'approved'" && git commit -qam "k approved" && behind
@@ -5999,7 +6006,7 @@ msg="headings: a second job adding ## Cache elsewhere on that page commits on it
 msg="headings: merging the first job passes"; expect_pass git merge -q --no-ff --no-edit ja
 out=$(git merge -q --no-ff --no-edit jb 2>&1); rc=$?
 msg="headings: the clean merge that would join the second ## Cache is refused, naming the page, the heading and both lines"
-expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'docs/store.md has the heading \`Cache\` 2 times (lines 5, 13)'" "$out"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'docs/store.md has \`Cache\` 2 times (lines 5, 13)'" "$out"
 git merge --abort 2>/dev/null; git reset -q --hard
 (cd .git/jig/worktrees/jb && git reset -q --hard HEAD~1 && printf '\n## Cache\n\nA write-behind buffer.\n' >> docs/store.md && echo c=2 >> src/b.py \
   && git add -A && git commit -qm "STORE: jb cache at the end" && git -c core.hooksPath=/dev/null reset -q --hard HEAD)
@@ -6010,7 +6017,7 @@ git merge -q --no-ff --no-edit ja >/dev/null 2>&1; git merge -q --no-ff --no-edi
 git show ja:docs/store.md > docs/store.md && printf '\n## Cache\n\nA write-behind buffer.\n' >> docs/store.md
 git add -A; out=$(git commit -qm "merge jb" 2>&1); rc=$?
 msg="headings: a conflicted merge resolved by keeping both ## Cache sections is refused"
-expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'has the heading \`Cache\` 2 times'" "$out"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'has \`Cache\` 2 times'" "$out"
 git merge --abort 2>/dev/null; git reset -q --hard
 printf '\n## Errors\n\n### Retry\n\nx\n\n## Sync\n\n### Retry\n\ny\n' >> docs/store.md && git add -A
 msg="headings: every level counts, so a second ### Retry under another section is refused"
@@ -6018,9 +6025,12 @@ expect_refuse git commit -qm "STORE: retries"; git reset -q --hard
 printf '\n## Example\n\n```\n## Schema\n## Schema\n```\n' >> docs/store.md && git add -A
 msg="headings: a heading quoted in fenced code is no address and isn't counted"
 expect_pass git commit -qm "STORE: example"
+printf '\n```\n~~~\n## Schema\n```\n' >> docs/store.md && git add -A
+msg="headings: only the opening fence's own marker closes it, so a heading after a ~~~ inside \`\`\` is still quoted"
+expect_pass git commit -qm "STORE: fences"
 printf '\n## schema\n' >> docs/store.md && git add -A
-msg="headings: a heading differing only in case is the same address and is refused"
-expect_refuse git commit -qm "STORE: case"; git reset -q --hard
+msg="headings: § keeps case, so a heading differing only in case is another address and commits"
+expect_pass git commit -qm "STORE: case"
 printf '\n## `Schema`\n' >> docs/store.md && git -c core.hooksPath=/dev/null commit -qam "planted duplicate"
 printf '\nMore rows.\n' >> docs/store.md && git add -A
 msg="headings: a page that already holds a duplicate on trunk is still editable elsewhere"
@@ -6034,6 +6044,26 @@ expect_refuse git commit -qm "KV: third"; git reset -q --hard
 mkdir -p docs/x && printf '# Changes\n\n## v2\n\n### Fixed\n\n## v1\n\n### Fixed\n' > docs/x/CHANGELOG.md && git add -A
 msg="headings: a CHANGELOG.md under docs/ repeats its headings freely"
 expect_pass git commit -qm "X: changelog"
+printf '# Arch\n\nThe arch.\n\n## Sync\n\n### Errors\n\n## Store\n\n### Errors\n' > ARCH.md && git add -A && git -c core.hooksPath=/dev/null commit -qm "old arch"
+git mv ARCH.md docs/arch.md
+msg="headings: a page moved into docs/ from outside keeps its duplicate, as /jig:redocument moves one"
+expect_pass git commit -qm "ARCH: into docs"
+printf '# Plan\n\nOld words.\n\n## Sync\n\n### Errors\n\n## Store\n\n### Errors\n' > PLAN.md && git add -A && git -c core.hooksPath=/dev/null commit -qm "old plan"
+git rm -q PLAN.md && printf '# Plan\n\nThe plan system, rewritten from the top.\nIt keeps rows.\nIt syncs them.\nIt stores them.\n\n## Sync\n\nNew.\n\n### Errors\n\nNew.\n\n## Store\n\nNew.\n\n### Errors\n\nNew.\n' > docs/plan.md && git add -A
+msg="headings: a move that rewrites most of the page (a delete and an add to git) keeps its duplicate too"
+expect_pass git commit -qm "PLAN: rewritten into docs"
+printf '# Glossary\n\n| Term | Means |\n|---|---|\n| Cache | a store |\n' > docs/glossary.md && git add -A && git commit -qm "GLOSSARY: cache" >/dev/null 2>&1
+printf '| `Cache` | again |\n' >> docs/glossary.md && git add -A
+msg="headings: a second glossary row of one term is refused, since § resolves rows too"
+out=$(git commit -qm "GLOSSARY: again" 2>&1); rc=$?; git reset -q --hard
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'docs/glossary.md has \`Cache\` 2 times'" "$out"
+printf '\n## Cache\n\nA store.\n' >> docs/glossary.md && git add -A
+msg="headings: a glossary heading naming a term a row already has is refused"
+out=$(git commit -qm "GLOSSARY: heading" 2>&1); rc=$?; git reset -q --hard
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'docs/glossary.md has \`Cache\` 2 times'" "$out"
+board "b['reserve'] = {'section': {'pattern': r'^### (\\d+)\\.1(?!\\d)', 'files': ['docs/**/*.md']}}" && git add -A && git commit -qm "board: section" >/dev/null 2>&1
+msg="headings: update's section-counter finding names the heading rule that replaces it"
+expect_pass sh -c "\$0 2>&1 | grep -F 'reserve.section' | grep -qF \"refuses a page's second heading of one name\"" "$UP"
 }
 
 UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches merge_log findings glossary headings"

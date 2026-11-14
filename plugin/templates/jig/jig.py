@@ -7301,16 +7301,23 @@ def remove_up_next(text: str, ids: set[str]) -> str:
     return "".join(out)
 
 
+def renames(rev: str, staged: bool = True) -> dict[str, str]:
+    """Every file the change renames from REV, old path to new, across the whole tree: a page
+    moved into docs/ from outside is a rename too, and git sees one only with both sides in view."""
+    out = {}
+    for line in git("-c", "core.quotePath=false", "diff", *(["--cached"] if staged else []), "-M",
+                    "--name-status", rev).splitlines():
+        parts = line.split("\t")
+        if parts[0].startswith("R") and len(parts) == 3:
+            out[parts[1]] = parts[2]
+    return out
+
+
 def page_moves(rev: str) -> dict[str, str]:
     """The docs pages the index renames from REV, old path to new. A move between a page's two
     forms is no move: both name the page."""
-    out = {}
-    for line in git("-c", "core.quotePath=false", "diff", "--cached", "-M", "--name-status",
-                    rev, "--", "docs/").splitlines():
-        parts = line.split("\t")
-        if parts[0].startswith("R") and len(parts) == 3 and not same_page(parts[1], parts[2]):
-            out[parts[1]] = parts[2]
-    return out
+    return {a: b for a, b in renames(rev).items()
+            if a.startswith("docs/") and b.startswith("docs/") and not same_page(a, b)}
 
 
 def retarget_touches(text: str, moves: dict[str, str]) -> str:
@@ -7671,16 +7678,28 @@ def boundary_rules(trunk: str, branch: str, staged: bool, paths: list[str],
     return out
 
 
-def heading_lines(text: str) -> dict[str, list[tuple[int, str]]]:
-    """Each heading of TEXT, at any level, keyed as `§` reads it (plain, case folded), with the
-    (line number, text) of every copy. Fenced code is skipped: a quoted heading is no address."""
+def heading_lines(text: str, glossary: bool = False) -> dict[str, list[tuple[int, str]]]:
+    """Each address `§` can name in TEXT, keyed as `§` compares it (plain, case kept), with the
+    (line number, text) of every copy: a heading at any level, and in the GLOSSARY a table row's
+    first cell too. Fenced code is skipped: a heading quoted in an example is no address."""
     out: dict[str, list[tuple[int, str]]] = {}
-    fence = False
-    for n, line in enumerate(text.splitlines(), 1):
-        if line.lstrip().startswith(("```", "~~~")):
-            fence = not fence
-        elif not fence and (m := HEADING.match(line)) and (shown := plain(m.group(1))):
-            out.setdefault(shown.casefold(), []).append((n, shown))
+    lines = text.splitlines()
+    fence = ""
+    for n, line in enumerate(lines, 1):
+        mark = re.match(r"[ \t]*(`{3,}|~{3,})", line)
+        if mark and not fence:
+            fence = mark.group(1)
+        elif fence:
+            # Only a run of the opening fence's own character, as long, closes it.
+            if mark and mark.group(1)[0] == fence[0] and len(mark.group(1)) >= len(fence) \
+                    and not line.strip()[len(mark.group(1)):].strip():
+                fence = ""
+        elif (m := HEADING.match(line)) and (shown := plain(m.group(1))):
+            out.setdefault(shown, []).append((n, shown))
+    if glossary:
+        for i, term in table_terms(lines):
+            out.setdefault(term, []).append((i + 1, term))
+            out[term].sort()
     return out
 
 
@@ -7688,28 +7707,28 @@ def heading_rules(trunk: str, staged: bool, paths: list[str], not_docs: list[str
     """A heading is the address `<page> § <heading>` cites, as a section number was before the
     page contract, so a page holds each once. Two jobs that each add `## Cache` to a shared page
     merge cleanly into two, and every citation then lands on both. Only a change that raises a
-    heading's count past one is refused, so a page that already holds a duplicate stays editable."""
+    heading's count past one is refused, so a page that already holds a duplicate stays editable
+    and movable."""
     files = [f for f in paths if f.startswith("docs/") and f.endswith(".md") and not reference_file(f)
              and not matches(f, not_docs) and Path(f).name not in ("CHANGELOG.md", "DECISIONS.md")]
     if not files:
         return []
     b = base(trunk)
-    # A moved page brings its headings with it: compare against where it came from.
-    was = {}
-    for line in git("-c", "core.quotePath=false", "diff", "-M", "--name-status", b,
-                    *(["--cached"] if staged else []), "--", "docs/").splitlines():
-        parts = line.split("\t")
-        if parts[0].startswith("R") and len(parts) == 3:
-            was[parts[2]] = parts[1]
+    came_from = {new: old for old, new in renames(b, staged).items()}
+    # A move that rewrites most of a page is a delete and an add to git. What the change deleted
+    # is where such a page came from, so its duplicates are no new ones either.
+    gone = [f for f in git("-c", "core.quotePath=false", "diff", *(["--cached"] if staged else []),
+                           "--name-only", "--diff-filter=D", b).splitlines() if f.endswith(".md")]
     out = []
     for f in files:
-        before = heading_lines(at_rev(b, was.get(f, f)))
-        for key, copies in heading_lines(in_index(f, staged)).items():
-            if len(copies) > max(1, len(before.get(key, []))):
+        olds = [came_from[f]] if f in came_from else [f, *gone]
+        before = [heading_lines(at_rev(b, o), o == GLOSSARY) for o in olds]
+        for key, copies in heading_lines(in_index(f, staged), f == GLOSSARY).items():
+            if len(copies) > max(1, *(len(h.get(key, [])) for h in before)):
                 lines = ", ".join(str(n) for n, _ in copies)
-                out.append(f"{f} has the heading `{copies[0][1]}` {len(copies)} times (lines {lines}): "
-                           f"a heading is the address `{f} § {copies[0][1]}` cites, so a page holds "
-                           f"each once. Rename one or join the sections ({DIR}/RULES.md, Documentation)")
+                out.append(f"{f} has `{copies[0][1]}` {len(copies)} times (lines {lines}): a heading "
+                           f"or glossary row is the address `{f} § {copies[0][1]}` cites, so a page "
+                           f"holds each once. Rename one or join the sections ({DIR}/RULES.md, Documentation)")
     return out
 
 
