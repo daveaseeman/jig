@@ -381,6 +381,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     out += roadmap_rules(board, branch, staged, paths, guarded)
     out += boundary_rules(trunk, branch, staged, paths, meta, board.data.get("not_docs") or [])
     out += page_form_rules(root, board, trunk, staged, guarded)
+    out += heading_rules(trunk, staged, paths, board.data.get("not_docs") or [])
     if CONFIG in paths and (raw := in_index(CONFIG, staged)):
         try:
             out += workflow_steps(json.loads(raw))[1]
@@ -2583,8 +2584,9 @@ def contract_holders(root: Path, files: list[str], board: dict) -> list[dict]:
                 and (pages or matches("docs/x/x.md", globs))):
             out.append({"path": CONFIG, "line": 0, "kind": "counter", "label": f"{CONFIG} reserve.{name}",
                         "fix": "numbers page headings: drop it at /jig:redocument's cleanup, once no "
-                               "page holds a numbered heading, since the contract cites a page by "
-                               "its heading"})
+                               "page holds a numbered heading: the contract cites a page by its "
+                               "heading, and the hook refuses a page's second heading of one name "
+                               f"({DIR}/RULES.md (Documentation))"})
     for f in RULES_NAMES:
         if f not in have or not (root / f).is_file():
             continue
@@ -7666,6 +7668,48 @@ def boundary_rules(trunk: str, branch: str, staged: bool, paths: list[str],
         elif (at == LOG or (at.startswith("docs/") and not matches(at, not_docs))) \
                 and (named := root_doc_named(at, text)):
             out.append(root_doc_refusal(at, n, named, text))
+    return out
+
+
+def heading_lines(text: str) -> dict[str, list[tuple[int, str]]]:
+    """Each heading of TEXT, at any level, keyed as `§` reads it (plain, case folded), with the
+    (line number, text) of every copy. Fenced code is skipped: a quoted heading is no address."""
+    out: dict[str, list[tuple[int, str]]] = {}
+    fence = False
+    for n, line in enumerate(text.splitlines(), 1):
+        if line.lstrip().startswith(("```", "~~~")):
+            fence = not fence
+        elif not fence and (m := HEADING.match(line)) and (shown := plain(m.group(1))):
+            out.setdefault(shown.casefold(), []).append((n, shown))
+    return out
+
+
+def heading_rules(trunk: str, staged: bool, paths: list[str], not_docs: list[str]) -> list[str]:
+    """A heading is the address `<page> § <heading>` cites, as a section number was before the
+    page contract, so a page holds each once. Two jobs that each add `## Cache` to a shared page
+    merge cleanly into two, and every citation then lands on both. Only a change that raises a
+    heading's count past one is refused, so a page that already holds a duplicate stays editable."""
+    files = [f for f in paths if f.startswith("docs/") and f.endswith(".md") and not reference_file(f)
+             and not matches(f, not_docs) and Path(f).name not in ("CHANGELOG.md", "DECISIONS.md")]
+    if not files:
+        return []
+    b = base(trunk)
+    # A moved page brings its headings with it: compare against where it came from.
+    was = {}
+    for line in git("-c", "core.quotePath=false", "diff", "-M", "--name-status", b,
+                    *(["--cached"] if staged else []), "--", "docs/").splitlines():
+        parts = line.split("\t")
+        if parts[0].startswith("R") and len(parts) == 3:
+            was[parts[2]] = parts[1]
+    out = []
+    for f in files:
+        before = heading_lines(at_rev(b, was.get(f, f)))
+        for key, copies in heading_lines(in_index(f, staged)).items():
+            if len(copies) > max(1, len(before.get(key, []))):
+                lines = ", ".join(str(n) for n, _ in copies)
+                out.append(f"{f} has the heading `{copies[0][1]}` {len(copies)} times (lines {lines}): "
+                           f"a heading is the address `{f} § {copies[0][1]}` cites, so a page holds "
+                           f"each once. Rename one or join the sections ({DIR}/RULES.md, Documentation)")
     return out
 
 

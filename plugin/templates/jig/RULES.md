@@ -95,6 +95,9 @@ Don't patch them; don't ledger it.
 Conventions so two jobs rarely meet in one hunk:
 
 - Append, never edit, shared prose. A change to someone else's section is a note in yours.
+- Two jobs sharing a page each add their own section under their own name. A name both chose
+  is refused at the merge that would join them (Documentation), so no number is reserved for
+  it; two names for one thing are for fold-in and review to catch.
 - A file of one's own: new routes in your own handler registered by one line; new state in
   your own module; new tests in your own file; a new fixture as a new file.
 - Scarce numbers come from the board (`--reserve`, `jig reserve`), never from looking at what seems free.
@@ -233,6 +236,13 @@ An invariant the code breaks is a finding the handoff surfaces for a person to r
 an instruction to bend the code. Cite a page by its heading (`docs/ui/ui.md § Invariants`),
 not by a number. A moved rule leaves no forwarding address behind — that is history, and
 git keeps it.
+
+A heading is its page's address, as a section number was, so a page holds each heading once,
+at any level: two `### Errors` under different sections are renamed apart (`### Sync errors`).
+The hook refuses a change that leaves a page under `docs/` with more copies of one heading than
+it had, compared as `§` reads a heading (code and emphasis marks dropped, case folded) and
+outside fenced code; a page that already holds a duplicate is not refused for it. A
+`CHANGELOG.md` or `DECISIONS.md` there, a datasheet and a file `not_docs` matches are exempt.
 
 In `docmap`, a subsystem's page names its own files and its system's page names the rest:
 fold-in asks every page that covers a changed file, so a system page whose globs reach into

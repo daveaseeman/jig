@@ -3784,7 +3784,8 @@ board "b['docmap'].update({'docs/q/r/r.md': ['src/q/r/*.py'], 'docs/q/r/s/s.md':
 git add -A && git -c core.hooksPath=/dev/null commit -qm deep && behind
 out=$($UP 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -A2 '^      fold docs/q/r/s/s.md into docs/q/r/r.md' | grep -q '^      git mv docs/q/r/r.md docs/q/r.md'" "$out"
-cat docs/q/r/s/s.md >> docs/q/r/r.md && git rm -q docs/q/r/s/s.md && git add -A && git mv docs/q/r/r.md docs/q/r.md
+# A fold joins the two pages' Invariants sections: one page holds each heading once.
+sed '1,/^## Invariants/d' docs/q/r/s/s.md >> docs/q/r/r.md && git rm -q docs/q/r/s/s.md && git add -A && git mv docs/q/r/r.md docs/q/r.md
 expect_pass git commit -qm "fold s"
 msg="form: an approved move of a lone folder page lands flat, and its commit passes"
 ipage docs/w/k/k.md && board "b['docmap']['docs/w/k/k.md'] = []" && git add -A && git -c core.hooksPath=/dev/null commit -qm "lone k"
@@ -5982,7 +5983,60 @@ assert m.merged_registers(pathlib.Path('.').resolve(), 'HEAD~1', 'HEAD') and not
 cd "$MM"
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches merge_log findings glossary"
+# ---------------------------------------------------------------- a heading is a page's address
+sec_headings() {
+HC="$T/headings"; pcnew "$HC" && mkdir -p docs src && printf 'x=1\n' > src/a.py && printf 'y=1\n' > src/b.py
+printf '# Store\n\nThe store keeps rows.\n\n## Schema\n\nRows.\n\n## Invariants\n\n- Rows are unique — dedupe; held by test_rows.\n' > docs/store.md
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J open ja --spec t --owns src/a.py --shares docs/store.md >/dev/null && $J open jb --spec t --owns src/b.py --shares docs/store.md >/dev/null
+git add -A && git commit -qm "TOOL: open ja jb"
+(cd .git/jig/worktrees/ja && python3 -c "f='docs/store.md'; s=open(f).read(); open(f,'w').write(s.replace('## Schema', '## Cache\n\nAn LRU in front of reads.\n\n## Schema'))" \
+  && echo c=1 >> src/a.py && git add -A && git commit -qm "STORE: ja cache")
+msg="headings: a job adding ## Cache to a shared page commits"; expect_pass test $? = 0
+(cd .git/jig/worktrees/jb && python3 -c "f='docs/store.md'; s=open(f).read(); open(f,'w').write(s.replace('## Invariants', '## Cache\n\nA write-behind buffer.\n\n## Invariants'))" \
+  && echo c=2 >> src/b.py && git add -A && git commit -qm "STORE: jb cache")
+msg="headings: a second job adding ## Cache elsewhere on that page commits on its branch"; expect_pass test $? = 0
+msg="headings: merging the first job passes"; expect_pass git merge -q --no-ff --no-edit ja
+out=$(git merge -q --no-ff --no-edit jb 2>&1); rc=$?
+msg="headings: the clean merge that would join the second ## Cache is refused, naming the page, the heading and both lines"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'docs/store.md has the heading \`Cache\` 2 times (lines 5, 13)'" "$out"
+git merge --abort 2>/dev/null; git reset -q --hard
+(cd .git/jig/worktrees/jb && git reset -q --hard HEAD~1 && printf '\n## Cache\n\nA write-behind buffer.\n' >> docs/store.md && echo c=2 >> src/b.py \
+  && git add -A && git commit -qm "STORE: jb cache at the end" && git -c core.hooksPath=/dev/null reset -q --hard HEAD)
+git -c core.hooksPath=/dev/null reset -q --hard HEAD~1
+(cd .git/jig/worktrees/ja && git reset -q --hard HEAD~1 && printf '\n## Cache\n\nAn LRU in front of reads.\n' >> docs/store.md && echo c=1 >> src/a.py \
+  && git add -A && git commit -qm "STORE: ja cache at the end")
+git merge -q --no-ff --no-edit ja >/dev/null 2>&1; git merge -q --no-ff --no-edit jb >/dev/null 2>&1
+git show ja:docs/store.md > docs/store.md && printf '\n## Cache\n\nA write-behind buffer.\n' >> docs/store.md
+git add -A; out=$(git commit -qm "merge jb" 2>&1); rc=$?
+msg="headings: a conflicted merge resolved by keeping both ## Cache sections is refused"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'has the heading \`Cache\` 2 times'" "$out"
+git merge --abort 2>/dev/null; git reset -q --hard
+printf '\n## Errors\n\n### Retry\n\nx\n\n## Sync\n\n### Retry\n\ny\n' >> docs/store.md && git add -A
+msg="headings: every level counts, so a second ### Retry under another section is refused"
+expect_refuse git commit -qm "STORE: retries"; git reset -q --hard
+printf '\n## Example\n\n```\n## Schema\n## Schema\n```\n' >> docs/store.md && git add -A
+msg="headings: a heading quoted in fenced code is no address and isn't counted"
+expect_pass git commit -qm "STORE: example"
+printf '\n## schema\n' >> docs/store.md && git add -A
+msg="headings: a heading differing only in case is the same address and is refused"
+expect_refuse git commit -qm "STORE: case"; git reset -q --hard
+printf '\n## `Schema`\n' >> docs/store.md && git -c core.hooksPath=/dev/null commit -qam "planted duplicate"
+printf '\nMore rows.\n' >> docs/store.md && git add -A
+msg="headings: a page that already holds a duplicate on trunk is still editable elsewhere"
+expect_pass git commit -qm "STORE: more"
+git mv docs/store.md docs/kv.md
+msg="headings: moving a page that already holds a duplicate isn't refused for it"
+expect_pass git commit -qm "STORE: rename"
+printf '\n## Schema\n' >> docs/kv.md && git add -A
+msg="headings: a third copy on that page is refused"
+expect_refuse git commit -qm "KV: third"; git reset -q --hard
+mkdir -p docs/x && printf '# Changes\n\n## v2\n\n### Fixed\n\n## v1\n\n### Fixed\n' > docs/x/CHANGELOG.md && git add -A
+msg="headings: a CHANGELOG.md under docs/ repeats its headings freely"
+expect_pass git commit -qm "X: changelog"
+}
+
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches merge_log findings glossary headings"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file
