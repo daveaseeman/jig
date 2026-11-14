@@ -1,1 +1,60 @@
-{}
+{
+  "checks-and-briefs": {
+    "spec": ".jig/specs/checks-and-briefs.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/scripts/check.sh",
+      "plugin/scripts/session-start.sh",
+      "plugin/hooks/hooks.json",
+      "plugin/templates/jig/scripts/check.sh",
+      "plugin/templates/AGENTS.md",
+      "AGENTS.md",
+      "plugin/skills/release/SKILL.md",
+      "plugin/skills/init/SKILL.md"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "plugin/skills/hubnode/SKILL.md",
+      "plugin/skills/subnode/SKILL.md",
+      "plugin/skills/review/SKILL.md",
+      "tests/smoke.sh"
+    ],
+    "reserved": {}
+  },
+  "cheaper-rounds": {
+    "spec": ".jig/specs/cheaper-rounds.md",
+    "state": "claimed",
+    "after": [
+      "checks-and-briefs"
+    ],
+    "owns": [],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "plugin/skills/hubnode/SKILL.md",
+      "plugin/skills/subnode/SKILL.md",
+      "plugin/skills/review/SKILL.md",
+      "tests/smoke.sh"
+    ],
+    "reserved": {}
+  },
+  "consolidate": {
+    "spec": ".jig/specs/consolidate.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/consolidate/**",
+      "plugin/skills/fix/SKILL.md"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "plugin/skills/hubnode/SKILL.md",
+      "plugin/skills/stage/SKILL.md",
+      "tests/smoke.sh"
+    ],
+    "reserved": {}
+  }
+}
