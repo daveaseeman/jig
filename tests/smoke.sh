@@ -6565,6 +6565,15 @@ printf '#!/bin/sh\nprintf x >> "%s"\nexit 2\n' "$T/cl-runs" > .jig/scripts/check
 CLAUDE_PROJECT_DIR="$HK" bash "$P/../scripts/check.sh" </dev/null >/dev/null 2>&1; rc=$?; stop
 expect_pass sh -c "test $rc = 2 && test \"\$(wc -c < '$T/cl-runs' | tr -d ' ')\" = 5 && tail -1 .git/jig/check.log | grep -qE '	2\$'"
 git checkout -q -- .jig/scripts/check.sh
+msg="stop hook: in a linked worktree, the pass is keyed under that worktree's own git dir"
+wt "$T/cl-hook-wt" -b side && stop_wt() { CLAUDE_PROJECT_DIR="$T/cl-hook-wt" bash "$P/../scripts/check.sh" </dev/null >/dev/null 2>&1; }
+stop_wt; stop_wt
+expect_pass sh -c "test -s .git/worktrees/cl-hook-wt/jig/check-passed && test \"\$(cat .git/worktrees/cl-hook-wt/jig/check-passed)\" != \"\$(cat .git/jig/check-passed 2>/dev/null)\" && test \"\$(wc -c < '$T/cl-runs' | tr -d ' ')\" = 6"
+msg="stop hook: an edit inside a submodule is a change: it runs again"
+SUB="$T/cl-sub"; mkdir -p "$SUB" && (cd "$SUB" && git init -q -b main && git config user.email t@t && git config user.name t && printf 'a\n' > a.c && git add -A && git commit -qm sub)
+git -c protocol.file.allow=always submodule add -q "$SUB" lib >/dev/null 2>&1 && git commit -qm "lib" >/dev/null 2>&1
+n0=$(wc -c < "$T/cl-runs" | tr -d ' '); stop; stop; printf 'broken\n' >> lib/a.c; stop
+expect_pass test "$(wc -c < "$T/cl-runs" | tr -d ' ')" = "$((n0 + 2))"
 
 msg="update: lists a .jig/scripts/check.sh that never reads --full as a repo file to review"
 UQ="$T/cl-up"; pcnew "$UQ" && printf '#!/bin/sh\nexit 0\n' > .jig/scripts/check.sh && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board

@@ -38,6 +38,8 @@ if [ -n "$here" ]; then
   cp "$(git rev-parse --path-format=absolute --git-path index)" "$tmp" 2>/dev/null || rm -f "$tmp"
   tree=$(GIT_INDEX_FILE="$tmp" git add -A >/dev/null 2>&1 && GIT_INDEX_FILE="$tmp" git write-tree 2>/dev/null)
   rm -f "$tmp"
+  # A submodule enters the tree as its HEAD alone, so edits inside one would read as no change.
+  git status --porcelain=v2 --ignore-submodules=none 2>/dev/null | grep -qE '^[12] .. S(.M.|..U)' && tree=""
 fi
 if [ -n "$tree" ]; then
   [ "$(cat "$state/check-passed" 2>/dev/null)" = "$tree" ] && exit 0

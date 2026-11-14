@@ -1222,7 +1222,8 @@ def cmd_checked(root: Path, args) -> int:
         if not good:
             print(f"no complete check is recorded on {trunk}: bisect needs a known good commit")
             return 1
-        cmd = args.trace or "<the failing command>"
+        # Through sh -c, so a command with `&&` or `cd` is run whole at each step.
+        cmd = f"sh -c {shlex.quote(args.trace)}" if args.trace else "<the failing command>"
         # --first-parent steps over merges only, so each step costs one run of one command.
         print("\nFind the merge that broke it, running only the failing command at each step:")
         print(f"  git bisect start --first-parent HEAD {good}")
