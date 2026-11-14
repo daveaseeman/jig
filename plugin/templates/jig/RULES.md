@@ -616,7 +616,10 @@ review>..HEAD` against the previous findings, at the `recheck` step's settings. 
 unless a full review of the job is on HEAD's first-parent chain. The note carries a
 `Recheck:` line beside `Review:`, and `jig gate` warns when either is below its line in the
 spec (a spec without a `recheck:` line is read against `review:`). A recheck widens to a
-full review when the diff changes anything the findings didn't name.
+full review when the diff changes anything the findings didn't name. What needs no new review at
+all: a clean `jig sync` of a reviewed commit, and DEFERRED.md rows whose net change deletes
+no line (Handoff, gate, merge). Working alone, a recheck leans only on a full review made
+since the last handoff note: a new task gets a full review.
 
 A `Proposed` entry the job adds or changes is a ruling the owner still owes. The job tells the
 hubnode when it writes one, the hubnode sends it up while the job builds, and `jig gate` warns,

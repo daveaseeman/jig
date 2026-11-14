@@ -503,10 +503,14 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     others = {n: l for n, l in board.open_jobs().items() if n != name}
 
     # A note's pair lines are answered when committed, not first at the gate: the gate is
-    # the costliest place to find a blank.
+    # the costliest place to find a blank. Only this job's own notes: a sync brings in other
+    # jobs' notes, which this job can't fix.
+    own = re.compile(rf"{re.escape(file_safe(name))}-\d{{4}}-\d{{2}}-\d{{2}}(?:-\d+)?\.md")
     if staged:
         for p in git("-c", "core.quotePath=false", "diff", "--cached", "--name-only",
                      "--diff-filter=AM", "--", f"{DIR}/handoffs/").splitlines():
+            if not own.fullmatch(Path(p).name):
+                continue
             sec = re.search(r"^## Fold-in\n(.*?)(?=^## |\Z)", in_index(p, staged), re.S | re.M)
             for l in (sec.group(1).splitlines() if sec else []):
                 if why := pair_problem(l):
@@ -1270,6 +1274,8 @@ def cmd_merge(root: Path, args) -> int:
               file=sys.stderr)
         for f in conflicted:
             print(f"  {f}", file=sys.stderr)
+        for l in later:
+            print(l)
         return 1
     for line in numbered:
         print(f"numbered {line}")
@@ -1533,23 +1539,28 @@ def review_log() -> list[tuple[str, dict]]:
 
 
 def job_chain(head: str, board: "Board") -> list[str]:
-    """HEAD's first-parent commits, newest first: on a job, only those trunk doesn't hold, so
-    a review of trunk's history is never taken for the job's."""
+    """HEAD's first-parent commits, newest first, that belong to this piece of work, so a
+    review of other work is never taken for it: on a job, those trunk doesn't hold; working
+    alone, those since the last commit that added a handoff note, which ended the last task."""
     branch = git("branch", "--show-current")
     name, _ = board.job_for_branch(branch)
-    rng = [head, f"^{board.trunk}"] if name and branch != board.trunk else [head]
-    return git("rev-list", "--first-parent", *rng).splitlines()
+    if name and branch != board.trunk:
+        return git("rev-list", "--first-parent", head, f"^{board.trunk}").splitlines()
+    ended = git("log", "--first-parent", "--diff-filter=A", "--format=%H", "-1", head, "--",
+                f"{DIR}/handoffs/")
+    return git("rev-list", "--first-parent", head, *([f"^{ended}"] if ended else [])).splitlines()
 
 
 def last_review(chain: list[str], kind: str | None = None) -> tuple[str, dict] | None:
     """The newest record on CHAIN, of KIND when given ("full" or "recheck"); the newest record
     of a commit wins, so a commit reviewed twice reads as its later review."""
-    recs: dict[str, dict] = {}
+    # Per kind too: a recheck recorded on the full review's own commit mustn't hide it.
+    recs: dict[tuple[str, str | None], dict] = {}
     for sha, data in review_log():
-        recs[sha] = data
+        recs[(sha, None)] = recs[(sha, data.get("kind", "full"))] = data
     for c in chain:
-        if c in recs and (kind is None or recs[c].get("kind", "full") == kind):
-            return c, recs[c]
+        if (c, kind) in recs:
+            return c, recs[(c, kind)]
     return None
 
 
@@ -1878,7 +1889,7 @@ def review_shortfall(root: Path, branch: str, name: str, note: str) -> str:
             break
         asked = None
         for want_step in (step, "review"):
-            asked = asked or (re.search(rf"^{want_step}: tier (\d+), effort (\d+)", sec.group(1), re.M)
+            asked = asked or (re.search(rf"\b{want_step}: tier (\d+), effort (\d+)", sec.group(1), re.M)
                               if sec else None)
         if not asked:
             continue
@@ -4055,9 +4066,8 @@ def reviewed_commits() -> set[str]:
 
 def counts_reviewed(commit: str, done: set[str], board: "Board") -> bool:
     """A commit is reviewed when `jig reviewed` recorded it, or when a recorded commit is its
-    first-parent ancestor and nothing of the job's changed since (`changed_since`): `jig
-    handoff` requires the review to be HEAD, so the note, and the DEFERRED.md rows beside it,
-    are always committed after it."""
+    first-parent ancestor and nothing of the job's changed since (`changed_since`): the note, and the DEFERRED.md rows
+    beside it, are committed after the review, and a clean sync may be too."""
     for c in git("rev-list", "--first-parent", commit).splitlines():
         if c in done:
             return not changed_since(c, commit, board)

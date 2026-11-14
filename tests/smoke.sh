@@ -6560,9 +6560,22 @@ Touches: docs/b.md
 
 When b starts, it asks first.' Open && git add -A && git commit -qm "D-?q: q" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 \
   && foldin && git add -A && git commit -qm "note q")
+msg="cheaper rounds: a sync bringing in another's note with an unanswered pair line isn't refused by the hook"
+printf '# Handoff: solo\n\n## Fold-in\n- [ ] D-009 vs .jig/decisions.md § D-001 (docs/a.md): ___\n\n## Left\n' > .jig/handoffs/solo-2026-11-01.md && git add -A && git commit -qm "trunk: a solo note"
+expect_pass sh -c "cd .git/jig/worktrees/q && $J sync"
 msg="cheaper rounds: the gate warns of a Proposed entry the job adds, naming it, and passes"
 out=$($J gate q 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-q 2>/dev/null
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'warning: .jig/decisions.md § D-?q which b? is Proposed'" "$out"
+# Working alone, a recheck leans only on a full review of this task, made since the last note.
+SO="$T/solo"; pcnew "$SO" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+printf 'a\n' > a.txt && git add -A && git commit -qm A && $J reviewed --tier 2 --effort 1 >/dev/null
+msg="cheaper rounds: a recheck on the full review's own commit keeps the full review's line"
+$J reviewed --recheck --tier 2 --effort 3 >/dev/null
+expect_pass sh -c "$J handoff >/dev/null && grep -qx 'Review: tier 2, effort 1' .jig/handoffs/main-*.md && grep -qx 'Recheck: tier 2, effort 3' .jig/handoffs/main-*.md"
+foldin && git add -A && git commit -qm "note A" && printf 'b\n' > b.txt && git add -A && git commit -qm B
+msg="cheaper rounds: working alone, a new task's recheck against the last task's review is refused"
+expect_refuse $J reviewed --recheck --tier 2 --effort 1
+cd "$CR"
 msg="cheaper rounds: the kickoff jig open prints says to message the hubnode on a Proposed entry"
 expect_pass sh -c "$J open k2 2>&1 | grep -q 'When you write or change a Proposed entry'"
 git checkout -q -- .jig/jobs.json 2>/dev/null
