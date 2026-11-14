@@ -1,7 +1,7 @@
 {
   "git-output-encoding": {
     "spec": ".jig/specs/bug-git-output-encoding.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [],
     "shares": [
@@ -38,7 +38,7 @@
   },
   "project-sweep-noise": {
     "spec": ".jig/specs/bug-project-sweep-noise.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [],
     "shares": [
@@ -70,7 +70,7 @@
   },
   "heading-collision": {
     "spec": ".jig/specs/bug-heading-collision.md",
-    "state": "claimed",
+    "state": "ready",
     "after": [],
     "owns": [],
     "shares": [
