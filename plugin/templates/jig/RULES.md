@@ -95,6 +95,9 @@ Don't patch them; don't ledger it.
 Conventions so two jobs rarely meet in one hunk:
 
 - Append, never edit, shared prose. A change to someone else's section is a note in yours.
+- Two jobs sharing a page each add their own section under their own name. A name both chose
+  is refused at the merge that would join them (Documentation), so no number is reserved for
+  it; two names for one thing are for fold-in and review to catch.
 - A file of one's own: new routes in your own handler registered by one line; new state in
   your own module; new tests in your own file; a new fixture as a new file.
 - Scarce numbers come from the board (`--reserve`, `jig reserve`), never from looking at what seems free.
@@ -171,7 +174,9 @@ its subsystem's page or to propose.
 (its docmap globs' files that no page but those above it covers), the repo's structure maps
 and manifests, and with `--levels` its imports. A page below a system whose docmap globs cover no file
 is a section of the page above it; one whose every file another page covers is that page's
-subsystem, or a seam; each folds on the owner's yes. It also lists the repo's own files that
+subsystem, or a seam; each folds on the owner's yes. A fold joins sections of one name into one
+— the folded page's Invariants entries under the receiving page's Invariants, its Talks to
+under its Talks to — since a page holds each heading once. It also lists the repo's own files that
 still hold the old page shape — a check of the Now / Rules / Checks headings, a counter over
 numbered page headings, an always-loaded line that makes page rules bind or cites a page by
 number — and the files that declare the docs structure beside the docmap. Those convert with
@@ -244,6 +249,15 @@ An invariant the code breaks is a finding the handoff surfaces for a person to r
 an instruction to bend the code. Cite a page by its heading (`docs/ui/ui.md § Invariants`),
 not by a number. A moved rule leaves no forwarding address behind — that is history, and
 git keeps it.
+
+A heading is its page's address, as a section number was, so a page holds each heading once,
+at any level: two `### Errors` under different sections are renamed apart (`### Sync errors`).
+The hook refuses a change that leaves a page under `docs/` with more copies of one heading than
+it had, compared as `§` compares them: code and emphasis marks dropped, case kept. In
+`docs/glossary.md` a table row's term is an address too, and counts with the headings. A
+heading quoted in fenced code is an example, not an address, and isn't counted. A page that
+already holds a duplicate isn't refused for it, wherever the change moved it from. A
+`CHANGELOG.md` or `DECISIONS.md` there, a datasheet and a file `not_docs` matches are exempt.
 
 In `docmap`, a subsystem's page names its own files and its system's page names the rest:
 fold-in asks every page that covers a changed file, so a system page whose globs reach into
@@ -333,7 +347,8 @@ URL and hash to fetch it again. Notes stay committed, and so does every file the
 Any other file has no home, and survey says which kind: an `AGENTS.md`, `CLAUDE.md` or
 `GEMINI.md` off root is a second rulebook; three or more sentences of this file word for word
 is a copy, which freezes while this file moves on; a page, flat or in its folder, below a
-subsystem, with no `deep_subsystems` entry, is deep: fold it into its subsystem's page, or
+subsystem, with no `deep_subsystems` entry, is deep: fold it into its subsystem's page, joining
+sections of one name, or
 propose its folder to the owner with its rationale; a page outside the tree — one with an
 Invariants section or a retired Undefined one, the old Now, Rules and Checks headings, or any file `docmap`
 names, whatever its format — goes flat beside
