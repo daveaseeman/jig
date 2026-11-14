@@ -1896,8 +1896,8 @@ WF="$T/wf"; mkdir -p "$WF" && cd "$WF" && git init -q -b main && git config user
 cp -r "$P/jig" .jig && chmod +x .jig/scripts/*.sh && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 msg="workflow: prints jig's defaults, one step per line"
 expect_pass sh -c "$J workflow | grep -qx 'execute: tier 2, effort 3' && $J workflow | grep -qx 'review: tier 2, effort 1'"
-msg="workflow: the bug step is printed, in step order after spec"
-expect_pass test "$($J workflow | cut -d: -f1 | tr '\n' ' ')" = "spec bug execute review check "
+msg="workflow: the bug step is printed after spec, recheck after review"
+expect_pass test "$($J workflow | cut -d: -f1 | tr '\n' ' ')" = "spec bug execute review recheck check "
 for rule in \
   '{"execute": {"tier": 1}}|workflow.execute: tier 1 is above the spec.s tier 2' \
   '{"execute": {"effort": 2}}|workflow.execute: effort 2 is not below the spec.s effort 2' \
@@ -5348,16 +5348,17 @@ rm -f .jig/handoffs/*.md && cp "$T/pin" .jig/meta-cache/PIN && $J handoff >/dev/
 note=$(ls .jig/handoffs/*.md)
 msg="touches fold-in: a pararepo entry touching the metarepo's page gets a pair line with the metarepo's entry"
 expect_pass grep -qxF -- '- [ ] D-?id-lock vs hub/.jig/decisions.md § D-033 (hub/docs/features/gestures.md): ___' "$note"
-git add -A && git commit -qm "TOOL: note lock" && cd "$TQ"
+git add -A && git -c core.hooksPath=/dev/null commit -qm "TOOL: note lock" && cd "$TQ"
+# The hook refuses these notes at commit (sec_cheaper_rounds); committed past it, the gate still does.
 msg="touches gate: the pair line unanswered is refused"
 expect_refuse gate_ok lock
 cd .git/jig/worktrees/b-lock && sed -i.bak -e 's/^- \[ \]/- [x]/' -e 's/: ___$/: conflicts/' -e 's/___/smoke/g' .jig/handoffs/*.md && rm .jig/handoffs/*.bak \
-  && git add -A && git commit -qm "TOOL: answer lock" && cd "$TQ"
+  && git add -A && git -c core.hooksPath=/dev/null commit -qm "TOOL: answer lock" && cd "$TQ"
 msg="touches gate: conflicts with no resolution is refused"
 out=$($J gate lock 2>&1); git worktree remove --force .git/jig/worktrees/gate-lock 2>/dev/null
 expect_pass sh -c "echo \"\$0\" | grep -q 'conflicts needs its resolution'" "$out"
 cd .git/jig/worktrees/b-lock && sed -i.bak 's/ (hub\/docs\/features\/gestures.md): conflicts$/: agrees/' .jig/handoffs/*.md && rm .jig/handoffs/*.bak \
-  && git add -A && git commit -qm "TOOL: reshape lock" && cd "$TQ"
+  && git add -A && git -c core.hooksPath=/dev/null commit -qm "TOOL: reshape lock" && cd "$TQ"
 msg="touches gate: a pair line reshaped by hand is refused"
 expect_refuse gate_ok lock
 cd .git/jig/worktrees/b-lock && sed -i.bak 's/§ D-033: agrees$/§ D-033 (hub\/docs\/features\/gestures.md): narrows: when locked (an exception the metarepo allows), gestures wait/' .jig/handoffs/*.md && rm .jig/handoffs/*.bak \
@@ -6451,7 +6452,121 @@ msg="headings: update's section-counter finding names the heading rule that repl
 expect_pass sh -c "\$0 2>&1 | grep -F 'reserve.section' | grep -qF \"refuses a page's second heading of one name\"" "$UP"
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings"
+# ---------------------------------------------------------------- cheaper rounds
+# After a job's first full review, each later touch costs what it changed.
+sec_cheaper_rounds() {
+CR="$T/cr"; pcnew "$CR" && mkdir -p docs nums .jig/ledgers && printf '# A\n' > docs/a.md && printf '# B\n' > docs/b.md && printf 'x\n' > shared.txt \
+  && cp "$P/ledgers/DEFERRED.md" .jig/ledgers/ && printf '| 2026-11-01 | base | f0 | should-fix | deferred | r |\n' >> .jig/ledgers/DEFERRED.md \
+  && git add -A && git commit -qm init && $J init >/dev/null
+board "b['reserve'] = {'section': {'pattern': r'^## (\\d+) ', 'files': ['nums/**']}}"
+ulog '### D-001 a rules
+Accepted (owner, 2026-11-01).
+Touches: docs/a.md
+
+When a is idle, it sleeps.' && mkdir -p .jig/specs && printf '# s\n\n## Workflow\nreview: tier 2, effort 1\nrecheck: tier 2, effort 1\n' > .jig/specs/s.md \
+  && git add -A && git commit -qm "board, D-001, spec"
+
+msg="cheaper rounds: jig workflow prints recheck at review's settings by default"
+expect_pass sh -c "$J workflow | grep -qx 'recheck: tier 2, effort 1' && test \"\$($J workflow | cut -d: -f1 | tr '\n' ' ')\" = 'spec bug execute review recheck check '"
+setwf '{"review": {"effort": 3}}'
+msg="cheaper rounds: a review override moves recheck with it"
+expect_pass sh -c "$J workflow | grep -qx 'recheck: tier 2, effort 3'"
+setwf '{"review": {"effort": 3}, "recheck": {"tier": 3, "effort": 4}}'
+msg="cheaper rounds: a recheck override wins"
+expect_pass sh -c "$J workflow | grep -qx 'recheck: tier 3, effort 4' && $J workflow | grep -qx 'review: tier 2, effort 3'"
+git checkout -q -- .jig/config.json
+
+$J open j1 --spec .jig/specs/s.md --shares shared.txt --reserve section >/dev/null && $J open j2 --reserve section >/dev/null \
+  && git add -A && git commit -qm "open j1 j2"
+W1=.git/jig/worktrees/j1 W2=.git/jig/worktrees/j2
+(cd $W1 && printf 'j1\n' > j1.txt && git add -A && git commit -qm j1)
+msg="cheaper rounds: reviewed --recheck is refused with no full review of the job on HEAD's chain"
+out=$(cd $W1 && $J reviewed --recheck --tier 2 --effort 1 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'no full review of this job'" "$out"
+(cd $W1 && $J reviewed --tier 2 --effort 1 >/dev/null)
+printf 'other\n' > other.txt && git add -A && git commit -qm "trunk: other"
+(cd $W1 && $J sync >/dev/null 2>&1)
+msg="cheaper rounds: a clean sync of a reviewed commit hands off with no new jig reviewed"
+expect_pass sh -c "cd $W1 && $J handoff >/dev/null && grep -qx 'Review: tier 2, effort 1' .jig/handoffs/j1-*.md && ! grep -q '^Recheck:' .jig/handoffs/j1-*.md"
+(cd $W1 && rm .jig/handoffs/*.md && printf 'job\n' > shared.txt && git commit -qam "j1 shared" && $J reviewed --tier 2 --effort 1 >/dev/null)
+printf 'trunk\n' > shared.txt && git commit -qam "trunk: shared"
+(cd $W1 && $J sync >/dev/null 2>&1; printf 'both\n' > shared.txt && git add -A && git commit -q --no-edit)
+msg="cheaper rounds: a hand-resolved sync is refused at handoff, naming jig reviewed --recheck"
+out=$(cd $W1 && $J handoff 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'shared.txt changed since the review' && echo \"\$0\" | grep -q 'reviewed --recheck'" "$out"
+(cd $W1 && $J reviewed --recheck --tier 2 --effort 3 --ran "model-x at level-z" >/dev/null)
+msg="cheaper rounds: after a recheck the note carries Recheck beside the full review's line"
+expect_pass sh -c "cd $W1 && $J handoff >/dev/null && grep -qx 'Review: tier 2, effort 1' .jig/handoffs/j1-*.md && grep -qx 'Recheck: tier 2, effort 3' .jig/handoffs/j1-*.md && grep -qx 'Recheck ran: model-x at level-z' .jig/handoffs/j1-*.md"
+(cd $W1 && foldin && git add -A && git commit -qm "note j1")
+msg="cheaper rounds: the gate warns of a recheck below the spec's recheck line, not of the full review"
+out=$($J gate j1 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-j1 2>/dev/null
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'warning: recheck ran at tier 2, effort 3; the spec asks for tier 2, effort 1' && ! echo \"\$0\" | grep -q 'review ran at'" "$out"
+msg="cheaper rounds: jig merge names the open job holding a later number of a counter it used"
+out=$($J merge j1 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'job j2 holds section 2, after j1.s 1: it syncs before its next handoff'" "$out"
+
+# DEFERRED.md is judged by its net change since the gated commit.
+(cd $W2 && printf 'j2\n' > j2.txt && git add -A && git commit -qm j2 && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 \
+  && foldin && git add -A && git commit -qm "note j2" \
+  && sed -i.bak 's/| f0 |/| f0 edited |/' .jig/ledgers/DEFERRED.md && git commit -qam "edit row" \
+  && sed -i.bak 's/| f0 edited |/| f0 |/' .jig/ledgers/DEFERRED.md && rm .jig/ledgers/DEFERRED.md.bak && git commit -qam "restore row")
+msg="cheaper rounds: a DEFERRED.md row edited and restored later, net append-only, merges with no new handoff"
+expect_pass $J merge j2
+$J open j3 >/dev/null && git add -A && git commit -qm "open j3"
+(cd .git/jig/worktrees/j3 && printf 'j3\n' > j3.txt && git add -A && git commit -qm j3 && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 \
+  && foldin && git add -A && git commit -qm "note j3" \
+  && printf '| 2026-11-02 | j3 | f1 | nit | rejected | r |\n' >> .jig/ledgers/DEFERRED.md && git commit -qam "add row" \
+  && sed -i.bak '/| base |/d' .jig/ledgers/DEFERRED.md && rm .jig/ledgers/DEFERRED.md.bak && git commit -qam "drop base row")
+msg="cheaper rounds: a line the net change deletes still counts, naming DEFERRED.md"
+out=$($J merge j3 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'changed since.*DEFERRED.md'" "$out"
+
+# Pairs: answered at commit, and a pair found at the gate answered in the note alone.
+for j in p1 p2; do
+  $J open $j >/dev/null && git add -A && git commit -qm "open $j"
+  (cd .git/jig/worktrees/$j && ulog "### D-?$j $j rules
+Accepted (owner, 2026-11-03).
+Touches: docs/a.md
+
+When $j runs, a waits." && git add -A && git commit -qm "D-?$j: $j" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1)
+done
+cd .git/jig/worktrees/p1 && sed -i.bak -e 's/^- \[ \]/- [x]/' -e '/ vs .* § /!s/___/smoke/g' .jig/handoffs/*.md && rm .jig/handoffs/*.bak && git add -A
+msg="cheaper rounds: the commit hook refuses a note whose pair line has no agrees, narrows: or conflicts:, naming the line"
+out=$(git commit -qm "note p1" 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'fold-in line \`- [x] D-?p1 vs .jig/decisions.md § D-001 (docs/a.md): ___\`'" "$out"
+sed -i.bak 's/___/agrees/' .jig/handoffs/*.md && rm .jig/handoffs/*.bak && git add -A
+msg="cheaper rounds: the same note answered agrees commits"
+expect_pass git commit -qm "note p1"
+cd "$CR" && (cd .git/jig/worktrees/p2 && foldin && git add -A && git commit -qm "note p2")
+gate_ok p1 && $J merge p1 >/dev/null 2>&1
+p2tip=$(git rev-parse p2)
+msg="cheaper rounds: a pair found at the gate says to answer it in the note and commit, sync only for a merge that needs a hand"
+out=$($J gate p2 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-p2 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'add each to the fold-in of .jig/handoffs/p2-.*, ticked and answered agrees' && echo \"\$0\" | grep -q 'jig sync. only when the merge itself needs a hand'" "$out"
+pair=$(echo "$out" | grep ' vs ' | sed -e 's/^ *//' -e 's/^- \[ \]/- [x]/' -e 's/___$/agrees/')
+(cd .git/jig/worktrees/p2 && python3 -c "import sys,glob; f=glob.glob('.jig/handoffs/p2-*.md')[0]; s=open(f).read(); open(f,'w').write(s.replace('## Fold-in\n', '## Fold-in\n'+sys.argv[1]+'\n', 1))" "$pair" \
+  && git add -A && git commit -qm "p2: answer the pair")
+msg="cheaper rounds: the answered note alone, no sync and no new review, passes the gate"
+expect_pass sh -c "gate_ok() { $J gate p2 >/dev/null 2>&1; r=\$?; git worktree remove --force .git/jig/worktrees/gate-p2 2>/dev/null; return \$r; }; gate_ok && test \"\$(git rev-list --count $p2tip..p2)\" = 1"
+expect_pass $J merge p2
+
+# A Proposed entry is a ruling still owed: the gate warns, never refuses.
+$J open q >/dev/null && git add -A && git commit -qm "open q"
+(cd .git/jig/worktrees/q && ulog '### D-?q which b?
+Proposed (owner, 2026-11-03).
+Touches: docs/b.md
+
+When b starts, it asks first.' Open && git add -A && git commit -qm "D-?q: q" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 \
+  && foldin && git add -A && git commit -qm "note q")
+msg="cheaper rounds: the gate warns of a Proposed entry the job adds, naming it, and passes"
+out=$($J gate q 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-q 2>/dev/null
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'warning: .jig/decisions.md § D-?q which b? is Proposed'" "$out"
+msg="cheaper rounds: the kickoff jig open prints says to message the hubnode on a Proposed entry"
+expect_pass sh -c "$J open k2 2>&1 | grep -q 'When you write or change a Proposed entry'"
+git checkout -q -- .jig/jobs.json 2>/dev/null
+}
+
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings cheaper_rounds"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file
