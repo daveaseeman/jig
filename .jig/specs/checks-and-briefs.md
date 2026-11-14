@@ -161,6 +161,11 @@ session's own report of its effort.
 - Interpreted: "the host's readout" is named generically in the skill text, with the Claude app's
   session readout as the example, since skills are the plugin's and may name the host.
 - Consolidated: one job for both, the owner's call on 2026-11-13.
+- Interpreted: `jig checked --trace [COMMAND]` takes the failing command as an optional argument
+  and prints it into `git bisect run`; with none it prints a placeholder. Accepted by the
+  hubnode on 2026-11-13.
+- Interpreted: `jig mark J gated` with no gate checkout is refused as a missing record is;
+  `--batch` is the only way past it without one. Accepted by the hubnode on 2026-11-13.
 
 ## Workflow
 spec: tier 2, effort 2

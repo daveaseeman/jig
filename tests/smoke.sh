@@ -6467,6 +6467,9 @@ $J open K >/dev/null && git add -A && git commit -qm "open K"
 ( cd .git/jig/worktrees/K && printf 'x=1\n' > k.py && git add -A && git commit -qm k && $J reviewed >/dev/null \
   && $J handoff >/dev/null 2>&1 && foldin && git add -A && git commit -qm "note K" )
 s=.git/jig/worktrees/gate-K
+msg="mark: gated with no gate checkout at all is refused, naming jig gate and jig checked"
+out=$($J mark K gated 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'no gate checkout for K: .jig gate K.*jig checked' && grep -q '\"state\": \"claimed\"' .jig/jobs.json" "$out"
 msg="gate: prints check.sh --full in the scratch checkout, the check step's tier and effort, jig checked and jig mark gated"
 out=$($J gate K 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -qF '(cd $s && ./.jig/scripts/check.sh --full)' && echo \"\$0\" | grep -q 'check step runs it: tier 3, effort 4' && echo \"\$0\" | grep -qF 'checked --tier 3 --effort 4 --seconds <s>' && echo \"\$0\" | grep -q 'jig mark K gated'" "$out"
