@@ -544,12 +544,15 @@ else stops with the files named, and a person resolves it.
    change since the check. A job may hand off several times.
 2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it sets
    up a **detached scratch checkout of the commit the note names**, with trunk merged in the
-   way `jig sync` merges it, and prints the check to run there. It never runs
-   the check: whoever runs it runs the same command. Never the job's live worktree, which the
-   subnode may still be building in.
+   way `jig sync` merges it, and prints the complete check to run there
+   (`.jig/scripts/check.sh --full`), the check step's tier and effort, and the `jig checked`
+   that records it. It never runs the check: whoever runs it runs the same command. Never the
+   job's live worktree, which the subnode may still be building in.
    The scratch checkout lives until the job is marked gated or merged: `jig mark <job> gated`
    and `jig merge <job>` remove it, untracked files and all, and refuse while it holds a
    tracked edit, which belongs on the job's branch. `jig update` removes one left behind.
+   `jig mark <job> gated` refuses until `jig checked` has recorded the checkout's commit;
+   `jig mark <job> gated --batch` leaves the check to the batch (Workflow).
    The hooks set that checkout up with `.jig/scripts/setup.sh`, when it is added and again
    after its merge of trunk, so the checks run in an environment built from the job's own
    manifests.
@@ -611,6 +614,32 @@ lower effort than the spec asks. So the warning catches a review recorded withou
 config changed after the spec was written; it can't see a review that actually ran weaker
 than it was set to. A fix goes back to the session that executed. A third round that doesn't converge is a
 bug in the spec or the approach: investigate it, don't start a fourth.
+
+### Two levels of check
+
+`.jig/scripts/check.sh` has two levels. With no argument it runs the quick part: what runs
+on every stop and while working (lint, type-check, unit tests). With `--full` it runs the
+quick part, then the complete one (the full suite, slow and end-to-end tests). While working,
+execute and fix run `check.sh` and the parts their change touched, never `--full`. Review
+reruns no check the builder's report shows for the same commit. Only the check step runs
+`--full`.
+
+`jig checked --tier N --effort N --seconds S` records a complete run that passed: HEAD, the
+check step's numbers, the seconds and the date, in `.git/jig/checked.log` (never committed;
+shared by every worktree). It warns when the numbers differ from the check step's. `jig
+status` prints the last one's seconds and date: what a complete check costs here.
+
+A single job keeps its own gate check: `check.sh --full` once in the gate's checkout, `jig
+checked` there, then `jig mark <job> gated`, which refuses without that record.
+
+A batch of jobs gated together owes one complete check instead: each is marked `jig mark <job>
+gated --batch`, they merge in sequence with `jig sync` between them, and `jig merge` writes
+`Check: batch` into each one's merge commit. Then, before a push or a release, `check.sh
+--full` runs once on trunk, and `jig checked` there. `jig release` refuses while a merge on
+trunk since its last recorded check carries `Check: batch`. When that check fails, `jig
+checked --trace [command]` on trunk lists the merges since the last checked commit and prints
+the `git bisect --first-parent` run that finds the one that broke it, running only the failing
+command at each step.
 
 ## Roadmap
 
@@ -1113,7 +1142,7 @@ jig reading-list <paths>    what to read before touching these files, and the pa
 jig install-hooks           rewrite the hooks
 jig status                  jobs, states, distance from trunk, dirt
 jig open <name> --spec … --owns … --shares … --after … --reserve schema
-jig mark <name> <state>     claimed|building|ready|gated|parked
+jig mark <name> <state>     claimed|building|ready|gated|parked; gated needs `jig checked`, or --batch
 jig merge <name> [-m msg] [--subject text]   merge a job, numbering its D-?<slug> ids; its entry is deleted in the merge commit
 jig merge --number          in a merge stopped on conflicts, once resolved: number the ids it brings in, then setup.sh and derive.sh
 jig check [--staged]        run the rules here
@@ -1121,6 +1150,8 @@ jig job                    this branch's manifest
 jig decision <id>           a decision entry and its supersedes chain
 jig sync                    merge trunk in, append rule applied; on a pararepo's trunk, the metarepo
 jig reviewed [--tier N --effort N] [--ran text]   record that HEAD has been reviewed, and at what
+jig checked --tier N --effort N --seconds S   record that the complete check passed on HEAD
+jig checked --trace [command]   on trunk: the merges since the last complete check, and the bisect that finds the breaking one
 jig workflow                each step's model tier and effort in effect
 jig handoff [--spec path] [--partial]   write the note for HEAD; --partial: it doesn't finish the spec
 jig roadmap [--write]       the roadmap's states on trunk; --write regenerates ROADMAP.md

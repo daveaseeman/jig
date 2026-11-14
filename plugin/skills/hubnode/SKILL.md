@@ -34,8 +34,10 @@ handoff or when blocked.
    marks `withdrawn` isn't listed: name it as a branch to delete, on the owner's word. Read-only: rows
    reach this repo only as a proposal.
 6. `jig workflow`, and read `${CLAUDE_PLUGIN_ROOT}/tiers.json`. Say what you run on:
-   `running <model> at <effort>`, from your own system prompt. If that is below the `spec`
-   step's, say so in one line — the owner chose your session, and jig can't change it.
+   `running <model>`, from your own system prompt, and your effort from the host's readout of
+   this session where it has one (the Claude app shows each session's), else `unknown`. If
+   that is below the `spec` step's, say so in one line — the owner chose your session, and
+   jig can't change it.
    If `jig workflow` isn't a command, the repo's `.jig/` is older than the plugin: say "run
    /jig:update first" and stop. No `bug` line: `.jig/` predates it; use spec's settings until
    `/jig:update`.
@@ -49,14 +51,21 @@ to change the config or `tiers.json`, and start nothing. You never pick a settin
 task; a task that needs others is the owner's config change.
 
 Every prompt you send a spawned session or subagent starts with the line
-`running <model> at <effort>`, and its first reply must start with the same line, read from
-its own settings. A value it can't read from its own settings, it reports as `unknown`. A
-mismatch stops a raised session: tell the owner, don't brief it. A subagent, or a session
-started at or below your settings, gets its brief in the same prompt, so that prompt also
-says: "if your own model or effort differs from this line, reply with only your `running`
-line and stop". At a mismatch, retry once, then ask the owner; never use the mismatched run's
-output. Only a value it read and that differs is a mismatch: an `unknown` gets no retry, you
-record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
+`running <model> at <effort>`: the step's configured settings. Its first reply starts with
+`running <model>`, the model read from its own settings, and no effort: a session's read of
+its own effort has been wrong too often to act on. You check the effort with the host's
+readout of that session when the host has one (the Claude app's session readout), and you
+record the configured numbers (`--tier N --effort N`) either way. A self-read the host
+contradicts is never a mismatch; only a model that differs is. A mismatch stops a raised
+session: tell the owner, don't brief it. A subagent, or a session started at or below your
+settings, gets its brief in the same prompt, so that prompt also says: "if your own model
+differs from this line, reply with only your `running` line and stop". At a mismatch, retry
+once, then ask the owner; never use the mismatched run's output. A model it can't read, it
+reports as `unknown`: no retry, you record it as `unknown` (`--ran "unknown at <effort>"`)
+and tell the owner once.
+
+When the host refuses to start a session on this turn, offer it to the owner to start
+instead (a proposal card, or the brief to paste), and never run the step in this session.
 
 - **execute, fix, check** run as sessions (`start_session`), so the owner can watch and steer.
   The tool clamps a new session to your model and effort, silently. When the step is at or
@@ -88,6 +97,10 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
 
 ## Opening a job
 
+Before opening more than one job, say in one line that each job's commands and checks run on
+this machine, with the last complete check's time from `jig status`, and that jobs run in the
+cloud only if the owner asks and the repo has a remote.
+
 1. Read the spec. In a pararepo, refuse a job whose spec cites a proposal `jig sync`'s
    report calls not released: it would build on a decision the metarepo hasn't made. This
    is the early warning; `jig gate` refuses it for good.
@@ -110,8 +123,11 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
 1. `jig mark <name> ready`, then `jig gate <name>`. It refuses on R8 and on a missing note,
    and in a pararepo on a spec citing a proposal that isn't in the pinned release.
 2. `jig gate` sets up a detached scratch checkout of the commit the note names, with trunk
-   merged in as `jig sync` would, and prints the check to run there. Don't run it in this
-   session: start a session at the `check` step's settings to run it in the scratch checkout.
+   merged in as `jig sync` would, and prints the complete check to run there and the
+   `jig checked` that records it. Don't run it in this session: start a session at the
+   `check` step's settings, from the check brief below, to run it in the scratch checkout.
+   One check session at a time: two complete suites at once on this machine each run slower
+   than both in turn.
    Not the job's worktree — the subnode may still be building there. It reports the exit
    code and output; you read it. `jig gate` warns when the review ran weaker than the spec's
    Workflow section: say so to the owner before the merge.
@@ -129,7 +145,8 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
    miss goes back to the subnode as a note, never as your own fix.
 4. **Do not re-review the diff.** The subnode's adversarial review is the review. You are
    checking that it happened and that the result matches the spec.
-5. `jig mark <name> gated` (it removes the scratch checkout), commit `jobs.json`, then on the owner's word
+5. `jig mark <name> gated` (it refuses until `jig checked` recorded the checkout's commit,
+   then removes the checkout), commit `jobs.json`, then on the owner's word
    `jig merge <name> -m "shared files: ..."`. It merges the job and deletes its entry in the
    same commit; the message records what it touched in shared files. In a repo whose
    subjects lead with ids, add `--subject "<ids>"`, e.g. `--subject "D-001, D-002"`: the
@@ -139,6 +156,61 @@ record it as `unknown` (`--ran "<model> at unknown"`) and tell the owner once.
    use those numbers in `--subject`, and report them to the owner. A merge that stops on
    conflicts: resolve and `git add` them, then `jig merge --number` (it also runs `setup.sh`
    and `derive.sh`), then `git commit`.
+
+## A batch
+
+Several handoffs waiting at once can share one complete check. Gate each (`jig gate`, read
+the note) but start no check session; `jig mark <name> gated --batch`. Merge them in
+sequence, `jig sync` in the next one's worktree between merges. Then one check session on
+trunk, from the check brief, with `check.sh --full` and `jig checked` there, before a push or a
+release: `jig release` refuses until it has run. When it fails, `jig checked --trace
+"<failing command>"` on trunk prints the bisect that names the merge; that merge's job gets the
+fix. Run a check on trunk after a merge only for a batch: a single job's gate check already
+ran on the merge it makes.
+
+## Briefs
+
+Each brief opens with the step's `running <model> at <effort>` line and says what the step
+runs, so no session runs a suite it doesn't own. Fill the `<…>`; add the job's kickoff
+(worktree, spec, owns, shares) where it applies.
+
+**execute**
+```
+running <model> at <effort>
+If your own model differs from this line, reply with only your running line and stop.
+You are the subnode for job <name>. Run /jig:subnode first. Spec: <spec>.
+While working, run `.jig/scripts/check.sh` and the parts of the suite your change touched,
+never the complete check: that is the check step's, once per gate or batch.
+When the checks pass, report the commit and the commands you ran with their output.
+```
+
+**fix**
+```
+running <model> at <effort>
+Fix these blocking findings on job <name>, in its worktree: <findings>.
+Run `.jig/scripts/check.sh` and the parts of the suite the fix touched, never the complete
+check. Report the commit and the commands you ran with their output.
+```
+
+**review**
+```
+running <model> at <effort>
+If your own model differs from this line, reply with only your running line and stop.
+Run /jig:review on <base>..<commit> in <worktree>, with only the diff, the spec <spec> and
+AGENTS.md. Rerun no check the builder's report shows for the same commit: <report>.
+Run only the narrowest check a specific finding needs.
+```
+
+**check**
+```
+running <model> at <effort>
+Run the complete check once, in <checkout>: `(cd <checkout> && ./.jig/scripts/check.sh --full)`,
+output to <out>, timed. Wait on it as /jig:verify says: background, its exit notice or pid.
+If it passes, `jig checked --tier <N> --effort <N> --seconds <s>` in that checkout.
+Report the exit code, the seconds and the output's tail. Change nothing; fix nothing.
+```
+The check brief adds the throwaway-repo variables from Gating a handoff when the suite makes
+repos, and for a batch, `<checkout>` is the trunk checkout.
 
 ## A roadmap change
 
