@@ -961,7 +961,7 @@ bump with the term's new home, `<meta>/docs/glossary.md § <term>`.
 | M5 | a merge into trunk of a commit `jig reviewed` never recorded. A commit counts as reviewed when a recorded one is its first-parent ancestor and nothing of the job's changed since: handoff notes and the rows they add to `.jig/ledgers/DEFERRED.md` (committed after the review by design) and syncs of trunk that `jig sync` would make don't count. A job's sync of trunk and the gate's scratch merge aren't merges into trunk; a merge on a detached HEAD at trunk, or behind it, is |
 | M6 | a subject that doesn't start with the ids it touches (`D-022: …`, `GLOSSARY: …`; on a branch, `D-?store-ro: …`) |
 | P1 | an `AGENTS.md` header that differs from what `.jig/para.json` generates |
-| P2 | a contract-path change (an edit, a delete, or a rename from one) with none of: a row added or changed in `.jig/ledgers/BUFFER.md` in the same commit, or a spec saying `meta: buffered <row id>`, `meta: <name> proposal <branch>`, `meta: <name> pointers <branch>` or `meta: none — <reason>` (a spec the change touches, or the job's own: the board's `spec`, read as trunk has it, a one-line spec being its own text; in a merge, the one job whose branch tip is what is merged in, or whose own first-parent line holds it, and none for an octopus); the same for a change that deletes or renames a file a cached metarepo pointer names, or the heading its `§` names; a lost file counts even when its heading was already missing. Also, in `BUFFER.md`: a state other than `Open` or `Closed`, a repeated id, an `Open` row deleted, or one closed by any commit but `jig sync`'s |
+| P2 | a contract-path change (an edit, a delete, or a rename from one) with none of: a row added or changed in `.jig/ledgers/BUFFER.md` in the same commit, or a spec saying `meta: buffered <row id>`, `meta: <name> proposal <branch>`, `meta: <name> pointers <branch>` or `meta: none — <reason>` (a spec the change touches, or the job's own: the board's `spec`, read as trunk has it, a one-line spec being its own text; in a merge, the one job whose branch tip is what is merged in, or whose own first-parent line holds it, and none for an octopus); the same for a change that deletes or renames a file a cached metarepo pointer names, or the heading its `§` names; a lost file counts even when its heading was already missing. Also, in `BUFFER.md`: a state other than `Open`, `Closed` or `Closed (answered in <release>: <reason>)`, a repeated id, an `Open` row deleted, or one closed with its other cells changed, in a commit that changes a contract path, or by anything but `jig sync`: a `Closed` row needs the pin to hold a proposal that carried it as it stands (checked against the metarepo's checkout), an answered one a release at or below the pin |
 | P4 | a contract-path change while a file targeting the metarepo is staged |
 | P3 | the metarepo's cache (`.jig/meta-cache/`) or its checkout committed into the pararepo |
 
@@ -1002,6 +1002,18 @@ proposal, `jig sync` on the pararepo's trunk makes the pin commit itself: it mov
 that release and marks `Closed` the rows the proposal carried that are unchanged since, in one
 commit `meta: <name> v0.3.0 → v0.4.0` (or, when the pin already holds the release, `meta:
 <name> v0.4.0: close B1`). Rows added or edited after the proposal stay `Open` for the next one.
+A claim the metarepo answered by some other change, its proposal never released, closes on the
+owner's word: `jig sync --answered B1,B2 --in <release> --reason <text>`, on trunk, with the pin
+at or above that release, writes `Closed (answered in <release>: <reason>)` in each row and
+commits it alone. jig checks the release, not the claim: the reason is the owner's, as
+`meta: none — <reason>` is. A proposal the metarepo will never release is withdrawn:
+`jig propose --withdraw <branch> --reason <text>` rewrites its spec's line to
+`meta: <name> withdrawn <branch> — <reason>`. Sync and gate stop waiting on it, it answers no
+change, and the rows it carried that are still `Open` go again in the next proposal. Its branch
+in the metarepo is the metarepo's to delete. A proposal a release already holds can't be withdrawn: the
+pin moves instead, and sync closes its rows. One withdrawn and released anyway, sync names, with
+the `--answered` that closes its rows. Sync names a buffer proposal that carries no `Open`
+row as one to withdraw.
 `jig sync` also names each file here that a decision at the pin cites and `contract_paths`
 doesn't cover. A path under a folder counts bare or after this repo's name; a root file every
 repo has (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `CHANGELOG.md`) counts only after
@@ -1096,6 +1108,8 @@ jig gate <name>             hubnode: verify, set up the scratch checkout, print 
 jig propose <spec> <slug>   pararepo: open a proposal branch on the metarepo
 jig propose <spec> <slug> --pointers  the same, recorded as pointer rewrites worked ahead of
 jig propose --buffer [slug]  pararepo: every Open row of the sync buffer, in one proposal
+jig propose --withdraw <branch> --reason <text>  pararepo: a proposal the metarepo won't release
+jig sync --answered <ids> --in <release> --reason <text>  pararepo trunk: close rows a release answered
 ```
 
 ## Hooks are opt-in per checkout

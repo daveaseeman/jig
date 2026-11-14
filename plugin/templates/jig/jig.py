@@ -1330,6 +1330,10 @@ def cmd_sync(root: Path, args) -> int:
     name, job = board.job_for_branch(branch)
     # Sync brings in this checkout's upstream: trunk for a job, the metarepo for a pararepo's
     # trunk. A plain repo's or a metarepo's trunk has nothing upstream.
+    if getattr(args, "answered", None):
+        if name or branch != trunk or not (root / PARA).exists():
+            die("--answered closes rows of a pararepo's sync buffer: run it on that pararepo's trunk", 2)
+        return sync_answered(root, args.answered, args.answered_in, args.reason)
     if not name and branch == trunk and (root / PARA).exists():
         return sync_meta(root)
     if not name:
@@ -5405,6 +5409,13 @@ PROPOSAL = re.compile(r"^\s*-?\s*meta: (?:none — \S.*|buffered (?P<row>\S+)|"
 # proposes them all at once. Rows are Open until the release that settles them is pinned.
 BUFFER = f"{DIR}/ledgers/BUFFER.md"
 BUFFER_STATES = ("Open", "Closed")
+# A row the metarepo answered by some change other than the proposal that carried it: closed
+# by `jig sync --answered` on the owner's word, naming the release, which the pin must hold, and why.
+ANSWERED = re.compile(r"^Closed \(answered in (?P<tag>\S+): (?P<reason>[^|]*\S)\)$")
+STATE_FORMS = "Open, Closed, or Closed (answered in <release>: <reason>)"
+# A proposal the owner says the metarepo will never release: no longer waited on or reported,
+# and the rows it carried are owed again.
+WITHDRAWN = re.compile(r"^\s*-?\s*meta: (?P<meta>\S+) withdrawn (?P<branch>\S+) — \S.*$", re.M)
 # A buffer proposal's spec lists the rows it carries under this heading, one `- <id>` each.
 BUFFER_ROWS = re.compile(r"^## Buffer rows\s*\n((?:- \S+.*\n?)*)", re.M)
 
@@ -5415,6 +5426,11 @@ def buffer_rows(text: str) -> list[list[str]]:
     return [r for r in rows if r and r[0] != "Id" and not re.fullmatch(r":?-+:?", r[0])]
 
 
+def row_state(cell: str) -> str | None:
+    """Open or Closed, an answered close counting as Closed; None for anything else."""
+    return cell if cell in BUFFER_STATES else "Closed" if ANSWERED.match(cell) else None
+
+
 def listed_rows(spec: str) -> list[str]:
     m = BUFFER_ROWS.search(spec)
     return [l[2:].split()[0] for l in m.group(1).splitlines()] if m else []
@@ -5422,7 +5438,10 @@ def listed_rows(spec: str) -> list[str]:
 
 def proposed_copy(spec: str) -> dict[str, list[str]]:
     """The rows a buffer proposal's spec carried, as they read when proposed. A row edited
-    since went to the metarepo in its old form, so only an unchanged one counts as proposed."""
+    since went to the metarepo in its old form, so only an unchanged one counts as proposed.
+    A withdrawn proposal carries nothing: its rows are owed again."""
+    if WITHDRAWN.search(spec):
+        return {}
     listed = set(listed_rows(spec))
     return {r[0]: r for r in buffer_rows(spec) if r[0] in listed}
 
@@ -5641,8 +5660,8 @@ def para_problems(root: Path, para: dict, trunk: str) -> tuple[list[str], Path |
         out.append(f"P3 {', '.join(tracked)} is the metarepo's: pararepos cite it at a tag, never copy it")
     rows = buffer_rows(git("show", f"{trunk}:{BUFFER}"))
     for r in rows:
-        if r[-1] not in BUFFER_STATES:
-            out.append(f"P2 {BUFFER} row {r[0]} is {r[-1] or 'empty'}: a row is Open or Closed")
+        if not row_state(r[-1]):
+            out.append(f"P2 {BUFFER} row {r[0]} is {r[-1] or 'empty'}: a row is {STATE_FORMS}")
     for i in sorted({r[0] for r in rows if [x[0] for x in rows].count(r[0]) > 1}):
         out.append(f"P2 {BUFFER} has more than one row {i}: each row has an id of its own")
     loc = meta_checkout(root, para)
@@ -5746,28 +5765,63 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
     rows = buffer_rows(in_index(BUFFER, staged))
     if BUFFER in paths:
         for r in rows:
-            if r[-1] not in BUFFER_STATES:
-                out.append(f"P2 {BUFFER} row {r[0]} is {r[-1] or 'empty'}: a row is Open or Closed")
+            if not row_state(r[-1]):
+                out.append(f"P2 {BUFFER} row {r[0]} is {r[-1] or 'empty'}: a row is {STATE_FORMS}")
         # Parallel jobs each appending "the next id" merge cleanly into two rows of one id.
         for i in sorted({r[0] for r in rows if [x[0] for x in rows].count(r[0]) > 1}):
             out.append(f"P2 {BUFFER} has more than one row {i}: each row has an id of its own")
-    # An Open row is drift still owed to the metarepo: it closes only once proposed as it
-    # stands, in a commit that changes no contract path (the one `jig sync` makes), and never
-    # disappears. A deleted ledger isn't in `paths`, so the old rows are read whatever changed.
+    # An Open row is drift still owed to the metarepo, and it never disappears. It closes only
+    # through jig, its other cells as they were, in a commit that changes no contract path: as
+    # `jig sync` closes it, once the pin holds a proposal that carried it as it stands; or as
+    # `jig sync --answered` closes it, naming a release the pin holds and why. A deleted ledger
+    # isn't in `paths`, so the old rows are read whatever changed.
     now = {r[0]: r for r in rows}
     was = [r for r in buffer_rows(at_rev(base(trunk), BUFFER)) if r[-1] == "Open"]
-    if was:
-        specs_then = [at_rev(base(trunk), s) for s in git("ls-tree", "-r", "--name-only", base(trunk),
-                                                         "--", f"{DIR}/specs/").splitlines()]
-        sent = proposed_rows(specs_then)
+    closing = [(r, now[r[0]]) for r in was if r[0] in now and row_state(now[r[0]][-1]) == "Closed"]
     for r in was:
-        n = now.get(r[0])
-        if n is None:
+        if r[0] not in now:
             out.append(f"P2 {BUFFER} row {r[0]} is Open and is gone: an Open row stays until "
                        "`jig sync` closes it")
-        elif n[-1] == "Closed" and (touched or tuple(r) not in sent or n[:-1] != r[:-1]):
-            out.append(f"P2 {BUFFER} row {r[0]} closed by hand: `jig sync` closes a row once "
-                       "the metarepo releases the proposal that carried it as it stands")
+    if closing:
+        try:
+            pin = (json.loads(in_index(PARA, staged) or "null") or para).get("pin", "")
+        except ValueError:
+            pin = para.get("pin", "")
+        specs_then = [at_rev(base(trunk), s) for s in git("ls-tree", "-r", "--name-only", base(trunk),
+                                                         "--", f"{DIR}/specs/").splitlines()]
+        how = ("`jig sync` closes a row once the pin holds the proposal that carried it as it "
+               "stands; `jig sync --answered <id> --in <release> --reason <text>` closes one a "
+               "release the pin holds answered some other way")
+        loc = None
+    for r, n in closing:
+        answered = ANSWERED.match(n[-1])
+        if touched or n[:-1] != r[:-1]:
+            out.append(f"P2 {BUFFER} row {r[0]} closed by hand: {how}")
+        elif answered:
+            # A tag that isn't a version sorts below every pin, so it must be a real release: the
+            # metarepo's own list when its checkout is here, else at least a release's shape.
+            tag = answered.group("tag")
+            loc = loc or meta_checkout(root, para)
+            real = tag in released_tags(str(loc)) if loc else bool(re.match(META_DEFAULTS["tag_pattern"], tag))
+            if not real:
+                out.append(f"P2 {BUFFER} row {r[0]} is answered in {tag}, which is not a release of "
+                           f"{para.get('meta')}: name the release that answered it")
+            elif version_key(tag) > version_key(pin):
+                out.append(f"P2 {BUFFER} row {r[0]} is answered in {tag}, which "
+                           f"the pin {pin} doesn't hold: take that release first")
+        else:
+            # Only the metarepo knows whether a release holds the branch; sync fetched it first.
+            branches = [m.group("branch") for t in specs_then if tuple(r) in proposed_rows([t])
+                        for m in PROPOSAL.finditer(t) if m.group("branch") and m.group("meta") == para.get("meta")]
+            loc = loc or meta_checkout(root, para)
+            if not branches:
+                out.append(f"P2 {BUFFER} row {r[0]} closed by hand: no proposal carried it as it stands. {how}")
+            elif loc is None:
+                out.append(f"P2 {BUFFER} row {r[0]} is closed, and {para.get('meta')} can't be reached "
+                           "to check that the pin holds its proposal: `jig repos add meta` in its checkout")
+            elif not any(proposal_in(loc, b, pin) for b in branches):
+                out.append(f"P2 {BUFFER} row {r[0]} closed by hand: {para.get('meta')} {pin} doesn't "
+                           f"hold {', '.join(branches)}. {how}")
     # A pointer this change leaves dangling: the metarepo now points at nothing, so it is owed
     # what a contract change is.
     # The cache lives in the primary checkout: it is ignored, so a job's worktree has none.
@@ -6088,7 +6142,10 @@ def unreleased_proposals(root: Path, para: dict, trunk: str, commit: str, named:
     specs = list(dict.fromkeys([*filter(None, named), *changed]))
     found = [(s, m) for s in specs
              for m in PROPOSAL.finditer(git("show", f"{commit}:{s}") or git("show", f"{trunk}:{s}") or s)]
-    cited = [(s, m) for s, m in found if m.group("branch")]
+    # A withdrawal is the owner's word on trunk: it wins over a job's copy from before it.
+    gone = {w.group("branch") for s in specs for w in WITHDRAWN.finditer(git("show", f"{trunk}:{s}") or "")
+            if w.group("meta") == para.get("meta")}
+    cited = [(s, m) for s, m in found if m.group("branch") and m.group("branch") not in gone]
     ahead = [(s, m) for s, m in found if m.group("pbranch")]
     if not cited and not ahead:
         return []
@@ -6149,14 +6206,28 @@ def sync_meta(root: Path) -> int:
     buffered = []          # (spec, branch, the rows it carried that are still Open, unchanged)
     still = {tuple(r) for r in buffer_rows((root / BUFFER).read_text() if (root / BUFFER).exists() else "")
              if r[-1] == "Open"}
+    open_ids = {r[0] for r in still}
     for spec in sorted((root / DIR / "specs").glob("*.md")):
         text = spec.read_text()
+        # Withdrawn, then released anyway: its rows still Open are answered, by --answered.
+        for w in WITHDRAWN.finditer(text):
+            owed = [i for i in listed_rows(text) if i in open_ids]
+            if w.group("meta") == name and owed:
+                first = next((t for t in tags if proposal_in(loc, w.group("branch"), t)), None)
+                if first:
+                    print(f"proposal {w.group('branch')} ({spec.relative_to(root)}): withdrawn, but "
+                          f"released by {first}: once the pin holds it, `jig sync --answered "
+                          f"{','.join(owed)} --in {first} --reason <text>`")
         for m in PROPOSAL.finditer(text):
             if m.group("branch") and m.group("meta") == name:
                 first = next((t for t in sorted(set(tags) | {pin}, key=version_key)
                               if proposal_in(loc, m.group("branch"), t)), None)
+                # A buffer proposal whose rows all left Open some other way waits on nothing.
+                idle = not first and listed_rows(text) and not set(listed_rows(text)) & open_ids
                 print(f"proposal {m.group('branch')} ({spec.relative_to(root)}): "
-                      f"{'released by ' + first if first else 'not released'}")
+                      f"{'released by ' + first if first else 'not released'}"
+                      + (f", and carries no Open row: {withdraw_line(m.group('branch'))} if it won't be"
+                         if idle else ""))
                 rows = [i for i, r in proposed_copy(text).items() if tuple(r) in still]
                 if rows:
                     buffered.append((spec, m.group("branch"), rows))
@@ -6215,6 +6286,62 @@ def sync_meta(root: Path) -> int:
     return 0
 
 
+def withdraw_line(branch: str) -> str:
+    return f"`jig propose --withdraw {branch} --reason <text>`"
+
+
+def sync_answered(root: Path, ids: str, release: str | None, reason: str | None) -> int:
+    """`jig sync --answered`: close Open rows the metarepo answered by a change other than the
+    proposal that carried them, on the owner's word. The row keeps its claim and records the
+    release and the reason, in a commit of its own that P2 checks against the pin."""
+    os.chdir(root)
+    para = json.loads((root / PARA).read_text())
+    name, pin = para["meta"], para["pin"]
+    reason = (reason or "").strip()
+    if not release or not reason:
+        die("usage: jig sync --answered <id>[,<id>…] --in <release> --reason <text>", 2)
+    if "|" in reason or "\n" in reason:
+        die("the reason goes in a table cell: one line, no `|`", 2)
+    loc = meta_checkout(root, para)
+    if loc is None:
+        die(f"can't find {name}: run `jig repos add meta` in its checkout", 2)
+    git("fetch", "-q", "--tags", cwd=str(loc))
+    if release not in released_tags(str(loc)):
+        die(f"{release} is not a release of {name}", 2)
+    if version_key(release) > version_key(pin):
+        die(f"{name} {release} is above the pin, {pin}: take it first (`jig sync` says how)", 2)
+    if git("status", "--porcelain"):
+        die("commit or stash first: the answered rows close in a commit of their own", 2)
+    want = [i for i in re.split(r"[,\s]+", ids) if i]
+    ledger = (root / BUFFER).read_text().splitlines(keepends=True) if (root / BUFFER).exists() else []
+    state = {r[0]: r[-1] for l in ledger for r in buffer_rows(l)}
+    bad = [i for i in want if state.get(i) != "Open"]
+    if bad:
+        die(f"not an Open row of {BUFFER}: {', '.join(bad)}", 2)
+    cell = f"Closed (answered in {release}: {reason})"
+    for n, l in enumerate(ledger):
+        r = buffer_rows(l)
+        if r and r[0][0] in want:
+            ledger[n] = re.sub(r"\bOpen(\s*\|?\s*)$", lambda m: cell + m.group(1), l.rstrip("\n")) + "\n"
+    (root / BUFFER).write_text("".join(ledger))
+    git("add", "--", BUFFER, check=True)
+    subject = f"meta: {name} {pin}: {', '.join(want)} answered in {release}"
+    if subprocess.run(["git", "commit", "-q", "-m", subject, "-m", reason], cwd=root).returncode:
+        die(f"the commit was refused: {BUFFER} is staged as jig wrote it", 1)
+    print(f"{subject}: committed.")
+    # A buffer proposal left carrying no Open row waits on nothing; withdrawing it is the owner's.
+    still = {r[0] for l in ledger for r in buffer_rows(l) if r[-1] == "Open"}
+    for spec in sorted((root / DIR / "specs").glob("*.md")):
+        text = spec.read_text()
+        listed = set(listed_rows(text))
+        if listed & set(want) and not listed & still:
+            for m in PROPOSAL.finditer(text):
+                if m.group("branch") and m.group("meta") == name and not proposal_in(loc, m.group("branch"), pin):
+                    print(f"{m.group('branch')} ({spec.relative_to(root)}) carries no Open row now: "
+                          f"{withdraw_line(m.group('branch'))} if {name} won't release it")
+    return 0
+
+
 def newer_release(root: Path, loc: Path, name: str, pin: str, latest: str) -> list[str]:
     major = version_key(latest)[0] > version_key(pin)[0]
     return [f"{name} {latest} is out; this repo pins {pin}{' (a major release)' if major else ''}.\n",
@@ -6254,7 +6381,7 @@ def entries_moved(loc: Path, old: str, new: str) -> list[tuple[str, str | None]]
 
 def closed_row(path: str, line: str) -> bool:
     """A Closed BUFFER row cites the pin it was written at: history, not a use."""
-    return path == BUFFER and line.lstrip().startswith("|") and table_cells(line)[-1:] == ["Closed"]
+    return path == BUFFER and line.lstrip().startswith("|") and row_state((table_cells(line) or [""])[-1]) == "Closed"
 
 
 def used_in(text: str, whole: bool = False) -> list[str]:
@@ -6585,7 +6712,7 @@ def naming_row(rows: list[list[str]], path: str, section: str | None = None,
     """The first row in one of STATES whose cells name PATH (and SECTION, for a heading)."""
     where = re.escape(path) + (rf"[ \t]*§[ \t]*{re.escape(section)}(?!\.?\w)" if section else r"(?![\w/-])")
     named = re.compile(rf"(?<![\w./-]){where}")
-    return next((r for r in rows if r[-1] in states and any(named.search(c) for c in r[1:-1])), None)
+    return next((r for r in rows if row_state(r[-1]) in states and any(named.search(c) for c in r[1:-1])), None)
 
 
 def row_offer(claim: str, now: str) -> str:
@@ -6764,6 +6891,8 @@ def cmd_propose(root: Path, args) -> int:
     loc = meta_checkout(root, para)
     if loc is None:
         die(f"can't find {para['meta']}: run `jig repos add meta` in its checkout", 2)
+    if args.withdraw:
+        return withdraw_proposal(root, para, loc, args.withdraw, args.reason)
     if args.buffer:
         slug = args.slug or args.spec or f"buffer-{date.today().isoformat()}"
         made = buffer_proposal(root, para, loc, slug)
@@ -6792,6 +6921,40 @@ def cmd_propose(root: Path, args) -> int:
     print(f"made {branch} in {para['meta']} and recorded it in {args.spec}.")
     print(f"Write the change there on that branch (git -C {loc} worktree add "
           f"<dir> {branch}); it lands by the metarepo's own review and release.")
+    return 0
+
+
+def withdraw_proposal(root: Path, para: dict, loc: Path, branch: str, reason: str | None) -> int:
+    """Mark a proposal the metarepo will never release as withdrawn, in the spec that names it.
+    The metarepo's branch is the metarepo's to delete: a pararepo writes there only by proposing."""
+    reason = (reason or "").strip()
+    if not reason or "\n" in reason:
+        die("usage: jig propose --withdraw <branch> --reason <text>", 2)
+    name, pin = para["meta"], para["pin"]
+    hits = [(spec, m) for spec in sorted((root / DIR / "specs").glob("*.md"))
+            for m in PROPOSAL.finditer(spec.read_text())
+            if m.group("branch") == branch and m.group("meta") == name]
+    if not hits:
+        die(f"no spec here says `meta: {name} proposal {branch}`", 2)
+    git("fetch", "-q", "--tags", cwd=str(loc))
+    if proposal_in(loc, branch, pin):
+        die(f"{name} {pin}, the pin, already holds {branch}: a released proposal can't be withdrawn", 2)
+    # Released above the pin, it isn't moot: the pin moves, and sync closes its rows.
+    later = next((t for t in released_tags(str(loc)) if version_key(t) > version_key(pin)
+                  and proposal_in(loc, branch, t)), None)
+    if later:
+        die(f"{name} {later} released {branch}: bump the pin instead (`jig sync` on trunk says how), "
+            "and sync closes its rows", 2)
+    for spec, m in hits:
+        text = spec.read_text()
+        line = re.sub(r"meta: \S+ proposal \S+", lambda _: f"meta: {name} withdrawn {branch} — {reason}",
+                      m.group(0), count=1)
+        spec.write_text(text[:m.start()] + line + text[m.end():])
+        rows = [i for i in listed_rows(text) if i in {r[0] for r in buffer_rows(
+            (root / BUFFER).read_text() if (root / BUFFER).exists() else "") if r[-1] == "Open"}]
+        print(f"withdrew {branch} in {spec.relative_to(root)}. Commit that spec."
+              + (f" Its Open rows ({', '.join(rows)}) go again in the next proposal." if rows else ""))
+    print(f"The branch stays in {name}; its owner deletes it there: git -C {loc} branch -D {branch}")
     return 0
 
 
@@ -10437,7 +10600,10 @@ def main(argv: list[str] | None = None) -> int:
     dc = sub.add_parser("decision", help="print a decision entry and its supersedes chain")
     dc.add_argument("id")
     dc.add_argument("--peers", action="store_true", help="an entry's peers, from this log or one read for peers (`<repo>/<id>` picks the log)")
-    sub.add_parser("sync", help="bring in the upstream: trunk on a job; the metarepo on a pararepo's trunk")
+    sy = sub.add_parser("sync", help="bring in the upstream: trunk on a job; the metarepo on a pararepo's trunk")
+    sy.add_argument("--answered", metavar="IDS", help="pararepo trunk: close these Open buffer rows as answered")
+    sy.add_argument("--in", dest="answered_in", metavar="RELEASE", help="the metarepo release that answered them")
+    sy.add_argument("--reason", help="why that release answers them, recorded in each row")
     rv = sub.add_parser("reviewed", help="record that HEAD has had its review")
     rv.add_argument("--tier", type=int, help="the model tier the review ran at")
     rv.add_argument("--effort", type=int, help="the effort it ran at")
@@ -10467,6 +10633,8 @@ def main(argv: list[str] | None = None) -> int:
     pp.add_argument("spec", nargs="?")
     pp.add_argument("slug", nargs="?")
     pp.add_argument("--buffer", action="store_true", help="every Open row of the sync buffer, in one proposal")
+    pp.add_argument("--withdraw", metavar="BRANCH", help="mark a proposal the metarepo won't release as withdrawn")
+    pp.add_argument("--reason", help="why it is withdrawn, recorded in its spec")
     pp.add_argument("--pointers", action="store_true",
                     help="record it as pointer rewrites worked ahead of, not a proposal to wait for")
     st = sub.add_parser("staging", help="list staged files, resolve or drop one, or check headers")

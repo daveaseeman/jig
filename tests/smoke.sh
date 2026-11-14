@@ -3133,6 +3133,101 @@ brow B4 'help page' 'gone' 'pointer' Open >> .jig/ledgers/BUFFER.md && git add -
 printf '# z\n\n- meta: buffered B4\n' > .jig/specs/z.md && git rm -q docs/z.md && git add -A; expect_pass git commit -qm "docs: drop z"
 }
 
+# ---------------------------------------------------------------- a buffer row answered some other way
+sec_buffer_answered() {
+# B1 and B2 are proposed; the metarepo answers D-001 on another branch, and never releases the proposal.
+SM="$T/ba-meta"; pcnew "$SM" && git add -A && git commit -qm init && $J init --meta --name bam >/dev/null && setentry .jig/decisions.md DECISIONS.md README.md
+printf '| D-001 | the list shows ids | accepted (owner) | 2026-11-01 |\n' >> DECISIONS.md && git add -A && git commit -qm meta-init && $J release >/dev/null
+SP="$T/ba-para"; pcnew "$SP" && mkdir -p api && printf 'x=1\n' > api/a.py && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para bam --location "$SM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
+mkdir -p .jig/ledgers && cp "$P/ledgers/BUFFER.md" .jig/ledgers/BUFFER.md
+brow B1 'ids shown' 'names shown' 'first' Open >> .jig/ledgers/BUFFER.md && brow B2 'a tools page' 'no tools page' 'first' Open >> .jig/ledgers/BUFFER.md
+printf 'y=2\n' >> api/a.py && git add -A && git commit -qm "api: y" && $J propose --buffer moot >/dev/null && git add -A && git commit -qm "specs: moot"
+msg="answered P2: a bare Closed whose proposal the pin doesn't hold is refused, naming the branch"
+sed -i.bak 's/| Open |$/| Closed |/' .jig/ledgers/BUFFER.md && rm .jig/ledgers/BUFFER.md.bak && git add -A; out=$(git commit -qm "buffer: close" 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'P2 .*row B1 closed by hand: bam v0.1.0 doesn.t hold propose/ba-para-moot'" "$out"
+(cd "$SM" && git switch -q -c redoc && sed -i.bak 's/the list shows ids/the list shows ids and names/' DECISIONS.md && rm DECISIONS.md.bak && ulog '- D-001: ids and names' \
+  && git add -A && git commit -qm "D-001: ids and names" && $J reviewed >/dev/null && git switch -q main && git merge -q --no-ff --no-edit redoc && $J release >/dev/null)
+(cd "$SM" && git switch -q -c d2 && printf '| D-002 | ids are links | accepted (owner) | 2026-11-03 |\n' >> DECISIONS.md && ulog '- D-002' \
+  && git add -A && git commit -qm "D-002: links" && $J reviewed >/dev/null && git switch -q main && git merge -q --no-ff --no-edit d2 && $J release >/dev/null)
+sbbump v0.2.0
+msg="answered: --in a release above the pin, a tag the metarepo doesn't have, no reason, or a row not Open, each refused, committing nothing"
+before=$(git rev-parse HEAD); f=0
+for a in "B1 --in v0.3.0 --reason r" "B1 --in v9.9.9 --reason r" "B1 --in v0.2.0 --reason ''" "B9 --in v0.2.0 --reason r"; do
+  eval "$J sync --answered $a" >/dev/null 2>&1 && f=1; done
+expect_pass sh -c "test $f = 0 && test \"\$(git rev-parse HEAD)\" = $before && test -z \"\$(git status --porcelain)\""
+msg="answered P2: by hand, an answer with no reason, one above the pin, one naming no release, and one beside a contract change are each refused naming P2"
+f=0
+for st in 'Closed (answered in v0.2.0: )' 'Closed (answered in v0.3.0: later)' 'Closed (answered in elsewhere: done)' 'Closed (answered in v0.2.0: rewritten)'; do
+  sed -i.bak "s/| Open |\$/| $st |/" .jig/ledgers/BUFFER.md && rm .jig/ledgers/BUFFER.md.bak
+  case "$st" in *rewritten*) printf 'z=3\n' >> api/a.py ;; esac
+  git add -A; out=$(git commit -qm x 2>&1) && f=1; echo "$out" | grep -q '^jig: P2 .*row B1' || f=1; undo; done
+expect_pass test $f = 0
+msg="answered P2: naming no release, the refusal says so"
+sed -i.bak 's/| Open |$/| Closed (answered in elsewhere: done) |/' .jig/ledgers/BUFFER.md && rm .jig/ledgers/BUFFER.md.bak && git add -A; out=$(git commit -qm x 2>&1); undo
+expect_pass sh -c "echo \"\$0\" | grep -q 'answered in elsewhere, which is not a release of bam'" "$out"
+msg="answered: sync --answered closes B1 and B2 in one commit, recording the release and the reason, and offers the withdraw"
+before=$(git rev-parse HEAD); out=$($J sync --answered B1,B2 --in v0.2.0 --reason "D-001 rewritten" 2>&1)
+expect_pass sh -c "test \"\$(git rev-list --count $before..HEAD)\" = 1 && git log -1 --format=%s | grep -qx 'meta: bam v0.2.0: B1, B2 answered in v0.2.0' && grep -q '^| B1 | DECISIONS.md § D-001: ids shown | .*| Closed (answered in v0.2.0: D-001 rewritten) |\$' .jig/ledgers/BUFFER.md && grep -q '^| B2 .*| Closed (answered in v0.2.0: D-001 rewritten) |\$' .jig/ledgers/BUFFER.md && test -z \"\$(git status --porcelain)\" && echo \"\$0\" | grep -q 'jig propose --withdraw propose/ba-para-moot'" "$out"
+msg="answered: a row already Closed is refused, committing nothing"
+before=$(git rev-parse HEAD); out=$($J sync --answered B1 --in v0.2.0 --reason again 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && test \"\$(git rev-parse HEAD)\" = $before && echo \"\$0\" | grep -q 'not an Open row of .jig/ledgers/BUFFER.md: B1'" "$out"
+msg="answered: sync names the proposal as carrying no Open row, with the withdraw"
+out=$($J sync 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'proposal propose/ba-para-moot (.jig/specs/moot.md): not released, and carries no Open row: .jig propose --withdraw propose/ba-para-moot'" "$out"
+msg="withdraw: the spec's line reads withdrawn; committed, sync no longer names the branch, and the metarepo still has it"
+$J propose --withdraw propose/ba-para-moot --reason "answered by v0.2.0" >/dev/null && git add -A && git commit -qm "specs: withdraw moot"; out=$($J sync 2>&1)
+expect_pass sh -c "grep -qx -- '- meta: bam withdrawn propose/ba-para-moot — answered by v0.2.0' .jig/specs/moot.md && ! echo \"\$0\" | grep -q 'ba-para-moot' && git -C '$SM' rev-parse -q --verify refs/heads/propose/ba-para-moot >/dev/null" "$out"
+msg="answered: a release after it opens no proposal for B1 or B2"
+n=$(sbprops); $J release --version 1.0.0 >/dev/null 2>&1
+expect_pass sh -c "git tag | grep -qx v1.0.0 && test $(sbprops) = $n"
+msg="withdraw: a withdrawn proposal's Open row goes again in the next release's proposal"
+brow B3 'help page' 'no help page' 'second' Open >> .jig/ledgers/BUFFER.md && printf 'w=4\n' >> api/a.py && git add -A && git commit -qm "api: w"
+$J propose --buffer b3 >/dev/null && git add -A && git commit -qm "specs: b3"
+$J propose --withdraw propose/ba-para-b3 --reason "redone" >/dev/null && git add -A && git commit -qm "specs: withdraw b3"
+$J release --version 1.0.1 >/dev/null 2>&1
+expect_pass sh -c "git -C '$SM' rev-parse -q --verify refs/heads/propose/ba-para-buffer-v1.0.1 >/dev/null && grep -qx -- '- B3' .jig/specs/buffer-v1.0.1.md"
+msg="withdraw: gate waits on a cited proposal, and not once it is withdrawn"
+printf '# w\n\n- meta: bam proposal propose/ba-para-buffer-v1.0.1\n' > .jig/specs/w.md && git add -A && git commit -qm "specs: w"
+expect_pass python3 -c "
+import importlib.util as u, json, pathlib, subprocess
+s = u.spec_from_file_location('j', '.jig/jig.py'); m = u.module_from_spec(s); s.loader.exec_module(m)
+para = json.load(open('.jig/para.json')); root = pathlib.Path('.').resolve()
+assert m.unreleased_proposals(root, para, 'main', 'HEAD', ['.jig/specs/w.md'])
+open('.jig/specs/w.md', 'w').write('# w\n\n- meta: bam withdrawn propose/ba-para-buffer-v1.0.1 — moot\n')
+subprocess.run(['git', 'commit', '-qam', 'specs: w withdrawn'], check=True)
+assert not m.unreleased_proposals(root, para, 'main', 'HEAD', ['.jig/specs/w.md'])"
+git revert --no-edit HEAD >/dev/null
+sbland propose/ba-para-buffer-v1.0.1 Help && sbbump v0.4.0
+msg="withdraw: a proposal the pin's release holds is refused"
+expect_refuse $J propose --withdraw propose/ba-para-buffer-v1.0.1 --reason late
+msg="answered P2: sync's own close, the pin holding the proposal, still commits"
+before=$(git rev-parse HEAD); out=$($J sync 2>&1)
+expect_pass sh -c "git log -1 --format=%s | grep -qx 'meta: bam v0.4.0: close B3' && grep -q '^| B3 .*| Closed |\$' .jig/ledgers/BUFFER.md" "$out"
+msg="withdraw: a proposal a release above the pin holds is refused, saying to bump the pin"
+brow B5 'five' 'not five' 'third' Open >> .jig/ledgers/BUFFER.md && printf 'v=5\n' >> api/a.py && git add -A && git commit -qm "api: v"
+$J propose --buffer b5 >/dev/null && git add -A && git commit -qm "specs: b5" && sbland propose/ba-para-b5 Five
+out=$($J propose --withdraw propose/ba-para-b5 --reason late 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'bam v0.5.0 released propose/ba-para-b5: bump the pin' && grep -q 'meta: bam proposal propose/ba-para-b5' .jig/specs/b5.md" "$out"
+$J sync >/dev/null 2>&1
+msg="withdraw: a withdrawn proposal released anyway is reported, naming --answered for its Open row"
+brow B6 'six' 'not six' 'fourth' Open >> .jig/ledgers/BUFFER.md && printf 'u=6\n' >> api/a.py && git add -A && git commit -qm "api: u"
+$J propose --buffer b6 >/dev/null && git add -A && git commit -qm "specs: b6"
+$J propose --withdraw propose/ba-para-b6 --reason moot >/dev/null && git add -A && git commit -qm "specs: withdraw b6" && sbland propose/ba-para-b6 Six
+out=$($J sync 2>&1)
+expect_pass sh -c "grep -q '^| B5 .*| Closed |\$' .jig/ledgers/BUFFER.md && echo \"\$0\" | grep -q 'proposal propose/ba-para-b6 (.jig/specs/b6.md): withdrawn, but released by v0.6.0: .*jig sync --answered B6 --in v0.6.0'" "$out"
+msg="withdraw: a job that hasn't synced since its proposal was withdrawn on trunk isn't told to wait for it"
+printf '# gj\n\n## Decisions\n' > .jig/specs/gj.md && $J propose .jig/specs/gj.md gj >/dev/null && git add -A && git commit -qm "specs: gj"
+$J open gj --spec .jig/specs/gj.md --owns 'api/gj.py' >/dev/null && git add -A && git commit -qm "open gj"
+(cd .git/jig/worktrees/gj && printf 'g=1\n' > api/gj.py && git add -A && git commit -qm "api: gj" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note gj") >/dev/null 2>&1
+out=$($J gate gj 2>&1); git worktree remove --force .git/jig/worktrees/gate-gj 2>/dev/null
+$J propose --withdraw propose/ba-para-gj --reason "no longer needed" >/dev/null && git add -A && git commit -qm "specs: withdraw gj"
+out2=$($J gate gj 2>&1); git worktree remove --force .git/jig/worktrees/gate-gj 2>/dev/null
+expect_pass sh -c "echo \"\$0\" | grep -q 'cites proposal propose/ba-para-gj' && ! echo \"\$1\" | grep -q 'cites proposal propose/ba-para-gj' && ! git -C .git/jig/worktrees/gj show HEAD:.jig/specs/gj.md | grep -q withdrawn" "$out" "$out2"
+msg="answered: RULES.md names the answered state, the withdrawn line and both commands"
+expect_pass sh -c "grep -q 'Closed (answered in <release>: <reason>)' '$P/jig/RULES.md' && grep -q 'meta: <name> withdrawn <branch>' '$P/jig/RULES.md' && grep -q '^jig propose --withdraw' '$P/jig/RULES.md' && grep -q '^jig sync --answered' '$P/jig/RULES.md'"
+}
+
 # ---------------------------------------------------------------- pointers
 sec_pointers() {
 # Numbered pointers: `§2` names `## 2. Motes`, as the Documentation rule cites rules. pp is
@@ -6356,7 +6451,7 @@ msg="headings: update's section-counter finding names the heading rule that repl
 expect_pass sh -c "\$0 2>&1 | grep -F 'reserve.section' | grep -qF \"refuses a page's second heading of one name\"" "$UP"
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings"
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file
