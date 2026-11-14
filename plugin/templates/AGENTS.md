@@ -12,13 +12,13 @@ Risk: R0 — personal prototype, single user, nothing shipped. Optimize for spee
 - test:   `TODO`
 - lint:   `TODO`
 - run:    `TODO`
-- check:  `.jig/scripts/check.sh` (runs on every stop; must pass before you're done)
+- check:  `.jig/scripts/check.sh` (the quick part: runs on every stop; must pass before you're done). `check.sh --full` adds the complete suite: the check step's, once per gate or batch
 - setup:  `.jig/scripts/setup.sh` (runs itself in new worktrees and after merges; run it after changing dependencies)
 - derive: `.jig/scripts/derive.sh` (writes the files built from several sources that separate jobs change; `jig merge` runs it and commits what `derived_files` in `.jig/config.json` lists; branches don't commit them)
 
 ## Workflow
 - Task bigger than a one-sentence diff → write `.jig/specs/<task>.md` first (see /jig:spec). Plan before editing.
-- Run `check` yourself and show the output. Don't claim done on a green build alone.
+- While working, run `check` and the tests your change touched, and show the output; never `--full`. Don't claim done on a green build alone.
 - Commit often; the git hook runs the rules. Never `--no-verify`.
 - A mergeable chunk is a handoff: checks pass → adversarial review (/jig:review) → `jig reviewed` → `jig handoff --spec .jig/specs/<task>.md`. Review happens once per handoff, not per commit. A chunk that doesn't finish its spec hands off with `--partial`.
 - Same fix twice → write a skill (see /jig:retro).
