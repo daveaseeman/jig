@@ -42,7 +42,7 @@
   },
   "consolidate": {
     "spec": ".jig/specs/consolidate.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/consolidate/**",
