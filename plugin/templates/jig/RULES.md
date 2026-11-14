@@ -52,6 +52,22 @@ does not look for a home for those files.
 **Owns is narrow on purpose.** Before opening a job, `jig open` diffs every open job's
 branch against trunk and refuses an `owns` entry another live branch already touched. Those
 go in `shares` from the start, or both jobs get blocked on every commit afterward.
+It also warns, naming each path, when a backticked path in the spec's `## Touches` is in
+neither `owns`, `shares` nor `common`; `jig share <job> <path>…` adds paths to an open job's
+shares, refusing one another open job owns.
+
+**Overlapping specs are answered before they open.** A spec is *waiting* when no open job names
+it, no handoff note's `Spec:` line names it, and the newest release tag doesn't hold it (any spec,
+with no tag yet). Two waiting specs overlap when their `## Touches` meet: one path, a glob
+covering the other's path, or the same `<page> § <term>` (a whole page meets any term on it).
+`jig consolidate` lists each group of overlapping waiting specs with the paths they share, as
+one proposed job. A group is answered one of two ways: one spec carries every input's `Source:`
+lines and the inputs are deleted (`/jig:consolidate` writes it), or either spec of a pair says
+`Kept separate from <spec>: <reason>`, one line per pair. Until then `jig open` refuses a spec
+in the group, and so does `jig staging resolve` for a file whose mark a spec in it carries.
+A consolidated spec that takes in metarepo proposals lists their branches under `## Proposals`,
+one backticked `propose/<repo>-<slug>` per bullet, in merge order; `jig open`'s kickoff then says
+to `jig sync` and merge each into the job's branch in that order.
 
 ## The rules
 
@@ -864,6 +880,8 @@ decision entries are added to the log; an update, a story's or request's spec, o
 with other content wait until the work is done and the
 source is in it; a file for another repo moves into that repo's staging, found through
 `jig repos`. `jig staging drop <file>` deletes it and records nothing: it was never committed.
+A story, request or report whose spec is in an unanswered group of overlapping waiting specs
+(The board) isn't resolved until the group is answered.
 
 A batch whose files depend on each other says so in each file's optional `after:` header: the
 staged file names it waits for (`a` reads as `a.md`). `jig staging` lists files so each comes after
@@ -1118,6 +1136,8 @@ jig staging [resolve|drop <file>]   list staged files, or land / drop one
 jig repos [add repo|meta|para | rename <new>]  where your repos live (user config)
 jig open ... --reserve K    allocate scarce counter K to this job
 jig reserve <job> <K>       hubnode: give an open job the next number of counter K too
+jig consolidate             hubnode: groups of waiting specs whose Touches overlap, to answer before opening
+jig share <job> <path>…     hubnode: add paths to an open job's shares
 jig reading-list <paths>    what to read before touching these files, and the pages above
 jig install-hooks           rewrite the hooks
 jig status                  jobs, states, distance from trunk, dirt

@@ -73,6 +73,14 @@ the job's owns and shares leave out, and `jig share` adds one.
   every spec touches one file (jig's own `jig.py`) pays one line per pair, not a refusal it
   can't clear.
 - Interpreted: a `Kept separate` line is per pair, and either spec of the pair may carry it.
+- Interpreted (hubnode, 2026-11-13): a consolidated spec lists its proposal branches under
+  `## Proposals`, one backticked `propose/<repo>-<slug>` per bullet in merge order; `jig open`
+  reads it into the kickoff. Rejected: a free-form line jig doesn't parse, so the kickoff can't say it.
+- Interpreted: the kickoff says `jig sync` before the proposal merges. A merge in a job is judged
+  against trunk, and a new job's branch lacks the commit that opened it, so without the sync the
+  hook reads the board as the job's change (R5) — [seen] in the smoke case.
+- Interpreted: `staging resolve` refuses where a spec already carries the file's mark (a story,
+  request or report); a staged `kind: spec` is written by `resolve` itself, so `jig open` catches it.
 
 ## Workflow
 spec: tier 2, effort 2

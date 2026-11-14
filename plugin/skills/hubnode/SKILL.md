@@ -106,9 +106,13 @@ cloud only if the owner asks and the repo has a remote.
    is the early warning; `jig gate` refuses it for good.
    Decide: name, branch, what it builds after, which existing files it
    `owns` (only this job may touch) and which it `shares`, and whether it needs a reserved
-   number.
+   number. Opening more than one job, run `jig consolidate` first: each group it lists
+   becomes one spec (`/jig:consolidate`) or gets a `Kept separate from <spec>: <reason>` line
+   per pair, on the owner's word. `jig open` refuses a spec in an unanswered group.
 2. `jig open <name> --spec .jig/specs/<task>.md --owns <paths> --shares <paths> --after <jobs> --reserve schema`.
    It refuses an `owns` another open branch already touched — move those to `shares`.
+   It warns on a Touches path the lists leave out: add it with `jig share <name> <path>`, or
+   say why the job doesn't need it.
 3. Commit `jobs.json` on trunk. Give the printed kickoff to a subnode session, or paste it
    into a new one.
 

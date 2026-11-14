@@ -15,22 +15,5 @@
       "tests/smoke.sh"
     ],
     "reserved": {}
-  },
-  "consolidate": {
-    "spec": ".jig/specs/consolidate.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/skills/consolidate/**",
-      "plugin/skills/fix/SKILL.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "plugin/skills/hubnode/SKILL.md",
-      "plugin/skills/stage/SKILL.md",
-      "tests/smoke.sh"
-    ],
-    "reserved": {}
   }
 }
