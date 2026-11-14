@@ -158,8 +158,9 @@ themselves. A synced job needs no new handoff: `jig merge` doesn't count what a 
 A job that needs another number gets it from `jig reserve <job> <counter>`, never a hand edit
 of `jobs.json`.
 
-`jig merge` already wrote the files the repo derives from the whole tree, with
-`.jig/scripts/derive.sh`, in the merge commit. A step the repo repeats after every merge that
+`jig merge` already wrote the files the repo builds from several sources that separate jobs
+change (`.jig/RULES.md`, Keeping merges mechanical), with `.jig/scripts/derive.sh`, in the
+merge commit. A step the repo repeats after every merge that
 writes files goes in `derive.sh`, its outputs in `derived_files` in `.jig/config.json`:
 propose it to the owner.
 

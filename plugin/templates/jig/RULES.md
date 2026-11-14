@@ -95,13 +95,21 @@ Don't patch them; don't ledger it.
 Conventions so two jobs rarely meet in one hunk:
 
 - Append, never edit, shared prose. A change to someone else's section is a note in yours.
+- Two jobs sharing a page each add their own section under their own name. A name both chose
+  is refused at the merge that would join them (Documentation), so no number is reserved for
+  it; two names for one thing are for fold-in and review to catch.
 - A file of one's own: new routes in your own handler registered by one line; new state in
   your own module; new tests in your own file; a new fixture as a new file.
 - Scarce numbers come from the board (`--reserve`, `jig reserve`), never from looking at what seems free.
   Two branches that both take migration 17 corrupt the first database that runs both.
-- A file generated from the whole tree (a reference, an index) is written on trunk by
-  `.jig/scripts/derive.sh` at each merge and listed in `derived_files`, never on a branch: two branches' copies merge into a
-  wrong file, or conflict.
+- A file generated from several sources that separate jobs change (an index of a folder, a
+  reference built from every module) is written on trunk by `.jig/scripts/derive.sh` at each
+  merge and listed in `derived_files`, never on a branch: each job's copy differs, and two
+  branches' copies merge into a wrong file, or conflict. Not such a file: one built from a
+  single source, regenerated in the job that changes that source (`check.sh` may compare it);
+  one the merge can't rebuild (made by hand, on special hardware, or too slow for every merge);
+  a lockfile, which a branch's own build needs, so its job commits it; and jig's own
+  `ROADMAP.md`.
 
 ## Reserved numbers
 
@@ -166,7 +174,9 @@ its subsystem's page or to propose.
 (its docmap globs' files that no page but those above it covers), the repo's structure maps
 and manifests, and with `--levels` its imports. A page below a system whose docmap globs cover no file
 is a section of the page above it; one whose every file another page covers is that page's
-subsystem, or a seam; each folds on the owner's yes. It also lists the repo's own files that
+subsystem, or a seam; each folds on the owner's yes. A fold joins sections of one name into one
+— the folded page's Invariants entries under the receiving page's Invariants, its Talks to
+under its Talks to — since a page holds each heading once. It also lists the repo's own files that
 still hold the old page shape — a check of the Now / Rules / Checks headings, a counter over
 numbered page headings, an always-loaded line that makes page rules bind or cites a page by
 number — and the files that declare the docs structure beside the docmap. Those convert with
@@ -188,8 +198,10 @@ not. The hook refuses an added line in a page under `docs/`, in `.jig/decisions.
 metarepo's entry file that names `.jig/specs/`, `.jig/handoffs/` or `.jig/roadmap.md`, or a
 scope id the roadmap has in code quotes (`` `alpha/screen` ``), and names the line; a moved
 page's old lines aren't new. What can be product text too, it can't judge: `ROADMAP.md`, a
-bare scope id ("the v1/api endpoint"), a phase name, prose like "phase 3" or "spec step 6".
-`jig survey` lists those. The hook also refuses a `roadmap.md` under `docs/` or matching a
+bare scope id ("the v1/api endpoint"), a phase name, prose like "phase 3" or "spec step 6", a
+`## Status` heading. Nothing searches for those, at commit or after: words like these are often
+the product's own (a status call, a three-phase motor, a launch configuration), so whoever
+writes the line judges it, and the spec, fold-in and review ask. The hook also refuses a `roadmap.md` under `docs/` or matching a
 metarepo's `entry_files`: the roadmap is `.jig/roadmap.md`, and the root `ROADMAP.md` is
 exempt only where `.jig/roadmap.md` exists.
 
@@ -221,19 +233,32 @@ current, is the skeleton):
    `- Rows are at least 44px — the touch-target minimum; held by test_touch_targets.` An
    entry without a why and a holder is description, and goes in the body or nowhere.
 
-A page has no `## Undefined`, `## Status`, `## Current state` or `## Roadmap` section: each holds
-the project. Work parked mid-build is an item under `## Up next` in `.jig/roadmap.md`, naming
-the pages it will touch, and named work with no phase yet an item under `## No phase` (Roadmap),
-each written only on the owner's word. An open product question
-is an `## Open` entry in `.jig/decisions.md`, which the page may cite. Review findings not taken
-go in `.jig/ledgers/DEFERRED.md`. `jig survey` lists each such heading with where its content
-goes; a page that still carries one works as before until it is moved.
+A page has no `## Undefined` section, and no section that holds the project: build status
+(done, pending, not built yet), or when and in what order work will happen. What the section
+says decides, not its heading: a `## Status` or `## Current state` describing the product's own
+thing (a status call, a state machine's states) is product. Work parked mid-build is an item
+under `## Up next` in `.jig/roadmap.md`, naming the pages it will touch, and named work with no
+phase yet an item under `## No phase` (Roadmap), each written only on the owner's word. An open
+product question is an `## Open` entry in `.jig/decisions.md`, which the page may cite. Review
+findings not taken go in `.jig/ledgers/DEFERRED.md`. `jig survey` lists a `## Undefined`
+heading, jig's own retired one, with where its content goes; it searches no other heading,
+since a heading's word alone says nothing. A page that still carries a project section works as
+before until it is moved.
 
 Trunk's code is reality. A page that disagrees with the code is a stale page, and gets fixed.
 An invariant the code breaks is a finding the handoff surfaces for a person to rule on, never
 an instruction to bend the code. Cite a page by its heading (`docs/ui/ui.md § Invariants`),
 not by a number. A moved rule leaves no forwarding address behind — that is history, and
 git keeps it.
+
+A heading is its page's address, as a section number was, so a page holds each heading once,
+at any level: two `### Errors` under different sections are renamed apart (`### Sync errors`).
+The hook refuses a change that leaves a page under `docs/` with more copies of one heading than
+it had, compared as `§` compares them: code and emphasis marks dropped, case kept. In
+`docs/glossary.md` a table row's term is an address too, and counts with the headings. A
+heading quoted in fenced code is an example, not an address, and isn't counted. A page that
+already holds a duplicate isn't refused for it, wherever the change moved it from. A
+`CHANGELOG.md` or `DECISIONS.md` there, a datasheet and a file `not_docs` matches are exempt.
 
 In `docmap`, a subsystem's page names its own files and its system's page names the rest:
 fold-in asks every page that covers a changed file, so a system page whose globs reach into
@@ -323,7 +348,8 @@ URL and hash to fetch it again. Notes stay committed, and so does every file the
 Any other file has no home, and survey says which kind: an `AGENTS.md`, `CLAUDE.md` or
 `GEMINI.md` off root is a second rulebook; three or more sentences of this file word for word
 is a copy, which freezes while this file moves on; a page, flat or in its folder, below a
-subsystem, with no `deep_subsystems` entry, is deep: fold it into its subsystem's page, or
+subsystem, with no `deep_subsystems` entry, is deep: fold it into its subsystem's page, joining
+sections of one name, or
 propose its folder to the owner with its rationale; a page outside the tree — one with an
 Invariants section or a retired Undefined one, the old Now, Rules and Checks headings, or any file `docmap`
 names, whatever its format — goes flat beside
@@ -365,16 +391,15 @@ contract above, and names a page in the old Now, Rules and Checks shape (convert
 what it says into description, delete what no longer holds, keep as Invariants only what
 passes the test), an Invariants entry with no why (` — `) or no holder (`held by`), and a
 page whose first line of text after its title is a heading rather than a lead paragraph. It
-lists, apart, the project in the product: a `## Status`, `## Current state`, `## Roadmap` or
-`## Undefined` heading on a page or a metarepo's entry file, and plan prose ("phase 3", "spec
-step 6") on a page or in the decision log, each with where it goes. `jig update --apply` brings this file; it
+lists, apart, the project in the product: an `## Undefined` heading on a page or a metarepo's
+entry file, and what the hook refuses on an added line (a `.jig/specs/`, `.jig/handoffs/` or
+`.jig/roadmap.md` path, a scope id in code quotes) in old text on a page or in the decision
+log, each with where it goes. It searches no words that may be the product's. `jig update --apply` brings this file; it
 changes a page only by `--sweep`, below, on the owner's yes, and reshaping a repo's pages is a job of its own there.
 
 `jig update` sweeps a repo onto the boundary, each move on the owner's yes. Under Repo files to
 review it lists each page's `## Undefined` entry as the `## Up next` item it would become, the
-project headings and plan prose above, each decision entry (or, before the log, register row or
-section) whose words read as scope (priorities, phases, milestones, a demo, a launch, a
-delivery queue, a sprint, "first, then"), and the repo's plan and register files with where
+project paths and quoted scope ids above, and the repo's plan and register files with where
 each one's content goes: `TODO.md`, `BACKLOG.md`, `STATUS.md`, `PLAN.md` and a hand-written
 `ROADMAP.md` to `.jig/roadmap.md`; `FEATURES.md` to its systems' pages and decision entries;
 `RULES.md`, `CONVENTIONS.md` and `CONTRIBUTING.md` to `AGENTS.md` or a skill. It judges none of
@@ -675,7 +700,8 @@ one names a page above the other's. Peers come from this log; in a pararepo, fro
 metarepo's log at the pin; in a metarepo, from each registered pararepo's log on its trunk
 (`jig repos`). A log jig can't read (no cache, a cache at another pin than the pin, a pararepo
 not found) is named. `jig decision <id> --peers` prints an
-entry's peers with their rule sentences. In a metarepo, `jig survey` names each of its pages
+entry's peers with their rule sentences. The entry may be in any log read for peers, this one
+first; `<repo>/<id>` picks the log when the id is in more than one. In a metarepo, `jig survey` names each of its pages
 two pararepos' entries touch while none of its own does: that ruling is probably the
 metarepo's.
 

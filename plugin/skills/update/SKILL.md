@@ -80,8 +80,9 @@ Then make every line the proposal names in one commit — the `git mv`s, the doc
 out each finding on a yes. Never propose adding a line that restates `.jig/RULES.md`: point at it.
 
 **The project in the product** (`.jig/RULES.md`, Documentation: Product and project) comes off
-pages and out of decisions, one item at a time, each only on a yes. jig lists by words and
-headings; you and the owner judge what is product.
+pages and out of decisions, one item at a time, each only on a yes. jig lists only what is
+never product text, and searches no words: a heading like `## Status`, "phase 3" or "launch" in
+old text is left alone unless the owner raises it.
 
 - An **`## Undefined` entry** is listed as the Up next item it would become. Ask per entry: parked
   work goes to Up next (the default); an open product question becomes an `## Open` entry in
@@ -92,11 +93,10 @@ headings; you and the owner judge what is product.
   run it there; in a metarepo the pages are a job's (M4): ask the hubnode to open the job the
   run names, and run `--apply --sweep` again in its worktree, which removes the sections whose
   entries trunk's roadmap holds. A clean tree is required.
-- A **page line** naming a spec, a handoff, the roadmap, a phase or scope id, or "phase 3",
-  and a **`## Status`, `## Current state` or `## Roadmap`** section: propose the rewrite that
-  drops the reference and keeps the product fact. A sentence that is all project leaves the
+- A **page line** naming a spec, a handoff, the roadmap or a scope id in code quotes: propose
+  the rewrite that drops the reference and keeps the product fact. A sentence that is all project leaves the
   page, and if its work is still live it becomes an Up next item.
-- A **decision entry** that reads as project scope: sort it with the owner. **Strike**, the
+- A **decision entry** the owner names as project scope (none is listed): sort it with them. **Strike**, the
   whole entry is project: remove it, and add under `## Unreleased` `### Removed` the line
   `- D-040: project scope, not a product decision.` in the same commit (that line is what lets
   a released entry go); if the work is still live, it becomes a roadmap item. **Split**: a new
@@ -105,7 +105,7 @@ headings; you and the owner judge what is product.
   Status cell says `struck`, and the merge leaves it out; in a metarepo that edit is a job's
   and, like any register change before the log, it takes a `CHANGELOG.md` line (M3). A row that
   a struck row supersedes is struck too, or the merge refuses: it would come back accepted. A
-  listed register section (a delivery queue) goes to the roadmap or is deleted before the merge.
+  register section that is a delivery queue goes to the roadmap or is deleted before the merge.
 - A **plan or register file** is listed with where its content goes: `TODO.md`, `BACKLOG.md`,
   `STATUS.md`, `PLAN.md` or a hand-written `ROADMAP.md` to `.jig/roadmap.md`; `FEATURES.md` to its
   systems' pages, each row's who and why to a decision entry; `RULES.md`, `CONVENTIONS.md`,
@@ -180,11 +180,19 @@ with nothing answering them. Each offers one `BUFFER.md` row: add it only on a y
    If it added `.jig/scripts/release.sh`, leave the TODO: `/jig:release` fills it on the first
    release. If it added `.jig/scripts/publish.sh`, leave its TODO too: `/jig:release` asks what
    a release publishes on the next release.
-   If it added `.jig/scripts/derive.sh`, ask whether the repo regenerates tracked files after
-   merges (a reference, an index). If it does, fill `derive.sh` with that, list the files it
-   writes in `derived_files` in `.jig/config.json`, and offer to remove
-   the hand-run step it replaces. A generator in `setup.sh` moves to `derive.sh`: `setup.sh`
-   must leave tracked files alone.
+   If it added `.jig/scripts/derive.sh`, don't ask the owner whether the repo regenerates
+   files: look. Find the tracked files that are generated: a "generated" or "do not edit"
+   header, a `linguist-generated` line in `.gitattributes`, an output path in a tracked script
+   or build file, a file `check.sh` rebuilds and compares. Read each one's generator and judge
+   it by the test in `.jig/RULES.md` (Keeping merges mechanical): built from several sources
+   that separate jobs change, and rebuildable at every merge. Show each file with its verdict
+   and the reason, such as "one source each: regenerated in its job" or "rendered by hand: the
+   merge can't rebuild it", or "a lockfile: the branch's own build needs it, so its job
+   commits it". For the files that pass, propose filling `derive.sh`, listing
+   them in `derived_files` in `.jig/config.json`, and removing the hand-run step it replaces;
+   a file `check.sh` compares with its sources loses that comparison when it moves. Make it on
+   a yes. If no file passes, say so in one line, leave the template, and ask nothing. A
+   generator in `setup.sh` moves to `derive.sh`: `setup.sh` must leave tracked files alone.
 3. Commit on trunk. The hooks read trunk's `.jig/jig.py`. Coming from `jig/`, `.aidev/` or
    claude-lane's `.claude/claude-lane/`, it exists only once this commit lands, so this one
    commit goes unchecked. Coming from the

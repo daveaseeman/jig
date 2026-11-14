@@ -70,8 +70,9 @@ newer-release report names such a file like any other.
 ## Alternatives considered
 - Fix only `used_in`, as the report's minimum — rejected because the same `git()` crash refuses a
   commit of a Latin-1 code file in any jig repo, pararepo or not — reason is [seen]
-- `errors="surrogateescape"`, which keeps the bytes — rejected because `fill_cache` and the merge
-  resolution write git output with `write_text`, which raises on a surrogate — reason is [seen]
+- `errors="surrogateescape"` everywhere — rejected for text jig only reads, which `replace`
+  handles; kept for text jig writes back, written with `errors="surrogateescape"` so the bytes
+  survive (Decisions, amended after review) — reason is [seen: review of 11dafae]
 - Skip files that aren't UTF-8 (`-I` already skips binaries) — rejected because the report wants
   the file named: it is a real use of the term — reason is [seen: the report's Done when]
 - Keep `splitlines()` and drop short records, the report's second correction alone — rejected
@@ -79,8 +80,11 @@ newer-release report names such a file like any other.
   reason is [seen]
 
 ## Decisions
-- `replace`, not `surrogateescape`: jig only matches ASCII ids, paths and headings, and some
-  callers write what they read.
+- `replace` for text jig only reads and matches; `surrogateescape` on both sides for text jig
+  writes back into a tracked file (the append-file resolution in `jig merge` and `jig sync`,
+  the roadmap rewrite). Amended after review, 2026-11-13: `replace` alone turned a crash into a
+  silent `\ufffd` in a merged append file, and `write_text(..., errors="surrogateescape")`
+  removes the reason `surrogateescape` was first rejected. Reason is [seen: review of 11dafae].
 - `grep_hits` reads bytes rather than relying on `git()`: `text=True`'s newline translation is
   what turns a lone CR into a record break.
 
