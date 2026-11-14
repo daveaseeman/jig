@@ -6451,7 +6451,104 @@ msg="headings: update's section-counter finding names the heading rule that repl
 expect_pass sh -c "\$0 2>&1 | grep -F 'reserve.section' | grep -qF \"refuses a page's second heading of one name\"" "$UP"
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings"
+sec_consolidate() {
+export JIG_CONFIG="$T/repos.json"     # never the user's real list
+CO="$T/co"; pcnew "$CO" && mkdir -p docs app/src lib && printf '# Shared\n' > docs/shared.md
+printf 'x\n' > app/src/x.ts && printf 'x\n' > lib/a.py && mkdir -p .jig/specs
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+cspec() {  # cspec <name> <touches> [extra line]: a spec whose ## Touches is that one backticked path
+  printf '# %s\n\nSource: chat %s\n\n## Touches\n- `%s` (the page) and `cmd_x`\n%s\n' "$1" "$1" "$2" "${3:-}" > ".jig/specs/$1.md"; }
+
+msg="consolidate: with no specs waiting it says so and exits 0"
+out=$($J consolidate 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'no waiting specs overlap'" "$out"
+
+cspec a 'docs/shared.md' && cspec b 'docs/**' && cspec c 'app/src/x.ts' && git add -A && git commit -qm specs
+msg="consolidate: three specs, two sharing a page, list as one group of two, with the shared paths"
+out=$($J consolidate 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'group 1: 2 specs' && echo \"\$0\" | grep -q 'a and b share: docs/shared.md, docs/\*\*' && ! echo \"\$0\" | grep -q 'c.md' && ! echo \"\$0\" | grep -q 'group 2'" "$out"
+
+msg="open: a spec in an unanswered group is refused, naming the group and jig consolidate, and nothing is opened"
+out=$($J open A --spec .jig/specs/a.md --owns 'docs/**' 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '.jig/specs/a.md, .jig/specs/b.md' && echo \"\$0\" | grep -q 'jig consolidate' && ! grep -q '\"A\"' .jig/jobs.json" "$out"
+
+msg="consolidate: a Kept separate line on either spec of the pair answers it"
+printf 'Kept separate from a: b rewrites the page after a ships\n' >> .jig/specs/b.md
+out=$($J consolidate 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'no waiting specs overlap' && $J open A --spec .jig/specs/a.md --owns 'docs/**' >/dev/null && git checkout -q -- .jig/jobs.json && git worktree remove --force .git/jig/worktrees/A && git branch -q -D A" "$out"
+git checkout -q -- .jig/specs/b.md
+
+msg="consolidate: one spec carrying both Source lines, the inputs deleted, answers the group"
+git rm -q .jig/specs/a.md .jig/specs/b.md
+printf '# ab\n\nSource: chat a\nSource: chat b\n\n## Touches\n- `docs/shared.md`\n' > .jig/specs/ab.md
+git add -A && git commit -qm "specs: ab from a and b"
+out=$($J consolidate 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'no waiting specs overlap'" "$out"
+
+msg="staging resolve: a report whose spec is in an unanswered group is refused, naming the group"
+mkdir -p .jig/staging && printf -- '---\nstaged: true\ntarget: this\nkind: feedback\nfrom: elsewhere\nchange: new\ndestination: x\nsource: chat r\nstatus: staged\n---\nbody\n' > .jig/staging/r.md
+cspec d 'docs/shared.md § Intro' 'Source: chat r (staged as r.md)'
+out=$($J staging resolve r.md 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '.jig/specs/ab.md, .jig/specs/d.md' && test -f .jig/staging/r.md" "$out"
+msg="staging resolve: with the pair answered it resolves"
+printf -- '- Kept separate from .jig/specs/ab.md: d only renames the term\n' >> .jig/specs/d.md
+expect_pass sh -c "$J staging resolve r.md && test ! -f .jig/staging/r.md"
+git add -A && git commit -qm "spec d"
+
+msg="consolidate: a spec the newest release holds, or a job or note names, isn't waiting"
+git tag v0.1.0 && cspec e 'docs/shared.md' && mkdir -p .jig/handoffs && printf '# Handoff: f\n\nSpec: .jig/specs/f.md\n' > .jig/handoffs/f-2026-01-01.md
+cspec f 'docs/shared.md'
+out=$($J consolidate 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'no waiting specs overlap'" "$out"
+rm .jig/specs/e.md .jig/specs/f.md .jig/handoffs/f-2026-01-01.md
+
+msg="open: a Touches path in neither owns, shares nor common is warned about, by name; a § term counts as its page"
+cspec g 'app/src/x.ts' && cspec h 'lib/a.py § Load' 'Kept separate from g: no overlap' && git add -A && git commit -qm "specs g h"
+out=$($J open G --spec .jig/specs/g.md --shares 'docs/**' 2>&1)
+out2=$($J open H --spec .jig/specs/h.md --owns 'lib/**' 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep 'warning' | grep -q 'app/src/x.ts' && ! echo \"\$0\" | grep 'warning' | grep -q cmd_x && ! echo \"\$1\" | grep -q warning" "$out" "$out2"
+git add -A && git commit -qm "open G H"
+printf 'y\n' >> .git/jig/worktrees/G/app/src/x.ts    # jig check judges the change not yet committed
+msg="share: a path another open job owns is refused, the board unchanged"
+expect_refuse $J share G lib/a.py
+msg="share: adds the path to the job's shares, and jig check in the job then passes"
+before=$(cd .git/jig/worktrees/G && $J check >/dev/null 2>&1; echo $?)
+$J share G app/src/x.ts >/dev/null && git add -A && git commit -qm "share G" >/dev/null
+expect_pass sh -c "test $before != 0 && grep -q 'app/src/x.ts' .jig/jobs.json && cd .git/jig/worktrees/G && $J check"
+
+# Metarepo: two pararepo proposals, consolidated into one job there, merged and released.
+PM="$T/pm"; pcnew "$PM" && git add -A && git commit -qm init
+$J init --meta --name pm >/dev/null && git add -A && git commit -qm meta-init && $J release >/dev/null
+PA="$T/pa"; pcnew "$PA" && mkdir -p api && printf 'x=1\n' > api/a.py
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para pm --location "$PM" --contract 'api/**' >/dev/null && git add -A && git commit -qm "init --para"
+mkdir -p .jig/specs && for s in one two; do printf '# %s\n\n## Decisions\n' $s > .jig/specs/$s.md && $J propose .jig/specs/$s.md $s >/dev/null; done
+git add -A && git commit -qm "specs: one two"
+cd "$PM"
+for s in one two; do
+  git switch -q propose/pa-$s && mkdir -p docs/products && printf '# %s\n' $s > docs/products/$s.md \
+    && git add -A && git commit -qm "PRODUCTS: $s" && $J reviewed >/dev/null && git switch -q main
+done
+# A release needs an entry file changed: proposal one also adds a glossary term and its line.
+git switch -q propose/pa-one && printf '\n### one\n' >> README.md && ulog '- one' \
+  && git add -A && git commit -qm "GLOSSARY: one" && $J reviewed >/dev/null && git switch -q main
+mkdir -p .jig/specs && printf '# m\n\nSource: pa one\nSource: pa two\n\n## Touches\n- `docs/products/**`\n\n## Proposals\n- `propose/pa-two`\n- `propose/pa-one`\n' > .jig/specs/m.md
+git add -A && git commit -qm "TOOL: spec m"
+msg="metarepo: open on a spec listing proposals: the kickoff says to merge each into the job's branch, in the spec's order"
+out=$($J open M --spec .jig/specs/m.md --owns 'docs/products/**' 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'Run .jig sync., then merge each proposal into M in this order: propose/pa-two, propose/pa-one'" "$out"
+git add -A && git commit -qm "TOOL: open M"
+(cd .git/jig/worktrees/M && $J sync && git merge -q --no-ff --no-edit propose/pa-two && git merge -q --no-ff --no-edit propose/pa-one \
+  && $J reviewed >/dev/null) >/dev/null 2>&1
+git merge -q --no-ff --no-edit M >/dev/null 2>&1 && $J release >/dev/null 2>&1
+git branch -q -D propose/pa-one propose/pa-two
+cd "$PA"
+msg="metarepo: after the release, the pararepo's sync reports both proposals released"
+out=$($J sync 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'proposal propose/pa-one (.jig/specs/one.md): released by v0.2.0' && echo \"\$0\" | grep -q 'proposal propose/pa-two (.jig/specs/two.md): released by v0.2.0'" "$out"
+}
+
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings consolidate"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file

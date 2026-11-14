@@ -973,6 +973,11 @@ def cmd_open(root: Path, args) -> int:
             "for their handoff notes and gate checkout: pick another name")
     branch = args.branch or args.name
     owns = args.owns or []
+    spec_file = root / args.spec if args.spec and args.spec.endswith(".md") else None
+    spec_text = spec_file.read_text(errors="replace") if spec_file and spec_file.is_file() else ""
+    # Overlapping specs get one answer before any becomes a job: one job, or kept apart on purpose.
+    if spec_text and (group := group_of(root, board, args.spec)):
+        die(group_refusal(group, args.spec))
     # R4 pre-check: a file another open job already changed is shared, never owned
     conflicts = []
     for p in owns:
@@ -1031,10 +1036,19 @@ def cmd_open(root: Path, args) -> int:
     print(f"job {args.name} {verb}. worktree: {worktree}  state: {state}")
     if reserve:
         print("reserved: " + ", ".join(f"{k}={v}" for k, v in reserve.items()))
+    # A warning, not a refusal: Touches is prose, and the hubnode may have meant to leave a path out.
+    if missed := uncovered_touches(board, spec_text, owns, args.shares or []):
+        print(f"warning: the spec's Touches names what {args.name} can't change, in neither owns, "
+              f"shares nor common: {', '.join(missed)}. `jig share {args.name} <path>…` adds them.")
+    proposals = proposal_branches(spec_text)
+    # Synced first: a merge in a job is judged against trunk, and a new job's branch doesn't
+    # hold the commit that opened it, so the board would read as the job's change.
+    merges = (f"Run `jig sync`, then merge each proposal into {branch} in this order: "
+              f"{', '.join(proposals)}.\n" if proposals else "")
     print(f"\n--- kickoff ---\nJob: {args.name}\nBranch: {branch}\nWorktree: {worktree}\n"
           f"Spec: {args.spec or '(see board)'}\n"
           f"Owns: {', '.join(owns) or '-'}\nShares: {', '.join(args.shares or []) or '-'}\n"
-          f"Read {DIR}/RULES.md, then `python3 {DIR}/jig.py check`.")
+          f"{merges}Read {DIR}/RULES.md, then `python3 {DIR}/jig.py check`.")
     return 0
 
 
@@ -1057,6 +1071,165 @@ def cmd_reserve(root: Path, args) -> int:
     reserved[args.counter] = n if had is None else [*(had if isinstance(had, list) else [had]), n]
     board.save()
     print(f"job {args.name}: {args.counter} {n} reserved. Commit {JOBS} on {board.trunk}.")
+    return 0
+
+
+# ---------------------------------------------------------------- consolidate
+
+def touches_spans(text: str) -> list[str]:
+    """The backticked paths in a spec's `## Touches`, a `<page> § <term>` kept whole. A span
+    with neither a slash nor an extension is a function or a flag, not a path."""
+    m = re.search(r"^## Touches[ \t]*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+    out = []
+    for span in re.findall(r"`([^`\n]+)`", m.group(1) if m else ""):
+        page = span.split("§")[0].strip()
+        if page and not re.search(r"\s", page) and ("/" in page or re.search(r"\.\w+$", page)):
+            out.append(f"{page} § {span.split('§', 1)[1].strip()}" if "§" in span else page)
+    return out
+
+
+def touches_meet(a: str, b: str) -> bool:
+    """Two Touches entries name one place: one path, a glob covering the other's path, or the
+    same `<page> § <term>`. A whole page meets any term on it; two terms on one page don't."""
+    pa, _, ta = a.partition(" § ")
+    pb, _, tb = b.partition(" § ")
+    if ta and tb:
+        return pa == pb and ta == tb
+    return pa == pb or matches(pa, [pb]) or matches(pb, [pa])
+
+
+def release_tag(trunk: str) -> str:
+    """The newest release on trunk: a vX.Y.Z tag `jig release` made."""
+    tags = [t for t in git("tag", "--merged", trunk).splitlines() if re.fullmatch(r"v\d+(\.\d+)*", t)]
+    return latest_tag(tags)
+
+
+def waiting_specs(root: Path, board: "Board") -> dict[str, str]:
+    """Specs no job has taken yet, path → text: no open job names it, no handoff note's
+    `Spec:` line names it, and the newest release doesn't hold it. The tag bounds it, so a
+    spec whose solo work merged long ago, with no note, isn't waiting."""
+    named = {j.get("spec", "") for j in board.jobs.values()}
+    notes = root / HANDOFFS
+    for n in notes.glob("*.md") if notes.is_dir() else []:
+        named |= set(re.findall(r"^Spec:[ \t]*(\S+)", n.read_text(errors="replace"), re.M))
+    tag = release_tag(board.trunk)
+    out = {}
+    for f in sorted((root / SPECS).glob("*.md")):
+        rel = f.relative_to(root).as_posix()
+        if not is_spec(rel) or rel in named:
+            continue
+        if tag and git("cat-file", "-t", f"{tag}:{rel}"):
+            continue
+        out[rel] = f.read_text(errors="replace")
+    return out
+
+
+def kept_separate(text: str) -> set[str]:
+    """The specs this one is kept apart from, by a `Kept separate from <spec>: <reason>` line,
+    as stems, so a path, a file name and a bare name are one spec."""
+    return {Path(m.group(1).strip("`")).stem for m in
+            re.finditer(r"^[-*]?[ \t]*Kept separate from (\S+?):[ \t]*\S", text, re.M)}
+
+
+def overlap_groups(root: Path, board: "Board") -> list[tuple[list[str], dict]]:
+    """Unanswered groups of waiting specs: specs joined by an overlap no `Kept separate` line
+    answers, with the shared Touches per pair. A merged spec answers by replacing its inputs."""
+    specs = waiting_specs(root, board)
+    touches = {s: touches_spans(t) for s, t in specs.items()}
+    kept = {s: kept_separate(t) for s, t in specs.items()}
+    names = sorted(specs)
+    edges: dict[tuple[str, str], list[str]] = {}
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            if Path(b).stem in kept[a] or Path(a).stem in kept[b]:
+                continue
+            shared = [x for x in touches[a] if any(touches_meet(x, y) for y in touches[b])]
+            shared += [y for y in touches[b] if y not in shared
+                       and any(touches_meet(x, y) for x in touches[a]) and y not in touches[a]]
+            if shared:
+                edges[(a, b)] = shared
+    groups, seen = [], set()
+    for s in names:
+        if s in seen or not any(s in e for e in edges):
+            continue
+        group, todo = [], [s]
+        while todo:
+            x = todo.pop()
+            if x in seen:
+                continue
+            seen.add(x)
+            group.append(x)
+            todo += [b if a == x else a for a, b in edges if x in (a, b)]
+        group.sort()
+        groups.append((group, {e: v for e, v in edges.items() if e[0] in group}))
+    return groups
+
+
+def group_of(root: Path, board: "Board", spec: str) -> tuple[list[str], dict] | None:
+    want = Path(spec).as_posix()
+    return next((g for g in overlap_groups(root, board) if want in g[0]), None)
+
+
+def group_refusal(group: tuple[list[str], dict], what: str) -> str:
+    specs, edges = group
+    return (f"{what} is in a group of waiting specs whose Touches overlap: {', '.join(specs)}. "
+            "Answer it first: merge them into one spec (/jig:consolidate), or add "
+            "`Kept separate from <spec>: <reason>` to one spec of each pair. `jig consolidate` lists it.")
+
+
+def cmd_consolidate(root: Path, args) -> int:
+    board = Board.load(root, working_tree=True)
+    groups = overlap_groups(root, board)
+    if not groups:
+        print("no waiting specs overlap: each can open as its own job")
+        return 0
+    for n, (specs, edges) in enumerate(groups, 1):
+        print(f"group {n}: {len(specs)} specs, proposed as one job")
+        for s in specs:
+            print(f"  {s}")
+        for (a, b), shared in edges.items():
+            print(f"    {Path(a).stem} and {Path(b).stem} share: {', '.join(shared)}")
+    print("\nAnswer each group before opening any of it: /jig:consolidate merges a group into one "
+          "spec, or one spec of a pair says `Kept separate from <spec>: <reason>`.")
+    return 0
+
+
+def uncovered_touches(board: "Board", spec_text: str, owns: list[str], shares: list[str]) -> list[str]:
+    """Touches paths the job could not change: in neither its owns, its shares, nor common.
+    A glob in Touches is covered when it is listed as is."""
+    lists = [*owns, *shares, *(board.data.get("common") or [])]
+    out = []
+    for t in touches_spans(spec_text):
+        page = t.partition(" § ")[0]
+        if page not in lists and not matches(page, lists) and page not in out:
+            out.append(page)
+    return out
+
+
+def proposal_branches(text: str) -> list[str]:
+    """The metarepo proposals a consolidated spec takes in, in its `## Proposals` order."""
+    m = re.search(r"^## Proposals[ \t]*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+    return re.findall(r"`(propose/[^`\s]+)`", m.group(1)) if m else []
+
+
+def cmd_share(root: Path, args) -> int:
+    """Add paths to an open job's shares: what its Touches needed and its kickoff left out."""
+    board = Board.load(root, working_tree=True)
+    if git("branch", "--show-current") != board.trunk:
+        die(f"share from {board.trunk} (the hubnode's checkout)")
+    job = board.jobs.get(args.name)
+    if job is None:
+        die(f"no open job {args.name}")
+    taken = [f"{p} (owned by open job {n})" for p in args.paths for n, j in board.jobs.items()
+             if n != args.name and any(p == o or matches(p, [o]) or matches(o, [p]) for o in j.get("owns") or [])]
+    if taken:
+        die("these are another job's to change; that job shares them first, or they wait:\n  "
+            + "\n  ".join(taken))
+    shares = job.setdefault("shares", [])
+    added = [p for p in args.paths if p not in shares]
+    shares += added
+    board.save()
+    print(f"job {args.name}: shares {', '.join(added) or 'unchanged'}. Commit {JOBS} on {board.trunk}.")
     return 0
 
 
@@ -7308,6 +7481,12 @@ def cmd_staging(root: Path, args) -> int:
             die(f"destination {rel!r} is outside this repo: give a path relative to its root", 2)
         return out
 
+    def unanswered(spec: str) -> None:
+        """A report resolves once its spec has its overlap answered: resolving is where the
+        hubnode moves on, so an overlap left here would reach `jig open` unread."""
+        if group := group_of(root, Board.load(root, working_tree=True), spec):
+            die(group_refusal(group, f"{spec}, which carries `{mark}`,"), 1)
+
     def landed(rel: str) -> bool:
         f = inside(rel)
         return f.exists() and mark in f.read_text(errors="replace")
@@ -7327,6 +7506,7 @@ def cmd_staging(root: Path, args) -> int:
         if not landed(dest):
             die(f"a request resolves into a spec: amend {dest}, the spec it names, from it, "
                 f"carrying `{mark}`, then resolve again", 1)
+        unanswered(dest)
         return done(f"carried by {dest}")
     if kind in ("user-story", "feature-request", "feedback"):
         specs = [s for s in (root / DIR / "specs").glob("*.md") if mark in s.read_text()]
@@ -7335,6 +7515,8 @@ def cmd_staging(root: Path, args) -> int:
             what = {"user-story": "a story", "feature-request": "a request"}.get(kind, "a report")
             die(f"{what} resolves into a spec: {how} under {DIR}/specs/ from it, carrying "
                 f"`{mark}`, then resolve again", 1)
+        for s in specs:
+            unanswered(s.relative_to(root).as_posix())
         return done(f"carried by {specs[0].relative_to(root)}")
     if kind in ("spec", "doc") and not bare_path(dest):
         die(f"destination {dest!r} isn't a path yet: find the page, put its path in the header, "
@@ -10583,6 +10765,10 @@ def main(argv: list[str] | None = None) -> int:
     o.add_argument("--worktree", help="adopting: where the branch is already checked out")
     o.add_argument("--state", choices=STATES, help="adopting: its state (default building)")
 
+    sub.add_parser("consolidate", help="hubnode: waiting specs whose Touches overlap, to answer before opening")
+    sh = sub.add_parser("share", help="hubnode: add paths to an open job's shares")
+    sh.add_argument("name")
+    sh.add_argument("paths", nargs="+")
     rs = sub.add_parser("reserve", help="hubnode: give an open job another number of a counter")
     rs.add_argument("name")
     rs.add_argument("counter")
@@ -10668,7 +10854,7 @@ def main(argv: list[str] | None = None) -> int:
     load_genres(root)
     fn = {
         "init": cmd_init, "install-hooks": cmd_install_hooks, "status": cmd_status,
-        "open": cmd_open, "reserve": cmd_reserve, "mark": cmd_mark, "merge": cmd_merge, "check": cmd_check, "decision": cmd_decision,
+        "open": cmd_open, "reserve": cmd_reserve, "consolidate": cmd_consolidate, "share": cmd_share, "mark": cmd_mark, "merge": cmd_merge, "check": cmd_check, "decision": cmd_decision,
         "job": cmd_job, "sync": cmd_sync, "reviewed": cmd_reviewed,
         "handoff": cmd_handoff, "gate": cmd_gate, "hook": cmd_hook,
         "workflow": cmd_workflow,
