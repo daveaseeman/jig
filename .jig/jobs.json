@@ -12,7 +12,7 @@
   },
   "peers-other-log-id": {
     "spec": ".jig/specs/bug-peers-other-log-id.md",
-    "state": "ready",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
