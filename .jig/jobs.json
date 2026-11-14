@@ -1,30 +1,7 @@
 {
-  "git-output-encoding": {
-    "spec": ".jig/specs/bug-git-output-encoding.md",
-    "state": "claimed",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "tests/smoke.sh"
-    ],
-    "reserved": {}
-  },
-  "peers-other-log-id": {
-    "spec": ".jig/specs/bug-peers-other-log-id.md",
-    "state": "claimed",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/templates/jig/RULES.md",
-      "plugin/templates/jig/jig.py",
-      "tests/smoke.sh"
-    ],
-    "reserved": {}
-  },
   "buffer-row-close": {
     "spec": ".jig/specs/bug-buffer-row-close.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
@@ -32,76 +9,6 @@
       "plugin/templates/jig/RULES.md",
       "plugin/templates/jig/jig.py",
       "plugin/templates/ledgers/BUFFER.md",
-      "tests/smoke.sh"
-    ],
-    "reserved": {}
-  },
-  "project-sweep-noise": {
-    "spec": ".jig/specs/bug-project-sweep-noise.md",
-    "state": "claimed",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/skills/review/SKILL.md",
-      "plugin/skills/survey/SKILL.md",
-      "plugin/skills/update/SKILL.md",
-      "plugin/templates/jig/RULES.md",
-      "plugin/templates/jig/jig.py",
-      "tests/smoke.sh"
-    ],
-    "reserved": {}
-  },
-  "derive-candidates": {
-    "spec": ".jig/specs/bug-derive-candidates.md",
-    "state": "claimed",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/skills/init/SKILL.md",
-      "plugin/skills/update/SKILL.md",
-      "plugin/templates/jig/RULES.md",
-      "plugin/templates/jig/scripts/derive.sh",
-      "plugin/templates/AGENTS.md",
-      "plugin/templates/jig/jig.py",
-      "plugin/skills/hubnode/SKILL.md"
-    ],
-    "reserved": {}
-  },
-  "heading-collision": {
-    "spec": ".jig/specs/bug-heading-collision.md",
-    "state": "claimed",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh"
-    ],
-    "reserved": {}
-  },
-  "roadmap-no-phase": {
-    "spec": ".jig/specs/bug-roadmap-no-phase.md",
-    "state": "claimed",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/skills/hubnode/SKILL.md",
-      "plugin/templates/jig/RULES.md",
-      "plugin/templates/jig/jig.py",
-      "tests/smoke.sh",
-      "plugin/skills/review/SKILL.md",
-      "plugin/skills/spec/SKILL.md"
-    ],
-    "reserved": {}
-  },
-  "touches-abstract": {
-    "spec": ".jig/specs/bug-touches-abstract.md",
-    "state": "claimed",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/templates/jig/RULES.md",
-      "plugin/templates/jig/jig.py",
       "tests/smoke.sh"
     ],
     "reserved": {}

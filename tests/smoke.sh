@@ -200,6 +200,17 @@ msg="R7: the marker in a string is accepted"
 printf 'msg = "adds a WORKAROUND: comment"\n' > src/s.py; git add -A; expect_pass git commit -qm t
 msg="R7: ; before a string with the marker is accepted"
 printf 'a(); log("WORKAROUND: x")\n' > src/s.js; git add -A; expect_pass git commit -qm t
+msg="R7: a code file holding a Latin-1 byte commits"
+printf '/* caf\xe9 */\nint x;\n' > src/l1.h; git add -A; expect_pass git commit -qm l1
+msg="R7: the marker beside a Latin-1 byte is still refused, by R7"
+printf '/* %s caf\xe9 */\n' "$W" > src/l2.c; git add -A; out=$(git commit -qm t 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'R7 the diff adds' && ! echo \"\$0\" | grep -q Traceback" "$out"; undo
+msg="R7: the marker after a lone CR on an added line is still refused"
+printf 'int x;\r/* %s y */\n' "$W" > src/cr.c; git add -A; expect_refuse git commit -qm t; undo
+msg="survey: a citation after a form feed on its line counts as inbound"
+printf '# Notes\n\nbody\n' > notes.md && printf 'see\x0cnotes.md\n' > src/cite.txt && git add -A && git commit -qm cite >/dev/null 2>&1
+expect_pass hrsurvey "assert [m['inbound'] for m in r['markdown'] if m['path'] == 'notes.md'] == [1], r['markdown']"
+git rm -q notes.md src/cite.txt && git commit -qm uncite >/dev/null 2>&1
 msg="R7: // in a URL before a string with the marker is accepted"
 printf 'u = "http://h"; s = "WORKAROUND: y"\n' > src/u.py; git add -A; expect_pass git commit -qm t
 msg="R7: jig's own R7 message line, outside the exempt checker, is accepted"
@@ -1330,6 +1341,12 @@ cd "$PR" && printf 'D-001 is how ids work\n' > api/ids.md && git add api/ids.md 
 msg="sync on a pararepo trunk: after a release it reports the change in this repo's terms, its BUFFER rows and specs included, and proposes the bump; the pin stays"
 out=$($J sync 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'docs v0.2.0 is out' && echo \"\$0\" | grep -qF 'D-001: used in .jig/ledgers/BUFFER.md, .jig/specs/buffer-v0.1.1.md, api/ids.md' && echo \"\$0\" | grep -q 'meta: docs v0.1.0 → v0.2.0' && grep -q '\"pin\": \"v0.1.0\"' .jig/para.json" "$out"
+msg="sync on a pararepo trunk: a tracked file not in UTF-8, or with a form feed or a lone CR on the matching line, is named, not a crash"
+mkdir -p notes && printf 'caf\xe9 D-001\n' > notes/latin1.txt && printf 'D-001 is\x0chow\n' > notes/ff.txt && printf 'D-001 is\rhow\n' > notes/cr.txt
+git add notes && git commit -qm "notes: encodings" >/dev/null 2>&1
+out=$($J sync 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -F 'D-001: used in' | grep -F notes/cr.txt | grep -F notes/ff.txt | grep -qF notes/latin1.txt" "$out"
+git rm -rq notes && git commit -qm "notes: gone" >/dev/null 2>&1
 
 msg="repos: lists each repo and flags a path that no longer exists"
 mv mrclone ../mrclone-away; out=$($J repos 2>&1); mv ../mrclone-away mrclone
@@ -2795,6 +2812,24 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'needs git 2.38'" "$o
 msg="merge: once synced, N merges with no new handoff"
 expect_pass sh -c "$J merge N && ! grep -q '\"N\"' .jig/jobs.json && grep -q '^- K' CHANGELOG.md && grep -q '^- N' CHANGELOG.md"
 
+# An append file holding bytes that aren't UTF-8: merge and sync write them back unchanged.
+FE="$T/fu-bytes"; pcnew "$FE" && printf '# Changelog\n' > CHANGELOG.md && git add -A && git commit -qm init \
+  && $J init >/dev/null && board "b['append_files'].append('CHANGELOG.md')" && git add -A && git commit -qm board
+for j in Q R S; do $J open $j --shares CHANGELOG.md >/dev/null; done; git add -A && git commit -qm "open Q R S"
+for j in Q R S; do
+  ( cd "$FE/.git/jig/worktrees/$j" && printf -- '- %s caf\xe9\n' "$j" >> CHANGELOG.md && git add -A && git commit -qm "$j" \
+    && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $j" )
+done
+$J merge Q >/dev/null 2>&1
+msg="merge: R, unsynced, appended a Latin-1 line: the merged CHANGELOG.md has Q's bytes, then R's, unchanged"
+out=$($J merge R 2>&1); rc=$?
+printf '# Changelog\n- Q caf\xe9\n- R caf\xe9\n' > "$T/fu-bytes.want"
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'resolved CHANGELOG.md' && git show HEAD:CHANGELOG.md | cmp -s - '$T/fu-bytes.want'" "$out"
+msg="sync: S, which appended a Latin-1 line, resolves CHANGELOG.md with every line's bytes unchanged"
+(cd "$FE/.git/jig/worktrees/S" && $J sync >/dev/null 2>&1); rc=$?
+printf '# Changelog\n- Q caf\xe9\n- R caf\xe9\n- S caf\xe9\n' > "$T/fu-bytes.want"
+expect_pass sh -c "test $rc = 0 && git -C '$FE/.git/jig/worktrees/S' show HEAD:CHANGELOG.md | cmp -s - '$T/fu-bytes.want'"
+
 # DEFERRED.md rows: two jobs' rows merge back to back; rows added beside the note don't count.
 FD="$T/fu-defer"; pcnew "$FD" && git add -A && git commit -qm init && $J init >/dev/null \
   && mkdir -p .jig/ledgers && cp "$P/ledgers/DEFERRED.md" .jig/ledgers/ && printf '| 2026-11-01 | base | f0 | should-fix | deferred | r |\n' >> .jig/ledgers/DEFERRED.md && git add -A && git commit -qm board
@@ -3880,7 +3915,15 @@ git add -A && git -c core.hooksPath=/dev/null commit -qm deep && behind
 out=$($UP 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -A2 '^      fold docs/q/r/s/s.md into docs/q/r/r.md' | grep -q '^      git mv docs/q/r/r.md docs/q/r.md'" "$out"
 cat docs/q/r/s/s.md >> docs/q/r/r.md && git rm -q docs/q/r/s/s.md && git add -A && git mv docs/q/r/r.md docs/q/r.md
+out=$(git commit -qm "fold s" 2>&1); rc=$?; git reset -q --hard
+msg="form: a fold that appends the page whole is refused for its second ## Invariants"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'has \`Invariants\` 2 times'" "$out"
+msg="form: update's fold of a deep page drafts the move flat of the page it leaves alone, and that commit passes"
+# A fold joins sections of one name: s's Invariants entries go under r's.
+sed '1,/^## Invariants/d' docs/q/r/s/s.md >> docs/q/r/r.md && git rm -q docs/q/r/s/s.md && git add -A && git mv docs/q/r/r.md docs/q/r.md
 expect_pass git commit -qm "fold s"
+msg="form: the joined fold holds one ## Invariants with both pages' entries"
+expect_pass sh -c "test \"\$(grep -c '^## Invariants' docs/q/r.md)\" = 1 && test \"\$(grep -c '^- rows stay sorted' docs/q/r.md)\" = 2"
 msg="form: an approved move of a lone folder page lands flat, and its commit passes"
 ipage docs/w/k/k.md && board "b['docmap']['docs/w/k/k.md'] = []" && git add -A && git -c core.hooksPath=/dev/null commit -qm "lone k"
 board "b['findings']['page:docs/w/k/k.md'] = 'approved'" && git commit -qam "k approved" && behind
@@ -4584,6 +4627,60 @@ out=$(cd .git/jig/worktrees/H && printf 'job\n' >> ROADMAP.md && git add -A && g
 expect_pass sh -c "test $rc = 0 && ! echo \"\$0\" | grep -q R5" "$out"
 msg="roadmap: with no roadmap, survey lists a hand-written ROADMAP.md as a stray"
 expect_pass hrsurvey "assert 'ROADMAP.md' in [e['path'] for e in r['homeless']], r['homeless']"
+
+NP="$T/no-phase"; pcnew "$NP" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+printf '# Roadmap\n\n## alpha\nThe first build for the demo.\nIt boots and shows a screen.\n\nExit when:\n- [ ] boots\nScopes:\n- `screen`: the panel\n\n## beta\nExit when:\n- [ ] ships to a tester\n\n## No phase\n- `pay`: payments\n- `pairing`: dongle pairing\n' > .jig/roadmap.md
+msg="no phase: a roadmap with a ## No phase section commits, and the section is no phase"
+git add -A && expect_pass git commit -qm roadmap
+$J roadmap --write >/dev/null && git add -A && git commit -qm view
+msg="no phase: the view's phase line holds only the phases, and No phase follows them with its items, unstated"
+expect_pass python3 -c "
+t = open('ROADMAP.md').read(); l = t.splitlines()
+assert '**alpha** (current) → beta' in l, t
+i = l.index('## No phase'); assert l[i + 2] == '_No phase set, in no order._' and '- **pay**: payments' in l[i:] and '- **pairing**: dongle pairing' in l[i:], t
+assert 'No phase (' not in t and i > l.index('## beta (next)'), t"
+msg="no phase: a phase's note is printed under its heading, before Exit when, in order"
+expect_pass python3 -c "
+l = open('ROADMAP.md').read().splitlines(); i = l.index('## alpha (current)')
+assert l[i + 2:i + 6] == ['The first build for the demo.', 'It boots and shows a screen.', '', 'Exit when:'], l"
+msg="no phase: jig roadmap prints the note under its phase and lists No phase apart from the phases"
+expect_pass sh -c "$J roadmap | grep -A1 '^alpha  current' | grep -q '^  The first build' && $J roadmap | grep -qx 'No phase' && $J roadmap | grep -q '^  pay  *payments' && ! $J roadmap | grep -q '^No phase  '"
+msg="no phase: with every phase done, No phase never becomes current"
+printf '## alpha\nExit when:\n- [x] boots\n\n## beta\nExit when:\n- [x] ships\n\n## No phase\n- `pay`: payments\n' > .jig/roadmap.md && $J roadmap --write >/dev/null && git add -A && git commit -qm done
+expect_pass sh -c "grep -qx 'alpha ✓ → beta ✓' ROADMAP.md && ! grep -q current ROADMAP.md && ! $J roadmap | grep -q current"
+rbad() { printf "$1" > .jig/roadmap.md && git add -A; out=$(git commit -qm bad 2>&1); rc=$?; git reset -q --hard; }
+msg="no phase: an item naming pages is refused by line, pointing at Up next"
+rbad '## a\nScopes:\n- `x`: y\n\n## No phase\n- `p`: pay (touches docs/a.md)\n'
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'line 6: No phase item p names pages.*Up next'" "$out"
+msg="no phase: a duplicate item id is refused by line"
+rbad '## a\nScopes:\n- `x`: y\n\n## No phase\n- `p`: pay\n- `p`: again\n'
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'line 7: No phase item p appears twice'" "$out"
+msg="no phase: a line that isn't an item is refused by line"
+rbad '## a\nScopes:\n- `x`: y\n\n## No phase\nsome prose\n'
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'line 6: not a No phase item'" "$out"
+msg="no phase: a spec can't take a No phase item: it is no scope, and the refusal says so"
+rspec s9 'No phase/pay' && git add -A; out=$(git commit -qm s9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"takes No phase/pay, which .jig/roadmap.md on main doesn't have\"" "$out"
+undo
+msg="no phase: a phase already named No phase is refused by line, saying the name is reserved"
+rbad '## a\nScopes:\n- `x`: y\n\n## No phase\nExit when:\n- [ ] z\n'
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'line 6: ## No phase is a reserved section, not a phase'" "$out"
+msg="no phase: a note ends at the first box, so a box before Exit when never shows under a done phase"
+printf '## a\nA note.\n- [ ] early\nExit when:\n- [x] boots\n' > .jig/roadmap.md && $J roadmap --write >/dev/null && git add -A && git commit -qm early
+expect_pass sh -c "grep -qx '## a (done)' ROADMAP.md && grep -qx 'A note.' ROADMAP.md && ! grep -q early ROADMAP.md"
+msg="no phase: a code fence inside a note is kept"
+printf '## a\nA note.\n```\nquoted\n```\nExit when:\n- [ ] boots\n' > .jig/roadmap.md && $J roadmap --write >/dev/null && git add -A && git commit -qm fence
+expect_pass python3 -c "
+l = open('ROADMAP.md').read().splitlines(); i = l.index('## a (current)')
+assert l[i + 2:i + 7] == ['A note.', '\`\`\`', 'quoted', '\`\`\`', ''], l"
+msg="no phase: with Up next and No phase both present, the view prints Up next, then No phase"
+mkdir -p docs && printf '# A\n\nA is.\n' > docs/a.md && printf '## a\nExit when:\n- [ ] boots\n\n## No phase\n- `pay`: payments\n\n## Up next\n- `off`: offline; stops at cache; parked 2026-11-13 (touches docs/a.md)\n' > .jig/roadmap.md
+$J roadmap --write >/dev/null && git add -A && git commit -qm both
+expect_pass python3 -c "
+l = open('ROADMAP.md').read().splitlines()
+assert l.index('## a (current)') < l.index('## Up next') < l.index('## No phase'), l"
+msg="no phase: the review, spec and RULES texts send work with no phase to ## No phase, and parked work to Up next"
+expect_pass sh -c "for f in '$P/../skills/review/SKILL.md' '$P/../skills/spec/SKILL.md' '$P/jig/RULES.md'; do grep -q 'No phase' \"\$f\" || exit 1; done"
 }
 
 # ---------------------------------------------------------------- project and product
@@ -4604,6 +4701,10 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'docs/a.md line 4 nam
 msg="boundary: words that may be the product's pass: a quoted phase name, a bare scope id, ROADMAP.md"
 printf 'Returns `1` on success. The v1/api endpoint answers. Values 1/screen are scaled. See ROADMAP.md.\n' >> docs/a.md && git add -A
 expect_pass git commit -qm words
+msg="boundary: a page line saying phase 3 and a ## Status heading commit, and the hook says nothing about them"
+printf '\nLands in phase 3.\n\n## Status\n\n`a_status` returns bits.\n' >> docs/a.md && git add -A
+out=$(git commit -qm status 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && ! echo \"\$0\" | grep -q 'jig'" "$out"
 msg="boundary: the hook refuses a decision-log line naming a spec or a quoted scope"
 ulog '- The panel ships, per .jig/specs/x.md.' && git add -A && refused log1
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '.jig/decisions.md line .* names .jig/specs/'" "$out"
@@ -4615,18 +4716,20 @@ expect_pass git commit -qm spec
 msg="boundary: a git mv of a page holding an old spec path commits: its lines aren't new"
 printf '# Old\n\nOld is.\n\nOnce cited .jig/specs/x.md.\n' > docs/old.md && git add -A && git -c core.hooksPath=/dev/null commit -qm planted
 git mv docs/old.md docs/older.md && expect_pass git commit -qm moved
-msg="boundary: survey lists plan prose, paths and scope ids on a page and in the log, and project headings"
-printf '# B\n\nB is.\n\nThe gesture lands in phase 3, after spec step 6.\n\n## Status\n\nhalf done\n\n## Undefined\n\n- sync — parked 2026-11-01.\n' > docs/b.md
+msg="boundary: survey lists old spec paths, quoted scope ids and ## Undefined, and no words: phase 3, ## Status, bare ids, ROADMAP.md"
+printf '# B\n\nB is.\n\nThe gesture lands in phase 3, after spec step 6, in `phase-1/screen`.\n\n## Status\n\nhalf done\n\n## Undefined\n\n- sync — parked 2026-11-01.\n' > docs/b.md
 ulog '- Demo priorities: A in phase 2, then B.' && git add -A && git -c core.hooksPath=/dev/null commit -qm b
 expect_pass python3 -c "
 import json, subprocess
 r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 p = {e['path']: ' | '.join(e['problems']) for e in r['project_in_product']}
 b = p['docs/b.md']
-assert '\"phase 3\"' in b and '\"spec step 6\"' in b and '## Status is the project' in b and '## Undefined is the project' in b and 'Up next' in b, b
-assert '\"v1/api\"' in p['docs/a.md'] and '\"ROADMAP.md\"' in p['docs/a.md'] and '\".jig/specs/\"' in p['docs/older.md'], p
-assert '\"phase 2\"' in p['.jig/decisions.md'], p"
-expect_pass sh -c "$J survey | grep -q '^  docs/b.md: ## Status is the project'"
+assert '\"phase-1/screen\"' in b and '## Undefined is the project' in b and 'Up next' in b, b
+assert 'phase 3' not in b and 'spec step' not in b and '## Status' not in b, b
+assert 'docs/a.md' not in p and '.jig/decisions.md' not in p and '\".jig/specs/\"' in p['docs/older.md'], p"
+s=$($J survey 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/b.md: ## Undefined is the project' && ! echo \"\$0\" | grep -q 'Status is the project'" "$s"
+msg="boundary: update lists the old quoted scope id under Repo files to review, and not phase 3"
+out=$($J update 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/b.md: line 5: \"phase-1/screen\" names the plan' && ! echo \"\$0\" | grep -q '\"phase 3\"'" "$out"
 msg="boundary: with the project in its pages, survey's verdict isn't nothing to do"
 expect_pass sh -c "$J survey | tail -1 | grep -q 'move the project listed above'"
 msg="boundary: a page still carrying ## Undefined is edited and committed as before"
@@ -5262,6 +5365,24 @@ cd .git/jig/worktrees/b-lock && sed -i.bak 's/§ D-033: agrees$/§ D-033 (hub\/d
 msg="touches gate: answered narrows, with parentheses in the answer, it passes"
 expect_pass gate_ok lock
 
+# --peers starts from an entry in any log it reads: here, the metarepo's at the pin.
+cd .git/jig/worktrees/b-lock
+msg="touches: --peers in a pararepo starts from the metarepo's entry this log lacks, with its peers here"
+out=$($J decision D-033 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'hub/.jig/decisions.md § D-033 gestures count as activity' && echo \"\$0\" | grep -qxF '  .jig/decisions.md § D-?id-lock the lock ignores gestures (docs/features/gestures.md)'" "$out"
+ulog '### D-033 lock own rule
+Accepted (owner, 2026-11-02).
+Touches: docs/identity.md
+
+When the lock is own, it holds.'
+msg="touches: with an id in both logs, the plain id starts from this repo's entry"
+out=$($J decision D-033 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | head -1 | grep -qx 'D-033 lock own rule'" "$out"
+msg="touches: with an id in both logs, <meta>/<id> starts from the metarepo's"
+out=$($J decision hub/D-033 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | head -1 | grep -qx 'hub/.jig/decisions.md § D-033 gestures count as activity'" "$out"
+git checkout -q -- .jig/decisions.md && cd "$TQ"
+
 # Two jobs ruling on one page at once meet at the gate of the second, after the first merges.
 for j in one two; do
   $J open $j --branch b-$j >/dev/null && git add -A && git commit -qm "TOOL: open $j"
@@ -5301,6 +5422,39 @@ Touches: pa/docs/x.md'
 msg="touches: --peers in a metarepo reads the pararepos, and names one it can't find"
 out=$($J decision D-001 --peers 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'pa/.jig/decisions.md § D-001' && echo \"\$0\" | grep -q 'pb/.jig/decisions.md § D-001' && echo \"\$0\" | grep -q 'not read: pc'" "$out"
+for r in pa pb; do (cd "$T/$r" && printf '\n### D-007 %s on y\nAccepted (owner, 2026-11-03).\nTouches: house/docs/features/y.md\n\nWhen y runs, %s yields.\n' $r $r >> .jig/decisions.md && git commit -qam "D-007"); done
+msg="touches: --peers in a metarepo refuses an id two pararepos hold, naming both <repo>/<id>"
+out=$($J decision D-007 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'pa/D-007' && echo \"\$0\" | grep -q 'pb/D-007'" "$out"
+msg="touches: --peers pa/D-007 starts from pa's entry, with peers here and in pb"
+out=$($J decision pa/D-007 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | head -1 | grep -qx 'pa/.jig/decisions.md § D-007 pa on y' && echo \"\$0\" | grep -qF '  .jig/decisions.md § D-001 y rules' && echo \"\$0\" | grep -qF '  pb/.jig/decisions.md § D-007 pb on y'" "$out"
+msg="touches: --peers on an id in no log is refused naming the logs searched and the one not read"
+out=$($J decision D-099 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'no live entry D-099 in .jig/decisions.md, pa/.jig/decisions.md, pb/.jig/decisions.md' && echo \"\$0\" | grep -q 'not read: pc'" "$out"
+msg="touches: --peers on <repo>/<id> whose log wasn't read says so, not that the entry is missing"
+out=$($J decision pc/D-001 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF \"pc's log was not read for peers\" && echo \"\$0\" | grep -q 'not read: pc' && ! echo \"\$0\" | grep -q 'no live entry'" "$out"
+ulog '### D-002 z one way
+Accepted (owner, 2026-11-03).
+Touches: docs/features/y.md
+
+When z runs, it runs fast.' && git add -A && git -c core.hooksPath=/dev/null commit -qm "D-002"
+python3 -c "import re; f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(re.sub(r'### D-002 .*?(?=\n### |\n## |\Z)', '', s, flags=re.S))"
+ulog '### D-003 z another way
+Accepted (owner, 2026-11-04). Supersedes D-002.
+Touches: docs/features/y.md
+
+When z runs, it runs slow.' && git add -A && git -c core.hooksPath=/dev/null commit -qm "D-003 supersedes D-002"
+(cd "$T/pa" && printf '\n### D-002 pa on z\nAccepted (owner, 2026-11-03).\nTouches: house/docs/features/y.md\n\nWhen z runs, pa waits.\n' >> .jig/decisions.md && git commit -qam "D-002")
+msg="touches: --peers on an id this repo superseded refuses, naming what holds now, not another log's same number"
+out=$($J decision D-002 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'D-002 was superseded in .jig/decisions.md; what holds now is D-003' && ! echo \"\$0\" | grep -q 'pa/'" "$out"
+(cd "$T/pb" && printf '\n### D-008 pb on w\nAccepted (owner, 2026-11-03).\nTouches: house/docs/features/y.md\n\nWhen w runs, pb waits.\n' >> .jig/decisions.md && git commit -qam "D-008" \
+  && python3 -c "f='.jig/decisions.md'; s=open(f).read(); open(f,'w').write(s.replace('### D-008 pb on w\nAccepted (owner, 2026-11-03).', '### D-009 pb on w again\nAccepted (owner, 2026-11-04). Supersedes D-008.'))" && git commit -qam "D-009 supersedes D-008")
+msg="touches: --peers on an id another log superseded starts from its successor, and says so"
+out=$($J decision D-008 --peers 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | head -1 | grep -qx 'pb/.jig/decisions.md § D-009 pb on w again' && echo \"\$0\" | grep -qF 'pb/.jig/decisions.md § D-008 is superseded; starting from D-009, which holds now.'" "$out"
 
 # A metarepo named docs: a bare docs/… path is the pararepo's own page; the metarepo's is docs:<path>.
 TD="$T/td"; pcnew "$TD" && git add -A && git commit -qm init && $J init --meta --name docs --genres features >/dev/null
@@ -5320,6 +5474,144 @@ Touches: docs/features/gestures.md'
 cd "$T"
 }
 
+
+sec_touches_terms() {
+# A decision that rules on a term names it in the glossary; one that rules on no page says none, and why.
+export JIG_CONFIG="$T/tt-repos.json" XDG_CONFIG_HOME="$T/tt-config"
+TA="$T/ta"; pcnew "$TA" && git add -A && git commit -qm init && $J init --meta --name ta --genres products,features >/dev/null
+mkdir -p docs/features && printf '# Pay\n' > docs/features/pay.md
+printf '# Glossary\n\n## products\n\nWhat we sell.\n\n## features\n\nWhat a product does.\n' > docs/glossary.md
+git add -A && git -c core.hooksPath=/dev/null commit -qm "meta-init" && $J release >/dev/null && git switch -q -c m2   # M4: trunk takes only merges
+msg="touches terms M2: an entry naming a glossary term passes, in any case"
+expect_pass m2 '### D-001 naming
+Accepted (owner, 2026-11-13).
+Touches: docs/glossary.md § products, docs/glossary.md § Features'
+msg="touches terms M2: Touches: none with a reason passes, commas and all"
+expect_pass m2 '### D-001 points
+Accepted (owner, 2026-11-13).
+Touches: none — this repo points, and never copies'
+msg="touches terms M2: a term the glossary lacks is refused, naming it"
+ulog '### D-001 naming
+Accepted (owner, 2026-11-13).
+Touches: docs/glossary.md § nosuchterm' && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'is no term in docs/glossary.md'" "$out"
+msg="touches terms M2: § on a page other than the glossary is refused"
+expect_refuse m2 '### D-001 naming
+Accepted (owner, 2026-11-13).
+Touches: docs/features/pay.md § Intro'
+msg="touches terms M2: none with no reason is refused"
+expect_refuse m2 '### D-001 points
+Accepted (owner, 2026-11-13).
+Touches: none'
+msg="touches terms M2: none beside a page is refused, either way round"
+expect_refuse m2 '### D-001 points
+Accepted (owner, 2026-11-13).
+Touches: none — x, docs/features/pay.md'
+expect_refuse m2 '### D-001 points
+Accepted (owner, 2026-11-13).
+Touches: docs/features/pay.md, none — x'
+msg="touches terms M2: a missing page is still refused"
+expect_refuse m2 '### D-001 points
+Accepted (owner, 2026-11-13).
+Touches: docs/features/gone.md'
+msg="touches terms M2: a reason may name a file in prose"
+expect_pass m2 '### D-001 points
+Accepted (owner, 2026-11-13).
+Touches: none — how each index.md is laid out'
+msg="touches terms M2: a reason naming a root document is no page beside none (the root-document check still names it)"
+ulog '### D-001 points
+Accepted (owner, 2026-11-13).
+Touches: none — how AGENTS.md is written' && git add -A; out=$($J check --staged 2>&1); git reset -q; git checkout -q -- .jig/decisions.md
+expect_pass sh -c "! echo \"\$0\" | grep -q '^M2 ' && echo \"\$0\" | grep -q 'names AGENTS.md, a root document'" "$out"
+msg="touches terms M2: none in another shape is refused, naming the form"
+for t in 'none: whole repo' '`none` — x' 'None — x'; do
+  ulog "### D-001 points
+Accepted (owner, 2026-11-13).
+Touches: $t" && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
+  expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'write it \`Touches: none — <reason>\`'" "$out"
+done
+msg="touches terms M2: a term holding a comma is one term, and the pointer after it another"
+printf '\n## red, green\n\nTwo colours.\n' >> docs/glossary.md
+expect_pass m2 '### D-001 colours
+Accepted (owner, 2026-11-13).
+Touches: docs/glossary.md § red, green, docs/features/pay.md'
+git checkout -q -- docs/glossary.md
+git switch -q main && ulog '### D-006 old
+Accepted (owner, 2026-11-13).
+
+Always, old.' && ulog '### D-005 points
+Accepted (owner, 2026-11-13).
+Touches: none — the whole repo, really
+
+Always, this repo points.' && ulog '### D-004 pay rounds
+Accepted (owner, 2026-11-13).
+Touches: docs/features/pay.md
+
+When pay rounds, it rounds down.' && ulog '### D-003 vocabulary
+Accepted (owner, 2026-11-13).
+Touches: docs/glossary.md
+
+Always, other repos use this vocabulary.' && ulog '### D-002 brand
+Accepted (owner, 2026-11-13).
+Touches: docs/glossary.md § Products
+
+Always, products carry the family name.' && ulog '### D-001 naming
+Accepted (owner, 2026-11-13).
+Touches: docs/glossary.md § products
+
+Always, a coined name takes one y.' && git add -A && git -c core.hooksPath=/dev/null commit -qm "D-001, D-002, D-003, D-004, D-005, D-006: x"
+msg="touches terms: two entries on one term are peers, the whole glossary meets the term, a page in its genre doesn't"
+out=$($J decision D-001 --peers 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '§ D-002 brand' && echo \"\$0\" | grep -q '§ D-003 vocabulary' && ! echo \"\$0\" | grep -qE '§ D-00[456]'" "$out"
+msg="touches terms: the page entry has no peer in the glossary"
+out=$($J decision D-004 --peers 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -qx 'No peers.'" "$out"
+msg="touches terms: --peers on a none entry says it touches no page, and why"
+out=$($J decision D-005 --peers 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -qF 'D-005 touches no page (the whole repo, really), so it has no peers.'" "$out"
+msg="touches terms update: lists the entry with no line, not the one that touches none, nor those on a term"
+out=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'D-006 old has no Touches line' && ! echo \"\$0\" | grep -qE 'D-00[1-5]'" "$out"
+for j in tj tk; do $J open $j --branch b-$j >/dev/null && git add -A && git -c core.hooksPath=/dev/null commit -qm "TOOL: open $j"; done
+cd .git/jig/worktrees/b-tj && ulog '### D-?nz none rules
+Accepted (owner, 2026-11-13).
+Touches: none — another repo-wide rule
+
+Always, nothing is copied.' && ulog '### D-?ny product names
+Accepted (owner, 2026-11-13).
+Touches: docs/glossary.md § products
+
+Always, product names are short.' && git add -A && git commit -qm "D-?ny, D-?nz: names" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
+note=$(ls .jig/handoffs/*.md)
+msg="touches terms fold-in: an entry on a term gets a pair line with each entry on it, and the none entry gets none"
+expect_pass sh -c "grep -qxF -- '- [ ] D-?ny vs .jig/decisions.md § D-001 (docs/glossary.md § products): ___' '$note' && grep -qF 'D-?ny vs .jig/decisions.md § D-002' '$note' && ! grep -qF 'D-?nz vs' '$note' && ! grep -qF '§ D-004' '$note'"
+pcfold && git add -A && git commit -qm "TOOL: note tj"
+cd "$TA/.git/jig/worktrees/b-tk" && ulog '### D-?nk product length
+Accepted (owner, 2026-11-13).
+Touches: docs/glossary.md § products
+
+Always, a product name fits a button.' && git add -A && git commit -qm "D-?nk: length" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 \
+  && pcfold && git add -A && git commit -qm "TOOL: note tk"
+cd "$TA"
+msg="touches terms gate: term pair lines answered agrees pass the gate"
+expect_pass gate_ok tj
+$J merge tj >/dev/null 2>&1
+msg="touches terms gate: a term pair with an entry trunk took after the handoff is refused, naming it"
+out=$($J gate tk 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-tk 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"doesn't answer these pairs\" && echo \"\$0\" | grep -qF 'D-?nk vs .jig/decisions.md § D-00' && echo \"\$0\" | grep -qF '(docs/glossary.md § products)'" "$out"
+TB="$T/tb"; pcnew "$TB" && mkdir -p docs && printf '# Own\n' > docs/own.md && git add -A && git commit -qm init \
+  && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para ta --location "$TA" >/dev/null 2>&1 && git add -A && git commit -qm "init --para" && git switch -q -c x
+msg="touches terms M2: a pararepo names the metarepo's term at the pin"
+expect_pass m2 '### D-?a a rules
+Accepted (owner, 2026-11-13).
+Touches: ta/docs/glossary.md § products'
+msg="touches terms M2: a pararepo naming a term the metarepo's glossary lacks at the pin is refused"
+expect_refuse m2 '### D-?a a rules
+Accepted (owner, 2026-11-13).
+Touches: ta/docs/glossary.md § nosuchterm'
+cd "$T"
+}
 
 # ---------------------------------------------------------------- a staged batch: after:, check, Workflow, near names
 sbafter() { sed -i.bak "s/^status: staged\$/after: $2\nstatus: staged/" ".jig/staging/$1" && rm ".jig/staging/$1.bak"; }
@@ -5431,12 +5723,14 @@ SW="$T/sweep"; pcnew "$SW" && mkdir -p docs && printf "# Q\n\nQ is.\n" > docs/q.
 UP="python3 $P/jig/jig.py update"
 printf '# P\n\nP keeps the list.\n\nBuilt as .jig/specs/x.md says, in phase 3.\n\n## Status\n\nhalf done\n\n## Undefined\n\n- Sync over BLE — stops at the GATT table; parked 2026-11-01.\n- Dark theme — stops at the palette;\n  parked 2026-11-02.\n' > docs/p.md
 printf -- '- [ ] ship it\n' > TODO.md && printf '| Feature | Why |\n| x | y |\n' > FEATURES.md
+printf '# HAL\n\nThe HAL is the board API.\n\n## Status\n\n`hal_status` returns `EVT_*` bits.\n' > docs/hal.md
+printf '# R\n\nR is.\n\nIn Phase 5 the wallet is a TEE.\n' > docs/r.md
 git add -A && git -c core.hooksPath=/dev/null commit -qm planted
 out=$($UP 2>&1)
 msg="sweep: update lists each ## Undefined entry as the Up next item it would be, naming the page"
 expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/p.md: ## Undefined entry → .jig/roadmap.md ## Up next.*- .p-sync-over-ble.: Sync over BLE; stops at the GATT table; parked 2026-11-01 (touches docs/p.md)' && echo \"\$0\" | grep -q 'Dark theme; stops at the palette; parked 2026-11-02 (touches docs/p.md)'" "$out"
-msg="sweep: a page line naming a spec, one saying phase 3, and a ## Status section are under Repo files to review"
-expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/p.md: line 5: \".jig/specs/\" names the plan' && echo \"\$0\" | grep -q '^  docs/p.md: line 5: \"phase 3\"' && echo \"\$0\" | grep -q '^  docs/p.md: ## Status is the project'" "$out"
+msg="sweep: a page line naming a spec is under Repo files to review; phase 3, Phase 5 and ## Status sections aren't, in update or survey"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/p.md: line 5: \".jig/specs/\" names the plan' && ! echo \"\$0\" | grep -qi 'phase [35]\\|Status is the project' && echo \"\$1\" | grep -q '^  docs/p.md: line 5: \".jig/specs/\" names the plan' && ! echo \"\$1\" | grep -qi 'phase [35]\\|Status is the project'" "$out" "$($J survey 2>&1)"
 msg="sweep: tracked TODO.md and FEATURES.md are each listed with their destination"
 expect_pass sh -c "echo \"\$0\" | grep -q '^  TODO.md: the project.s plan: its items go to .jig/roadmap.md' && echo \"\$0\" | grep -q '^  FEATURES.md: the product: each feature goes to its system.s page'" "$out"
 msg="sweep: --sweep alone is a dry run that changes nothing"
@@ -5459,11 +5753,15 @@ printf 'mkdir -p dist && printf x > "dist/app-$version.zip"\n' >> .jig/scripts/r
 board "b['release']['artifacts'] = ['dist/*.zip']" && printf 'dist/\n' > .gitignore
 ulog '### D-002 ids are numbers
 Accepted (owner, 2026-11-01).
-Touches: docs/p.md' && ulog '### D-001 Demo priorities: A, then B
+Touches: docs/p.md' && ulog '### D-003 Wallet base
 Accepted (owner, 2026-11-01).
-Touches: docs/p.md' && git add -A && git commit -qm "D-001, D-002" && $J release --minor >/dev/null
-msg="sweep: a released D-001 Demo priorities is listed as a project candidate, D-002 isn't"
-out=$($UP 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '^  .jig/decisions.md: D-001 Demo priorities: A, then B reads as project scope.*strike, split or keep' && ! echo \"\$0\" | grep -q 'D-002 ids'" "$out"
+Touches: docs/p.md
+
+The launch base is a TEE; the motor driver commutates three phases; a demo mode loops the screens.' && ulog '### D-001 Demo priorities: A, then B
+Accepted (owner, 2026-11-01).
+Touches: docs/p.md' && git add -A && git commit -qm "D-001, D-002, D-003" && $J release --minor >/dev/null
+msg="sweep: no released entry is listed by its words, launch, phases and demo included, in update or survey"
+out=$($UP 2>&1); expect_pass sh -c "! echo \"\$0\" | grep -q 'project scope\\|D-00[123]' && echo \"\$1\" | grep -q '^  docs/p.md: line 5: \".jig/specs/\" names the plan' && ! echo \"\$1\" | grep -q 'D-00[123]'" "$out" "$($J survey 2>&1)"
 msg="sweep: removing released D-001 with no ### Removed line naming it is refused"
 rment D-001 && git add -A; out=$(git commit -qm drop 2>&1); undo
 expect_pass sh -c "echo \"\$0\" | grep -q 'D-001 is removed from release v0.1.0.*### Removed.*in the same commit'" "$out"
@@ -5475,12 +5773,12 @@ ulog '### Removed
 - D-001: project scope, not a product decision.' && rment D-001 && git add -A
 expect_pass sh -c "git commit -qm 'D-001: struck' && ! grep -q '^### D-001' .jig/decisions.md && grep -qx '### D-002 ids are numbers' .jig/decisions.md"
 
-# Before --merge-log: a register's priority row and a Pending delivery section are listed, and a struck row is left out.
+# Before --merge-log: nothing is listed by its words, and a struck row is left out.
 SR2="$T/sweep-reg"; pcnew "$SR2" && printf '# Decisions\n\n| Id | Decision | Status | Date |\n|---|---|---|---|\n| D-001 | ids are numbers | accepted | 2026-11-01 |\n| D-002 | Demo priorities: 1) radio 2) screen | accepted | 2026-11-02 |\n\n## Pending delivery to the app\n\n- the radio patch\n' > DECISIONS.md
 git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
 out=$($UP 2>&1)
-msg="sweep: before --merge-log, update lists the register's priority row and its Pending delivery section, not the ids row"
-expect_pass sh -c "echo \"\$0\" | grep -q '^  DECISIONS.md: row D-002 Demo priorities.*reads as project scope' && echo \"\$0\" | grep -q '^  DECISIONS.md: lines .* .## Pending delivery to the app. read as project scope' && ! echo \"\$0\" | grep -q 'row D-001'" "$out"
+msg="sweep: before --merge-log, update lists neither the register's priority row nor its Pending delivery section"
+expect_pass sh -c "! echo \"\$0\" | grep -q 'project scope'" "$out"
 msg="sweep: a row whose Status says struck is left out of the log --merge-log writes, its number named"
 sed -i.bak 's/| accepted | 2026-11-02 |/| struck | 2026-11-02 |/' DECISIONS.md && rm DECISIONS.md.bak && git add -A && git commit -qm "D-002: struck"
 out=$($UP --apply --merge-log 2>&1)
@@ -5549,8 +5847,8 @@ $J open o1 --shares DECISIONS.md CHANGELOG.md >/dev/null && git add -A && git co
   && printf -- '- D-001, D-002, D-003\n' >> CHANGELOG.md && git add -A && git commit -qm "D-001, D-002, D-003: rows" && $J reviewed >/dev/null \
   && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note o1")
 $J merge o1 >/dev/null 2>&1
-msg="sweep: old-shape metarepo: update lists the priority row before --merge-log"
-out=$($UP 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '^  DECISIONS.md: row D-002 Demo priorities.*reads as project scope'" "$out"
+msg="sweep: old-shape metarepo: update doesn't list the priority row by its words before --merge-log"
+out=$($UP 2>&1); expect_pass sh -c "! echo \"\$0\" | grep -q 'reads as project scope'" "$out"
 $J open ml --shares DECISIONS.md CHANGELOG.md README.md >/dev/null && git add -A && git commit -qm "TOOL: open ml"
 cd .git/jig/worktrees/ml
 msg="sweep: old-shape metarepo: a row struck with no CHANGELOG.md line is refused (M3)"
@@ -6077,7 +6375,83 @@ assert m.merged_registers(pathlib.Path('.').resolve(), 'HEAD~1', 'HEAD') and not
 cd "$MM"
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches sweep staging_batches merge_log findings glossary"
+# ---------------------------------------------------------------- a heading is a page's address
+sec_headings() {
+HC="$T/headings"; pcnew "$HC" && mkdir -p docs src && printf 'x=1\n' > src/a.py && printf 'y=1\n' > src/b.py
+printf '# Store\n\nThe store keeps rows.\n\n## Schema\n\nRows.\n\n## Invariants\n\n- Rows are unique — dedupe; held by test_rows.\n' > docs/store.md
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J open ja --spec t --owns src/a.py --shares docs/store.md >/dev/null && $J open jb --spec t --owns src/b.py --shares docs/store.md >/dev/null
+git add -A && git commit -qm "TOOL: open ja jb"
+(cd .git/jig/worktrees/ja && python3 -c "f='docs/store.md'; s=open(f).read(); open(f,'w').write(s.replace('## Schema', '## Cache\n\nAn LRU in front of reads.\n\n## Schema'))" \
+  && echo c=1 >> src/a.py && git add -A && git commit -qm "STORE: ja cache")
+msg="headings: a job adding ## Cache to a shared page commits"; expect_pass test $? = 0
+(cd .git/jig/worktrees/jb && python3 -c "f='docs/store.md'; s=open(f).read(); open(f,'w').write(s.replace('## Invariants', '## Cache\n\nA write-behind buffer.\n\n## Invariants'))" \
+  && echo c=2 >> src/b.py && git add -A && git commit -qm "STORE: jb cache")
+msg="headings: a second job adding ## Cache elsewhere on that page commits on its branch"; expect_pass test $? = 0
+msg="headings: merging the first job passes"; expect_pass git merge -q --no-ff --no-edit ja
+out=$(git merge -q --no-ff --no-edit jb 2>&1); rc=$?
+msg="headings: the clean merge that would join the second ## Cache is refused, naming the page, the heading and both lines"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'docs/store.md has \`Cache\` 2 times (lines 5, 13)'" "$out"
+git merge --abort 2>/dev/null; git reset -q --hard
+(cd .git/jig/worktrees/jb && git reset -q --hard HEAD~1 && printf '\n## Cache\n\nA write-behind buffer.\n' >> docs/store.md && echo c=2 >> src/b.py \
+  && git add -A && git commit -qm "STORE: jb cache at the end" && git -c core.hooksPath=/dev/null reset -q --hard HEAD)
+git -c core.hooksPath=/dev/null reset -q --hard HEAD~1
+(cd .git/jig/worktrees/ja && git reset -q --hard HEAD~1 && printf '\n## Cache\n\nAn LRU in front of reads.\n' >> docs/store.md && echo c=1 >> src/a.py \
+  && git add -A && git commit -qm "STORE: ja cache at the end")
+git merge -q --no-ff --no-edit ja >/dev/null 2>&1; git merge -q --no-ff --no-edit jb >/dev/null 2>&1
+git show ja:docs/store.md > docs/store.md && printf '\n## Cache\n\nA write-behind buffer.\n' >> docs/store.md
+git add -A; out=$(git commit -qm "merge jb" 2>&1); rc=$?
+msg="headings: a conflicted merge resolved by keeping both ## Cache sections is refused"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'has \`Cache\` 2 times'" "$out"
+git merge --abort 2>/dev/null; git reset -q --hard
+printf '\n## Errors\n\n### Retry\n\nx\n\n## Sync\n\n### Retry\n\ny\n' >> docs/store.md && git add -A
+msg="headings: every level counts, so a second ### Retry under another section is refused"
+expect_refuse git commit -qm "STORE: retries"; git reset -q --hard
+printf '\n## Example\n\n```\n## Schema\n## Schema\n```\n' >> docs/store.md && git add -A
+msg="headings: a heading quoted in fenced code is no address and isn't counted"
+expect_pass git commit -qm "STORE: example"
+printf '\n```\n~~~\n## Schema\n```\n' >> docs/store.md && git add -A
+msg="headings: only the opening fence's own marker closes it, so a heading after a ~~~ inside \`\`\` is still quoted"
+expect_pass git commit -qm "STORE: fences"
+printf '\n## schema\n' >> docs/store.md && git add -A
+msg="headings: § keeps case, so a heading differing only in case is another address and commits"
+expect_pass git commit -qm "STORE: case"
+printf '\n## `Schema`\n' >> docs/store.md && git -c core.hooksPath=/dev/null commit -qam "planted duplicate"
+printf '\nMore rows.\n' >> docs/store.md && git add -A
+msg="headings: a page that already holds a duplicate on trunk is still editable elsewhere"
+expect_pass git commit -qm "STORE: more"
+git mv docs/store.md docs/kv.md
+msg="headings: moving a page that already holds a duplicate isn't refused for it"
+expect_pass git commit -qm "STORE: rename"
+printf '\n## Schema\n' >> docs/kv.md && git add -A
+msg="headings: a third copy on that page is refused"
+expect_refuse git commit -qm "KV: third"; git reset -q --hard
+mkdir -p docs/x && printf '# Changes\n\n## v2\n\n### Fixed\n\n## v1\n\n### Fixed\n' > docs/x/CHANGELOG.md && git add -A
+msg="headings: a CHANGELOG.md under docs/ repeats its headings freely"
+expect_pass git commit -qm "X: changelog"
+printf '# Arch\n\nThe arch.\n\n## Sync\n\n### Errors\n\n## Store\n\n### Errors\n' > ARCH.md && git add -A && git -c core.hooksPath=/dev/null commit -qm "old arch"
+git mv ARCH.md docs/arch.md
+msg="headings: a page moved into docs/ from outside keeps its duplicate, as /jig:redocument moves one"
+expect_pass git commit -qm "ARCH: into docs"
+printf '# Plan\n\nOld words.\n\n## Sync\n\n### Errors\n\n## Store\n\n### Errors\n' > PLAN.md && git add -A && git -c core.hooksPath=/dev/null commit -qm "old plan"
+git rm -q PLAN.md && printf '# Plan\n\nThe plan system, rewritten from the top.\nIt keeps rows.\nIt syncs them.\nIt stores them.\n\n## Sync\n\nNew.\n\n### Errors\n\nNew.\n\n## Store\n\nNew.\n\n### Errors\n\nNew.\n' > docs/plan.md && git add -A
+msg="headings: a move that rewrites most of the page (a delete and an add to git) keeps its duplicate too"
+expect_pass git commit -qm "PLAN: rewritten into docs"
+printf '# Glossary\n\n| Term | Means |\n|---|---|\n| Cache | a store |\n' > docs/glossary.md && git add -A && git commit -qm "GLOSSARY: cache" >/dev/null 2>&1
+printf '| `Cache` | again |\n' >> docs/glossary.md && git add -A
+msg="headings: a second glossary row of one term is refused, since § resolves rows too"
+out=$(git commit -qm "GLOSSARY: again" 2>&1); rc=$?; git reset -q --hard
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'docs/glossary.md has \`Cache\` 2 times'" "$out"
+printf '\n## Cache\n\nA store.\n' >> docs/glossary.md && git add -A
+msg="headings: a glossary heading naming a term a row already has is refused"
+out=$(git commit -qm "GLOSSARY: heading" 2>&1); rc=$?; git reset -q --hard
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'docs/glossary.md has \`Cache\` 2 times'" "$out"
+board "b['reserve'] = {'section': {'pattern': r'^### (\\d+)\\.1(?!\\d)', 'files': ['docs/**/*.md']}}" && git add -A && git commit -qm "board: section" >/dev/null 2>&1
+msg="headings: update's section-counter finding names the heading rule that replaces it"
+expect_pass sh -c "\$0 2>&1 | grep -F 'reserve.section' | grep -qF \"refuses a page's second heading of one name\"" "$UP"
+}
+
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file

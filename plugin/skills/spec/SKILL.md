@@ -19,7 +19,8 @@ Before writing code:
    roadmap item it lists under a page (an `## Up next` item or a scope), say in the spec which
    it is: **adopt** (this task builds it; its content goes into the page's body, and an Up
    next item leaves the roadmap when the job merges), **depart** (the task goes another way,
-   and why), or **leave** (out of scope). Parked work is an Up next item, added on the owner's
+   and why), or **leave** (out of scope). Work parked mid-build is an Up next item, naming its
+   pages, and named work with no phase yet a `## No phase` item, each added on the owner's
    word as a roadmap change (`/jig:stage`), never written on a page. The spec is where project
    meets product: of each decision entry and page change it plans, ask is this about the product, or about when and in what order we build it? What is the
    project stays in the spec or the roadmap; the pages and entries it writes describe the

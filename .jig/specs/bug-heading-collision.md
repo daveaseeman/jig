@@ -116,6 +116,17 @@ apart. Update's `reserve.section` finding names that rule as what replaces the c
 - Maige-Lite's own config. Its owner keeps the counter until this ships, and then drops it at
   update's word.
 
+## Alternatives considered
+- Keep the `reserve.section` counter for named headings — rejected because a name has no "next"
+  to hand out, and the counter guarded numbers that pages no longer carry. Reason is [seen]:
+  RULES.md, Documentation, "cite a page by its heading", and the redocumented pages.
+- Reserve heading names on the board (`--owns "<page> § <heading>"`) — rejected because the
+  hubnode would have to guess each heading before a job writes it, while the collision is
+  mechanical at merge where the hook already runs. Reason is [seen]: the repro, where two jobs
+  merged two `## Cache` headings cleanly and only the merge commit held both.
+- Only `## ` headings count — rejected by the owner, 2026-11-13 (Decisions): `§` resolves any
+  heading, so a duplicate at any level makes a citation ambiguous. Reason is [seen: owner].
+
 ## Decisions
 - **Every heading level counts** (Dave, 2026-11-13: "Yes, open all eight", taking the hubnode's recommendation). A page with two `### Errors` under different `## ` sections renames one.
 
