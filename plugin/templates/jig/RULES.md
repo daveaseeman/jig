@@ -616,7 +616,7 @@ order.
 
 | Node | Settings | What it does | Roles it may load |
 |---|---|---|---|
-| hubnode | the owner's session; tier 2, effort 1 or better | talks, decides, assigns, gates, merges, pushes, publishes | spec (only for specs drafted from the conversation) |
+| hubnode | the owner's session; tier 2, effort 1 or better | talks, decides, assigns, gates, merges, releases, pushes, publishes | spec (only for specs drafted from the conversation) |
 | subnode | the role's | takes one role on one job, works only in its worktree, reports back, never touches trunk | any of the five |
 
 **Roles.**
@@ -627,9 +627,9 @@ order.
 | bug | 2, 1 | bug, then the spec for what it found | tier no worse than spec's; effort no lower |
 | work | 2, 3 | work, handoff, fixes, hand-resolved syncs | tier no better than spec's; effort lower |
 | review | 2, 2 | review-work (the job's whole diff), review-change (only what changed since the last review); always a fresh session | tier no worse than work's; any effort |
-| check | 3, 4 | check (the complete suite), trace a failed batch, survey, release run (the complete check before a release; `jig release` itself is the hubnode's) | nothing: fixed commands |
+| check | 3, 4 | check (the complete suite, before a release too), trace a failed batch, survey | nothing: fixed commands |
 
-The hubnode's own steps, which are no role's: assign, gate, merge, push, publish. jig itself
+The hubnode's own steps, which are no role's: assign, gate, merge, release, push, publish. jig itself
 (no model) refuses a step out of order, and removes a merged job's clean worktree and branch.
 
 Tier 1 is the best model the tool has; a higher number is a lesser model. Effort 0 is the
@@ -648,7 +648,7 @@ job's work session); `⇢` starts a new one.
 | Bug | bug → spec ⇢ Job | a fourth fix round, a feedback group, or the owner's `/jig:bug` | never on a session's own reading that something is broken |
 | Feedback | consolidate ⇢ bug + spec → consolidate ⇢ Job | staged feedback, in the jig repo | one bug + spec per group; overlaps answered before any job opens |
 | Batch | gate → merge ⇢ check → trace | two or more gated jobs | one check on trunk; a failure is traced to its merge, then Fix on that job |
-| Release | check → release run → push → publish | the owner's word | refused while a batch check is owed; push and publish only on the owner's word |
+| Release | check → release → push → publish | the owner's word | refused while a batch check is owed; push and publish only on the owner's word |
 | Survey | survey ⇢ spec ⇢ Jobs | `/jig:survey`, `/jig:adopt`, `/jig:update` | |
 | Redocument | spec ⇢ Jobs ⇢ Batch ⇢ Job | `/jig:redocument` | the spec is the remap; the last job is the cleanup |
 

@@ -1,201 +1,202 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="880" height="955" viewBox="0 0 880 955" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img">
-<rect width="880" height="955" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="1003" viewBox="0 0 880 1003" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img">
+<rect width="880" height="1003" fill="#ffffff"/>
 <text x="24.0" y="37.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Roles</text>
-<rect x="24.0" y="49.0" width="269.3" height="82.0" rx="8" fill="none" stroke="#9a6700" stroke-width="0.5"/>
+<rect x="24.0" y="49.0" width="269.3" height="98.0" rx="8" fill="none" stroke="#9a6700" stroke-width="0.5"/>
 <circle cx="40.0" cy="67.5" r="4" fill="#9a6700"/>
 <text x="50.0" y="75.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">hubnode</text>
 <text x="36.0" y="97.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">the owner's · 2,1 or better</text>
-<text x="36.0" y="120.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">assign, gate, merge, push, publish</text>
-<rect x="305.3" y="49.0" width="269.3" height="82.0" rx="8" fill="none" stroke="#59636e" stroke-width="0.5"/>
+<text x="36.0" y="120.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">assign, gate, merge, release, push,</text>
+<text x="36.0" y="136.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">publish</text>
+<rect x="305.3" y="49.0" width="269.3" height="98.0" rx="8" fill="none" stroke="#59636e" stroke-width="0.5"/>
 <circle cx="321.3" cy="67.5" r="4" fill="#59636e"/>
 <text x="331.3" y="75.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">subnode</text>
 <text x="317.3" y="97.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">the role's settings</text>
 <text x="317.3" y="120.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">one role, outside the trunk checkout</text>
-<rect x="586.7" y="49.0" width="269.3" height="82.0" rx="8" fill="none" stroke="#8250df" stroke-width="0.5"/>
+<rect x="586.7" y="49.0" width="269.3" height="98.0" rx="8" fill="none" stroke="#8250df" stroke-width="0.5"/>
 <circle cx="602.7" cy="67.5" r="4" fill="#8250df"/>
 <text x="612.7" y="75.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">spec</text>
 <text x="598.7" y="97.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">2,2 · new session</text>
 <text x="598.7" y="120.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">spec, consolidate</text>
-<rect x="24.0" y="143.0" width="269.3" height="82.0" rx="8" fill="none" stroke="#cf222e" stroke-width="0.5"/>
-<circle cx="40.0" cy="161.5" r="4" fill="#cf222e"/>
-<text x="50.0" y="169.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">bug</text>
-<text x="36.0" y="191.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">2,1 · new session</text>
-<text x="36.0" y="214.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">bug, then the spec for what it found</text>
-<rect x="305.3" y="143.0" width="269.3" height="82.0" rx="8" fill="none" stroke="#1a7f37" stroke-width="0.5"/>
-<circle cx="321.3" cy="161.5" r="4" fill="#1a7f37"/>
-<text x="331.3" y="169.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">work</text>
-<text x="317.3" y="191.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">2,3 · one session per job</text>
-<text x="317.3" y="214.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">work, handoff, fix, sync</text>
-<rect x="586.7" y="143.0" width="269.3" height="82.0" rx="8" fill="none" stroke="#bf3989" stroke-width="0.5"/>
-<circle cx="602.7" cy="161.5" r="4" fill="#bf3989"/>
-<text x="612.7" y="169.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">review</text>
-<text x="598.7" y="191.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">2,2 · fresh session</text>
-<text x="598.7" y="214.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">review-work, review-change</text>
-<rect x="24.0" y="237.0" width="269.3" height="82.0" rx="8" fill="none" stroke="#0969da" stroke-width="0.5"/>
-<circle cx="40.0" cy="255.5" r="4" fill="#0969da"/>
-<text x="50.0" y="263.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">check</text>
-<text x="36.0" y="285.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">3,4 · new session</text>
-<text x="36.0" y="308.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">check, trace, survey, release run</text>
-<rect x="305.3" y="237.0" width="269.3" height="82.0" rx="8" fill="none" stroke="#d1d9e0" stroke-width="0.5" stroke-dasharray="4 3"/>
-<text x="317.3" y="263.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">jig itself</text>
-<text x="317.3" y="285.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">no model</text>
-<text x="317.3" y="308.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">refuses steps out of order, cleans up</text>
-<text x="24.0" y="360.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Workflows</text>
-<text x="856" y="360.0" font-size="11" fill="#59636e" text-anchor="end">→ continues a session that already exists, named by its letter<tspan fill="#cf222e" dx="12">⇢</tspan> starts a new one</text>
-<line x1="24" y1="376.0" x2="856" y2="376.0" stroke="#d1d9e0" stroke-width="0.5"/>
-<text x="24.0" y="402.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Job</text>
-<rect x="120.0" y="388.0" width="52.8" height="20" rx="10" fill="#8250df" fill-opacity="0.14" stroke="#8250df" stroke-width="0.5"/>
-<text x="129.0" y="402.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">spec</text>
-<text x="157.6" y="404.0" font-size="11" font-weight="600" fill="#8250df" text-anchor="start">S</text>
-<text x="183.8" y="402.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
-<rect x="190.8" y="388.0" width="52.8" height="20" rx="10" fill="#1a7f37" fill-opacity="0.14" stroke="#1a7f37" stroke-width="0.5"/>
-<text x="199.8" y="402.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">work</text>
-<text x="228.4" y="404.0" font-size="11" font-weight="600" fill="#1a7f37" text-anchor="start">W</text>
-<text x="254.6" y="402.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
-<rect x="261.6" y="388.0" width="102.1" height="20" rx="10" fill="#bf3989" fill-opacity="0.14" stroke="#bf3989" stroke-width="0.5"/>
-<text x="270.6" y="402.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">review-work</text>
-<text x="342.4" y="404.0" font-size="11" font-weight="600" fill="#bf3989" text-anchor="start">R1</text>
-<text x="374.7" y="402.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
-<rect x="381.7" y="388.0" width="71.3" height="20" rx="10" fill="#1a7f37" fill-opacity="0.14" stroke="#1a7f37" stroke-width="0.5"/>
-<text x="390.7" y="402.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">handoff</text>
-<text x="437.8" y="404.0" font-size="11" font-weight="600" fill="#1a7f37" text-anchor="start">W</text>
-<text x="464.0" y="402.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
-<rect x="471.0" y="388.0" width="52.8" height="20" rx="10" fill="#9a6700" fill-opacity="0.14" stroke="#9a6700" stroke-width="0.5"/>
-<text x="480.0" y="402.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">gate</text>
-<text x="508.6" y="404.0" font-size="11" font-weight="600" fill="#9a6700" text-anchor="start">H</text>
-<text x="534.8" y="402.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
-<rect x="541.8" y="388.0" width="59.0" height="20" rx="10" fill="#0969da" fill-opacity="0.14" stroke="#0969da" stroke-width="0.5"/>
-<text x="550.8" y="402.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">check</text>
-<text x="585.6" y="404.0" font-size="11" font-weight="600" fill="#0969da" text-anchor="start">C</text>
-<text x="611.7" y="402.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
-<rect x="618.7" y="388.0" width="59.0" height="20" rx="10" fill="#9a6700" fill-opacity="0.14" stroke="#9a6700" stroke-width="0.5"/>
-<text x="627.7" y="402.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">merge</text>
-<text x="662.5" y="404.0" font-size="11" font-weight="600" fill="#9a6700" text-anchor="start">H</text>
-<text x="120.0" y="427.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">jig open · merge only on the owner's word</text>
-<line x1="24" y1="439.0" x2="856" y2="439.0" stroke="#d1d9e0" stroke-width="0.5"/>
-<text x="24.0" y="465.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Fix</text>
-<rect x="120.0" y="451.0" width="52.8" height="20" rx="10" fill="#1a7f37" fill-opacity="0.14" stroke="#1a7f37" stroke-width="0.5"/>
-<text x="129.0" y="465.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">work</text>
-<text x="157.6" y="467.0" font-size="11" font-weight="600" fill="#1a7f37" text-anchor="start">W</text>
-<text x="183.8" y="465.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
-<rect x="190.8" y="451.0" width="114.4" height="20" rx="10" fill="#bf3989" fill-opacity="0.14" stroke="#bf3989" stroke-width="0.5"/>
-<text x="199.8" y="465.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">review-change</text>
-<text x="283.9" y="467.0" font-size="11" font-weight="600" fill="#bf3989" text-anchor="start">R1</text>
-<text x="316.2" y="465.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
-<rect x="323.2" y="451.0" width="71.3" height="20" rx="10" fill="#1a7f37" fill-opacity="0.14" stroke="#1a7f37" stroke-width="0.5"/>
-<text x="332.2" y="465.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">handoff</text>
-<text x="379.3" y="467.0" font-size="11" font-weight="600" fill="#1a7f37" text-anchor="start">W</text>
-<text x="120.0" y="490.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">a review with blocking findings · three rounds at most; a fourth is refused and Bug runs</text>
-<line x1="24" y1="502.0" x2="856" y2="502.0" stroke="#d1d9e0" stroke-width="0.5"/>
-<text x="24.0" y="528.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Sync</text>
-<rect x="120.0" y="514.0" width="52.8" height="20" rx="10" fill="#1a7f37" fill-opacity="0.14" stroke="#1a7f37" stroke-width="0.5"/>
-<text x="129.0" y="528.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">work</text>
-<text x="157.6" y="530.0" font-size="11" font-weight="600" fill="#1a7f37" text-anchor="start">W</text>
-<text x="183.8" y="528.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
-<rect x="190.8" y="514.0" width="114.4" height="20" rx="10" fill="#bf3989" fill-opacity="0.14" stroke="#bf3989" stroke-width="0.5"/>
-<text x="199.8" y="528.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">review-change</text>
-<text x="283.9" y="530.0" font-size="11" font-weight="600" fill="#bf3989" text-anchor="start">R1</text>
-<text x="316.2" y="528.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
-<rect x="323.2" y="514.0" width="71.3" height="20" rx="10" fill="#1a7f37" fill-opacity="0.14" stroke="#1a7f37" stroke-width="0.5"/>
-<text x="332.2" y="528.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">handoff</text>
-<text x="379.3" y="530.0" font-size="11" font-weight="600" fill="#1a7f37" text-anchor="start">W</text>
-<text x="120.0" y="553.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">a sync with a hand-resolved conflict · a clean sync needs nothing</text>
-<line x1="24" y1="565.0" x2="856" y2="565.0" stroke="#d1d9e0" stroke-width="0.5"/>
-<text x="24.0" y="591.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Bug</text>
-<rect x="120.0" y="577.0" width="46.6" height="20" rx="10" fill="#cf222e" fill-opacity="0.14" stroke="#cf222e" stroke-width="0.5"/>
-<text x="129.0" y="591.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">bug</text>
-<text x="151.5" y="593.0" font-size="11" font-weight="600" fill="#cf222e" text-anchor="start">B</text>
-<text x="177.6" y="591.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
-<rect x="184.6" y="577.0" width="52.8" height="20" rx="10" fill="#8250df" fill-opacity="0.14" stroke="#8250df" stroke-width="0.5"/>
-<text x="193.6" y="591.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">spec</text>
-<text x="222.3" y="593.0" font-size="11" font-weight="600" fill="#8250df" text-anchor="start">B</text>
-<text x="248.4" y="591.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
-<rect x="255.4" y="577.0" width="36.5" height="20" rx="10" fill="none" stroke="#1f2328" stroke-width="0.5"/>
-<text x="264.4" y="591.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">Job</text>
-<text x="120.0" y="616.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">a fourth fix round, a feedback group, or the owner's /jig:bug · never on a session's own reading that something is broken</text>
-<line x1="24" y1="628.0" x2="856" y2="628.0" stroke="#d1d9e0" stroke-width="0.5"/>
-<text x="24.0" y="654.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Feedback</text>
-<rect x="120.0" y="640.0" width="95.9" height="20" rx="10" fill="#8250df" fill-opacity="0.14" stroke="#8250df" stroke-width="0.5"/>
-<text x="129.0" y="654.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">consolidate</text>
-<text x="200.8" y="656.0" font-size="11" font-weight="600" fill="#8250df" text-anchor="start">S</text>
-<text x="226.9" y="654.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
-<rect x="233.9" y="640.0" width="46.6" height="20" rx="10" fill="#cf222e" fill-opacity="0.14" stroke="#cf222e" stroke-width="0.5"/>
-<text x="242.9" y="654.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">bug</text>
-<text x="265.4" y="656.0" font-size="11" font-weight="600" fill="#cf222e" text-anchor="start">B</text>
-<text x="291.6" y="654.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">+</text>
-<rect x="298.6" y="640.0" width="52.8" height="20" rx="10" fill="#8250df" fill-opacity="0.14" stroke="#8250df" stroke-width="0.5"/>
-<text x="307.6" y="654.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">spec</text>
-<text x="336.2" y="656.0" font-size="11" font-weight="600" fill="#8250df" text-anchor="start">B</text>
-<text x="362.4" y="654.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
-<rect x="369.4" y="640.0" width="95.9" height="20" rx="10" fill="#8250df" fill-opacity="0.14" stroke="#8250df" stroke-width="0.5"/>
-<text x="378.4" y="654.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">consolidate</text>
-<text x="450.1" y="656.0" font-size="11" font-weight="600" fill="#8250df" text-anchor="start">S</text>
-<text x="476.3" y="654.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
-<rect x="483.3" y="640.0" width="36.5" height="20" rx="10" fill="none" stroke="#1f2328" stroke-width="0.5"/>
-<text x="492.3" y="654.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">Job</text>
-<text x="120.0" y="679.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">staged feedback, in the jig repo · one bug + spec per group; overlaps answered before any job opens</text>
-<line x1="24" y1="691.0" x2="856" y2="691.0" stroke="#d1d9e0" stroke-width="0.5"/>
-<text x="24.0" y="717.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Batch</text>
-<rect x="120.0" y="703.0" width="52.8" height="20" rx="10" fill="#9a6700" fill-opacity="0.14" stroke="#9a6700" stroke-width="0.5"/>
-<text x="129.0" y="717.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">gate</text>
-<text x="157.6" y="719.0" font-size="11" font-weight="600" fill="#9a6700" text-anchor="start">H</text>
-<text x="183.8" y="717.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
-<rect x="190.8" y="703.0" width="59.0" height="20" rx="10" fill="#9a6700" fill-opacity="0.14" stroke="#9a6700" stroke-width="0.5"/>
-<text x="199.8" y="717.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">merge</text>
-<text x="234.6" y="719.0" font-size="11" font-weight="600" fill="#9a6700" text-anchor="start">H</text>
-<text x="260.8" y="717.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
-<rect x="267.8" y="703.0" width="59.0" height="20" rx="10" fill="#0969da" fill-opacity="0.14" stroke="#0969da" stroke-width="0.5"/>
-<text x="276.8" y="717.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">check</text>
-<text x="311.6" y="719.0" font-size="11" font-weight="600" fill="#0969da" text-anchor="start">C</text>
-<text x="337.7" y="717.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
-<rect x="344.7" y="703.0" width="59.0" height="20" rx="10" fill="#0969da" fill-opacity="0.14" stroke="#0969da" stroke-width="0.5"/>
-<text x="353.7" y="717.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">trace</text>
-<text x="388.5" y="719.0" font-size="11" font-weight="600" fill="#0969da" text-anchor="start">C</text>
-<text x="120.0" y="742.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">two or more gated jobs · one check on trunk; a failure is traced to its merge, then Fix on that job</text>
-<line x1="24" y1="754.0" x2="856" y2="754.0" stroke="#d1d9e0" stroke-width="0.5"/>
-<text x="24.0" y="780.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Release</text>
-<rect x="120.0" y="766.0" width="59.0" height="20" rx="10" fill="#0969da" fill-opacity="0.14" stroke="#0969da" stroke-width="0.5"/>
-<text x="129.0" y="780.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">check</text>
-<text x="163.8" y="782.0" font-size="11" font-weight="600" fill="#0969da" text-anchor="start">C</text>
-<text x="190.0" y="780.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
-<rect x="197.0" y="766.0" width="95.9" height="20" rx="10" fill="#0969da" fill-opacity="0.14" stroke="#0969da" stroke-width="0.5"/>
-<text x="206.0" y="780.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">release run</text>
-<text x="277.7" y="782.0" font-size="11" font-weight="600" fill="#0969da" text-anchor="start">C</text>
-<text x="303.9" y="780.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
-<rect x="310.9" y="766.0" width="52.8" height="20" rx="10" fill="#9a6700" fill-opacity="0.14" stroke="#9a6700" stroke-width="0.5"/>
-<text x="319.9" y="780.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">push</text>
-<text x="348.5" y="782.0" font-size="11" font-weight="600" fill="#9a6700" text-anchor="start">H</text>
-<text x="374.7" y="780.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
-<rect x="381.7" y="766.0" width="71.3" height="20" rx="10" fill="#9a6700" fill-opacity="0.14" stroke="#9a6700" stroke-width="0.5"/>
-<text x="390.7" y="780.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">publish</text>
-<text x="437.8" y="782.0" font-size="11" font-weight="600" fill="#9a6700" text-anchor="start">H</text>
-<text x="120.0" y="805.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">the owner's word · refused while a batch check is owed; push and publish only on the owner's word</text>
-<line x1="24" y1="817.0" x2="856" y2="817.0" stroke="#d1d9e0" stroke-width="0.5"/>
-<text x="24.0" y="843.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Survey</text>
-<rect x="120.0" y="829.0" width="65.1" height="20" rx="10" fill="#0969da" fill-opacity="0.14" stroke="#0969da" stroke-width="0.5"/>
-<text x="129.0" y="843.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">survey</text>
-<text x="170.0" y="845.0" font-size="11" font-weight="600" fill="#0969da" text-anchor="start">C</text>
-<text x="196.1" y="843.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
-<rect x="203.1" y="829.0" width="52.8" height="20" rx="10" fill="#8250df" fill-opacity="0.14" stroke="#8250df" stroke-width="0.5"/>
-<text x="212.1" y="843.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">spec</text>
-<text x="240.8" y="845.0" font-size="11" font-weight="600" fill="#8250df" text-anchor="start">S</text>
-<text x="266.9" y="843.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
-<rect x="273.9" y="829.0" width="42.6" height="20" rx="10" fill="none" stroke="#1f2328" stroke-width="0.5"/>
-<text x="282.9" y="843.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">Jobs</text>
-<text x="120.0" y="868.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">/jig:survey, /jig:adopt, /jig:update</text>
-<line x1="24" y1="880.0" x2="856" y2="880.0" stroke="#d1d9e0" stroke-width="0.5"/>
-<text x="24.0" y="906.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Redocument</text>
-<rect x="120.0" y="892.0" width="52.8" height="20" rx="10" fill="#8250df" fill-opacity="0.14" stroke="#8250df" stroke-width="0.5"/>
-<text x="129.0" y="906.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">spec</text>
-<text x="157.6" y="908.0" font-size="11" font-weight="600" fill="#8250df" text-anchor="start">S</text>
-<text x="183.8" y="906.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
-<rect x="190.8" y="892.0" width="42.6" height="20" rx="10" fill="none" stroke="#1f2328" stroke-width="0.5"/>
-<text x="199.8" y="906.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">Jobs</text>
-<text x="244.4" y="906.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
-<rect x="251.4" y="892.0" width="48.8" height="20" rx="10" fill="none" stroke="#1f2328" stroke-width="0.5"/>
-<text x="260.4" y="906.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">Batch</text>
-<text x="311.2" y="906.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
-<rect x="318.2" y="892.0" width="36.5" height="20" rx="10" fill="none" stroke="#1f2328" stroke-width="0.5"/>
-<text x="327.2" y="906.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">Job</text>
-<text x="120.0" y="931.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">/jig:redocument · the spec is the remap; the last job is the cleanup</text>
+<rect x="24.0" y="159.0" width="269.3" height="98.0" rx="8" fill="none" stroke="#cf222e" stroke-width="0.5"/>
+<circle cx="40.0" cy="177.5" r="4" fill="#cf222e"/>
+<text x="50.0" y="185.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">bug</text>
+<text x="36.0" y="207.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">2,1 · new session</text>
+<text x="36.0" y="230.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">bug, then the spec for what it found</text>
+<rect x="305.3" y="159.0" width="269.3" height="98.0" rx="8" fill="none" stroke="#1a7f37" stroke-width="0.5"/>
+<circle cx="321.3" cy="177.5" r="4" fill="#1a7f37"/>
+<text x="331.3" y="185.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">work</text>
+<text x="317.3" y="207.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">2,3 · one session per job</text>
+<text x="317.3" y="230.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">work, handoff, fix, sync</text>
+<rect x="586.7" y="159.0" width="269.3" height="98.0" rx="8" fill="none" stroke="#bf3989" stroke-width="0.5"/>
+<circle cx="602.7" cy="177.5" r="4" fill="#bf3989"/>
+<text x="612.7" y="185.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">review</text>
+<text x="598.7" y="207.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">2,2 · fresh session</text>
+<text x="598.7" y="230.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">review-work, review-change</text>
+<rect x="24.0" y="269.0" width="269.3" height="98.0" rx="8" fill="none" stroke="#0969da" stroke-width="0.5"/>
+<circle cx="40.0" cy="287.5" r="4" fill="#0969da"/>
+<text x="50.0" y="295.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">check</text>
+<text x="36.0" y="317.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">3,4 · new session</text>
+<text x="36.0" y="340.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">check, trace, survey</text>
+<rect x="305.3" y="269.0" width="269.3" height="98.0" rx="8" fill="none" stroke="#d1d9e0" stroke-width="0.5" stroke-dasharray="4 3"/>
+<text x="317.3" y="295.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">jig itself</text>
+<text x="317.3" y="317.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">no model</text>
+<text x="317.3" y="340.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">refuses steps out of order, cleans up</text>
+<text x="24.0" y="408.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Workflows</text>
+<text x="856" y="408.0" font-size="11" fill="#59636e" text-anchor="end">→ continues a session that already exists, named by its letter<tspan fill="#cf222e" dx="12">⇢</tspan> starts a new one</text>
+<line x1="24" y1="424.0" x2="856" y2="424.0" stroke="#d1d9e0" stroke-width="0.5"/>
+<text x="24.0" y="450.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Job</text>
+<rect x="120.0" y="436.0" width="52.8" height="20" rx="10" fill="#8250df" fill-opacity="0.14" stroke="#8250df" stroke-width="0.5"/>
+<text x="129.0" y="450.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">spec</text>
+<text x="157.6" y="452.0" font-size="11" font-weight="600" fill="#8250df" text-anchor="start">S</text>
+<text x="183.8" y="450.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
+<rect x="190.8" y="436.0" width="52.8" height="20" rx="10" fill="#1a7f37" fill-opacity="0.14" stroke="#1a7f37" stroke-width="0.5"/>
+<text x="199.8" y="450.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">work</text>
+<text x="228.4" y="452.0" font-size="11" font-weight="600" fill="#1a7f37" text-anchor="start">W</text>
+<text x="254.6" y="450.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
+<rect x="261.6" y="436.0" width="102.1" height="20" rx="10" fill="#bf3989" fill-opacity="0.14" stroke="#bf3989" stroke-width="0.5"/>
+<text x="270.6" y="450.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">review-work</text>
+<text x="342.4" y="452.0" font-size="11" font-weight="600" fill="#bf3989" text-anchor="start">R1</text>
+<text x="374.7" y="450.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
+<rect x="381.7" y="436.0" width="71.3" height="20" rx="10" fill="#1a7f37" fill-opacity="0.14" stroke="#1a7f37" stroke-width="0.5"/>
+<text x="390.7" y="450.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">handoff</text>
+<text x="437.8" y="452.0" font-size="11" font-weight="600" fill="#1a7f37" text-anchor="start">W</text>
+<text x="464.0" y="450.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
+<rect x="471.0" y="436.0" width="52.8" height="20" rx="10" fill="#9a6700" fill-opacity="0.14" stroke="#9a6700" stroke-width="0.5"/>
+<text x="480.0" y="450.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">gate</text>
+<text x="508.6" y="452.0" font-size="11" font-weight="600" fill="#9a6700" text-anchor="start">H</text>
+<text x="534.8" y="450.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
+<rect x="541.8" y="436.0" width="59.0" height="20" rx="10" fill="#0969da" fill-opacity="0.14" stroke="#0969da" stroke-width="0.5"/>
+<text x="550.8" y="450.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">check</text>
+<text x="585.6" y="452.0" font-size="11" font-weight="600" fill="#0969da" text-anchor="start">C</text>
+<text x="611.7" y="450.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
+<rect x="618.7" y="436.0" width="59.0" height="20" rx="10" fill="#9a6700" fill-opacity="0.14" stroke="#9a6700" stroke-width="0.5"/>
+<text x="627.7" y="450.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">merge</text>
+<text x="662.5" y="452.0" font-size="11" font-weight="600" fill="#9a6700" text-anchor="start">H</text>
+<text x="120.0" y="475.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">jig open · merge only on the owner's word</text>
+<line x1="24" y1="487.0" x2="856" y2="487.0" stroke="#d1d9e0" stroke-width="0.5"/>
+<text x="24.0" y="513.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Fix</text>
+<rect x="120.0" y="499.0" width="52.8" height="20" rx="10" fill="#1a7f37" fill-opacity="0.14" stroke="#1a7f37" stroke-width="0.5"/>
+<text x="129.0" y="513.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">work</text>
+<text x="157.6" y="515.0" font-size="11" font-weight="600" fill="#1a7f37" text-anchor="start">W</text>
+<text x="183.8" y="513.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
+<rect x="190.8" y="499.0" width="114.4" height="20" rx="10" fill="#bf3989" fill-opacity="0.14" stroke="#bf3989" stroke-width="0.5"/>
+<text x="199.8" y="513.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">review-change</text>
+<text x="283.9" y="515.0" font-size="11" font-weight="600" fill="#bf3989" text-anchor="start">R1</text>
+<text x="316.2" y="513.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
+<rect x="323.2" y="499.0" width="71.3" height="20" rx="10" fill="#1a7f37" fill-opacity="0.14" stroke="#1a7f37" stroke-width="0.5"/>
+<text x="332.2" y="513.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">handoff</text>
+<text x="379.3" y="515.0" font-size="11" font-weight="600" fill="#1a7f37" text-anchor="start">W</text>
+<text x="120.0" y="538.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">a review with blocking findings · three rounds at most; a fourth is refused and Bug runs</text>
+<line x1="24" y1="550.0" x2="856" y2="550.0" stroke="#d1d9e0" stroke-width="0.5"/>
+<text x="24.0" y="576.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Sync</text>
+<rect x="120.0" y="562.0" width="52.8" height="20" rx="10" fill="#1a7f37" fill-opacity="0.14" stroke="#1a7f37" stroke-width="0.5"/>
+<text x="129.0" y="576.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">work</text>
+<text x="157.6" y="578.0" font-size="11" font-weight="600" fill="#1a7f37" text-anchor="start">W</text>
+<text x="183.8" y="576.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
+<rect x="190.8" y="562.0" width="114.4" height="20" rx="10" fill="#bf3989" fill-opacity="0.14" stroke="#bf3989" stroke-width="0.5"/>
+<text x="199.8" y="576.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">review-change</text>
+<text x="283.9" y="578.0" font-size="11" font-weight="600" fill="#bf3989" text-anchor="start">R1</text>
+<text x="316.2" y="576.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
+<rect x="323.2" y="562.0" width="71.3" height="20" rx="10" fill="#1a7f37" fill-opacity="0.14" stroke="#1a7f37" stroke-width="0.5"/>
+<text x="332.2" y="576.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">handoff</text>
+<text x="379.3" y="578.0" font-size="11" font-weight="600" fill="#1a7f37" text-anchor="start">W</text>
+<text x="120.0" y="601.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">a sync with a hand-resolved conflict · a clean sync needs nothing</text>
+<line x1="24" y1="613.0" x2="856" y2="613.0" stroke="#d1d9e0" stroke-width="0.5"/>
+<text x="24.0" y="639.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Bug</text>
+<rect x="120.0" y="625.0" width="46.6" height="20" rx="10" fill="#cf222e" fill-opacity="0.14" stroke="#cf222e" stroke-width="0.5"/>
+<text x="129.0" y="639.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">bug</text>
+<text x="151.5" y="641.0" font-size="11" font-weight="600" fill="#cf222e" text-anchor="start">B</text>
+<text x="177.6" y="639.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
+<rect x="184.6" y="625.0" width="52.8" height="20" rx="10" fill="#8250df" fill-opacity="0.14" stroke="#8250df" stroke-width="0.5"/>
+<text x="193.6" y="639.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">spec</text>
+<text x="222.3" y="641.0" font-size="11" font-weight="600" fill="#8250df" text-anchor="start">B</text>
+<text x="248.4" y="639.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
+<rect x="255.4" y="625.0" width="36.5" height="20" rx="10" fill="none" stroke="#1f2328" stroke-width="0.5"/>
+<text x="264.4" y="639.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">Job</text>
+<text x="120.0" y="664.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">a fourth fix round, a feedback group, or the owner's /jig:bug · never on a session's own reading that something is broken</text>
+<line x1="24" y1="676.0" x2="856" y2="676.0" stroke="#d1d9e0" stroke-width="0.5"/>
+<text x="24.0" y="702.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Feedback</text>
+<rect x="120.0" y="688.0" width="95.9" height="20" rx="10" fill="#8250df" fill-opacity="0.14" stroke="#8250df" stroke-width="0.5"/>
+<text x="129.0" y="702.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">consolidate</text>
+<text x="200.8" y="704.0" font-size="11" font-weight="600" fill="#8250df" text-anchor="start">S</text>
+<text x="226.9" y="702.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
+<rect x="233.9" y="688.0" width="46.6" height="20" rx="10" fill="#cf222e" fill-opacity="0.14" stroke="#cf222e" stroke-width="0.5"/>
+<text x="242.9" y="702.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">bug</text>
+<text x="265.4" y="704.0" font-size="11" font-weight="600" fill="#cf222e" text-anchor="start">B</text>
+<text x="291.6" y="702.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">+</text>
+<rect x="298.6" y="688.0" width="52.8" height="20" rx="10" fill="#8250df" fill-opacity="0.14" stroke="#8250df" stroke-width="0.5"/>
+<text x="307.6" y="702.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">spec</text>
+<text x="336.2" y="704.0" font-size="11" font-weight="600" fill="#8250df" text-anchor="start">B</text>
+<text x="362.4" y="702.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
+<rect x="369.4" y="688.0" width="95.9" height="20" rx="10" fill="#8250df" fill-opacity="0.14" stroke="#8250df" stroke-width="0.5"/>
+<text x="378.4" y="702.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">consolidate</text>
+<text x="450.1" y="704.0" font-size="11" font-weight="600" fill="#8250df" text-anchor="start">S</text>
+<text x="476.3" y="702.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
+<rect x="483.3" y="688.0" width="36.5" height="20" rx="10" fill="none" stroke="#1f2328" stroke-width="0.5"/>
+<text x="492.3" y="702.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">Job</text>
+<text x="120.0" y="727.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">staged feedback, in the jig repo · one bug + spec per group; overlaps answered before any job opens</text>
+<line x1="24" y1="739.0" x2="856" y2="739.0" stroke="#d1d9e0" stroke-width="0.5"/>
+<text x="24.0" y="765.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Batch</text>
+<rect x="120.0" y="751.0" width="52.8" height="20" rx="10" fill="#9a6700" fill-opacity="0.14" stroke="#9a6700" stroke-width="0.5"/>
+<text x="129.0" y="765.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">gate</text>
+<text x="157.6" y="767.0" font-size="11" font-weight="600" fill="#9a6700" text-anchor="start">H</text>
+<text x="183.8" y="765.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
+<rect x="190.8" y="751.0" width="59.0" height="20" rx="10" fill="#9a6700" fill-opacity="0.14" stroke="#9a6700" stroke-width="0.5"/>
+<text x="199.8" y="765.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">merge</text>
+<text x="234.6" y="767.0" font-size="11" font-weight="600" fill="#9a6700" text-anchor="start">H</text>
+<text x="260.8" y="765.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
+<rect x="267.8" y="751.0" width="59.0" height="20" rx="10" fill="#0969da" fill-opacity="0.14" stroke="#0969da" stroke-width="0.5"/>
+<text x="276.8" y="765.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">check</text>
+<text x="311.6" y="767.0" font-size="11" font-weight="600" fill="#0969da" text-anchor="start">C</text>
+<text x="337.7" y="765.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
+<rect x="344.7" y="751.0" width="59.0" height="20" rx="10" fill="#0969da" fill-opacity="0.14" stroke="#0969da" stroke-width="0.5"/>
+<text x="353.7" y="765.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">trace</text>
+<text x="388.5" y="767.0" font-size="11" font-weight="600" fill="#0969da" text-anchor="start">C</text>
+<text x="120.0" y="790.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">two or more gated jobs · one check on trunk; a failure is traced to its merge, then Fix on that job</text>
+<line x1="24" y1="802.0" x2="856" y2="802.0" stroke="#d1d9e0" stroke-width="0.5"/>
+<text x="24.0" y="828.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Release</text>
+<rect x="120.0" y="814.0" width="59.0" height="20" rx="10" fill="#0969da" fill-opacity="0.14" stroke="#0969da" stroke-width="0.5"/>
+<text x="129.0" y="828.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">check</text>
+<text x="163.8" y="830.0" font-size="11" font-weight="600" fill="#0969da" text-anchor="start">C</text>
+<text x="190.0" y="828.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
+<rect x="197.0" y="814.0" width="71.3" height="20" rx="10" fill="#9a6700" fill-opacity="0.14" stroke="#9a6700" stroke-width="0.5"/>
+<text x="206.0" y="828.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">release</text>
+<text x="253.1" y="830.0" font-size="11" font-weight="600" fill="#9a6700" text-anchor="start">H</text>
+<text x="279.2" y="828.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
+<rect x="286.2" y="814.0" width="52.8" height="20" rx="10" fill="#9a6700" fill-opacity="0.14" stroke="#9a6700" stroke-width="0.5"/>
+<text x="295.2" y="828.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">push</text>
+<text x="323.9" y="830.0" font-size="11" font-weight="600" fill="#9a6700" text-anchor="start">H</text>
+<text x="350.0" y="828.0" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">→</text>
+<rect x="357.0" y="814.0" width="71.3" height="20" rx="10" fill="#9a6700" fill-opacity="0.14" stroke="#9a6700" stroke-width="0.5"/>
+<text x="366.0" y="828.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">publish</text>
+<text x="413.2" y="830.0" font-size="11" font-weight="600" fill="#9a6700" text-anchor="start">H</text>
+<text x="120.0" y="853.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">the owner's word · refused while a batch check is owed; push and publish only on the owner's word</text>
+<line x1="24" y1="865.0" x2="856" y2="865.0" stroke="#d1d9e0" stroke-width="0.5"/>
+<text x="24.0" y="891.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Survey</text>
+<rect x="120.0" y="877.0" width="65.1" height="20" rx="10" fill="#0969da" fill-opacity="0.14" stroke="#0969da" stroke-width="0.5"/>
+<text x="129.0" y="891.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">survey</text>
+<text x="170.0" y="893.0" font-size="11" font-weight="600" fill="#0969da" text-anchor="start">C</text>
+<text x="196.1" y="891.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
+<rect x="203.1" y="877.0" width="52.8" height="20" rx="10" fill="#8250df" fill-opacity="0.14" stroke="#8250df" stroke-width="0.5"/>
+<text x="212.1" y="891.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">spec</text>
+<text x="240.8" y="893.0" font-size="11" font-weight="600" fill="#8250df" text-anchor="start">S</text>
+<text x="266.9" y="891.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
+<rect x="273.9" y="877.0" width="42.6" height="20" rx="10" fill="none" stroke="#1f2328" stroke-width="0.5"/>
+<text x="282.9" y="891.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">Jobs</text>
+<text x="120.0" y="916.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">/jig:survey, /jig:adopt, /jig:update</text>
+<line x1="24" y1="928.0" x2="856" y2="928.0" stroke="#d1d9e0" stroke-width="0.5"/>
+<text x="24.0" y="954.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">Redocument</text>
+<rect x="120.0" y="940.0" width="52.8" height="20" rx="10" fill="#8250df" fill-opacity="0.14" stroke="#8250df" stroke-width="0.5"/>
+<text x="129.0" y="954.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">spec</text>
+<text x="157.6" y="956.0" font-size="11" font-weight="600" fill="#8250df" text-anchor="start">S</text>
+<text x="183.8" y="954.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
+<rect x="190.8" y="940.0" width="42.6" height="20" rx="10" fill="none" stroke="#1f2328" stroke-width="0.5"/>
+<text x="199.8" y="954.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">Jobs</text>
+<text x="244.4" y="954.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
+<rect x="251.4" y="940.0" width="48.8" height="20" rx="10" fill="none" stroke="#1f2328" stroke-width="0.5"/>
+<text x="260.4" y="954.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">Batch</text>
+<text x="311.2" y="954.0" font-size="13" font-weight="400" fill="#cf222e" text-anchor="middle">⇢</text>
+<rect x="318.2" y="940.0" width="36.5" height="20" rx="10" fill="none" stroke="#1f2328" stroke-width="0.5"/>
+<text x="327.2" y="954.0" font-size="11" font-weight="400" fill="#1f2328" text-anchor="start">Job</text>
+<text x="120.0" y="979.0" font-size="11" font-weight="400" fill="#59636e" text-anchor="start">/jig:redocument · the spec is the remap; the last job is the cleanup</text>
 </svg>

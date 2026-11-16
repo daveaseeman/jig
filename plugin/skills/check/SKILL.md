@@ -1,10 +1,10 @@
 ---
 name: check
-description: The check role - fixed commands run from files alone, never in the trunk checkout - the complete suite in a gate's checkout or a detached worktree of trunk for a batch or a release, recorded with jig checked; the trace of a failed batch to its merge; a survey run; a release run. Use when `jig next` or the hubnode names check, trace, survey or release run.
+description: The check role - fixed commands run from files alone, never in the trunk checkout - the complete suite in a gate's checkout or a detached worktree of trunk for a batch or a release, recorded with jig checked; the trace of a failed batch to its merge; a survey run. Use when `jig next` or the hubnode names check, trace or survey.
 ---
 
 `jig` below is `python3 .jig/jig.py`. Your settings are the check role's (`jig roles`). Your
-steps are check, trace, survey and release run: fixed commands, run in a new session that
+steps are check (before a release too), trace and survey: fixed commands, run in a new session that
 needs nothing but files, never in the trunk checkout. You change nothing and fix nothing; you
 run, record and report.
 `jig next` decides what comes after.
@@ -56,7 +56,7 @@ reset` after, and report the merge it names: that job gets Fix.
 `jig survey` (with `--json` when the hubnode asks), as `/jig:survey` says. Report what it
 prints; the plan from it is the spec role's.
 
-## Release run
+## Before a release
 
 Before a release: the complete check, as Check says, in a detached worktree of trunk's tip,
 recorded with `jig checked`. That is all of it. You never run `jig release`: it commits on

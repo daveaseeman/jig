@@ -17,7 +17,7 @@ role needs a fresh context or different settings.
 
 | Node | Settings | What it does | Roles it may load |
 |---|---|---|---|
-| hubnode | the owner's session; jig warns below 2,1 | talks, decides, assigns, gates, merges, pushes, publishes | spec (only for specs drafted from the conversation) |
+| hubnode | the owner's session; jig warns below 2,1 | talks, decides, assigns, gates, merges, releases, pushes, publishes | spec (only for specs drafted from the conversation) |
 | subnode | the role's | takes one role on one job, works only in its worktree, reports back, never touches trunk | any of the five |
 
 **Roles.** One skill each, loaded when assigned.
@@ -28,9 +28,9 @@ role needs a fresh context or different settings.
 | bug | 2, 1 | Opus at xhigh | bug, then the spec for what it found |
 | work | 2, 3 | Opus at medium | work, handoff, fixes, hand-resolved syncs |
 | review | 2, 2 | Opus at high | review-work (the job's whole diff), review-change (only what changed since the last review); always a fresh session |
-| check | 3, 4 | Sonnet at low | check (the complete suite), trace a failed batch, survey, release run |
+| check | 3, 4 | Sonnet at low | check (the complete suite, before a release too), trace a failed batch, survey |
 
-The hubnode's own steps, which are no role's: assign, gate, merge, push, publish. jig itself
+The hubnode's own steps, which are no role's: assign, gate, merge, release, push, publish. jig itself
 (no model): refuses a step out of order, removes a merged job's clean worktree and branch.
 
 **Workflows.** `→` continues the same session; `⇢` starts a new one.
@@ -43,7 +43,7 @@ The hubnode's own steps, which are no role's: assign, gate, merge, push, publish
 | Bug | bug → spec ⇢ Job | a fourth fix round, a feedback group, or the owner's `/jig:bug` | never on a session's own reading that something is broken |
 | Feedback | consolidate ⇢ bug + spec (one per group) → consolidate ⇢ Job | staged feedback, in the jig repo | overlaps answered before any job opens |
 | Batch | gate → merge ⇢ check → trace | two or more gated jobs | one check on trunk; a failure is traced to its merge, then Fix on that job |
-| Release | check → release run → push → publish | the owner's word | refused while a batch check is owed; push and publish only on the owner's word |
+| Release | check → release → push → publish | the owner's word | refused while a batch check is owed; push and publish only on the owner's word |
 | Survey | survey ⇢ spec ⇢ Jobs | `/jig:survey`, `/jig:adopt`, `/jig:update` | |
 | Redocument | spec ⇢ Jobs ⇢ Batch ⇢ Job | `/jig:redocument` | the spec is the remap; the last job is the cleanup |
 
@@ -139,12 +139,12 @@ with the defaults.
 
 | Skill | Today | Resolution |
 |---|---|---|
-| hubnode | the hubnode, plus its own job cycle and briefs | node skill; keeps assign, gate, merge, push, publish; its job cycle and the order of steps move to `FLOWS`; briefs move to each role skill |
+| hubnode | the hubnode, plus its own job cycle and briefs | node skill; keeps assign, gate, merge, release, push, publish; its job cycle and the order of steps move to `FLOWS`; briefs move to each role skill |
 | subnode | the job session: check in, build, hand off, sync | node skill: check in, take one role, report back; build, hand off and sync move to `work` |
 | spec | writes a spec | role skill `spec`; absorbs `consolidate`, and redocument's remap and adopt's plan |
 | bug | investigation | role skill `bug`; ends with its spec; trigger narrowed |
 | review | review dispatch and record | role skill `review`: review-work and review-change |
-| (new) check | spread over the gate brief, `release`, `verify` | role skill `check`: complete suite, `jig checked`, trace, survey run, release run |
+| (new) check | spread over the gate brief, `release`, `verify` | role skill `check`: complete suite (before a release too), `jig checked`, trace, survey run |
 | (new) work | in `subnode` | role skill `work`: build, evidence (absorbs `verify`), handoff, fixes, syncs |
 | consolidate | writes a merged spec | merged into `spec` |
 | verify | how to prove a change works | merged into `work` |
@@ -246,6 +246,11 @@ with the defaults.
   consolidate, and bug for a feedback group run in a detached worktree and commit nothing: the
   hubnode reads the result and commits it on trunk (for consolidate, with the `git rm` of the
   inputs). session-start.sh names the subnode, and the role its brief names, in any worktree.
+- Interpreted (hubnode, 2026-11-15), following from the owner's "Hubnode runs it": Release is
+  check → release → push → publish. The check role owns check, in a detached worktree of
+  trunk's tip; the hubnode owns release (`jig release`), push and publish. "release run" leaves
+  the check role's steps and "release" joins the hubnode's, in every table, `FLOWS`, `ROLES`,
+  RULES.md, README and the drawing.
 - Consolidated: `rename-check-rules` (2026-11-11) is folded in, and its spec file is deleted in
   the commit that adds this one.
 

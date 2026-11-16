@@ -128,7 +128,7 @@ by `scripts/roles_svg.py`.
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/roles-and-flows-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="assets/roles-and-flows-light.svg">
-  <img src="assets/roles-and-flows-light.svg" alt="Roles: the hubnode (the owner's session) assigns, gates, merges, pushes and publishes; spec (tier 2, effort 2) writes and consolidates specs; bug (2,1) investigates and writes the spec for what it found; work (2,3, one session per job) builds, hands off, fixes and syncs; review (2,2, always a fresh session) runs review-work and review-change; check (3,4) runs the complete suite, traces a failed batch, surveys and runs releases; jig itself refuses steps out of order. Workflows: Job is spec, work, review-work, handoff, gate, check, merge; Fix and Sync are work, review-change, handoff; Bug is bug, spec, then a Job; Feedback, Batch, Release, Survey and Redocument follow, each with its trigger and controls. The tables below say the same in text.">
+  <img src="assets/roles-and-flows-light.svg" alt="Roles: the hubnode (the owner's session) assigns, gates, merges, releases, pushes and publishes; a subnode takes one role, outside the trunk checkout; spec (tier 2, effort 2) writes and consolidates specs; bug (2,1) investigates and writes the spec for what it found; work (2,3, one session per job) builds, hands off, fixes and syncs; review (2,2, always a fresh session) runs review-work and review-change; check (3,4) runs the complete suite, before a release too, traces a failed batch and surveys; jig itself refuses steps out of order and cleans up after a merge. Workflows: Job is spec, work, review-work, handoff, gate, check, merge; Fix and Sync are work, review-change, handoff; Bug is bug, spec, then a Job; Feedback, Batch, Release, Survey and Redocument follow, each with its trigger and controls. The tables below say the same in text.">
 </picture>
 
 <details>
@@ -138,7 +138,7 @@ by `scripts/roles_svg.py`.
 
 | Node | Settings | What it does | Roles it may load |
 |---|---|---|---|
-| hubnode | the owner's session; tier 2, effort 1 or better | talks, decides, assigns, gates, merges, pushes, publishes | spec (only for specs drafted from the conversation) |
+| hubnode | the owner's session; tier 2, effort 1 or better | talks, decides, assigns, gates, merges, releases, pushes, publishes | spec (only for specs drafted from the conversation) |
 | subnode | the role's | takes one role on one job, works only in its worktree, reports back, never touches trunk | any of the five |
 
 **Roles.**
@@ -149,9 +149,9 @@ by `scripts/roles_svg.py`.
 | bug | 2, 1 | bug, then the spec for what it found |
 | work | 2, 3 | work, handoff, fixes, hand-resolved syncs |
 | review | 2, 2 | review-work (the job's whole diff), review-change (only what changed since the last review); always a fresh session |
-| check | 3, 4 | check (the complete suite), trace a failed batch, survey, release run |
+| check | 3, 4 | check (the complete suite, before a release too), trace a failed batch, survey |
 
-The hubnode's own steps, which are no role's: assign, gate, merge, push, publish. jig itself
+The hubnode's own steps, which are no role's: assign, gate, merge, release, push, publish. jig itself
 (no model) refuses a step out of order, and removes a merged job's clean worktree and branch. Tiers and efforts are numbers; `plugin/tiers.json`
 maps them to models and effort levels.
 
@@ -165,7 +165,7 @@ maps them to models and effort levels.
 | Bug | bug → spec ⇢ Job | a fourth fix round, a feedback group, or the owner's `/jig:bug` | never on a session's own reading that something is broken |
 | Feedback | consolidate ⇢ bug + spec → consolidate ⇢ Job | staged feedback, in the jig repo | one bug + spec per group; overlaps answered before any job opens |
 | Batch | gate → merge ⇢ check → trace | two or more gated jobs | one check on trunk; a failure is traced to its merge, then Fix on that job |
-| Release | check → release run → push → publish | the owner's word | refused while a batch check is owed; push and publish only on the owner's word |
+| Release | check → release → push → publish | the owner's word | refused while a batch check is owed; push and publish only on the owner's word |
 | Survey | survey ⇢ spec ⇢ Jobs | `/jig:survey`, `/jig:adopt`, `/jig:update` | |
 | Redocument | spec ⇢ Jobs ⇢ Batch ⇢ Job | `/jig:redocument` | the spec is the remap; the last job is the cleanup |
 

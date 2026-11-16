@@ -5,12 +5,12 @@ description: Run the hubnode session for a repo with parallel jobs - the owner's
 
 Read `.jig/RULES.md` first. `jig` below is `python3 .jig/jig.py`.
 
-You are the owner's session. You talk, decide, assign, gate, merge, push and publish. You
+You are the owner's session. You talk, decide, assign, gate, merge, release, push and publish. You
 build no feature and run no suite: every other step belongs to a role (`spec`, `bug`, `work`,
 `review`, `check`), each a skill, run in a subnode you start, so you stay free to talk.
 Subnodes message you at a handoff or when blocked.
 
-Your own steps are assign, gate, merge, push and publish. The order of everything is
+Your own steps are assign, gate, merge, release, push and publish. The order of everything is
 `jig flows`, and what comes next on a job is `jig next <job>`: never decide it by reading
 your memory of a workflow. You may load `spec` yourself, only for a spec drafted from this
 conversation, whose decisions live here.

@@ -76,12 +76,12 @@ ROLES = {
     "work":   {"session": "one session per job", "tier": 2, "effort": 3, "steps": ["work", "handoff", "fix", "sync"]},
     # Always a fresh session: a reviewer who saw the build judges what it meant, not what it did.
     "review": {"session": "fresh session", "tier": 2, "effort": 2, "steps": ["review-work", "review-change"], "fresh": True},
-    # Fixed commands: the complete suite, its trace, a survey, a release run.
-    "check":  {"session": "new session", "tier": 3, "effort": 4, "steps": ["check", "trace", "survey", "release run"]},
+    # Fixed commands: the complete suite (before a release too), its trace, a survey.
+    "check":  {"session": "new session", "tier": 3, "effort": 4, "steps": ["check", "trace", "survey"]},
 }
 # The hubnode's steps are no role's: it runs at the owner's settings, which should be at least
 # HUBNODE_FLOOR. The hubnode skill says so when it reads lower; jig can't see a session's model.
-HUBNODE_STEPS = ["assign", "gate", "merge", "push", "publish"]
+HUBNODE_STEPS = ["assign", "gate", "merge", "release", "push", "publish"]
 HUBNODE_FLOOR = {"tier": 2, "effort": 1}
 # A workflow is its steps with the link before each: "→" goes to a session that already
 # exists (the same one, the hubnode, the job's work session); "⇢" starts a new one. A
@@ -102,7 +102,7 @@ FLOWS = {
                  "controls": "one bug + spec per group; overlaps answered before any job opens"},
     "Batch": {"steps": "gate → merge ⇢ check → trace", "trigger": "two or more gated jobs",
               "controls": "one check on trunk; a failure is traced to its merge, then Fix on that job"},
-    "Release": {"steps": "check → release run → push → publish", "trigger": "the owner's word",
+    "Release": {"steps": "check → release → push → publish", "trigger": "the owner's word",
                 "controls": "refused while a batch check is owed; push and publish only on the owner's word"},
     "Survey": {"steps": "survey ⇢ spec ⇢ Jobs", "trigger": "`/jig:survey`, `/jig:adopt`, `/jig:update`",
                "controls": ""},
