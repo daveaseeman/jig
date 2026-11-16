@@ -1,7 +1,7 @@
 {
   "rig": {
     "spec": ".jig/specs/rig.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [
       "decision-cards"
     ],
@@ -15,6 +15,7 @@
       "README.md",
       "tests/smoke.sh"
     ],
-    "reserved": {}
+    "reserved": {},
+    "check": "batch"
   }
 }
