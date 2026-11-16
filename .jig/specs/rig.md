@@ -124,6 +124,12 @@ blocks.
   git dir, local and never committed.
 - Interpreted: `jig rig` prints plain text and JSON; drawing the picture is the skill's, so
   `jig.py` and the templates stay tool-agnostic.
+- Interpreted, accepted by the hubnode 2026-11-16: "a spec naming one it builds after" is the
+  repo's existing prose line `` Build after `<name>` ``, matched against waiting specs, staged
+  files and open jobs (by name or by their spec's name). No new header for specs.
+- Interpreted, accepted by the hubnode 2026-11-16: grouping counts only the staged files whose
+  stored judgment says ready, so `jig.py` never guesses; the skill judges, stores, then reruns
+  `jig rig --json`. No `--ready` flag.
 - Kept separate from bug-sync-trunk-edits: different code in jig.py (rig adds a command; the bug fix changes the R3 check and added-line counting), and the fix shouldn't wait on rig. The owner, 2026-11-16: "Keep separate".
 
 ## Workflow

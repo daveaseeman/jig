@@ -11697,6 +11697,15 @@ def built_after(text: str) -> list[str]:
     return out
 
 
+def job_touches(root: Path, board: "Board") -> dict[str, list[str]]:
+    """Each open job's spec's Touches, by job name: what that job is already changing."""
+    out = {}
+    for name, job in sorted(board.open_jobs().items()):
+        spec = root / spec_key(root, job["spec"]) if job.get("spec", "").endswith(".md") else None
+        out[name] = touches_spans(spec.read_text(errors="replace")) if spec and spec.is_file() else []
+    return out
+
+
 def rig_items(root: Path, board: "Board") -> list[dict]:
     """Every waiting spec, every staged file and the roadmap's next step, unjudged, in kind
     then path order. A staged file's open or ready is the skill's call, read back from the store."""
@@ -11712,25 +11721,30 @@ def rig_items(root: Path, board: "Board") -> list[dict]:
                       "content": f.read_text(errors="replace"), "header": head,
                       "touches": touches_spans(body), "after": [Path(n).stem for n in after_names(head)],
                       "kept": sorted(kept_separate(body)), "scopes": spec_scopes(body)})
-    step = rig_next_step(board, [s for i in items for s in i["scopes"]])
+    covering = [t for i in items for t in i["touches"]]
+    covering += [t for ts in job_touches(root, board).values() for t in ts]
+    step = rig_next_step(board, [s for i in items for s in i["scopes"]], covering)
     if step:
         items.append(step)
     return items
 
 
-def rig_next_step(board: "Board", taken: list[str]) -> dict | None:
-    """One step ahead on trunk's roadmap: the first Up next item, else the current phase's first
-    scope, that no spec, waiting or staged, takes."""
+def rig_next_step(board: "Board", taken: list[str], covering: list[str]) -> dict | None:
+    """One step ahead on trunk's roadmap: the first Up next item whose pages no open job's,
+    waiting spec's or staged file's Touches already cover, else the current phase's first open
+    scope that no waiting spec or staged file takes by its `Scope:` line. An Up next item has no
+    scope id to take, so its pages are what says work on it is under way."""
     snap = Snapshot(board.trunk)
     text = snap.show(ROADMAP)
     if not text:
         return None
     for i in parse_up_next(text):
-        if i["id"] not in taken:
-            return {"kind": "next-step", "id": i["id"], "path": f"{ROADMAP}#{i['id']}",
-                    "content": f"{UP_NEXT}\0{i['id']}\0{i['what']}\0{i['touches']}",
-                    "what": i["what"], "from": UP_NEXT, "touches": i["touches"], "after": [],
-                    "kept": [], "scopes": []}
+        if i["touches"] and all(any(touches_meet(p, t) for t in covering) for p in i["touches"]):
+            continue
+        return {"kind": "next-step", "id": i["id"], "path": f"{ROADMAP}#{i['id']}",
+                "content": f"{UP_NEXT}\0{i['id']}\0{i['what']}\0{i['touches']}",
+                "what": i["what"], "from": UP_NEXT, "touches": i["touches"], "after": [],
+                "kept": [], "scopes": []}
     for p in roadmap_state(snap) or []:
         if p["state"] != "current":
             continue
@@ -11743,8 +11757,9 @@ def rig_next_step(board: "Board", taken: list[str]) -> dict | None:
 
 
 def rig_state(root: Path, board: "Board") -> dict:
-    """The picture as data: each item with its judgment, what it waits on and its proposed job
-    group, then the open jobs with `jig next`'s step for each."""
+    """The picture as data: each item with its judgment, what it waits on and its proposed group,
+    then the open jobs with `jig next`'s step for each. In a group, items whose Touches overlap
+    are one job to answer (merge, or keep apart); an item that depends on another opens after it."""
     items = rig_items(root, board)
     store = rig_load_store()
     for i in items:
@@ -11759,10 +11774,15 @@ def rig_state(root: Path, board: "Board") -> dict:
         if i["kind"] != "next-step":
             by_name.setdefault(i["id"], i)
             by_name.setdefault(Path(i["id"]).stem, i)
-    # What each item waits on: an open job, or an item that isn't ready, directly or through one.
+    # A spec that opened as a job under another name is still the one an item builds after.
+    job_of = {n: n for n in board.jobs}
+    for n, j in sorted(board.jobs.items()):
+        if j.get("spec"):
+            job_of.setdefault(Path(j["spec"]).stem, n)
     for i in items:
         i["deps"] = sorted({by_name[n]["path"] for n in i["after"] if n in by_name and by_name[n] is not i})
-        i["waits_on"] = sorted(f"job {n}" for n in set(i["after"]) if n in board.jobs and n not in by_name)
+        i["waits_on"] = sorted({f"job {job_of[n]}" for n in i["after"] if n in job_of and n not in by_name})
+    # What waits, directly or through an item that isn't ready or itself waits.
     changed = True
     while changed:
         changed = False
@@ -11777,18 +11797,20 @@ def rig_state(root: Path, board: "Board") -> dict:
     for i in items:
         i["waits_on"].sort()
     start = [i for i in items if i["state"] == "ready" and not i["waits_on"]]
-    # Proposed jobs: overlapping Touches no `Kept separate` line answers, and dependencies, join items.
     parent = {i["path"]: i["path"] for i in start}
 
     def find(x: str) -> str:
         while parent[x] != x:
             x = parent[x]
         return x
+    overlaps = []
     for n, a in enumerate(start):
         for b in start[n + 1:]:
             apart = Path(b["id"]).stem in a["kept"] or Path(a["id"]).stem in b["kept"]
-            meet = any(touches_meet(x, y) for x in a["touches"] for y in b["touches"])
-            if (meet and not apart) or b["path"] in a["deps"] or a["path"] in b["deps"]:
+            if not apart and any(touches_meet(x, y) for x in a["touches"] for y in b["touches"]):
+                overlaps.append(sorted([a["path"], b["path"]]))
+                parent[find(b["path"])] = find(a["path"])
+            elif b["path"] in a["deps"] or a["path"] in b["deps"]:
                 parent[find(b["path"])] = find(a["path"])
     rank = {k: n for n, k in enumerate(RIG_KINDS)}
     sort_key = lambda i: (rank[i["kind"]], i["path"])
@@ -11797,7 +11819,6 @@ def rig_state(root: Path, board: "Board") -> dict:
         groups.setdefault(find(i["path"]), []).append(i)
     ordered = []
     for members in groups.values():
-        # Dependency order within a group, kind then path between items that don't depend.
         left, out = list(members), []
         while left:
             free = [i for i in left if not any(d in {x["path"] for x in left} for d in i["deps"])] or left
@@ -11805,18 +11826,27 @@ def rig_state(root: Path, board: "Board") -> dict:
             out.append(pick)
             left.remove(pick)
         ordered.append(out)
+    paired = {p for pair in overlaps for p in pair}
     for g, members in enumerate(ordered, 1):
+        inside = {i["path"] for i in members}
         for i in members:
             i["group"] = g
+            # `after` first: until what it builds after opens, there is nothing to answer about it.
+            i["opens"] = ("after" if any(d in inside for d in i["deps"]) else
+                          "answer" if i["path"] in paired else "now")
     for i in items:
         i.setdefault("group", None)
+        i.setdefault("opens", None)
         del i["kept"]
     jobs = []
     for name in sorted(board.open_jobs()):
         step, who, session, why = next_step(root, board, name)
         jobs.append({"name": name, "step": step, "who": who, "session": session, "why": why})
     asks = [i for i in items if i["state"] in ("open", "unjudged")]
-    return {"items": sorted(items, key=sort_key), "groups": [[i["path"] for i in g] for g in ordered],
+    return {"items": sorted(items, key=sort_key),
+            "groups": [{"paths": [i["path"] for i in g],
+                        "overlaps": sorted(p for p in overlaps if p[0] in {i["path"] for i in g})}
+                       for g in ordered],
             "waiting_on_you": len(asks), "can_start": len(start), "jobs": jobs}
 
 
@@ -11825,12 +11855,15 @@ def rig_text(state: dict) -> str:
     n, m = state["waiting_on_you"], state["can_start"]
     out = [f"{n} thing{'s' if n != 1 else ''} waiting on your answers; {m} can start now."]
     out.append("\nCan start now:")
-    for g, paths in enumerate(state["groups"], 1):
-        out.append(f"  job {g}:")
+    for g, group in enumerate(state["groups"], 1):
+        paths = group["paths"]
+        out.append(f"  group {g}:")
         for p in paths:
             i = next(x for x in items if x["path"] == p)
             after = [d for d in i["deps"] if d in paths]
             out.append(f"    {i['kind']:<7} {p}" + (f"  (after {', '.join(after)})" if after else ""))
+        for a, b in group["overlaps"]:
+            out.append(f"    {a} and {b} overlap: one job, or kept apart")
     if not state["groups"]:
         out.append("  nothing")
     out.append("\nWaiting on:")
@@ -11871,8 +11904,11 @@ def cmd_rig(root: Path, args) -> int:
             judgment = json.loads(sys.stdin.read())
         except ValueError as e:
             die(f"--store-put reads a JSON object on stdin: {e}", 2)
-        if not isinstance(judgment, dict) or judgment.get("call", "ready") not in ("ready", "open"):
-            die('--store-put reads a JSON object whose "call", if given, is "ready" or "open"', 2)
+        # A staged file's call is what places it: one stored without it would replay as unjudged.
+        call = judgment.get("call", "ready" if item["kind"] != "staged" else None) if isinstance(judgment, dict) else None
+        if call not in ("ready", "open"):
+            die(f'--store-put reads a JSON object whose "call" is "ready" or "open"'
+                f'{" (a staged file needs one)" if item["kind"] == "staged" else ""}', 2)
         store = rig_load_store()
         store[path] = {"key": item["key"], "judgment": judgment}
         rig_store().parent.mkdir(parents=True, exist_ok=True)

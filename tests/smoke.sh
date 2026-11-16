@@ -7293,7 +7293,7 @@ expect_pass sh -c "h=\$(echo \"\$0\" | sed -n '/hold the old page contract/,/^\$
 
 # ---------------------------------------------------------------- rig
 sec_rig() {
-RG="$T/rg"; pcnew "$RG" && mkdir -p docs app && printf '# Shared\n' > docs/shared.md && printf 'x\n' > app/x.ts
+RG="$T/rg"; pcnew "$RG" && mkdir -p docs app && printf '# Shared\n' > docs/shared.md && printf '# Off\n' > docs/off.md && printf 'x\n' > app/x.ts
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 rspec() {  # rspec <name> <touches> [extra line]: a waiting spec touching one path
   printf '# %s\n\nSource: chat %s\n%s\n\n## Touches\n- `%s`\n' "$1" "$1" "${3:-}" "$2" > ".jig/specs/$1.md"; }
@@ -7301,12 +7301,12 @@ rstage() {  # rstage <file> <touches> [after]: a staged spec touching one path
   printf -- '---\nstaged: true\ntarget: this\nkind: spec\nchange: new\ndestination: .jig/specs/%s\nsource: chat %s\nstatus: staged\n%s---\n# %s\n\n## Touches\n- `%s`\n' \
     "$1" "$1" "${3:+after: $3
 }" "$1" "$2" > ".jig/staging/$1"; }
-rstate() { $J rig --json | python3 -c "import json,sys; d=json.load(sys.stdin); i={x['path']: x for x in d['items']}; $1"; }
+rstate() { $J rig --json | python3 -c "import json,sys; d=json.load(sys.stdin); dd=d; i={x['path']: x for x in d['items']}; $1"; }
 mkdir -p .jig/specs && rspec alpha docs/shared.md
-printf '# Roadmap\n\n## one\nScopes:\n- `panel`: the panel\n\n## Up next\n- `offline`: Offline mode (touches docs/shared.md)\n' > .jig/roadmap.md
+printf '# Roadmap\n\n## one\nScopes:\n- `panel`: the panel\n\n## Up next\n- `offline`: Offline mode (touches docs/off.md)\n' > .jig/roadmap.md
 git add -A && git commit -qm "spec and roadmap" && $J open j --owns 'j/**' >/dev/null && git add -A && git commit -qm "open j"
 rstage s1.md app/x.ts && rstage s2.md 'lib/**' s1
-before=$(cat .jig/roadmap.md .jig/staging/* | shasum)
+before=$(cat .jig/roadmap.md .jig/staging/s2.md | shasum)
 
 msg="rig: the ready spec can start, both staged files and Up next wait on the owner, the open job runs"
 out=$($J rig 2>&1); rc=$?
@@ -7330,12 +7330,12 @@ expect_pass c1
 msg="rig: a staged file judged ready after a ready one waits on nothing and goes after it in its group"
 w=$(rstate "print(i['.jig/staging/s2.md']['waits_on'])")
 printf '{"call": "ready"}' | $J rig --store-put .jig/staging/s2.md >/dev/null
-c2() { test "$w" = "[]" && rstate "g=d['groups']; s=[x for x in g if '.jig/staging/s2.md' in x][0]; assert s.index('.jig/staging/s1.md') < s.index('.jig/staging/s2.md'), g" && $J rig | grep -q 'staged  .jig/staging/s2.md  (after .jig/staging/s1.md)'; }
+c2() { test "$w" = "[]" && rstate "g=d['groups']; s=[x['paths'] for x in g if '.jig/staging/s2.md' in x['paths']][0]; assert i['.jig/staging/s2.md']['opens'] == 'after'; assert s.index('.jig/staging/s1.md') < s.index('.jig/staging/s2.md'), g" && $J rig | grep -q 'staged  .jig/staging/s2.md  (after .jig/staging/s1.md)'; }
 expect_pass c2
 
 msg="rig: a changed item's stored judgment no longer holds, and what waits on it waits again"
 printf 'more\n' >> .jig/staging/s1.md
-before=$(cat .jig/roadmap.md .jig/staging/* | shasum)
+s1hash=$(shasum < .jig/staging/s1.md)
 c3() { ! $J rig --store-get .jig/staging/s1.md >/dev/null && rstate "assert i['.jig/staging/s1.md']['state'] == 'unjudged' and i['.jig/staging/s2.md']['waits_on'] == ['staged .jig/staging/s1.md'], i"; }
 expect_pass c3
 
@@ -7343,13 +7343,34 @@ msg="rig: --fresh forgets every stored judgment"
 c4() { $J rig --fresh >/dev/null && ! $J rig --store-get .jig/staging/s2.md >/dev/null; }
 expect_pass c4
 
-msg="rig: overlapping Touches propose one job; a spec built after an open job waits on it"
-rspec beta docs/shared.md && rspec gamma 'j/x.txt' 'Build after `j` merges.'
-expect_pass rstate "assert i['.jig/specs/alpha.md']['group'] == i['.jig/specs/beta.md']['group'] and i['.jig/specs/gamma.md']['waits_on'] == ['job j'] and i['.jig/specs/gamma.md']['group'] is None, i"
+msg="rig: --store-put refuses a staged file's judgment with no call"
+expect_refuse sh -c "printf '{\"recommend\": \"x\"}' | $J rig --store-put .jig/staging/s2.md"
+
+msg="rig: a spec built after another, Touches apart, opens after it in its group, with nothing to merge"
+rspec delta 'other/x.txt' 'Build after `alpha` merges.'
+expect_pass rstate "a, d = i['.jig/specs/alpha.md'], i['.jig/specs/delta.md']; assert a['group'] == d['group'] and a['opens'] == 'now' and d['opens'] == 'after' and d['waits_on'] == [] and d['deps'] == ['.jig/specs/alpha.md'] and all(g['overlaps'] == [] for g in dd['groups']), (d, dd['groups'])"
+
+msg="rig: a changed board voids a stored judgment"
+printf '{"call": "ready"}' | $J rig --store-put .jig/staging/s1.md >/dev/null
+git add -A && git commit -qm delta && $J open A --spec .jig/specs/alpha.md --owns 'docs/**' >/dev/null && git add -A && git commit -qm "open A"
+expect_refuse $J rig --store-get .jig/staging/s1.md
+
+msg="rig: the spec opened as job A under another name: what builds after it waits on job A"
+expect_pass rstate "assert i['.jig/specs/delta.md']['waits_on'] == ['job A'] and i['.jig/specs/delta.md']['group'] is None, i['.jig/specs/delta.md']"
+
+msg="rig: an Up next item whose pages a waiting spec's Touches cover is taken, so the next step is the phase's open scope"
+rspec zeta docs/off.md
+expect_pass rstate "s=[x for x in d['items'] if x['kind'] == 'next-step']; assert [x['id'] for x in s] == ['one/panel'], s"
+
+rm .jig/specs/zeta.md
+
+msg="rig: overlapping Touches are one job to answer; a spec built after an open job waits on it"
+rspec beta 'lib/b.py' && rspec eps 'lib/**' && rspec gamma 'j/x.txt' 'Build after `j` merges.'
+expect_pass rstate "b, e = i['.jig/specs/beta.md'], i['.jig/specs/eps.md']; assert b['group'] == e['group'] and b['opens'] == e['opens'] == 'answer' and ['.jig/specs/beta.md', '.jig/specs/eps.md'] in dd['groups'][b['group'] - 1]['overlaps'] and i['.jig/specs/gamma.md']['waits_on'] == ['job j'] and i['.jig/specs/gamma.md']['group'] is None, dd['groups']"
 
 msg="rig: a run writes neither the roadmap nor staging"
 $J rig >/dev/null; $J rig --json >/dev/null
-expect_pass test "$(cat .jig/roadmap.md .jig/staging/* | shasum)" = "$before"
+expect_pass test "$(cat .jig/roadmap.md .jig/staging/s2.md | shasum) $(shasum < .jig/staging/s1.md)" = "$before $s1hash"
 }
 
 UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders rig"

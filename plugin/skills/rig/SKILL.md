@@ -37,8 +37,8 @@ Draw it from that last output, in this order, the same every run. Where the host
 inline visual, it may; the sections and their contents stay these.
 
 1. The count line: how many things wait on the owner's answers, and how many can start now.
-2. **Can start now:** each proposed job (a `group`), its items in the order given, each with
-   what it comes after.
+2. **Can start now:** each `group`, its items in the order given, each with what it comes
+   after, and each overlapping pair the group's `overlaps` names.
 3. **Waiting on:** each item and what it waits for: a job, a spec or a staged file.
 4. **Waiting on you:** the open staged files and the next step.
 5. **Running:** each open job with its step, who takes it, and whether it continues a session
@@ -52,9 +52,11 @@ in this order:
 1. Each open staged file's questions, from its stored judgment.
 2. The next step.
 3. Each ready staged file: write its spec? The stored recommendation is the recommended option.
-4. Each proposed job: start it? A group of more than one spec can't open as it stands (`jig
-   consolidate` names it): its options are to merge them into one spec (the spec role's
-   consolidate) or keep one apart (`Kept separate from <spec>: <reason>`).
+4. Each item whose `opens` is `now`: start it as a job?
+5. Each pair in a group's `overlaps` (items whose `opens` is `answer`): merge them into one spec
+   (the spec role's consolidate), or keep one apart (`Kept separate from <spec>: <reason>`).
+   Only an overlap gets this block. An item whose `opens` is `after` gets none: it builds
+   after another item in its group, and once that opens as a job, it waits on that job.
 
 Every block has "not now". It is an answer: the item stays as it is and comes back next run.
 Nothing is ever dropped for it.
@@ -64,19 +66,22 @@ Nothing is ever dropped for it.
 - **An open file's answers:** append them to the staged file under `## Owner's answers`, dated,
   in the owner's words. The file changed, so the next run judges it again.
 - **Write a spec:** resolve the staged file as `/jig:stage` says (a request or story is
-  interpreted into a spec, with the spec role where the hubnode's rules say).
+  interpreted into a spec, with the spec role where the hubnode's rules say). Its `after:`
+  header becomes a `` Build after `<spec>` `` line in that spec, naming the spec each file it
+  waited for became, so the order survives the staging file.
 - **Start a job:** open it and start its subnode as `/jig:hubnode` says (Assigning a step).
 - **The next step taken:** a spec for it, with the spec role. The roadmap itself is the
   owner's to edit: never change it here.
 
-Then `jig rig` again, and show the new picture, so the owner sees items move from open to
-ready to running.
+Then `jig rig --json` again. Opening a job changes the board, and a changed board voids every
+stored judgment, so judge each item whose `judged` is null as in step 1 before drawing. Then
+show the new picture, so the owner sees items move from open to ready to running.
 
 ## `/jig:rig auto`
 
 The same run, without asking for what needs no answer: write a spec from every ready staged
-file, then open and start every proposed job that can open (a group of overlapping specs still
-needs the owner's answer, so it waits). Answer no open question and take no roadmap step:
+file, then open and start every item whose `opens` is `now`. An overlapping pair needs the
+owner's answer, and an item that comes `after` another waits for that job, so neither starts. Answer no open question and take no roadmap step:
 those are proposed, as blocks, for the owner. End with the picture and a short list of what
 you did.
 
