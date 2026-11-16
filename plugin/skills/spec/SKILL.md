@@ -7,7 +7,8 @@ description: The spec role - turn a task request into .jig/specs/TASK.md before 
 steps are spec and consolidate; `jig next` decides what comes after. The hubnode loads this
 role itself only for a spec drafted from its conversation with the owner, whose decisions
 live there; a spec from files (a survey, a feedback group, a staged request) runs in a new
-session.
+session, in a detached worktree of trunk the hubnode names, and commits nothing: the hubnode
+reads it and commits it on trunk.
 
 ## Brief
 
@@ -66,7 +67,7 @@ a job that has had three blocking fix rounds carries `Bug-for: <job>` on a line 
 
 Merge waiting specs whose Touches overlap into one, so they run as one job: one gate, one test
 run, one merge. Read `.jig/RULES.md` (The board, "Overlapping specs are answered before they
-open"). Run on trunk, in the hubnode's checkout.
+open"). Run in the detached worktree of trunk the hubnode names, and commit nothing.
 
 1. **List.** `jig consolidate`. Each group is specs no job has taken whose `## Touches` meet,
    with the paths they share. None listed: stop, each spec opens as its own job.
@@ -88,9 +89,9 @@ open"). Run on trunk, in the hubnode's checkout.
    - `## Proposals`, when any input names a metarepo proposal branch (`propose/<repo>-<slug>`):
      one backticked branch per bullet, in the order they should merge. `jig open` reads it and
      the kickoff says to `jig sync`, then merge each into the job's branch in that order.
-4. **Delete the inputs** (`git rm`) and add the merged spec in the same commit. Run
-   `jig consolidate` again: the group is gone.
-5. Report to the hubnode: it opens the job.
+4. **Report** the merged spec's path and the inputs it replaces. The hubnode commits it on
+   trunk with the `git rm` of the inputs, in one commit; `jig consolidate` then lists the
+   group no more. It opens the job.
 
 Never merge two specs one of which an open job already builds: that job takes new scope by an
 amendment to its own spec. Overlap by meaning, two specs changing one claim in different files,

@@ -16,10 +16,13 @@ from your own settings. No effort: the hubnode reads it from the host. If the ki
 different model, say so and stop: the owner set it, and the hubnode raises a session before
 briefing it.
 
-1. Find your job on the board: `jig job`. If this branch is on no job, stop and ask
-   the hubnode to open one. Never create a job branch yourself.
-2. Work in the worktree the board names, nowhere else. A check session works in the gate's
-   scratch checkout, or on trunk for a batch, as its brief says.
+1. Find your job on the board: `jig job`. If this branch is on no job and your brief names
+   no detached worktree, stop and ask the hubnode to open one. Never create a job branch
+   yourself.
+2. Work in the worktree your brief names, nowhere else: the job's worktree, a gate's scratch
+   checkout, or a detached worktree of trunk for a check, a spec from files or a feedback
+   group's bug. Never the trunk checkout. In a detached worktree you commit nothing: the
+   hubnode commits what you wrote.
 3. `jig rules`. If you are behind trunk and your role builds (work), `jig sync` and run the
    checks before changing anything.
 4. Load the role your brief names: `/jig:spec`, `/jig:bug`, `/jig:work`, `/jig:review` or

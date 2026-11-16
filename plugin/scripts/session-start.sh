@@ -31,10 +31,15 @@ try:
 except ValueError:
     jobs = {}
 if os.path.realpath(top) != os.path.realpath(main):
+    # Every subnode runs outside the trunk checkout: a job's worktree, a gate's checkout, or a
+    # detached checkout of trunk for a check, a spec from files or a feedback group's bug.
+    then = " Run /jig:subnode before anything else, then the role your brief names."
     for name, job in jobs.items():
         if (job or {}).get("branch", name) == branch:
-            print(f"jig: this session is the subnode for job {name}. Run /jig:subnode before anything else.")
+            print(f"jig: this session is the subnode for job {name}.{then}")
             break
+    else:
+        print(f"jig: this session is a subnode, outside the {trunk} checkout.{then}")
     sys.exit(0)
 staging = os.path.join(main, ".jig", "staging")
 staged = [f for f in (os.listdir(staging) if os.path.isdir(staging) else []) if not f.startswith(".")]

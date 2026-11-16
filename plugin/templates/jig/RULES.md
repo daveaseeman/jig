@@ -13,7 +13,10 @@ of a job — `jig survey` names what you have and what it maps to.
 - **The hubnode** is one session, the owner's. It owns the trunk branch, the board, the
   worktrees, and the merges. It opens jobs, gates handoffs, merges. It builds no feature.
 - **A subnode** is every other session. One job and one role each (Workflow): its branch,
-  its worktree, its files. It never commits on trunk, never pushes trunk, never merges.
+  its worktree, its files. It never works in the trunk checkout, never commits on trunk, never
+  pushes trunk, never merges. A role with no job of its own (a check for a batch or a
+  release, a spec from files, a consolidate, a bug for a feedback group) works in a detached
+  worktree of trunk's tip and commits nothing: the hubnode commits what it wrote.
 
 **Working alone?** Open no jobs and you are the hubnode of a one-job repo. R1–R5 and R8 go
 quiet — a feature branch in your one checkout is nobody else's problem — while R7, the review
@@ -624,7 +627,7 @@ order.
 | bug | 2, 1 | bug, then the spec for what it found | tier no worse than spec's; effort no lower |
 | work | 2, 3 | work, handoff, fixes, hand-resolved syncs | tier no better than spec's; effort lower |
 | review | 2, 2 | review-work (the job's whole diff), review-change (only what changed since the last review); always a fresh session | tier no worse than work's; any effort |
-| check | 3, 4 | check (the complete suite), trace a failed batch, survey, release run | nothing: fixed commands |
+| check | 3, 4 | check (the complete suite), trace a failed batch, survey, release run (the complete check before a release; `jig release` itself is the hubnode's) | nothing: fixed commands |
 
 The hubnode's own steps, which are no role's: assign, gate, merge, push, publish. jig itself
 (no model) refuses a step out of order, and removes a merged job's clean worktree and branch.

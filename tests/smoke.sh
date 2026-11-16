@@ -6861,6 +6861,11 @@ msg="checked --trace: the printed first-parent bisect, running only the failing 
 bis=$(echo "$out" | sed -n 's/^  \(git bisect .*\)$/\1/p' | grep -v reset)
 first_bad=$(eval "$bis" 2>&1 | sed -n 's/^\([0-9a-f]\{40\}\) is the first bad commit$/\1/p'); git bisect reset >/dev/null 2>&1
 expect_pass sh -c "git log -1 --format=%s $first_bad | grep -qx 'merge M'"
+msg="checked --trace: in a detached checkout of trunk's tip, as a check session runs it, it lists the same merges"
+wt --detach .git/jig/worktrees/check-main main
+out=$(cd .git/jig/worktrees/check-main && $J checked --trace 'test ! -f broken' 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -A3 'oldest first' | sed -n '2,4p' | sed 's/^ *[0-9a-f]* //' | tr '\n' ' ' | grep -qx 'merge L merge M merge N '" "$out"
+git worktree remove --force .git/jig/worktrees/check-main
 msg="release: after check.sh --full and jig checked on trunk HEAD, it passes"
 bash .jig/scripts/check.sh --full >/dev/null && $J checked --tier 3 --effort 4 --seconds 3 >/dev/null 2>&1
 expect_pass sh -c "$J release --version 1.0.0 >/dev/null 2>&1 && git tag | grep -qx v1.0.0"
@@ -6945,6 +6950,11 @@ expect_pass sh -c "test \"\$(echo \"\$0\" | grep -c '1 open job: this session is
 msg="role line: in the job's worktree, it names /jig:subnode and the job"
 out=$(role "$RO/.git/jig/worktrees/K")
 expect_pass sh -c "test \"\$(echo \"\$0\" | grep -c 'subnode for job K. Run /jig:subnode before anything else.')\" = 3" "$out"
+wt --detach "$RO/.git/jig/worktrees/check-main" main
+msg="role line: in a detached checkout of trunk, it names /jig:subnode and the role the brief names"
+out=$(role "$RO/.git/jig/worktrees/check-main")
+expect_pass sh -c "test \"\$(echo \"\$0\" | grep -c 'a subnode, outside the main checkout. Run /jig:subnode before anything else, then the role your brief names.')\" = 3" "$out"
+git worktree remove --force "$RO/.git/jig/worktrees/check-main"
 msg="role line: it writes no file, in the trunk checkout or the worktree"
 b=$(fsnap "$RO"); role "$RO" >/dev/null; role "$RO/.git/jig/worktrees/K" >/dev/null
 expect_pass test "$(fsnap "$RO")" = "$b"

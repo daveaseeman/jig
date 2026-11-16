@@ -5,7 +5,8 @@ description: The check role - fixed commands run from files alone - the complete
 
 `jig` below is `python3 .jig/jig.py`. Your settings are the check role's (`jig roles`). Your
 steps are check, trace, survey and release run: fixed commands, run in a new session that
-needs nothing but files. You change nothing and fix nothing; you run, record and report.
+needs nothing but files, never in the trunk checkout. You change nothing and fix nothing; you
+run, record and report.
 `jig next` decides what comes after.
 
 ## Brief
@@ -18,8 +19,10 @@ If your own model differs from this line, reply with only your running line and 
 You are in the check role: run /jig:check. <the step>: in <checkout>, output to <out>.
 ```
 
-For a job's gate, `<checkout>` is the scratch checkout `jig gate` printed; for a batch, the
-trunk checkout. `<out>` is `$(git rev-parse --git-common-dir)/jig/gate-<name>.out`, named
+For a job's gate, `<checkout>` is the scratch checkout `jig gate` printed. For a batch or a
+release, it is a detached worktree of trunk's tip the hubnode made for you
+(`git worktree add --detach .git/jig/worktrees/check-<trunk> <trunk>`): `jig checked` there
+records trunk's commit, and the hubnode removes it after your report. `<out>` is `$(git rev-parse --git-common-dir)/jig/gate-<name>.out`, named
 after the scratch checkout (`/` in the name as `-`), outside `worktrees/`, so it outlives the
 checkout; a failure nobody can reproduce is reported with that path, so it can be read.
 
@@ -42,7 +45,8 @@ exit code, the seconds and the output's tail.
 
 ## Trace
 
-A batch's check on trunk failed. `jig checked --trace "<failing command>"` on trunk prints
+A batch's check on trunk failed. `jig checked --trace "<failing command>"`, in the same detached
+worktree of trunk's tip, prints
 the merges since the last complete check and the `git bisect --first-parent` run that finds
 the one that broke it, running only the failing command at each step. Run it, `git bisect
 reset` after, and report the merge it names: that job gets Fix.
@@ -54,10 +58,10 @@ prints; the plan from it is the spec role's.
 
 ## Release run
 
-The release protocol, `/jig:release`, run on trunk with a clean tree, once the owner gave the
-hubnode the word: the complete check, `jig release`, and what `release.sh` and `publish.sh`
-print. `jig release` ends by running `publish.sh`, the push and the publish: the owner's word
-for the release covers them, and the hubnode reports them.
+Before a release: the complete check, as Check says, in a detached worktree of trunk's tip,
+recorded with `jig checked`. That is all of it. You never run `jig release`: it commits on
+trunk, tags, and runs `publish.sh`, the push and the publish, which are the hubnode's on the
+owner's word (`/jig:release`).
 
 ## Never
 

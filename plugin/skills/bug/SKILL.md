@@ -9,6 +9,10 @@ you (Bug, after a job's third blocking fix round; Feedback, once per group) or t
 `/jig:bug`. A session that only thinks it has seen something broken says so to the hubnode
 and the owner; it never starts this on its own reading.
 
+For a job, you run in the job's worktree and commit your spec on its branch: `jig reviewed`
+reads the `Bug-for:` line there. For a feedback group, you run in a detached worktree of trunk
+the hubnode names and commit nothing: the hubnode reads your spec and commits it on trunk.
+
 ## Brief
 
 The hubnode starts this role with:

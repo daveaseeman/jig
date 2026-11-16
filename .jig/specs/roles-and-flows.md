@@ -175,7 +175,7 @@ with the defaults.
 | checked | check | check |
 | merge | hubnode | merge, then removes a clean worktree and branch |
 | sync | work, hubnode | Sync |
-| release | check (run), hubnode (tag on the owner's word) | Release |
+| release | check (the complete check before it), hubnode (`jig release` on the owner's word: tag, publish.sh's push and publish) | Release |
 | check → rules | the hooks, anyone | the rules |
 | job, decision, roadmap, reading-list, survey, staging | anyone | lookups and staging |
 | propose | hubnode | pararepo proposals |
@@ -236,6 +236,16 @@ with the defaults.
   onto review, replacing the literal "recheck → review" mapping above. Review-change runs at the
   review role's settings, so a cheaper recheck mapped onto review would lower every full review;
   and `recheck` was never released. `jig update` lists the drop, and `jig roles` notes it on stderr.
+- The owner, 2026-11-15 ("Hubnode runs it"): on the owner's word the hubnode runs `jig release`
+  (the tag, then publish.sh's push and publish). The check role's "release run" is the complete
+  check on trunk before it, recorded with `jig checked`; the check role never runs `jig release`.
+  No `--no-publish` flag.
+- The owner, 2026-11-15 ("Detached worktrees"): every subnode runs outside the trunk checkout.
+  Check for a batch or a release runs in a detached worktree of trunk's tip and records `jig
+  checked` on that commit; the hubnode removes the worktree after. A spec from files,
+  consolidate, and bug for a feedback group run in a detached worktree and commit nothing: the
+  hubnode reads the result and commits it on trunk (for consolidate, with the `git rm` of the
+  inputs). session-start.sh names the subnode, and the role its brief names, in any worktree.
 - Consolidated: `rename-check-rules` (2026-11-11) is folded in, and its spec file is deleted in
   the commit that adds this one.
 

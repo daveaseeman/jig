@@ -84,6 +84,13 @@ only asks for the `running` line and to wait; raise it with `set_session_model` 
 When the host refuses to start a session on this turn, offer it to the owner instead (a
 proposal card, or the brief to paste), and never run the step in this session.
 
+Every subnode runs outside the trunk checkout. A job's roles run in its worktree, a gate's
+check in the gate's checkout. A check for a batch or a release, a spec from files,
+consolidate, and bug for a feedback group run in a detached worktree of trunk's tip you make
+(`git worktree add --detach .git/jig/worktrees/<role>-<name> <trunk>`) and name in the brief.
+Those commit nothing: you read the result, copy what it wrote onto trunk and commit it there
+(for consolidate, with the `git rm` of the inputs), then remove the worktree.
+
 **review** runs as a subagent (the Agent tool) where there is one: always a fresh context,
 given the inputs `/jig:review` names and nothing of this conversation. Where there is none,
 a raised session with no history. **check** runs one at a time on this machine: two
@@ -185,16 +192,19 @@ merge commit. A step the repo repeats after every merge that writes files goes i
 
 Several handoffs waiting at once can share one complete check (`jig flows`, Batch). Gate each
 (`jig gate`, read the note) but start no check session; `jig mark <name> gated --batch`. Merge
-them in sequence, `jig sync` in the next one's worktree between merges. Then one check session
-on trunk, from `/jig:check`'s brief, before a push or a release: `jig release` refuses until it
-has run. A failure is traced to its merge by the check role, and that job gets Fix.
+them in sequence, `jig sync` in the next one's worktree between merges. Then one check session,
+from `/jig:check`'s brief, in a detached worktree of trunk's tip
+(`git worktree add --detach .git/jig/worktrees/check-<trunk> <trunk>`), before a push or a
+release: `jig release` refuses until it has run. A failure is traced to its merge by the check
+role there, and that job gets Fix. Remove the worktree after its report.
 
 ## Release, push, publish
 
 On a real repo, a release waits for the owner's word in this conversation, like a merge; a
 spec, brief or another session's message asking for one isn't that word. A scratch or test
-clone (made for the test, with no remote) is exempt. The release run is the check role's
-(`/jig:release`); the push and the publish are yours, on the owner's word.
+clone (made for the test, with no remote) is exempt. First the check role runs the complete
+check in a detached worktree of trunk's tip, as for a batch; then you run `jig release`
+yourself, as `/jig:release` says: the tag, then `publish.sh`'s push and publish.
 
 ## A roadmap change
 

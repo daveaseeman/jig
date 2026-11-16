@@ -1558,8 +1558,10 @@ def cmd_checked(root: Path, args) -> int:
     broke trunk since its last recorded one. jig records and prints; it never runs a check."""
     if args.trace is not None:
         trunk = Board.load(root).trunk
-        if git("branch", "--show-current") != trunk:
-            die(f"--trace reads {trunk}'s history: run it on {trunk}")
+        # A check session runs outside the trunk checkout, in a detached checkout of its tip.
+        if git("branch", "--show-current") != trunk and git("rev-parse", "HEAD") != git("rev-parse", trunk):
+            die(f"--trace reads {trunk}'s history: run it on {trunk}, or in a detached checkout "
+                f"of {trunk}'s tip")
         good = last_checked_on("HEAD")
         rng = f"{good}..HEAD" if good else "HEAD"
         merges = git("log", "--first-parent", "--merges", "--reverse", "--format=%h %s", rng).splitlines()
