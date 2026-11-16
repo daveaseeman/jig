@@ -68,7 +68,7 @@ between answers. Where the host can't draw a card, the same content goes out as 
 
 ## Decisions
 - Interpreted: the skill is neither a node nor a role. It's a shared presentation skill, like
-  `/jig:stage` is a standalone tool, and the roles-and-flows inventory gains a row for it.
+  `/jig:stage` is a standalone tool. Its FEATURES row is its inventory entry; no README change.
 - Interpreted: the text fallback uses numbered decisions and lettered options, so a reply like
   "1b; and 2 hold" maps back without the card.
 
