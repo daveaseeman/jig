@@ -20,8 +20,9 @@ The hubnode starts this role with:
 ```
 running <model> at <effort>
 If your own model differs from this line, reply with only your running line and stop.
-You are in the bug role: run /jig:bug on <the symptom, in the reporter's words> for <job, or
-the feedback group's files>. <For a job past its fix rounds: the findings each round left.>
+You are in the bug role: run /jig:bug, in <worktree: the job's, or a detached worktree of
+trunk for a feedback group>, on <the symptom, in the reporter's words> for <job, or the
+feedback group's files>. <For a job past its fix rounds: the findings each round left.>
 ```
 
 Run this in order. Write it to `.jig/specs/bug-<name>.md`. Nothing gets edited until step 5 is done.

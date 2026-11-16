@@ -1142,6 +1142,12 @@ stage e.md this doc new ../escape.md; expect_refuse $J staging resolve e.md; rm 
 msg="staging: a .DS_Store is not a staged file"
 : > .jig/staging/.DS_Store; expect_pass test "$($J staging)" = "nothing staged in .jig/staging"; rm .jig/staging/.DS_Store
 
+msg="staging: a detached worktree of trunk lists the primary checkout's staged files, as a spec session there reads them"
+stage w2.md this doc new docs/w2.md; wt --detach .git/jig/worktrees/spec-x HEAD
+out=$(cd .git/jig/worktrees/spec-x && $J staging 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^  w2.md: new doc for this'" "$out"
+git worktree remove --force .git/jig/worktrees/spec-x; rm .jig/staging/w2.md
+
 msg="staging: a CRLF header parses"
 printf -- '---\r\nstaged: true\r\ntarget: this\r\nkind: doc\r\nchange: new\r\ndestination: docs/c.md\r\nsource: chat c\r\nstatus: staged\r\n---\r\nbody\r\n' > .jig/staging/c.md
 expect_pass $J staging; rm .jig/staging/c.md
@@ -1921,7 +1927,8 @@ for rule in \
   '{"review": {"effort": 3}}|roles.review: no reason' \
   '{"review": {"effort": 3, "reason": " "}}|roles.review: no reason' \
   '{"review": {"fresh": false, "reason": "r"}}|roles.review.fresh: fixed whatever the config says: a fresh session for every review' \
-  '{"execute": {"effort": 4, "reason": "r"}}|roles.execute: no such role'; do
+  '{"execute": {"effort": 4, "reason": "r"}}|roles.execute: no such role' \
+  '{"work": {"steps": ["work"], "reason": "r"}}|roles.work.steps: fixed whatever the config says: where a role runs and which steps it owns are jig.s'; do
   setroles "${rule%%|*}"
   msg="roles: $(echo "${rule%%|*}") is refused by jig roles, naming the rule"
   expect_pass sh -c "! $J roles >/dev/null 2>&1 && $J roles 2>&1 | grep -q '${rule#*|}' && test -z \"\$($J roles 2>/dev/null)\""
@@ -2063,6 +2070,12 @@ expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q \"removed k's worktree
 $J open k3 --owns 'k3/**' >/dev/null && git add -A && git commit -qm "open k3"
 (cd .git/jig/worktrees/k3 && mkdir k3 && printf 'x\n' > k3/x.txt && git add -A && git commit -qm x && $J reviewed >/dev/null \
   && $J handoff >/dev/null && foldin && git add -A && git commit -qm "note k3" && printf 'draft\n' > k3/draft.txt)
+printf 'k4/*.log\n' >> .gitignore && git add -A && git commit -qm "ignore logs" && $J open k4 --owns 'k4/**' >/dev/null && git add -A && git commit -qm "open k4"
+(cd .git/jig/worktrees/k4 && mkdir k4 && printf 'x\n' > k4/x.txt && git add -A && git commit -qm x && $J reviewed >/dev/null \
+  && $J handoff >/dev/null && foldin && git add -A && git commit -qm "note k4" && printf 'log\n' > k4/run.log)
+msg="merge: a clean worktree holding an ignored file is removed, and the merge names the file that went with it"
+gated k4; out=$($J merge k4 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'with the worktree went 1 ignored file(s) or folder(s): k4/run.log' && test ! -e .git/jig/worktrees/k4" "$out"
 msg="merge: a job whose worktree holds an untracked file merges, and its worktree and branch are left, named"
 gated k3; out=$($J merge k3 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'left .*worktrees/k3 and its branch k3: it holds 1 uncommitted or untracked file' && test -f .git/jig/worktrees/k3/k3/draft.txt && git rev-parse -q --verify refs/heads/k3 >/dev/null" "$out"

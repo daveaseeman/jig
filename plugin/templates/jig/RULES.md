@@ -541,8 +541,8 @@ else stops with the files named, and a person resolves it.
 
 ## Handoff, gate, merge
 
-1. **The subnode hands off.** Runs the checks, has the diff adversarially reviewed, records it
-   (`jig reviewed`), then `jig handoff` writes a note naming that exact commit, in
+1. **The work subnode hands off.** Runs the checks, has the diff adversarially reviewed (the
+   session that dispatched the review records it once, `jig reviewed` with `--blocking`), then `jig handoff` writes a note naming that exact commit, in
    `.jig/handoffs/<name>-<date>.md` with a `/` in the job's or branch's name as `-`. Its
    `Spec:` is `--spec`, as a path from the repo root, else the job's spec on the board:
    working alone, pass `--spec`. A chunk that doesn't finish its spec hands off with

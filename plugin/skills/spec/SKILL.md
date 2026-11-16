@@ -17,8 +17,9 @@ The hubnode starts this role with:
 ```
 running <model> at <effort>
 If your own model differs from this line, reply with only your running line and stop.
-You are in the spec role: run /jig:spec. <spec or consolidate>: <the request, the files to
-read, or the specs `jig consolidate` grouped>.
+You are in the spec role: run /jig:spec, in <worktree: the detached worktree of trunk made for
+you>. <spec or consolidate>: <the request, the files to read, or the specs `jig consolidate`
+grouped>.
 ```
 
 ## Spec

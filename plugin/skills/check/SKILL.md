@@ -1,6 +1,6 @@
 ---
 name: check
-description: The check role - fixed commands run from files alone - the complete suite in a gate's checkout or on trunk for a batch, recorded with jig checked; the trace of a failed batch to its merge; a survey run; a release run. Use when `jig next` or the hubnode names check, trace, survey or release run.
+description: The check role - fixed commands run from files alone, never in the trunk checkout - the complete suite in a gate's checkout or a detached worktree of trunk for a batch or a release, recorded with jig checked; the trace of a failed batch to its merge; a survey run; a release run. Use when `jig next` or the hubnode names check, trace, survey or release run.
 ---
 
 `jig` below is `python3 .jig/jig.py`. Your settings are the check role's (`jig roles`). Your

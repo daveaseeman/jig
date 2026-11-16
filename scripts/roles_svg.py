@@ -106,7 +106,7 @@ def draw(jig, theme: str) -> str:
     cw = (W - 2 * PAD - (cols - 1) * gap) / cols
     floor = jig.HUBNODE_FLOOR
     cards = [("hubnode", f"the owner's · {floor['tier']},{floor['effort']} or better", jig.HUBNODE_STEPS),
-             ("subnode", "the role's settings", ["one role on one job, in its worktree"])]
+             ("subnode", "the role's settings", ["one role, outside the trunk checkout"])]
     for name, r in roles.items():
         cards.append((name, f"{r['tier']},{r['effort']} · {r['session']}",
                       r["steps"] + ([f"then {r['then']}"] if r.get("then") else [])))

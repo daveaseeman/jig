@@ -333,7 +333,7 @@ def role_settings(config: dict) -> tuple[dict, list[str]]:
             if k == "reason":
                 continue
             if k in ("fresh", "session", "steps", "then"):
-                why = FIXED_RULES[1] if k == "fresh" or role == "review" else \
+                why = FIXED_RULES[1] if k == "fresh" or (role == "review" and k == "session") else \
                     "where a role runs and which steps it owns are jig's, not a repo's"
                 bad.append(f"{key}.{role}.{k}: fixed whatever the config says: {why}")
             elif least is None:
@@ -1559,9 +1559,13 @@ def cmd_checked(root: Path, args) -> int:
     if args.trace is not None:
         trunk = Board.load(root).trunk
         # A check session runs outside the trunk checkout, in a detached checkout of its tip.
-        if git("branch", "--show-current") != trunk and git("rev-parse", "HEAD") != git("rev-parse", trunk):
+        # The hubnode may merge again while a batch's check runs, so any commit of trunk's will do.
+        on_trunk = git("branch", "--show-current") == trunk or (
+            not git("branch", "--show-current")
+            and subprocess.run(["git", "merge-base", "--is-ancestor", "HEAD", trunk]).returncode == 0)
+        if not on_trunk:
             die(f"--trace reads {trunk}'s history: run it on {trunk}, or in a detached checkout "
-                f"of {trunk}'s tip")
+                f"of a commit of {trunk}'s")
         good = last_checked_on("HEAD")
         rng = f"{good}..HEAD" if good else "HEAD"
         merges = git("log", "--first-parent", "--merges", "--reverse", "--format=%h %s", rng).splitlines()
@@ -1776,6 +1780,9 @@ def clean_up_job(name: str, branch: str) -> None:
                   f"uncommitted or untracked file(s). Save what matters, then `git worktree "
                   f"remove {where}` and `git branch -d {branch}`")
             return
+        # git status leaves ignored files out, and the removal deletes them: name what goes.
+        ignored = git("ls-files", "--others", "--ignored", "--exclude-standard", "--directory",
+                      cwd=where).splitlines()
         p = subprocess.run(["git", "worktree", "remove", where], capture_output=True, text=True)
         if p.returncode:
             print(f"left {where} and its branch {branch}: git worktree remove: "
@@ -1786,6 +1793,9 @@ def clean_up_job(name: str, branch: str) -> None:
         print(f"left the branch {branch}: git branch -d: {(p.stderr or p.stdout).strip()}")
         return
     print(f"removed {name}'s " + ("worktree and " if where else "") + f"branch {branch}")
+    if where and ignored:
+        print(f"  with the worktree went {len(ignored)} ignored file(s) or folder(s): "
+              + ", ".join(ignored[:5]) + (", …" if len(ignored) > 5 else ""))
 
 
 def append_globs(board: "Board") -> list[str]:
@@ -8025,6 +8035,9 @@ def cmd_staging_check(args) -> int:
 
 def cmd_staging(root: Path, args) -> int:
     if args.action not in ("resolve", "drop"):
+        # Staged files are never committed, so a detached worktree (a spec or bug session's)
+        # lists the primary checkout's, as resolve and drop already read them.
+        root = main_root()
         files, cycles, blocked = batch_order(staged_files(root))
         waiting = fallback_files()
         if not files and not waiting:

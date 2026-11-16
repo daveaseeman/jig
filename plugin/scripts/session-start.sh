@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Plugin hook, on SessionStart (startup, resume, compact). Prints one line naming this
-# session's jig node (its role skill is loaded on assignment), so a session that loses its skill to compaction is told again: a role
-# read once at the start is gone by the time the session drifts. Prints nothing where there
-# is no hubnode or subnode work: no .jig/, or no open job and nothing staged. Reads only;
+# session's jig node (its role skill loads on assignment), so a session that loses its skill
+# to compaction is told again: a node read once at the start is gone by the time the session
+# drifts. Prints nothing where there is no hubnode or subnode work: no .jig/, or, in the trunk
+# checkout, no open job and nothing staged. Any other worktree holds a subnode. Reads only;
 # always exits 0, so it can never stop a session from starting.
 set -u
 cat >/dev/null 2>&1   # the event's JSON: the role is the same for every source
