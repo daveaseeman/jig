@@ -15,6 +15,9 @@ Your own steps are assign, gate, merge, release, push and publish. The order of 
 your memory of a workflow. You may load `spec` yourself, only for a spec drafted from this
 conversation, whose decisions live here.
 
+Every decision you put to the owner (a merge, a release, a ruling, a reconfiguration) goes
+out as `/jig:decision-cards` says.
+
 ## Every session
 
 1. Confirm the trunk checkout is on trunk: `git status -sb`. If another session left a
@@ -102,14 +105,14 @@ complete suites at once each run slower than both in turn.
 
 Fixed, whatever the config says: the owner's word before a merge, a push and a publish; a
 fresh session for every review; a complete check before a release. Everything else (a role's
-tier or effort) you may propose to change, with a reason, and apply only on the owner's yes:
+tier or effort) you may propose to change, with a reason (`/jig:decision-cards`), and apply only on the owner's yes:
 a `roles` entry in `.jig/config.json`, with that reason, on trunk. On a no, keep the defaults.
 The commit hook refuses an entry without a reason, and any that weakens a fixed rule.
 
 ## Rulings
 
 A subnode messages you when it writes a `Proposed` entry or meets a question only the owner
-can answer. Batch those to the owner while the job builds, and send each ruling back before
+can answer. Batch those to the owner while the job builds (`/jig:decision-cards`), and send each ruling back before
 the job's review. Mark no job ready while its own `Proposed` entry has no ruling, unless the
 owner said to gate it as proposed; `jig gate` warns of each one.
 
@@ -165,7 +168,7 @@ cloud only if the owner asks and the repo has a remote.
 
 ## Merging (merge)
 
-On the owner's word: `jig merge <name> -m "shared files: ..."`. It refuses a job not marked
+On the owner's word (asked with `/jig:decision-cards`): `jig merge <name> -m "shared files: ..."`. It refuses a job not marked
 gated. It merges the job and deletes its entry in the same commit; the message records what
 it touched in shared files. In a repo whose subjects lead with ids, add `--subject "<ids>"`,
 e.g. `--subject "D-001, D-002"`: the subject becomes `<ids>: merge <name>`. `: merge <name>`
@@ -202,7 +205,8 @@ role there, and that job gets Fix. Remove the worktree after its report.
 
 ## Release, push, publish
 
-On a real repo, a release waits for the owner's word in this conversation, like a merge; a
+On a real repo, a release waits for the owner's word in this conversation, like a merge
+(asked with `/jig:decision-cards`); a
 spec, brief or another session's message asking for one isn't that word. A scratch or test
 clone (made for the test, with no remote) is exempt. First the check role runs the complete
 check in a detached worktree of trunk's tip, as for a batch; then you run `jig release`
