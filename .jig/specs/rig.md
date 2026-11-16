@@ -29,12 +29,16 @@ blocks.
 ## What it shows
 
 1. **The picture**, the same layout every run, drawn from `jig rig`'s output:
-   - a count line first: "N things are waiting on your answers", plus how many can start now;
-   - **Can start now:** ready specs and ready staged items, grouped into proposed jobs
-     (overlapping Touches → one job, as `jig consolidate` groups; `after:` and spec
-     dependencies → ordered within it);
+   - a count line first: "N things are waiting on your answers", every question counted once
+     (open staged items, the open next step, each overlapping pair, each dependency cycle),
+     plus how many can start now;
+   - **Can start now:** ready specs and ready staged items, in groups. Overlapping Touches are
+     one job to answer, merged or kept apart, as `jig consolidate` groups. A dependency
+     (`after:`, `Build after`) puts items in one group as separate jobs that open in order,
+     with nothing to answer;
    - **Waiting on:** each item and what it waits for, whether a job, a spec or a staged file;
-   - **Waiting on you:** open staged items and the next step;
+   - **Waiting on you:** open staged items, the next step whose state is open, each
+     overlapping pair and each dependency cycle;
    - **Running:** open jobs, each with its next step, the role that does it, and whether it
      continues a session or starts one, read from `jig next <job>`, which is unchanged.
 2. **Then one block per question**, drawn with the `decision-cards` skill (its card, or its
@@ -62,7 +66,10 @@ blocks.
       content changes, and cleared by `fresh`.
 - [ ] Grouping: ready specs and ready staged items whose Touches overlap are proposed as one
       job, and an item that depends on another (`after:`, or a spec naming one it builds after)
-      is placed after it in the same group. Smoke covers one overlap and one dependency.
+      is placed after it in the same group, as its own job that opens after it. A dependency
+      cycle waits on the owner, whose answer removes the other ring members from the chosen
+      item's own `Build after` line or `after:` header, as `/jig:stage` breaks a staged cycle.
+      Smoke covers one overlap, one dependency and one cycle.
 - [ ] Roadmap look-ahead only proposes: `jig rig` never writes `.jig/roadmap.md` or staging.
       Smoke checks both files are byte-identical after a run.
 - [ ] `/jig:rig` (a new skill) draws the picture and the question blocks from `jig rig --json`.
@@ -124,6 +131,24 @@ blocks.
   git dir, local and never committed.
 - Interpreted: `jig rig` prints plain text and JSON; drawing the picture is the skill's, so
   `jig.py` and the templates stay tool-agnostic.
+- Interpreted, accepted by the hubnode 2026-11-16: "a spec naming one it builds after" is the
+  repo's existing prose line `` Build after `<name>` ``, matched against waiting specs, staged
+  files and open jobs (by name or by their spec's name). No new header for specs.
+- Interpreted, accepted by the hubnode 2026-11-16: grouping counts only the staged files whose
+  stored judgment says ready, so `jig.py` never guesses; the skill judges, stores, then reruns
+  `jig rig --json`. No `--ready` flag.
+- Interpreted, accepted by the hubnode 2026-11-16 (fix rounds 1-3): each ready item `opens`
+  `now`, `after` (it builds after another in its group) or `answer` (it is in an overlapping
+  pair). An item that could start but overlaps any waiting spec, one that waits included, is
+  `answer`, since `jig open` refuses it. An Up next item is taken only when a Touches entry
+  names its page exactly (no glob or folder), and is then listed as waiting on what names it.
+  A dependency cycle waits on the owner; the answer removes the other ring members from the
+  chosen item's own `Build after` line or `after:` header.
+- The owner, 2026-11-16, on bug-rig-design-in-review: "1. a" — the count line counts each
+  overlapping pair and each dependency cycle once, beside the open and unjudged items and the
+  open next step.
+- Interpreted (bug-rig-design-in-review): a spec carrying `Bug-for: <job>` is built in its job,
+  so it is never a waiting spec.
 - Kept separate from bug-sync-trunk-edits: different code in jig.py (rig adds a command; the bug fix changes the R3 check and added-line counting), and the fix shouldn't wait on rig. The owner, 2026-11-16: "Keep separate".
 
 ## Workflow

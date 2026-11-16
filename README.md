@@ -125,6 +125,11 @@ roles, each with its own model tier and effort. The workflows are data in `jig.p
 starts one, and jig refuses a step taken out of order. The pictures are drawn from that data
 by `scripts/roles_svg.py`.
 
+The hubnode's entry point is `/jig:rig`: one picture of what can start now, what waits on
+what and what waits on you, with the roadmap's next step, then one batch of decisions.
+`/jig:rig auto` writes the specs and starts the jobs it can without asking, and leaves your
+questions open.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/roles-and-flows-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="assets/roles-and-flows-light.svg">
