@@ -41,6 +41,28 @@ That is a dry run. It changes nothing, and its exit code says what you have:
   `STEPS` entry to add, with a done-when the plugin owner can test. Save nothing; on the
   owner's word, the owner runs `/jig:feedback`. Apply nothing, and stop.
 
+**Roles and workflows: jig's standard, in every repo.** A `workflow` key in
+`.jig/config.json` (the old system's) is replaced with jig's standard, with no keep option and
+no exception: an entry carries no reason, so nothing tells a one-run instruction written there
+from a choice. The plan lists it under Removed with its old values and the standard; say both
+out loud. An owner who wants other settings sets `roles` afterwards, each entry with a reason
+(`.jig/RULES.md`, Workflow). A `roles` key is the new system's and stays as it is. jig's
+retired AGENTS.md lines are jig's words, so the plan replaces each with the template line that
+took its place, and `--apply` makes it (in a metarepo they are a job's, M4); the old `check:`
+line waits, listed, until `check.sh` reads `--full`.
+
+Under Repo files to review, a line of an always-loaded instruction file that runs a step in the
+repo's own words (a node or role skill, a command that records a step, a tier or effort), and a
+repo skill, command or agent that does one of jig's steps, are each shown with what owns that
+step now. Ask about each: the owner rewords, keeps or retires it, and you edit a line only on
+a yes. A custom skill is never edited or deleted by update, and nothing proposes deleting one;
+a skill that does none of jig's steps is not listed at all.
+
+Then, after the dry run, read this project's memory index, which the host loaded into the
+session. List each entry that sets a model, tier or effort, says who runs a step or when to
+merge, or names `jig workflow`, with what owns that step now (`jig roles`, the role or node,
+`.jig/RULES.md` § Workflow). Retire an entry only on the owner's yes; jig.py never reads memory.
+
 **Repo files to review** are the repo's own files an old convention left behind. Show each
 one's proposed edit and ask about each; make it only on a yes.
 
@@ -75,7 +97,11 @@ and `boards` entry; ask before each, and record each answer.
 A **holder of the old page contract** (a check of the Now / Rules / Checks headings, a counter
 over numbered headings, an always-loaded line that makes page rules bind or cites a page by
 number) is listed with its fix and never proposed for deletion: it converts with the pages,
-accepting both shapes while `/jig:redocument` runs and the new one after its cleanup. A page
+accepting both shapes while a `/jig:redocument` run is under way (`.jig/redocument.md` on
+trunk) and the new one once no page is in the old shape. A counter that matches no line, with
+no run under way, numbers nothing: the plan lists its removal under Removed and `--apply`
+removes it from the board, which is jig's. Once no run is under way, the rest are edited where
+they sit. A page
 that **covers no file** is a section of the page above it: propose the fold, with every line it
 touches, on a yes.
 Then make every line the proposal names in one commit — the `git mv`s, the docmap keys,

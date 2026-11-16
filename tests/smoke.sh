@@ -483,7 +483,15 @@ allowed = {'$board', '.jig/config.json', '.jig/jobs.json', '.aidev/aidev.py', 'j
            '.aidev/RULES.md', 'jig/RULES.md', '.jig/RULES.md', '.jig/docs-page.md', '.gitignore', '.jig/scripts/setup.sh', '.jig/scripts/derive.sh', '.jig/scripts/release.sh', '.jig/scripts/publish.sh', '.jig/staging/.gitignore', '.jig/decisions.md'}
 for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
     status, *paths = line.split('\t')
-    assert status == 'R100' or set(paths) <= allowed, line"
+    assert status == 'R100' or set(paths) <= allowed | {'AGENTS.md'}, line
+# AGENTS.md changes only where a line is one jig's template retired.
+import importlib.util
+s = importlib.util.spec_from_file_location('j', '$P/jig/jig.py'); j = importlib.util.module_from_spec(s); s.loader.exec_module(j)
+was = subprocess.check_output(['git', 'show', 'HEAD:AGENTS.md'], text=True).splitlines()
+now = subprocess.check_output(['git', 'show', ':AGENTS.md'], text=True).splitlines()
+import difflib
+gone = [l[1:] for l in difflib.ndiff(was, now) if l.startswith('- ')]
+assert all(j.squeeze(l) in j.RETIRED for l in gone), gone"
 
   msg="update $name: every board glob that matched before still matches"
   expect_pass python3 -c "$GLOBS" "$P/jig/jig.py" "$board"
@@ -1985,27 +1993,21 @@ git add -A; expect_pass git commit -qm wf
 msg="roles: the accepted override is the role in effect"
 expect_pass sh -c "$J roles | grep -qx 'review: tier 1, effort 0'"
 
-# The pre-roles key: read and mapped, then rewritten by update --apply.
+# The pre-roles key: never read, refused by the hook, removed by update --apply.
 python3 -c "import json; c = json.load(open('.jig/config.json')); del c['roles']; c['workflow'] = {'execute': {'effort': 4}, 'recheck': {'tier': 1}}; c['bogus'] = 1; json.dump(c, open('.jig/config.json', 'w'), indent=2)"
-msg="roles: an old workflow key is read with no reasons, execute as work; its recheck entry is dropped, with a note"
-expect_pass sh -c "$J roles 2>/dev/null | grep -qx 'work: tier 2, effort 4' && $J roles 2>/dev/null | grep -qx 'review: tier 2, effort 2' && $J roles 2>&1 >/dev/null | grep -qx 'note: workflow.recheck: dropped, review-change runs at the review role.s settings'"
-msg="roles: an old workflow key that breaks a rule is refused under its own name"
-setwf '{"execute": {"effort": 2}}'
-expect_pass sh -c "$J roles 2>&1 | grep -q 'workflow.work: effort 2 is not below'"
-setwf '{"execute": {"effort": 4}, "recheck": {"tier": 1}}'
-msg="roles: the commit hook refuses a new override under the old workflow key, naming roles"
+msg="roles: an old workflow key is not read: jig's standard prints, with one stderr line that update removes it"
+expect_pass sh -c "$J roles 2>/dev/null | grep -qx 'work: tier 2, effort 3' && $J roles 2>/dev/null | grep -qx 'review: tier 2, effort 2' && test \"\$($J roles 2>&1 >/dev/null | wc -l | tr -d ' ')\" = 1 && $J roles 2>&1 >/dev/null | grep -q '^note: .workflow. in .jig/config.json is not read: .jig update --apply. removes it'"
+msg="roles: the commit hook refuses a config holding the old workflow key, naming roles"
 git add -A; out=$(git commit -qm wf 2>&1); rc=$?
-expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '.workflow. is the pre-roles key'" "$out"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '.workflow. is the pre-roles key' && echo \"\$0\" | grep -q 'under .roles.'" "$out"
 git -c core.hooksPath=/dev/null commit -qm "older config, an unknown key"
 out=$($J update 2>&1)
-msg="update: lists the old workflow key's rename to roles, each step renamed, and the recheck entry dropped"
-expect_pass sh -c "echo \"\$0\" | grep -q 'workflow: renamed roles (execute → work)\$' && echo \"\$0\" | grep -q 'workflow.recheck: dropped, review-change runs at the review role.s settings' && ! echo \"\$0\" | grep -q 'board key .workflow. is not one jig knows'" "$out"
-msg="update: a truly unknown board key is still named"
-expect_pass sh -c "echo \"\$0\" | grep -q 'board key .bogus. is not one jig knows'" "$out"
+msg="update: a truly unknown board key is still named; workflow is not called unknown"
+expect_pass sh -c "echo \"\$0\" | grep -q 'board key .bogus. is not one jig knows' && ! echo \"\$0\" | grep -q 'board key .workflow. is not one jig knows'" "$out"
 $J update --apply >/dev/null 2>&1
-msg="update --apply rewrites workflow as roles, each entry with a reason"
-expect_pass python3 -c "import json; c = json.load(open('.jig/config.json')); assert 'workflow' not in c and c['roles'] == {'work': {'effort': 4, 'reason': 'carried over from \`workflow\` by jig update'}}, c.get('roles')"
-python3 -c "import json; c = json.load(open('.jig/config.json')); del c['roles'], c['bogus']; c['version'] = 8; json.dump(c, open('.jig/config.json', 'w'), indent=2)"
+msg="update --apply removes workflow and writes no roles"
+expect_pass python3 -c "import json; c = json.load(open('.jig/config.json')); assert 'workflow' not in c and 'roles' not in c, c"
+python3 -c "import json; c = json.load(open('.jig/config.json')); c.pop('roles', None); del c['bogus']; c['version'] = 8; json.dump(c, open('.jig/config.json', 'w'), indent=2)"
 git add -A && git commit -qm "older config, no override"
 $J update --apply >/dev/null 2>&1
 msg="update --apply adds no roles key to a board without one"
@@ -6987,6 +6989,11 @@ msg="update: lists a .jig/scripts/check.sh that never reads --full as a repo fil
 UQ="$T/cl-up"; pcnew "$UQ" && printf '#!/bin/sh\nexit 0\n' > .jig/scripts/check.sh && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 out=$($UP 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q '.jig/scripts/check.sh: never reads --full: split it into a quick part'" "$out"
+msg="update: with no test command in AGENTS.md (the template's TODO), the check.sh finding names none"
+expect_refuse sh -c "echo \"\$0\" | grep -q 'candidate for the --full part'" "$out"
+msg="update: with a test: line in AGENTS.md, the check.sh finding names it as the --full candidate"
+sed -i.bak 's/^- test:   `TODO`$/- test: `npm test`/' AGENTS.md && rm AGENTS.md.bak && git commit -qam "test command"
+expect_pass sh -c "$UP 2>&1 | grep '.jig/scripts/check.sh: never reads --full' | grep -qF 'test command, \`npm test\`, is the candidate for the --full part'"
 msg="update: the template's check.sh, which reads --full, is not listed"
 cp "$P/jig/scripts/check.sh" .jig/scripts/check.sh && git commit -qam "two levels"
 expect_refuse sh -c "$UP 2>&1 | grep -q 'never reads --full'"
@@ -7044,7 +7051,247 @@ msg="svg: redrawn, it passes, and the light drawing shows the new effort"
 expect_pass sh -c "python3 scripts/roles_svg.py >/dev/null && python3 scripts/roles_svg.py --check && grep -q '>2,3 · fresh session<' assets/roles-and-flows-light.svg"
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg"
+sec_update_roles() {
+# A repo on the plugin's jig, so update's only work is what each case adds. Each case starts
+# from the committed board (ur_reset), commits its fixture past the hook, and reads $UP.
+UR="$T/ur"; pcnew "$UR" && chmod +x .jig/scripts/*.sh && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+base=$(git rev-parse HEAD)
+ur_reset() { git reset -q --hard "$base" && git clean -fdq; }
+ur_commit() { git add -A && git -c core.hooksPath=/dev/null commit -qm "$1"; }
+std="spec 2,2 · bug 2,1 · work 2,3 · review 2,2 · check 3,4"
+roles_std="spec: tier 2, effort 2
+bug: tier 2, effort 1
+work: tier 2, effort 3
+review: tier 2, effort 2
+check: tier 3, effort 4"
+
+# Fixture A: an override like the report's, every step at tier 1.
+setwf '{"spec": {"tier": 1, "effort": 2}, "bug": {"tier": 1, "effort": 1}, "execute": {"tier": 1, "effort": 3}, "review": {"tier": 1, "effort": 1}}' && ur_commit "override"
+msg="update roles A: jig roles ignores workflow, printing the standard, with one stderr line naming update"
+expect_pass sh -c "test \"\$($J roles 2>/dev/null)\" = \"\$0\" && $J roles 2>&1 >/dev/null | grep -q 'jig update --apply. removes it'" "$roles_std"
+msg="update roles A: the commit hook refuses a staged config holding workflow, naming roles"
+board "b['name'] = 'renamed'"; git add -A; out=$(git commit -qm x 2>&1); rc=$?; git checkout -q HEAD -- .jig/config.json
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'workflow. is the pre-roles key' && echo \"\$0\" | grep -q 'roles'" "$out"
+out=$($UP 2>&1)
+msg="update roles A: the dry run lists workflow under Removed, with each old entry and jig's standard"
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Removed:/,/^\$/p' | grep -qxF \"  board: workflow (spec 1,2 · bug 1,1 · execute 1,3 · review 1,1; jig's standard: $std)\"" "$out"
+msg="update roles A: no renamed-roles line, nothing about workflow under Repo files to review, no unknown-key warning"
+expect_pass sh -c "! echo \"\$0\" | grep -q 'renamed roles' && ! echo \"\$0\" | sed -n '/^Repo files to review/,\$p' | grep -q workflow && ! echo \"\$0\" | grep -q 'board key .workflow.'" "$out"
+$UP --apply >/dev/null 2>&1
+msg="update roles A: --apply leaves neither workflow nor roles, jig roles prints the standard, jig workflow execute at 2,3"
+expect_pass sh -c "python3 -c \"import json; c = json.load(open('.jig/config.json')); assert 'workflow' not in c and 'roles' not in c\" && test \"\$($J roles 2>&1)\" = \"\$0\" && $J workflow | grep -qx 'execute: tier 2, effort 3'" "$roles_std"
+
+# Fixture B: an override that looks deliberate goes the same way.
+ur_reset; setwf '{"review": {"tier": 2, "effort": 2}}' && ur_commit "review at 2,2: the owner wants every review at the default, on purpose"
+out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+msg="update roles B: a deliberate-looking override is listed and removed exactly as A"
+expect_pass sh -c "echo \"\$0\" | grep -qxF \"  board: workflow (review 2,2; jig's standard: $std)\" && python3 -c \"import json; c = json.load(open('.jig/config.json')); assert 'workflow' not in c and 'roles' not in c\"" "$out"
+
+# Fixture C: no override.
+ur_reset; out=$($UP 2>&1)
+msg="update roles C: with no override update says nothing about workflow, and jig roles prints the standard"
+expect_pass sh -c "echo \"\$0\" | grep -qE '^up to date|^Dry run:' && ! echo \"\$0\" | grep -q workflow && test \"\$($J roles 2>&1)\" = \"\$1\"" "$out" "$roles_std"
+
+# Fixture D: both keys. workflow goes, roles stays.
+ur_reset; setwf '{"execute": {"tier": 1, "effort": 3}}'; setroles '{"review": {"tier": 1, "effort": 0, "reason": "the owner wants the best reviews"}}'; ur_commit both
+before=$(python3 -c "import json; print(json.dumps(json.load(open('.jig/config.json'))['roles'], sort_keys=True))")
+out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+msg="update roles D: workflow is removed and said, naming roles as what stays"
+expect_pass sh -c "echo \"\$0\" | grep -qF '  board: workflow (execute 1,3; \`roles\` stays: spec 2,2 · bug 2,1 · work 2,3 · review 1,0 · check 3,4)'" "$out"
+msg="update roles D: roles is the same after --apply, parsed, and jig roles prints it"
+expect_pass sh -c "test \"\$(python3 -c \"import json; c = json.load(open('.jig/config.json')); assert 'workflow' not in c; print(json.dumps(c['roles'], sort_keys=True))\")\" = '$before' && $J roles | grep -qx 'review: tier 1, effort 0'"
+
+# Fixture E: roles only.
+ur_reset; setroles '{"review": {"tier": 1, "effort": 0, "reason": "r"}}'; ur_commit roles
+out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+msg="update roles E: roles alone is not mentioned, and --apply keeps it"
+expect_pass sh -c "echo \"\$0\" | grep -qE '^up to date|^Dry run:' && ! echo \"\$0\" | grep -qE 'roles|workflow' && python3 -c \"import json; assert json.load(open('.jig/config.json'))['roles'] == {'review': {'tier': 1, 'effort': 0, 'reason': 'r'}}\"" "$out"
+
+msg="update roles: the mapping is gone: no carried-over reason, no recheck note"
+expect_refuse grep -qE "carried over from|RECHECK_DROPPED" "$P/jig/jig.py"
+msg="update roles: workflow is a retired board key, not an optional one"
+expect_pass python3 - "$P/jig/jig.py" <<'PY'
+import importlib.util, sys
+s = importlib.util.spec_from_file_location("j", sys.argv[1]); j = importlib.util.module_from_spec(s); s.loader.exec_module(j)
+assert "workflow" not in j.BOARD_OPTIONAL and "workflow" in j.RETIRED_BOARD_KEYS
+assert j.role_overrides({"workflow": {"execute": {"tier": 1}}}) == ("roles", {}, [])
+PY
+
+# The table: each retired line maps to an opening that names exactly one template line.
+msg="update roles: each RETIRED_LINES opening matches exactly one template line, and no key is a template line"
+expect_pass python3 - "$P/jig/jig.py" "$P/AGENTS.md" <<'PY'
+import importlib.util, sys
+s = importlib.util.spec_from_file_location("j", sys.argv[1]); j = importlib.util.module_from_spec(s); s.loader.exec_module(j)
+tpl = open(sys.argv[2]).read().splitlines()
+assert len(j.RETIRED_LINES) >= 15
+for k, v in j.RETIRED_LINES.items():
+    assert sum(l.startswith(v) for l in tpl) == 1, v
+    assert j.squeeze(k) not in {j.squeeze(l) for l in tpl}, k
+PY
+
+# Fixture F: retired lines, one with doubled spaces, a line of the repo's own, and a one-level check.sh.
+ur_reset
+tline() { grep -m1 "^$1" "$P/AGENTS.md"; }
+cat > AGENTS.md <<'MD'
+# AGENTS.md
+
+## Commands
+- test:   `npm test`
+- check:  `.jig/scripts/check.sh` (runs on every stop; must pass before you're done)
+
+## Workflow
+- Task bigger than a one-sentence diff → write `.jig/specs/<task>.md` first (see /jig:brief). Plan before editing.
+- Rulebook `.jig/RULES.md`, enforced by `python3 .jig/jig.py`. Roles: /jig:hubnode, /jig:subnode.
+- Run `check`  yourself and show  the output. Don't claim done on a green build alone.
+- A mergeable chunk is a handoff: checks pass → adversarial review (/jig:review) → `jig reviewed` → `jig handoff`. Review happens once per handoff, not per commit.
+- Keep the changelog short: one line per release.
+
+## Code
+- Bug reported → /jig:bug before editing. Prefer the fix that makes the odd path look like the healthy ones over one that patches the symptom.
+MD
+tline "- Task bigger than" >> AGENTS.md          # its replacement is already there: the retired line goes
+printf '#!/bin/sh\necho quick\n' > .jig/scripts/check.sh
+ur_commit "fixture F"
+cp AGENTS.md "$T/F.before"
+out=$($UP 2>&1)
+msg="update roles F: the dry run lists each retired line with its replacement"
+expect_pass sh -c "for o in '- Rulebook ' '- While working, run .check.' '- A mergeable chunk is a handoff' '- A bug the owner reports'; do echo \"\$0\" | sed -n '/^AGENTS.md, jig.s retired lines/,/^\$/p' | grep -q \" → .\$o\" || { echo \"missing \$o\"; exit 1; }; done" "$out"
+msg="update roles F: a retired line whose replacement the file holds is listed for removal"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  8: .*removed: the file already holds its replacement'" "$out"
+msg="update roles F: with a one-level check.sh the check: line waits, listed beside the check.sh finding"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  AGENTS.md:5: jig.s retired .check:. line: replaced with the template.s .* once .jig/scripts/check.sh reads --full' && ! echo \"\$0\" | grep -q '^  5: '" "$out"
+msg="update roles F: the check.sh finding names AGENTS.md's test command as the --full candidate"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  .jig/scripts/check.sh: never reads --full.*AGENTS.md.s test command, .npm test., is the candidate'" "$out"
+$UP --apply >/dev/null 2>&1
+msg="update roles F: --apply replaces each in place and every other line stays byte-identical"
+expect_pass python3 - "$T/F.before" AGENTS.md "$P/AGENTS.md" <<'PY'
+import sys
+was = open(sys.argv[1], 'rb').read().decode().splitlines(keepends=True)
+now = open(sys.argv[2], 'rb').read().decode().splitlines(keepends=True)
+tpl = open(sys.argv[3]).read().splitlines()
+pick = lambda o: next(l for l in tpl if l.startswith(o)) + "\n"
+want = list(was)
+want[8] = pick("- Rulebook ")
+want[9] = pick("- While working, run `check`")
+want[10] = pick("- A mergeable chunk is a handoff")
+want[14] = pick("- A bug the owner reports")
+del want[7]
+assert now == want, "".join(now)
+PY
+msg="update roles F: once check.sh reads --full, the check: line is replaced"
+git add -A && git -c core.hooksPath=/dev/null commit -qm applied
+printf '#!/bin/sh\necho quick\n[ "${1:-}" = --full ] && echo full\n' > .jig/scripts/check.sh && ur_commit full
+out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+expect_pass sh -c "echo \"\$0\" | grep -q '^  5: .*→ .- check:' && grep -qxF -e \"\$(grep -m1 '^- check:' \"\$1\")\" AGENTS.md" "$out" "$P/AGENTS.md"
+
+# A pararepo's generated header is jig's, and a metarepo's AGENTS.md changes only in a job.
+ur_reset
+{ echo '# AGENTS.md'; echo; echo '<!-- jig:meta — generated from .jig/para.json by `jig init --para`; edit that, not this -->'
+  echo '- Rulebook `.jig/RULES.md`, enforced by `python3 .jig/jig.py`. Roles: /jig:hubnode, /jig:subnode.'
+  echo '- Each contract change waits for `jig handoff` in the metarepo.'; echo '<!-- jig:meta end -->'
+  tline "- Rulebook "
+  echo '- Bug reported → /jig:bug before editing. Prefer the fix that makes the odd path look like the healthy ones over one that patches the symptom.'; } > AGENTS.md && ur_commit para
+out=$($UP 2>&1)
+msg="update roles: lines inside a pararepo's generated header are not read; the retired line after it is"
+expect_pass sh -c "! echo \"\$0\" | grep -qE '^  (4|5): |AGENTS.md:(4|5):' && echo \"\$0\" | grep -q '^  8: .- Bug reported'" "$out"
+ur_reset
+{ cat "$P/AGENTS.md"; echo '- Bug reported → /jig:bug before editing. Prefer the fix that makes the odd path look like the healthy ones over one that patches the symptom.'; } > AGENTS.md
+echo '{}' > .jig/meta.json && ur_commit meta && cp AGENTS.md "$T/M.before"
+out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+n=$(wc -l < "$T/M.before" | tr -d ' ')
+msg="update roles: in a metarepo the retired line is listed as a job's, and --apply leaves AGENTS.md unchanged"
+expect_pass sh -c "echo \"\$0\" | grep -q \"^  AGENTS.md:$n: jig.s retired line: .* in a job (M4\" && cmp -s AGENTS.md \"\$1\"" "$out" "$T/M.before"
+
+# Fixture G: procedures in the repo's own words.
+ur_reset
+cat >> AGENTS.md <<'MD'
+- Every commit: review the staged diff (/jig:review), then commit; record it with `jig reviewed`
+- Docs-only diffs get review at tier 2, effort 3
+- 'hubnode', 'gate' and 'merge' in the owner's words mean the app's own
+- Review at tier 1
+- Tier 1 suppliers ship within effort: 3 days
+MD
+printf '@AGENTS.md\n\nAfter each chunk, run `jig handoff` yourself.\n' > CLAUDE.md && ur_commit G
+cp AGENTS.md "$T/G.a"; cp CLAUDE.md "$T/G.c"
+n=$(grep -n '^- Every commit' AGENTS.md | cut -d: -f1)
+out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+msg="update roles G: the review line names /jig:review, once per handoff"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  AGENTS.md:$n: runs a step in the repo.s own words; .*/jig:review (a fresh session, once per handoff)'" "$out"
+msg="update roles G: the tier line names roles in config.json"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  AGENTS.md:$((n + 1)): runs a step.*.roles. in .jig/config.json (.jig/RULES.md § Workflow)'" "$out"
+msg="update roles G: the CLAUDE.md line names /jig:work; the product line is not listed"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  CLAUDE.md:3: runs a step.*/jig:work (jig handoff)' && ! echo \"\$0\" | grep -q 'AGENTS.md:$((n + 2)):'" "$out"
+msg="update roles G: a role word beside one tier is listed with roles; a product's Tier and effort are not"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  AGENTS.md:$((n + 3)): runs a step.*.roles. in .jig/config.json' && ! echo \"\$0\" | grep -q 'AGENTS.md:$((n + 4)):'" "$out"
+msg="update roles G: after --apply both files are byte-identical"
+expect_pass sh -c "cmp -s AGENTS.md \"\$0\" && cmp -s CLAUDE.md \"\$1\"" "$T/G.a" "$T/G.c"
+
+# Fixture H: custom skills survive untouched; only the overlapping ones are listed.
+ur_reset
+mkdir -p .claude/skills/review .claude/skills/ship .claude/commands .claude/skills/flash-board skills/notes plugin/skills/review
+printf -- '---\nname: review\ndescription: our review\n---\nRead the diff.\n' > .claude/skills/review/SKILL.md
+printf -- '---\nname: ship\n---\nRun `jig reviewed`, then `jig handoff`.\n' > .claude/skills/ship/SKILL.md
+printf 'Land it: `jig merge X`.\n' > .claude/commands/land.md
+printf -- '---\nname: flash-board\n---\nRun the flash gate (`scripts/flash-gate.sh`); keep the merged images.\n' > .claude/skills/flash-board/SKILL.md
+printf -- '---\nname: notes\n---\nWrite notes.\n' > skills/notes/SKILL.md
+printf -- '---\nname: review\n---\nRun `jig reviewed`.\n' > plugin/skills/review/SKILL.md
+ur_commit H && snapH=$(cat .claude/skills/*/SKILL.md .claude/commands/land.md skills/notes/SKILL.md | shasum)
+out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+msg="update roles H: review → /jig:review, ship → /jig:review and /jig:work, land → /jig:hubnode"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  .claude/skills/review/: .*/jig:review' && echo \"\$0\" | grep '^  .claude/skills/ship/: ' | grep -q '/jig:review.*jig reviewed' && echo \"\$0\" | grep '^  .claude/skills/ship/: ' | grep -q '/jig:work (jig handoff)' && echo \"\$0\" | grep -q '^  .claude/commands/land.md: .*/jig:hubnode (jig merge)'" "$out"
+msg="update roles H: flash-board, notes and a non-root plugin/skills/ are not listed"
+expect_pass sh -c "! echo \"\$0\" | grep -qE 'flash-board|notes|plugin/skills'" "$out"
+msg="update roles H: after --apply every skill file is byte-identical and git shows no change there"
+expect_pass sh -c "test \"\$(cat .claude/skills/*/SKILL.md .claude/commands/land.md skills/notes/SKILL.md | shasum)\" = '$snapH' && test -z \"\$(git status --porcelain -- .claude skills)\""
+msg="update roles: no repo name and no exception list in jig.py or the update skill"
+expect_refuse grep -nE 'Maige|maige|Daisy|daisy|Adventure|adventure|zenshape|Zenshape|Walyt|walyt' "$P/jig/jig.py" "$(dirname "$P")/skills/update/SKILL.md"
+}
+
+sec_holders() {
+# A counter over page headings whose fix waited on a /jig:redocument cleanup that had already
+# run. Each holder's fix names a condition the repo's state can meet, not an event.
+HO="$T/ho"; pcnew "$HO" && chmod +x .jig/scripts/*.sh && git add -A && git commit -qm init && $J init >/dev/null
+mkdir -p docs db/migrations && printf '# X\n\nThe x page.\n\n## Thing\n\nx\n' > docs/x.md && printf -- '-- step 1\n' > db/migrations/001.sql
+board "b['docmap'] = {'docs/x.md': []}; b['reserve'] = {'section': {'pattern': r'^### (\d+)\.1(?!\d)', 'files': ['docs/**/*.md']}, 'step': {'pattern': r'^-- step (\d+)', 'files': ['db/migrations/*.sql']}}"
+git add -A && git commit -qm fixture
+base=$(git rev-parse HEAD)
+ho_reset() { git reset -q --hard "$base" && git clean -fdq; }
+reserve() { python3 -c "import json; print(json.dumps(json.load(open('.jig/config.json'))['reserve'], sort_keys=True))"; }
+
+sv=$($J survey 2>&1); out=$($UP 2>&1)
+msg="holders A: neither survey nor the update dry run prints the cleanup fix"
+expect_pass sh -c "! echo \"\$0\" | grep -q \"drop it at /jig:redocument's cleanup\" && ! echo \"\$1\" | grep -q \"drop it at /jig:redocument's cleanup\"" "$sv" "$out"
+msg="holders A: the dry run removes reserve.section under Removed, and doesn't list it under Repo files to review"
+expect_pass sh -c "echo \"\$0\" | sed -n '/^Removed:/,/^\$/p' | grep -qF '  board: reserve.section (' && ! echo \"\$0\" | sed -n '/^Repo files to review/,\$p' | grep -q 'reserve.section'" "$out"
+msg="holders D: the step counter is never listed by survey or update"
+expect_pass sh -c "! echo \"\$0\" | grep -q 'reserve.step' && ! echo \"\$1\" | grep -q 'reserve.step'" "$sv" "$out"
+$UP --apply >/dev/null 2>&1
+msg="holders A: --apply leaves reserve as the step counter alone, staged"
+expect_pass sh -c "test \"\$($J survey >/dev/null 2>&1; python3 -c \"import json; print(list(json.load(open('.jig/config.json'))['reserve']))\")\" = \"['step']\" && git diff --cached --name-only | grep -qx .jig/config.json"
+msg="holders A: after --apply, committed, survey prints no holder block"
+git commit -qm update; out=$($J survey 2>&1)
+expect_pass sh -c "! echo \"\$0\" | grep -q 'hold the old page contract'" "$out"
+
+ho_reset; printf '# Y\n\nThe y page.\n\n### 3.1 X\n' > docs/y.md && board "b['docmap']['docs/y.md'] = []" && git add -A && git commit -qm y
+before=$(reserve); out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+msg="holders B: a matching line keeps the counter: no removal, a fix naming docs/y.md:5 with no cleanup, unchanged after --apply"
+expect_pass sh -c "! echo \"\$0\" | grep -q 'board: reserve.section' && echo \"\$0\" | sed -n '/^Repo files to review/,\$p' | grep '  .jig/config.json reserve.section: ' | grep 'docs/y.md:5' | grep -vq cleanup && test \"\$(python3 -c \"import json; print(json.dumps(json.load(open('.jig/config.json'))['reserve'], sort_keys=True))\")\" = \"\$1\"" "$out" "$before"
+
+ho_reset; printf '# Remap\n' > .jig/redocument.md && git add -A && git commit -qm remap
+before=$(reserve); out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+msg="holders C: a run under way keeps the counter, listed as a holder, unchanged after --apply"
+expect_pass sh -c "! echo \"\$0\" | grep -q 'board: reserve.section' && echo \"\$0\" | grep -q '  .jig/config.json reserve.section: ' && test \"\$(python3 -c \"import json; print(json.dumps(json.load(open('.jig/config.json'))['reserve'], sort_keys=True))\")\" = \"\$1\"" "$out" "$before"
+
+ho_reset
+printf 'HEADS = ["Now", "Rules", "%s"]\n' Checks > tests_docs.py && mkdir -p tests && mv tests_docs.py tests/test_docs.py
+printf -- '- Rules written in a documentation page bind as if they stood in this file.\n' >> AGENTS.md
+printf '# Y\n\nThe y page.\n\n### 3.1 X\n' > docs/y.md && board "b['docmap']['docs/y.md'] = []" && git add -A && git commit -qm three
+sv=$($J survey 2>&1); out=$($UP 2>&1)
+msg="holders E: survey lists three holders, and no holder line in survey or the dry run says cleanup"
+expect_pass sh -c "h=\$(echo \"\$0\" | sed -n '/hold the old page contract/,/^\$/p'); test \"\$(echo \"\$h\" | grep -c '^  ')\" = 3 && ! echo \"\$h\" | grep -q cleanup && ! echo \"\$1\" | grep -E '^  (tests/test_docs.py:1|.jig/config.json reserve.section|AGENTS.md:[0-9]+): ' | grep -q cleanup" "$sv" "$out"
+}
+
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file
