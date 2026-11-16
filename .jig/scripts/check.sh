@@ -14,5 +14,8 @@ claude plugin validate ./plugin >/dev/null 2>&1 || fail "plugin invalid (claude 
 # --- test ----------------------------------------------------------------
 # The full suite (tests/smoke.sh) takes minutes, so it runs at the gate, not here.
 python3 -m py_compile plugin/templates/jig/jig.py || fail "jig.py does not compile"
+# README's "Who does what" pictures are drawn from jig.py's ROLES and FLOWS; a change to either
+# without a redraw would leave the README stating old tables.
+python3 scripts/roles_svg.py --check || fail "README's drawing is stale: python3 scripts/roles_svg.py, then commit assets/"
 
 exit 0

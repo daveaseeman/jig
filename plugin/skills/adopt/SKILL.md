@@ -4,6 +4,10 @@ description: Analyze an existing repo and propose how to bring it to the jig sha
 disable-model-invocation: true
 ---
 
+An entry point: it starts the Survey workflow (`jig flows`: survey ⇢ spec ⇢ Jobs). Steps 1–3
+are the survey and its reading; the plan (step 4) is the spec role's, written as that step
+says; step 6's stages are Jobs, each with its own work role.
+
 Produce a migration plan. Steps 1–5 **change nothing**: the deliverable is
 `.jig/specs/adopt-<repo>.md`, which the user reads and approves before step 6 carries out any
 of it.
@@ -101,7 +105,7 @@ must say two more things, or the repo ends up stating one rule and living anothe
    the new rule applies to changed code and old code migrates as touched. Grandfather by
    default for style rules — an agent rewriting comments it did not write will invent reasons.
 
-## 4. Write the plan
+## 4. Write the plan (the spec role's)
 
 `.jig/specs/adopt-<repo>.md`, using the spec template as `/jig:spec` finds it, plus:
 

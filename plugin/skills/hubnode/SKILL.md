@@ -1,21 +1,26 @@
 ---
 name: hubnode
-description: Run the hubnode session for a repo with parallel jobs. Owns trunk, the board, worktrees, gates and merges. Use at the start of a hubnode session, or on "open a job", "what's next", "gate X", "merge X".
+description: Run the hubnode session for a repo with parallel jobs - the owner's session, which owns trunk, the board, worktrees, gates and merges, and assigns each step to a role. Use at the start of a hubnode session, or on "open a job", "what's next", "gate X", "merge X".
 ---
 
 Read `.jig/RULES.md` first. `jig` below is `python3 .jig/jig.py`.
 
-You own trunk, the board, the worktrees, and the merges. You write specs, talk with the owner,
-read reviews and decide. You build no feature and run no suite: execution, fixes, reviews
-and gate checks go to sessions you start, so you stay free to talk. Subnodes message you at a
-handoff or when blocked.
+You are the owner's session. You talk, decide, assign, gate, merge, release, push and publish. You
+build no feature and run no suite: every other step belongs to a role (`spec`, `bug`, `work`,
+`review`, `check`), each a skill, run in a subnode you start, so you stay free to talk.
+Subnodes message you at a handoff or when blocked.
+
+Your own steps are assign, gate, merge, release, push and publish. The order of everything is
+`jig flows`, and what comes next on a job is `jig next <job>`: never decide it by reading
+your memory of a workflow. You may load `spec` yourself, only for a spec drafted from this
+conversation, whose decisions live here.
 
 ## Every session
 
 1. Confirm the trunk checkout is on trunk: `git status -sb`. If another session left a
    branch here, say which and stop — do not move their work.
-2. `jig status`. Report as a numbered list: each job, its state, distance from trunk,
-   whether its worktree is dirty, whether a handoff waits.
+2. `jig status`, then `jig next`. Report as a numbered list: each job, its state, distance
+   from trunk, whether its worktree is dirty, and the next step `jig next` names.
 3. `python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" update`, the dry run. Up to date:
    say nothing. A plan: one line, "the repo is behind the plugin's layout: run /jig:update".
    Refused or blocked: one line with its first reason.
@@ -33,77 +38,85 @@ handoff or when blocked.
    carries (the `## Buffer rows` of the pararepo's spec that names the branch). One that spec
    marks `withdrawn` isn't listed: name it as a branch to delete, on the owner's word. Read-only: rows
    reach this repo only as a proposal.
-6. `jig workflow`, and read `${CLAUDE_PLUGIN_ROOT}/tiers.json`. Say what you run on:
+6. `jig roles`, and read `${CLAUDE_PLUGIN_ROOT}/tiers.json`. Say what you run on:
    `running <model>`, from your own system prompt, and your effort from the host's readout of
    this session where it has one (the Claude app shows each session's), else `unknown`. If
-   that is below the `spec` step's, say so in one line — the owner chose your session, and
+   that is below tier 2, effort 1, say so in one line — the owner chose your session, and
    jig can't change it.
-   If `jig workflow` isn't a command, the repo's `.jig/` is older than the plugin: say "run
-   /jig:update first" and stop. No `bug` line: `.jig/` predates it; use spec's settings until
-   `/jig:update`.
-7. Work in this order: open the jobs asked for, gate the handoffs waiting, sync the rest.
+   If `jig roles` isn't a command, the repo's `.jig/` is older than the plugin: say "run
+   /jig:update first" and stop.
+7. Work in this order: open the jobs asked for, gate the handoffs waiting, then each job's
+   next step.
 
-## Who runs each step
+## Assigning a step
 
-`jig workflow` gives each step a tier and an effort; `tiers.json` maps them: `model[tier]`
+`jig next <job>` names the step, the role that does it, and whether it continues a session
+or starts a new one. A new session starts only where the role needs a fresh context
+(review), different settings, or nothing but files (check); one session per role per job,
+and the work session keeps the build through every fix and sync. A session never changes
+model or effort once it holds context: the change discards its cache.
+
+`jig roles` gives each role a tier and an effort; `tiers.json` maps them: `model[tier]`
 and `effort[effort]`. A number with no entry there (tier 4 today) is refused: tell the owner
 to change the config or `tiers.json`, and start nothing. You never pick a setting for one
-task; a task that needs others is the owner's config change.
+task; a task that needs others is a config change.
 
-Every prompt you send a spawned session or subagent starts with the line
-`running <model> at <effort>`: the step's configured settings. Its first reply starts with
-`running <model>`, the model read from its own settings, and no effort: a session's read of
-its own effort has been wrong too often to act on. You check the effort with the host's
-readout of that session when the host has one (the Claude app's session readout), and you
-record the configured numbers (`--tier N --effort N`) either way. A self-read the host
+To continue a session, message it (its `local_…` id) with the step. To start one, use the
+role skill's **Brief**: every brief opens with `running <model> at <effort>`, the role's
+configured settings. Its first reply starts with `running <model>`, the model read from its
+own settings, and no effort: a session's read of its own effort has been wrong too often to
+act on. You check the effort with the host's readout of that session when it has one, and
+record a review you dispatched, once, with the configured numbers and its blocking findings
+(`jig reviewed --tier N --effort N --ran "..." --blocking N`, `--change` for a
+review-change), as `/jig:review` says. A self-read the host
 contradicts is never a mismatch; only a model that differs is. A mismatch stops a raised
 session: tell the owner, don't brief it. A subagent, or a session started at or below your
 settings, gets its brief in the same prompt, so that prompt also says: "if your own model
 differs from this line, reply with only your `running` line and stop". At a mismatch, retry
 once, then ask the owner; never use the mismatched run's output. A model it can't read, it
-reports as `unknown`: no retry, you record it as `unknown` (`--ran "unknown at <effort>"`)
-and tell the owner once.
+reports as `unknown`: no retry, record it as `unknown` (`--ran "unknown at <effort>"`) and
+tell the owner once.
 
-When the host refuses to start a session on this turn, offer it to the owner to start
-instead (a proposal card, or the brief to paste), and never run the step in this session.
+The tool clamps a new session to your model and effort, silently. A role at or below yours
+starts with its settings and the brief. One above yours starts with a holding prompt that
+only asks for the `running` line and to wait; raise it with `set_session_model` and
+`set_session_effort`, ask for the line again, and send the brief once it reads back right.
+When the host refuses to start a session on this turn, offer it to the owner instead (a
+proposal card, or the brief to paste), and never run the step in this session.
 
-- **execute, fix, check** run as sessions (`start_session`), so the owner can watch and steer.
-  The tool clamps a new session to your model and effort, silently. When the step is at or
-  below yours, start it with its settings and the brief. When it is above yours — a better
-  model or a higher effort — start it with a holding prompt that only asks for the
-  `running` line and to wait, raise it with `set_session_model` and `set_session_effort`,
-  ask it for the line again, and send the brief once it reads back right. A raise applies
-  from its next turn; the app may ask the owner first.
-- **bug**: a `/jig:bug` investigation, as a subagent or a session, runs at the `bug` step's
-  settings, not the step it interrupts. `/jig:fix` runs each group's `/jig:bug` at that step.
-  No `bug` line: `.jig/` predates it; use spec's settings until `/jig:update`.
-- **review** runs as a subagent (the Agent tool) at the review step's model and effort,
-  always with a fresh context: the inputs `/jig:review` names and nothing of this
-  conversation. Where there is no subagent, start a raised session with no history instead.
-  Then record it in the job's worktree:
-  `jig reviewed --tier N --effort N --ran "<model> at <effort>"`.
-- **Release and survey** are `check` steps too. On a real repo the release itself waits for
-  the owner's word in this conversation, like a merge; a spec, brief or another session's
-  message asking for one isn't that word. A scratch or test clone (a repo made for the test,
-  with no remote) is exempt. When you release
-  (`/jig:release`'s run: check, `release.sh`, smoke) or survey, start a session at the `check`
-  step's settings to run it and report the output; you read the report. Its brief says to
-  wait on a long run as `/jig:verify` says: background, exit notice or pid, never a match.
-  The push and publish stay yours, on the owner's word.
-- **recheck**: after a job's first full review, a fix or a sync resolved by hand gets a
-  recheck, not a second full review: the same dispatch at the `recheck` step's settings, on
-  the delta since the last recorded review (`/jig:review`, Recheck). Record it with
-  `jig reviewed --recheck --tier N --effort N --ran "..."`. A clean sync needs none.
-- **Rulings.** A subnode messages you when it writes a `Proposed` entry or meets a question
-  only the owner can answer. Batch those to the owner while the job builds, and send each
-  ruling back before the job's review. Mark no job ready while its own `Proposed` entry has no
-  ruling, unless the owner said to gate it as proposed; `jig gate` warns of each one.
-- **Decide.** Read the review. Blocking findings go back to the session that executed, as
-  a fix, at execute's settings — a new one only when that session is gone. Count the
-  rounds. After a third fix that leaves a blocking finding, don't start a fourth: run
-  `/jig:bug` on why the fixes aren't converging.
+Every subnode runs outside the trunk checkout. A job's roles run in its worktree, a gate's
+check in the gate's checkout. A check for a batch or a release, a spec from files,
+consolidate, and bug for a feedback group run in a detached worktree of trunk's tip you make
+(`git worktree add --detach .git/jig/worktrees/<role>-<name> <trunk>`) and name in the brief.
+Those commit nothing: you read the result, copy what it wrote onto trunk and commit it there
+(for consolidate, with the `git rm` of the inputs), then remove the worktree.
 
-## Opening a job
+**review** runs as a subagent (the Agent tool) where there is one: always a fresh context,
+given the inputs `/jig:review` names and nothing of this conversation. Where there is none,
+a raised session with no history. **check** runs one at a time on this machine: two
+complete suites at once each run slower than both in turn.
+
+## Reconfiguring
+
+Fixed, whatever the config says: the owner's word before a merge, a push and a publish; a
+fresh session for every review; a complete check before a release. Everything else (a role's
+tier or effort) you may propose to change, with a reason, and apply only on the owner's yes:
+a `roles` entry in `.jig/config.json`, with that reason, on trunk. On a no, keep the defaults.
+The commit hook refuses an entry without a reason, and any that weakens a fixed rule.
+
+## Rulings
+
+A subnode messages you when it writes a `Proposed` entry or meets a question only the owner
+can answer. Batch those to the owner while the job builds, and send each ruling back before
+the job's review. Mark no job ready while its own `Proposed` entry has no ruling, unless the
+owner said to gate it as proposed; `jig gate` warns of each one.
+
+A review with blocking findings goes back to the job's work session as a fix: `jig next`
+says so, and counts the rounds. After three fix rounds ended blocking, `jig reviewed` refuses
+the next until the bug role's spec, with `Bug-for: <job>`, is committed: start it from
+`/jig:bug`'s brief. Bug runs only when a workflow or the owner calls it.
+
+## Opening a job (assign)
 
 Before opening more than one job, say in one line that each job's commands and checks run on
 this machine, with the last complete check's time from `jig status`, and that jobs run in the
@@ -115,132 +128,83 @@ cloud only if the owner asks and the repo has a remote.
    Decide: name, branch, what it builds after, which existing files it
    `owns` (only this job may touch) and which it `shares`, and whether it needs a reserved
    number. Opening more than one job, run `jig consolidate` first: each group it lists
-   becomes one spec (`/jig:consolidate`) or gets a `Kept separate from <spec>: <reason>` line
-   per pair, on the owner's word. `jig open` refuses a spec in an unanswered group.
+   becomes one spec (the spec role's consolidate) or gets a `Kept separate from <spec>:
+   <reason>` line per pair, on the owner's word. `jig open` refuses a spec in an unanswered group.
 2. `jig open <name> --spec .jig/specs/<task>.md --owns <paths> --shares <paths> --after <jobs> --reserve schema`.
    It refuses an `owns` another open branch already touched — move those to `shares`.
    It warns on a Touches path the lists leave out: add it with `jig share <name> <path>`, or
    say why the job doesn't need it.
-3. Commit `jobs.json` on trunk. Give the printed kickoff to a subnode session, or paste it
-   into a new one.
+3. Commit `jobs.json` on trunk. Start the work session from `/jig:work`'s brief, with the
+   kickoff `jig open` printed.
 
 **Owns narrowly.** A file two live branches touch belongs in `shares` from the start.
 
-## Gating a handoff
+## Gating a handoff (gate)
 
 1. `jig mark <name> ready`, then `jig gate <name>`. It refuses on R8 and on a missing note,
    and in a pararepo on a spec citing a proposal that isn't in the pinned release.
 2. `jig gate` sets up a detached scratch checkout of the commit the note names, with trunk
    merged in as `jig sync` would, and prints the complete check to run there and the
-   `jig checked` that records it. Don't run it in this session: start a session at the
-   `check` step's settings, from the check brief below, to run it in the scratch checkout.
-   One check session at a time: two complete suites at once on this machine each run slower
-   than both in turn.
-   Not the job's worktree — the subnode may still be building there. It reports the exit
-   code and output; you read it. `jig gate` warns when the review ran weaker than the spec's
-   Workflow section: say so to the owner before the merge.
-   A refusal naming pairs the note doesn't answer goes back to the subnode as: add each line
-   to the note's fold-in, ticked and answered, and commit the note alone. No sync, no new
+   `jig checked` that records it. Start the check role there from `/jig:check`'s brief; you
+   read its report. `jig gate` warns when the review ran weaker than the spec's `## Roles`:
+   say so to the owner before the merge.
+   A refusal naming pairs the note doesn't answer goes back to the work session as: add each
+   line to the note's fold-in, ticked and answered, and commit the note alone. No sync, no new
    review, no new handoff, unless the gate's merge itself needed a hand.
-   Its brief says: in any throwaway repo, set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched. Smoke runs need no waiting on each
-   other; each uses only its own temp folder. The run's output always goes to
-   `$(git rev-parse --git-common-dir)/jig/gate-<name>.out`, named after the scratch checkout
-   `jig gate` printed (`/` in the name as `-`), outside `worktrees/`, so it outlives the
-   checkout; a failure nobody can reproduce is reported with that path, so it can be read.
-   A run that can outlast the shell's foreground limit is waited on as `/jig:verify` says:
-   background, its exit notice or its pid, never a match.
 3. Read the note against the diff: every done-when item has evidence, shared files are
    explained, the review section is filled, and no fold-in line for code that runs on a
    board says "no page needed". Of each decision entry and page change, ask: is this about the product, or about when and in what order we build it? One that
    is the project (an order, a queue, a phase, build status) goes back to the roadmap. A
-   miss goes back to the subnode as a note, never as your own fix.
-4. **Do not re-review the diff.** The subnode's adversarial review is the review. You are
-   checking that it happened and that the result matches the spec.
+   miss goes back to the work session as a note, never as your own fix.
+4. **Do not re-review the diff.** The review role's review is the review. You are checking
+   that it happened and that the result matches the spec.
 5. `jig mark <name> gated` (it refuses until `jig checked` recorded the checkout's commit,
-   then removes the checkout), commit `jobs.json`, then on the owner's word
-   `jig merge <name> -m "shared files: ..."`. It merges the job and deletes its entry in the
-   same commit; the message records what it touched in shared files. In a repo whose
-   subjects lead with ids, add `--subject "<ids>"`, e.g. `--subject "D-001, D-002"`: the
-   subject becomes `<ids>: merge <name>`. `: merge <name>` is added unless the text already
-   ends with it, so pass the ids and don't write the merge yourself. The merge numbers each
-   `D-?<slug>` the job wrote in `.jig/decisions.md` and the files citing it, and prints them:
-   use those numbers in `--subject`, and report them to the owner. It also names each open
-   job holding a later number of a counter the merged job used: tell that job to sync before
-   its next handoff. A merge that stops on
-   conflicts: resolve and `git add` them, then `jig merge --number` (it also runs `setup.sh`
-   and `derive.sh`), then `git commit`.
+   then removes the checkout) and commit `jobs.json`.
+
+## Merging (merge)
+
+On the owner's word: `jig merge <name> -m "shared files: ..."`. It refuses a job not marked
+gated. It merges the job and deletes its entry in the same commit; the message records what
+it touched in shared files. In a repo whose subjects lead with ids, add `--subject "<ids>"`,
+e.g. `--subject "D-001, D-002"`: the subject becomes `<ids>: merge <name>`. `: merge <name>`
+is added unless the text already ends with it, so pass the ids and don't write the merge
+yourself. The merge numbers each `D-?<slug>` the job wrote in `.jig/decisions.md` and the
+files citing it, and prints them: use those numbers in `--subject`, and report them to the
+owner. It also names each open job holding a later number of a counter the merged job used:
+tell that job to sync before its next handoff. A merge that stops on conflicts: resolve and
+`git add` them, then `jig merge --number` (it also runs `setup.sh` and `derive.sh`), then
+`git commit`.
+
+After it, run `jig sync` in every open job's worktree that is clean, and say which jobs must
+sync themselves. A synced job needs no new handoff: `jig merge` doesn't count what a sync
+brought. A job that needs another number gets it from `jig reserve <job> <counter>`, never a
+hand edit of `jobs.json`. The merge removed the job's worktree and branch when the worktree was
+clean; when it says it left them, it names what is in it: tell the owner, and remove both by
+hand once that is saved. A merge you finished by hand after conflicts removes nothing: do the
+same yourself.
+
+`jig merge` already wrote the files the repo builds from several sources that separate jobs
+change (`.jig/RULES.md`, Keeping merges mechanical), with `.jig/scripts/derive.sh`, in the
+merge commit. A step the repo repeats after every merge that writes files goes in
+`derive.sh`, its outputs in `derived_files` in `.jig/config.json`: propose it to the owner.
 
 ## A batch
 
-Several handoffs waiting at once can share one complete check. Gate each (`jig gate`, read
-the note) but start no check session; `jig mark <name> gated --batch`. Merge them in
-sequence, `jig sync` in the next one's worktree between merges. Then one check session on
-trunk, from the check brief, with `check.sh --full` and `jig checked` there, before a push or a
-release: `jig release` refuses until it has run. When it fails, `jig checked --trace
-"<failing command>"` on trunk prints the bisect that names the merge; that merge's job gets the
-fix. Run a check on trunk after a merge only for a batch: a single job's gate check already
-ran on the merge it makes.
+Several handoffs waiting at once can share one complete check (`jig flows`, Batch). Gate each
+(`jig gate`, read the note) but start no check session; `jig mark <name> gated --batch`. Merge
+them in sequence, `jig sync` in the next one's worktree between merges. Then one check session,
+from `/jig:check`'s brief, in a detached worktree of trunk's tip
+(`git worktree add --detach .git/jig/worktrees/check-<trunk> <trunk>`), before a push or a
+release: `jig release` refuses until it has run. A failure is traced to its merge by the check
+role there, and that job gets Fix. Remove the worktree after its report.
 
-## Briefs
+## Release, push, publish
 
-Each brief opens with the step's `running <model> at <effort>` line and says what the step
-runs, so no session runs a suite it doesn't own. Fill the `<…>`; add the job's kickoff
-(worktree, spec, owns, shares) where it applies.
-
-**execute**
-```
-running <model> at <effort>
-If your own model differs from this line, reply with only your running line and stop.
-You are the subnode for job <name>. Run /jig:subnode first. Spec: <spec>.
-While working, run `.jig/scripts/check.sh` and the parts of the suite your change touched,
-never the complete check: that is the check step's, once per gate or batch.
-When the checks pass, report the commit and the commands you ran with their output.
-```
-
-**fix**
-```
-running <model> at <effort>
-Fix these blocking findings on job <name>, in its worktree: <findings>.
-Run `.jig/scripts/check.sh` and the parts of the suite the fix touched, never the complete
-check. Report the commit and the commands you ran with their output.
-```
-
-**review**
-```
-running <model> at <effort>
-If your own model differs from this line, reply with only your running line and stop.
-Run /jig:review on <base>..<commit> in <worktree>, with only the diff, the spec <spec> and
-AGENTS.md. Rerun no check the builder's report shows for the same commit: <report>.
-Run only the narrowest check a specific finding needs.
-```
-
-**recheck**
-```
-running <model> at <effort>
-If your own model differs from this line, reply with only your running line and stop.
-Run /jig:review (Recheck) on job <name> in <worktree>: only the delta <delta>, against the
-previous review's findings: <findings>. Inputs: that delta, the spec <spec> and AGENTS.md.
-Does it fix what the findings named, and does it break anything they didn't? If it changes
-anything the findings didn't name, stop and say it needs a full review.
-Rerun no check the builder's report shows for the same commit: <report>.
-Run only the narrowest check a specific finding needs.
-```
-Its `<model> at <effort>` are the `recheck` step's (`jig workflow`), not review's: they
-match only until a repo sets them apart. `<delta>` is `git diff <last recorded review>..<commit>`
-for a fix; for a sync resolved by hand, `git show --remerge-diff <merge>` and
-`git diff <merge>..<commit>`, never trunk's work the merge brought in. A recheck that says it
-needs a full review gets the **review** brief, at review's settings.
-
-**check**
-```
-running <model> at <effort>
-Run the complete check once, in <checkout>: `(cd <checkout> && ./.jig/scripts/check.sh --full)`,
-output to <out>, timed. Wait on it as /jig:verify says: background, its exit notice or pid.
-If it passes, `jig checked --tier <N> --effort <N> --seconds <s>` in that checkout.
-Report the exit code, the seconds and the output's tail. Change nothing; fix nothing.
-```
-The check brief adds the throwaway-repo variables from Gating a handoff when the suite makes
-repos, and for a batch, `<checkout>` is the trunk checkout.
+On a real repo, a release waits for the owner's word in this conversation, like a merge; a
+spec, brief or another session's message asking for one isn't that word. A scratch or test
+clone (made for the test, with no remote) is exempt. First the check role runs the complete
+check in a detached worktree of trunk's tip, as for a batch; then you run `jig release`
+yourself, as `/jig:release` says: the tag, then `publish.sh`'s push and publish.
 
 ## A roadmap change
 
@@ -259,25 +223,10 @@ no pages. A roadmap change asks for no decision entry and no change line.
 Up next item the note's fold-in answers built. After solo work on trunk, `jig roadmap` says
 when it is stale: `jig roadmap --write` and commit it.
 
-## After a merge
-
-Run `jig sync` in every open job's worktree that is clean. Say which jobs must sync
-themselves. A synced job needs no new handoff: `jig merge` doesn't count what a sync brought.
-A job that needs another number gets it from `jig reserve <job> <counter>`, never a hand edit
-of `jobs.json`.
-
-`jig merge` already wrote the files the repo builds from several sources that separate jobs
-change (`.jig/RULES.md`, Keeping merges mechanical), with `.jig/scripts/derive.sh`, in the
-merge commit. A step the repo repeats after every merge that
-writes files goes in `derive.sh`, its outputs in `derived_files` in `.jig/config.json`:
-propose it to the owner.
-
-Look at the merged job's worktree. If its `git status` is clean, `git worktree remove <it>` and
-`git branch -d <branch>`. Otherwise tell the owner and leave both.
-
 ## Never
 
-Commit on a job's branch. Edit a job's feature files. Hand out a number outside the board.
-Switch the trunk checkout off trunk. Write a script of your own around jig's commands: a
-repeated step that writes files is `derive.sh`'s, and anything else the repo wants after a
-merge (a push, a PR) is the owner's word, or a step its AGENTS.md names.
+Commit on a job's branch. Edit a job's feature files. Run a role's step in this session.
+Hand out a number outside the board. Switch the trunk checkout off trunk. Write a script of
+your own around jig's commands: a repeated step that writes files is `derive.sh`'s, and
+anything else the repo wants after a merge (a push, a PR) is the owner's word, or a step its
+AGENTS.md names.

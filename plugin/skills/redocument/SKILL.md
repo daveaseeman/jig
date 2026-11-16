@@ -1,16 +1,18 @@
 ---
 name: redocument
-description: Convert a jig repo's pages - in the old Now/Rules/Checks shape, outside the docs tree in any format, or in the old board layout - to the current page contract in one supervised pass - a remap the owner approves, one job per surviving page, old docs removed at the end with every reference to them. Run by the hubnode; subnodes follow its Subnode section from their kickoff.
+description: Convert a jig repo's pages - in the old Now/Rules/Checks shape, outside the docs tree in any format, or in the old board layout - to the current page contract in one supervised pass - a remap the owner approves, one job per surviving page, old docs removed at the end with every reference to them. An entry point for the Redocument workflow, run by the hubnode; each page job's work role follows its Work role section from the kickoff.
 disable-model-invocation: true
 ---
 
 Read `.jig/RULES.md` (Documentation) and `.jig/docs-page.md` first: they are the contract every
 page lands on. `jig` below is `python3 .jig/jig.py`.
 
-The hubnode runs this skill; Before starting and Hubnode are the hubnode's only. A subnode
-reads only Subnode, from the path its kickoff gives, and never runs the refusals. The skill
-composes `update`, `survey`, `open`, `handoff`, `gate` and `merge`; it adds no command. The
-owner's time goes to the remap and to flagged pages, not to diffs.
+An entry point: it starts Redocument (`jig flows`: spec ⇢ Jobs ⇢ Batch ⇢ Job). The hubnode
+runs Before starting; the remap is the spec role's, written as The remap says; each page is a
+Job whose work role reads only Work role, from the path its kickoff gives, and never runs the
+refusals; the last job is the cleanup. The skill composes `update`, `survey`, `open`,
+`handoff`, `gate` and `merge`; it adds no command. The owner's time goes to the remap and to
+flagged pages, not to diffs.
 
 ## Before starting
 
@@ -40,7 +42,7 @@ Otherwise:
    stop: fold-in would ask a page that is about to die about live code changes. Those jobs
    merge first.
 
-## Hubnode: the remap
+## The remap (the spec role's)
 
 1. **Seed it from survey.** First, one row per old-contract holder survey lists (a check, a
    counter, an always-loaded line), verb `convert`: they are the run's first job, before any
@@ -172,10 +174,10 @@ Otherwise:
    jig open <page> --spec .jig/specs/redocument-<page>.md --owns <path kept in place, if any>
    ```
 
-   The kickoff says: "Run /jig:subnode. Follow the Subnode section of
+   The kickoff says: "Run /jig:subnode, in the work role. Follow the Work role section of
    `<this skill's absolute path>`", the expansion of
-   `${CLAUDE_PLUGIN_ROOT}/skills/redocument/SKILL.md` in the hubnode's session. The subnode
-   cannot load this skill itself.
+   `${CLAUDE_PLUGIN_ROOT}/skills/redocument/SKILL.md` in the hubnode's session. The work
+   role cannot load this skill itself.
 5. **As each job merges,** write that page's `docmap` entries on trunk from the Docmap list in
    its handoff note's conversion report (R5: subnodes propose them, never write them). In a
    pararepo, also fill that page's lines in `.jig/specs/redocument-pointers.md` from the
@@ -210,7 +212,7 @@ Otherwise:
    approval and deferral whose finding the run answered); no `docmap` key names a file that doesn't exist; `git grep -n -F <old path>`
    finds nothing for any old path. Anything left is fixed before the run is called done.
 
-## Subnode: three phases per page
+## Work role: three phases per page
 
 Your spec carries the job's remap rows and the Sources. You write only your page.
 

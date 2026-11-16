@@ -17,7 +17,7 @@ role needs a fresh context or different settings.
 
 | Node | Settings | What it does | Roles it may load |
 |---|---|---|---|
-| hubnode | the owner's session; jig warns below 2,1 | talks, decides, assigns, gates, merges, pushes, publishes | spec (only for specs drafted from the conversation) |
+| hubnode | the owner's session; jig warns below 2,1 | talks, decides, assigns, gates, merges, releases, pushes, publishes | spec (only for specs drafted from the conversation) |
 | subnode | the role's | takes one role on one job, works only in its worktree, reports back, never touches trunk | any of the five |
 
 **Roles.** One skill each, loaded when assigned.
@@ -28,9 +28,9 @@ role needs a fresh context or different settings.
 | bug | 2, 1 | Opus at xhigh | bug, then the spec for what it found |
 | work | 2, 3 | Opus at medium | work, handoff, fixes, hand-resolved syncs |
 | review | 2, 2 | Opus at high | review-work (the job's whole diff), review-change (only what changed since the last review); always a fresh session |
-| check | 3, 4 | Sonnet at low | check (the complete suite), trace a failed batch, survey, release run |
+| check | 3, 4 | Sonnet at low | check (the complete suite, before a release too), trace a failed batch, survey |
 
-The hubnode's own steps, which are no role's: assign, gate, merge, push, publish. jig itself
+The hubnode's own steps, which are no role's: assign, gate, merge, release, push, publish. jig itself
 (no model): refuses a step out of order, removes a merged job's clean worktree and branch.
 
 **Workflows.** `→` continues the same session; `⇢` starts a new one.
@@ -43,7 +43,7 @@ The hubnode's own steps, which are no role's: assign, gate, merge, push, publish
 | Bug | bug → spec ⇢ Job | a fourth fix round, a feedback group, or the owner's `/jig:bug` | never on a session's own reading that something is broken |
 | Feedback | consolidate ⇢ bug + spec (one per group) → consolidate ⇢ Job | staged feedback, in the jig repo | overlaps answered before any job opens |
 | Batch | gate → merge ⇢ check → trace | two or more gated jobs | one check on trunk; a failure is traced to its merge, then Fix on that job |
-| Release | check → release run → push → publish | the owner's word | refused while a batch check is owed; push and publish only on the owner's word |
+| Release | check → release → push → publish | the owner's word | refused while a batch check is owed; push and publish only on the owner's word |
 | Survey | survey ⇢ spec ⇢ Jobs | `/jig:survey`, `/jig:adopt`, `/jig:update` | |
 | Redocument | spec ⇢ Jobs ⇢ Batch ⇢ Job | `/jig:redocument` | the spec is the remap; the last job is the cleanup |
 
@@ -122,6 +122,10 @@ with the defaults.
         and the check fails, naming the SVG.
       - **Text as well:** the same three tables follow the image as Markdown, inside
         `<details>`, for search, screen readers and copying.
+- [ ] After its merge commit, `jig merge` removes the job's worktree when `git status` there is
+      clean, then runs `git branch -d`; otherwise it names what's left and removes nothing (the
+      owner, 2026-11-15: "Build it in Part 2"). Smoke covers both, and the cases that read a
+      job's branch after its merge are updated. The hubnode skill's after-merge step matches.
 - [ ] RULES.md § Workflow states the tables and the session rules with the contracts, as text.
       Neither it nor the README names Claude, Opus, Sonnet or a session tool: tiers and efforts
       only, with `plugin/tiers.json` named as where they map.
@@ -135,12 +139,12 @@ with the defaults.
 
 | Skill | Today | Resolution |
 |---|---|---|
-| hubnode | the hubnode, plus its own job cycle and briefs | node skill; keeps assign, gate, merge, push, publish; its job cycle and the order of steps move to `FLOWS`; briefs move to each role skill |
+| hubnode | the hubnode, plus its own job cycle and briefs | node skill; keeps assign, gate, merge, release, push, publish; its job cycle and the order of steps move to `FLOWS`; briefs move to each role skill |
 | subnode | the job session: check in, build, hand off, sync | node skill: check in, take one role, report back; build, hand off and sync move to `work` |
 | spec | writes a spec | role skill `spec`; absorbs `consolidate`, and redocument's remap and adopt's plan |
 | bug | investigation | role skill `bug`; ends with its spec; trigger narrowed |
 | review | review dispatch and record | role skill `review`: review-work and review-change |
-| (new) check | spread over the gate brief, `release`, `verify` | role skill `check`: complete suite, `jig checked`, trace, survey run, release run |
+| (new) check | spread over the gate brief, `release`, `verify` | role skill `check`: complete suite (before a release too), `jig checked`, trace, survey run |
 | (new) work | in `subnode` | role skill `work`: build, evidence (absorbs `verify`), handoff, fixes, syncs |
 | consolidate | writes a merged spec | merged into `spec` |
 | verify | how to prove a change works | merged into `work` |
@@ -171,7 +175,7 @@ with the defaults.
 | checked | check | check |
 | merge | hubnode | merge, then removes a clean worktree and branch |
 | sync | work, hubnode | Sync |
-| release | check (run), hubnode (tag on the owner's word) | Release |
+| release | check (the complete check before it), hubnode (`jig release` on the owner's word: tag, publish.sh's push and publish) | Release |
 | check → rules | the hooks, anyone | the rules |
 | job, decision, roadmap, reading-list, survey, staging | anyone | lookups and staging |
 | propose | hubnode | pararepo proposals |
@@ -219,6 +223,34 @@ with the defaults.
 - Interpreted: the README's drawing is a generated SVG pair, because GitHub's Markdown strips the
   styling the chat's pills and cards use; drawing it from `ROLES` and `FLOWS` keeps it from
   stating the tables a second time by hand.
+- Interpreted (hubnode, 2026-11-15): `→` continues a session that already exists (the work
+  session, the hubnode, the check session), named by its letter; `⇢` starts a new one. Read
+  literally as "the same session", handoff would run in the review session.
+- Interpreted (hubnode, 2026-11-15): `jig check` stays as an alias of `jig rules`, and
+  `jig reviewed --recheck` as a hidden alias of `--change`, for one release like `jig workflow`;
+  old `recheck` review records read as review-change.
+- Interpreted (hubnode, 2026-11-15): the smoke's `gated <job>` helper sets a job's state on trunk
+  in place of gate, check and mark, since about 80 smoke merges never gated their job; the `next`
+  section walks the real gate → check → mark path.
+- Interpreted (hubnode, 2026-11-15): an old `workflow.recheck` override is dropped, not mapped
+  onto review, replacing the literal "recheck → review" mapping above. Review-change runs at the
+  review role's settings, so a cheaper recheck mapped onto review would lower every full review;
+  and `recheck` was never released. `jig update` lists the drop, and `jig roles` notes it on stderr.
+- The owner, 2026-11-15 ("Hubnode runs it"): on the owner's word the hubnode runs `jig release`
+  (the tag, then publish.sh's push and publish). The check role's "release run" is the complete
+  check on trunk before it, recorded with `jig checked`; the check role never runs `jig release`.
+  No `--no-publish` flag.
+- The owner, 2026-11-15 ("Detached worktrees"): every subnode runs outside the trunk checkout.
+  Check for a batch or a release runs in a detached worktree of trunk's tip and records `jig
+  checked` on that commit; the hubnode removes the worktree after. A spec from files,
+  consolidate, and bug for a feedback group run in a detached worktree and commit nothing: the
+  hubnode reads the result and commits it on trunk (for consolidate, with the `git rm` of the
+  inputs). session-start.sh names the subnode, and the role its brief names, in any worktree.
+- Interpreted (hubnode, 2026-11-15), following from the owner's "Hubnode runs it": Release is
+  check → release → push → publish. The check role owns check, in a detached worktree of
+  trunk's tip; the hubnode owns release (`jig release`), push and publish. "release run" leaves
+  the check role's steps and "release" joins the hubnode's, in every table, `FLOWS`, `ROLES`,
+  RULES.md, README and the drawing.
 - Consolidated: `rename-check-rules` (2026-11-11) is folded in, and its spec file is deleted in
   the commit that adds this one.
 

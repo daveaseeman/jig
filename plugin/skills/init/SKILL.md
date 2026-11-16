@@ -64,7 +64,7 @@ Then:
 3. **Fill what the code tells you.** In `AGENTS.md` Commands and `.jig/scripts/check.sh`: detect the build system (`package.json`, `Cargo.toml`, `pyproject.toml`, `CMakeLists.txt`, `idf.py`, `platformio.ini`) and replace the matching `TODO` lines. Leave anything you can't infer as `TODO` — don't guess.
    `check.sh` has two parts: the quick one (build, lint, fast unit tests) runs on every stop;
    the complete one, after `--full`, holds the full suite and slow or end-to-end tests, run only
-   by the check step at a gate. A suite you can't split yet goes in the complete part, and the
+   by the check role at a gate. A suite you can't split yet goes in the complete part, and the
    quick part keeps the build.
    In `.jig/scripts/setup.sh`, install from what is there, and leave a TODO for anything else:
    `uv.lock` → `uv sync`; `poetry.lock` → `poetry install`; `requirements*.txt` → a venv and
