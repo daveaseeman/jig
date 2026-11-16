@@ -56,7 +56,6 @@ BOARD_DEFAULTS = {
 BOARD_OPTIONAL = (
     "derived_files",       # globs derive.sh writes; jig merge commits what they match
     "roles",               # overrides ROLES' tiers and efforts, each with a reason
-    "workflow",            # the pre-roles name for "roles": read, and rewritten by update
     "deep_subsystems",     # {"docs/<system>/<subsystem>/<folder>": rationale}: owner-approved deeper pages
     "boards",              # ["docs/<board>/<board>.md", "docs/<system>/<board>/<board>.md"]: the pages that are boards, never inferred from a path
     "findings",            # {"<kind>:<path>": "approved" | "deferred: <where>" | "exception: <reason>"}: the owner's answer to each finding
@@ -116,12 +115,13 @@ FIXED_RULES = ["the owner's word before merge, push and publish",
                "a complete check before a release"]
 # A job's review rounds with blocking findings before the next is refused and Bug runs.
 FIX_ROUNDS = 3
-# The pre-roles config key, read until `jig update --apply` rewrites it, and its step names.
-# `recheck` was the old name of review-change, which runs at the review role's settings, so a
-# recheck override is dropped: mapped onto review, it would change what full reviews run at.
+# The pre-roles step names, which `jig workflow` still prints for skills that read them.
+# The pre-roles config key, `workflow`, is never read: an entry carries no reason, so nothing
+# tells a one-run instruction written into it from the owner's choice, and update removes it.
 OLD_STEPS = {"spec": "spec", "bug": "bug", "execute": "work", "review": "review",
              "recheck": "review", "check": "check"}
-RECHECK_DROPPED = "workflow.recheck: dropped, review-change runs at the review role's settings"
+WORKFLOW_IGNORED = (f"note: `workflow` in .jig/config.json is not read: `jig update --apply` "
+                    "removes it, and jig's standard (or `roles`) is in effect")
 
 
 # ---------------------------------------------------------------- git helpers
@@ -292,24 +292,11 @@ def step_owner(step: str) -> str:
 
 
 def role_overrides(config: dict) -> tuple[str, dict, list[str]]:
-    """The config's overrides as (key, {role: entry}, problems): `roles`, or the pre-roles
-    `workflow` mapped onto roles. An old key's entries carry no reason; update adds one."""
-    if "roles" in config or "workflow" not in config:
-        over = config.get("roles") or {}
-        if not isinstance(over, dict):
-            return "roles", {}, ['roles: must map role names to {"tier": N, "effort": N, "reason": "..."}']
-        return "roles", over, []
-    old = config.get("workflow") or {}
-    if not isinstance(old, dict):
-        return "workflow", {}, ["workflow: must map step names to {\"tier\": N, \"effort\": N}"]
-    over, bad = {}, []
-    for step, vals in old.items():
-        role = OLD_STEPS.get(step)
-        if role is None:
-            bad.append(f"workflow.{step}: no such step; the steps were {', '.join(OLD_STEPS)}")
-        elif step != "recheck":
-            over[role] = vals
-    return "workflow", over, bad
+    """The config's overrides as (key, {role: entry}, problems): `roles` only."""
+    over = config.get("roles") or {}
+    if not isinstance(over, dict):
+        return "roles", {}, ['roles: must map role names to {"tier": N, "effort": N, "reason": "..."}']
+    return "roles", over, []
 
 
 def role_settings(config: dict) -> tuple[dict, list[str]]:
@@ -367,8 +354,8 @@ def settings_or_refuse(root: Path) -> dict:
     # The working tree's config, so the hubnode sees a refusal before committing the edit.
     data = Board.load(root, working_tree=True).data
     roles, bad = role_settings(data)
-    if "roles" not in data and "recheck" in (data.get("workflow") or {}):
-        print(f"note: {RECHECK_DROPPED}", file=sys.stderr)
+    if "workflow" in data:
+        print(WORKFLOW_IGNORED, file=sys.stderr)
     # Refused, nothing goes to stdout: a skill copying the roles into a spec must get none.
     for b in bad:
         print(b, file=sys.stderr)
@@ -546,15 +533,12 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
         try:
             new_cfg = json.loads(raw)
             out += role_settings(new_cfg)[1]
-            # The old key is only read, so a repo keeps working until update renames it; an
-            # override written under it now would skip the reason a `roles` entry needs.
-            try:
-                was = json.loads(git("show", f"HEAD:{CONFIG}") or "{}").get("workflow")
-            except ValueError:
-                was = None
-            if "workflow" in new_cfg and new_cfg["workflow"] != was:
-                out.append(f"{CONFIG}: `workflow` is the pre-roles key, read until `jig update "
-                           "--apply` renames it: write the override under `roles`, with its reason")
+            # The old key isn't read: a commit carrying it keeps a setting that looks in effect
+            # and isn't. `jig update --apply` removes it.
+            if "workflow" in new_cfg:
+                out.append(f"{CONFIG}: `workflow` is the pre-roles key, and jig doesn't read it: "
+                           "remove it (`jig update --apply` does), and write an override the owner "
+                           "says is standing under `roles`, with its reason")
         except ValueError as e:
             out.append(f"{CONFIG} is not JSON: {e}")
     # A remap that keeps a page where survey moves it overrides jig's rule: the owner's
@@ -1548,9 +1532,16 @@ def check_levels_review(root: Path) -> list[tuple[str, str]]:
     f = root / path
     if not f.is_file() or "--full" in f.read_text(errors="replace"):
         return []
+    agents = root / "AGENTS.md"
+    test = re.search(r"(?m)^\s*-\s*test:\s*`([^`]+)`", agents.read_text(errors="replace")) \
+        if agents.is_file() else None
+    # The repo's own test command is a candidate, not the answer: only the repo knows which
+    # of its tests are quick, and some run their whole suite on every stop on purpose.
+    named = (f"; AGENTS.md's test command, `{test.group(1)}`, is the candidate for the --full part"
+             if test and "TODO" not in test.group(1) else "")
     return [(path, "never reads --full: split it into a quick part (lint, type-check, unit "
              "tests: what runs on every stop) and a complete part run only with --full (the "
-             "full suite, slow or end-to-end tests: what the gate's check step runs)")]
+             "full suite, slow or end-to-end tests: what the gate's check step runs)" + named)]
 
 
 def cmd_checked(root: Path, args) -> int:
@@ -3344,18 +3335,23 @@ NOT_SYSTEM_NAMES = ("readme", "index", "changelog", "glossary", "contributing")
 HEADING_SAMPLES = ("# 1 x", "## 1 x", "## 1. x", "### 1.1 x", "### 12.3 x", "#### 1.1.1 x")
 
 
-def contract_holders(root: Path, files: list[str], board: dict) -> list[dict]:
+def contract_holders(root: Path, files: list[str], board: dict, read=None) -> list[dict]:
     """Each check, counter and always-loaded line that still holds the old page contract, as
-    {path, line, kind, label, fix}. A file under not_docs ships as code: its text is the
-    product's, not a check of this repo's pages. jig's own folder, under any name it has had,
-    defines the shapes, so it holds nothing."""
+    {path, line, kind, label, fix}; a counter that numbers nothing, with no /jig:redocument run
+    under way, is also `removable`, which update carries out. A file under not_docs ships as
+    code: its text is the product's, not a check of this repo's pages. jig's own folder, under
+    any name it has had, defines the shapes, so it holds nothing. READ gives a file's text as
+    FILES names it (update's, after its moves); by default the working tree's."""
     not_docs = board.get("not_docs") or []
     tool = tuple({os.path.dirname(f) + "/" for f in files
                   if Path(f).name in ("jig.py", "aidev.py") and "/" in f} | {f"{DIR}/"})
     have, named = set(files), named_pages(board)
+    # A remap on trunk is a run under way: its cleanup is still ahead (redocument's resume rule).
+    run = bool(at_rev(Board.trunk_name(root), REMAP))
 
-    def read(f: str) -> str:
-        return (root / f).read_text(errors="replace") if (root / f).is_file() else ""
+    if read is None:
+        def read(f: str) -> str:
+            return (root / f).read_text(errors="replace") if (root / f).is_file() else ""
     # A docs page's own name names it too: "core §2" for docs/core.md. Only a page's, in any
     # case; a name of one or two letters is a word in any sentence.
     stems = sorted({Path(f).stem for f in files if f.startswith("docs/") and f.endswith(".md")
@@ -3374,8 +3370,8 @@ def contract_holders(root: Path, files: list[str], board: dict) -> list[dict]:
                         for m in OLD_HEADS_RUN.findall(text))):
             out.append({"path": f, "line": int(line), "kind": "check", "label": f"{f}:{line}",
                         "fix": "checks the old page shape: it converts with the pages, accepting "
-                               "both shapes while /jig:redocument runs and only the new one after "
-                               "its cleanup"})
+                               "both shapes while a /jig:redocument run is under way and only the "
+                               "new one once no page is in the old shape"})
     reserve = board.get("reserve") if isinstance(board.get("reserve"), dict) else {}
     for name, c in reserve.items():
         if not isinstance(c, dict):
@@ -3392,11 +3388,23 @@ def contract_holders(root: Path, files: list[str], board: dict) -> list[dict]:
                  and (folder_page(f) or flat_page(f, have, named, read))]
         if ("#" in rx.pattern and any(rx.search(s) for s in HEADING_SAMPLES)
                 and (pages or matches("docs/x/x.md", globs))):
+            # A fix names a condition, never an event: a cleanup that already ran can't be waited on.
+            held = [(f, text[:m.start()].count("\n") + 1) for f in files if matches(f, globs)
+                    for text in [read(f)] for m in [rx.search(text)] if m]
+            why = ("the contract cites a page by its heading, and the hook refuses a page's "
+                   f"second heading of one name ({DIR}/RULES.md (Documentation))")
+            if held:
+                more = f" and {len(held) - 1} more" if len(held) > 1 else ""
+                fix = (f"numbers page headings, and {held[0][0]}:{held[0][1]}{more} holds one: "
+                       "`jig update --apply` removes it once no line matches and no "
+                       f"/jig:redocument run is under way: {why}")
+            elif run:
+                fix = ("numbers page headings: drop it at /jig:redocument's cleanup, once no "
+                       f"page holds a numbered heading: {why}")
+            else:
+                fix = f"numbers page headings, and no line holds one: `jig update --apply` removes it: {why}"
             out.append({"path": CONFIG, "line": 0, "kind": "counter", "label": f"{CONFIG} reserve.{name}",
-                        "fix": "numbers page headings: drop it at /jig:redocument's cleanup, once no "
-                               "page holds a numbered heading: the contract cites a page by its "
-                               "heading, and the hook refuses a page's second heading of one name "
-                               f"({DIR}/RULES.md (Documentation))"})
+                        "name": name, "fix": fix, "removable": not held and not run})
     for f in RULES_NAMES:
         if f not in have or not (root / f).is_file():
             continue
@@ -9445,6 +9453,31 @@ def from_claude_lane(data: dict) -> tuple[dict, list[str]]:
     return out, gone
 
 
+# Board keys update removes, each said under Removed: history git keeps, or an old system's.
+RETIRED_BOARD_KEYS = ("lanes", "log", "payload", "workflow")
+
+
+def settings_said(config: dict) -> str:
+    """Each role's tier and effort in effect under CONFIG, as `spec 2,2 · bug 2,1 · …`."""
+    roles, _ = role_settings(config)
+    return " · ".join(f"{r} {v['tier']},{v['effort']}" for r, v in roles.items())
+
+
+def workflow_said(old) -> str:
+    """The pre-roles key's entries as they were, by their old step names."""
+    if not isinstance(old, dict) or not old:
+        return json.dumps(old)
+    out = []
+    for step, v in old.items():
+        if isinstance(v, dict) and set(v) <= {"tier", "effort"} and len(v) == 2:
+            out.append(f"{step} {v['tier']},{v['effort']}")
+        elif isinstance(v, dict):
+            out.append(f"{step} " + " ".join(f"{k} {json.dumps(x)}" for k, x in v.items()))
+        else:
+            out.append(f"{step} {json.dumps(v)}")
+    return " · ".join(out)
+
+
 def rewrite_board(data: dict, files: list[str], plan: dict) -> tuple[dict, list[str], list[str], list[str]]:
     """The config with every path rewritten to where its files went. Returns the new config,
     one line per edit, warnings, and what it drops: the jobs, every one merged (update
@@ -9522,22 +9555,13 @@ def rewrite_board(data: dict, files: list[str], plan: dict) -> tuple[dict, list[
     if log is not None:
         gone.append(f"board: log ({len(log)} line{'s' if len(log) != 1 else ''}; git log of "
                     f"{JOBS} records opens and merges now)")
-    # The pre-roles key: each step's override becomes its role's, with the reason a `roles`
-    # entry needs saying where it came from. An override the new rules refuse stays refused.
-    if "workflow" in new and "roles" not in new and isinstance(new["workflow"], dict):
-        _, mapped, _ = role_overrides(new)
-        roles = {r: {**v, "reason": v.get("reason") or "carried over from `workflow` by jig update"}
-                 for r, v in mapped.items() if isinstance(v, dict) and r in ROLES}
-        renamed = ", ".join(f"{k} → {OLD_STEPS[k]}" for k in new["workflow"] if k in OLD_STEPS
-                            and OLD_STEPS[k] != k and k != "recheck")
-        dropped = "recheck" in new["workflow"]
-        del new["workflow"]
-        if roles:
-            new["roles"] = roles
-        edits.append("workflow: renamed roles" + (f" ({renamed})" if renamed else "")
-                     + ("" if roles else ", empty, so dropped"))
-        if dropped:
-            edits.append(RECHECK_DROPPED)
+    # The pre-roles key is removed, never mapped: an entry carries no reason, so a one-run
+    # instruction written there can't be told from a choice, and jig's standard is the only
+    # safe state. The owner sets `roles` afterwards, with a reason, for what is standing.
+    if "workflow" in new:
+        gone.append(f"board: workflow ({workflow_said(new.pop('workflow'))}; "
+                    + (f"`roles` stays: {settings_said(new)}" if "roles" in new
+                       else f"jig's standard: {settings_said({})}") + ")")
     for name, spec in (new.get("reserve") or {}).items():
         if isinstance(spec, dict) and "next" in spec:
             del spec["next"]
@@ -9552,7 +9576,7 @@ def rewrite_board(data: dict, files: list[str], plan: dict) -> tuple[dict, list[
         new["version"] = STAMP
     for key in data:
         if key not in BOARD_DEFAULTS and key not in BOARD_OPTIONAL \
-                and key not in ("lanes", "log", "payload"):
+                and key not in RETIRED_BOARD_KEYS:
             warn.append(f"board key `{key}` is not one jig knows: kept, and the checker ignores it")
     return new, edits, warn, gone
 
@@ -9699,6 +9723,229 @@ def files_to_review(root: Path, plan: dict, template: Path | None = None,
 RETIRED_BLOCKS = ("## Lanes (parallel sessions)", "## Jobs (parallel sessions)")
 
 
+# Lines jig's AGENTS.md template once shipped about how steps run, each mapped to the opening
+# of the template line that replaced it. A cut adds its line here in the same commit: the
+# repo kept jig's words, so update replaces them, as .gitignore's rewrite does jig's lines.
+RETIRED_LINES = {
+    "- A mergeable chunk is a handoff: checks pass → adversarial review (/jig:review) → `jig reviewed` → `jig handoff`. Review happens once per handoff, not per commit.":
+        "- A mergeable chunk is a handoff",
+    "- Bug reported → /jig:bug before editing (in a repo with a hubnode, ask the hubnode to run it). Prefer the fix that makes the odd path look like the healthy ones over one that patches the symptom.":
+        "- A bug the owner reports",
+    "- Bug reported → /jig:bug before editing. Prefer the fix that makes the odd path look like the healthy ones over one that patches the symptom.":
+        "- A bug the owner reports",
+    "- Rulebook `.jig/RULES.md`, enforced by `python3 .jig/jig.py`. Roles: /jig:hubnode, /jig:subnode.":
+        "- Rulebook ",
+    "- Rulebook `jig/RULES.md`, enforced by `python3 jig/jig.py`. Roles: /jig:hubnode, /jig:subnode.":
+        "- Rulebook ",
+    "- Run `check` yourself and show the output. Don't claim done on a green build alone.":
+        "- While working, run `check`",
+    "- Task bigger than a one-sentence diff → write `.jig/specs/<task>.md` first (see /jig:brief). Plan before editing.":
+        "- Task bigger than",
+    "- Task bigger than a one-sentence diff → write `jig/specs/<task>.md` first (see /jig:brief). Plan before editing.":
+        "- Task bigger than",
+    "- Task bigger than a one-sentence diff → write `specs/<task>.md` first (see /jig:brief). Plan before editing.":
+        "- Task bigger than",
+    "- check:  `.jig/scripts/check.sh` (runs on every stop; must pass before you're done)": "- check:",
+    "- check:  `jig/scripts/check.sh` (runs on every stop; must pass before you're done)": "- check:",
+    "- check:  `scripts/check.sh` (runs on every stop; must pass before you're done)": "- check:",
+    "- derive: `.jig/scripts/derive.sh` (writes the files built from several sources that separate jobs change, `.jig/RULES.md` says which; `jig merge` runs it and commits what `derived_files` in `.jig/config.json` lists; branches don't commit them)":
+        "- derive:",
+    "- derive: `.jig/scripts/derive.sh` (writes the files derived from the whole tree; `jig merge` runs it and commits them; branches don't commit them)":
+        "- derive:",
+    "- derive: `.jig/scripts/derive.sh` (writes the files derived from the whole tree; `jig merge` runs it and commits what `derived_files` in `.jig/config.json` lists; branches don't commit them)":
+        "- derive:",
+}
+
+
+def squeeze(line: str) -> str:
+    return " ".join(line.split())
+
+
+RETIRED = {squeeze(k): v for k, v in RETIRED_LINES.items()}
+
+
+def retired_blocks(lines: list[str]) -> list[tuple[int, int]]:
+    """Each RETIRED_BLOCKS block in LINES, as (heading index, end): to the next heading, less
+    the blank lines before it."""
+    blocks = []
+    for i, line in enumerate(lines):
+        if line.strip() in RETIRED_BLOCKS:
+            end = next((j for j in range(i + 1, len(lines)) if lines[j].startswith("## ")), len(lines))
+            while end > i + 1 and not lines[end - 1].strip():
+                end -= 1
+            blocks.append((i, end))
+    return blocks
+
+
+def outside_header(lines: list[str]) -> list[int]:
+    """The indexes of LINES outside a pararepo's generated header: that block is jig's,
+    rewritten from para.json, so its words are no repo's procedure."""
+    out, inside = [], False
+    for i, line in enumerate(lines):
+        if line.startswith("<!-- jig:meta — "):
+            inside = True
+        if not inside:
+            out.append(i)
+        if line.strip() == HEADER_END:
+            inside = False
+    return out
+
+
+def retired_lines(root: Path, template: Path | None, check_full: bool) -> tuple[list, list]:
+    """AGENTS.md's lines jig retired, as ([(index, old, new or None)], [(label, what)]): each
+    replaced by the template line that took its place, or removed when the file already holds
+    that line. The `check:` line waits while check.sh has one level: its new text says
+    `--full` adds the complete suite, which that script doesn't."""
+    mine = root / "AGENTS.md"
+    if (not (template and template.exists() and mine.exists())
+            or root.resolve() in template.resolve().parents):
+        return [], []
+    tpl = template.read_text().splitlines()
+    lines = mine.read_text(errors="replace").splitlines()
+    have = {squeeze(l) for l in lines}
+    edits, waiting = [], []
+    # A retired block goes whole, by agents_lines' proposal: a line inside it isn't replaced.
+    blocks = retired_blocks(lines)
+    for i in outside_header(lines):
+        if any(b <= i < e for b, e in blocks):
+            continue
+        opening = RETIRED.get(squeeze(lines[i]))
+        if opening is None:
+            continue
+        new = next((l for l in tpl if l.startswith(opening)), None)
+        if new is None:
+            continue
+        if opening == "- check:" and not check_full:
+            waiting.append((f"AGENTS.md:{i + 1}", f"jig's retired `check:` line: replaced with "
+                            f"the template's (`{new}`) once {DIR}/scripts/check.sh reads --full"))
+            continue
+        edits.append((i, lines[i], None if squeeze(new) in have else new))
+        have.add(squeeze(new))
+    return edits, waiting
+
+
+def apply_retired(root: Path, edits: list) -> None:
+    """Each edit in place; every other line keeps its bytes, its line ending included."""
+    path = root / "AGENTS.md"
+    lines = path.read_bytes().decode(errors="surrogateescape").splitlines(keepends=True)
+    for i, _, new in edits:
+        end = lines[i][len(lines[i].rstrip("\r\n")):]
+        lines[i] = "" if new is None else new + end
+    path.write_bytes("".join(lines).encode(errors="surrogateescape"))
+
+
+# The words that run one of jig's steps: a node or role skill, a command that records a step,
+# a tier or effort number. A line is matched on these, never on words like gate or merge,
+# which a product uses for its own things.
+STEP_SKILL = re.compile(r"/jig:(hubnode|subnode|spec|bug|work|review|check)\b")
+STEP_COMMAND = re.compile(r"\bjig(?:\.py)?\s+(reviewed|handoff|gate|checked|mark|merge|release)\b")
+STEP_SETTING = re.compile(r"(?i)\b(?:tier|effort)\b\s*[:=]?\s*\d")
+COMMAND_STEP = {"reviewed": "review-work", "handoff": "handoff", "gate": "gate", "checked": "check",
+                "mark": "gate", "merge": "merge", "release": "release"}
+ROLES_SAID = f"`roles` in {CONFIG} ({DIR}/RULES.md § Workflow)"
+
+
+def owner_said(owner: str) -> str:
+    if owner == "review":
+        return "/jig:review (a fresh session, once per handoff)"
+    return f"/jig:{owner}" if owner else ""
+
+
+def step_hits(text: str) -> str:
+    """What owns each step TEXT runs, as `<owner> (<what named it>)` joined, or ""."""
+    owners: dict[str, list[str]] = {}
+    for m in STEP_SKILL.finditer(text):
+        owners.setdefault(owner_said(m.group(1)), []).append(m.group(0))
+    for m in STEP_COMMAND.finditer(text):
+        owners.setdefault(owner_said(step_owner(COMMAND_STEP[m.group(1)])), []).append(f"jig {m.group(1)}")
+    if STEP_SETTING.search(text):
+        owners.setdefault(ROLES_SAID, []).append("a tier or effort")
+    return "; ".join(f"{o} ({', '.join(dict.fromkeys(w))})" for o, w in owners.items())
+
+
+def instruction_files(root: Path, files: list[str]) -> list[str]:
+    """The always-loaded agent-instruction files the repo tracks, as COORDINATION names them."""
+    paths = next(p for name, _, p in COORDINATION if name == "agent instructions")
+    return [f for f in files if any(f == p or f.startswith(p + "/") for p in paths)]
+
+
+def procedure_lines(root: Path, files: list[str], template: Path | None) -> list[tuple[str, str]]:
+    """Lines of the always-loaded instruction files that run a step in the repo's own words,
+    each with what owns that step now. Listed, never edited: such a line often carries a rule
+    of the repo's beside the step. jig's own lines, current or retired, are update's."""
+    tpl = {squeeze(l) for l in template.read_text().splitlines()} if template and template.exists() else set()
+    out = []
+    for f in instruction_files(root, files):
+        try:
+            lines = (root / f).read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+        for i in outside_header(lines):
+            text = lines[i]
+            if squeeze(text) in tpl or squeeze(text) in RETIRED:
+                continue
+            hits = step_hits(text)
+            if hits:
+                out.append((f"{f}:{i + 1}", f"runs a step in the repo's own words; what owns it "
+                            f"now: {hits}. Kept as it is: the owner rewords or removes it"))
+    return out
+
+
+# The names a skill takes when it does one of jig's steps: a node's, a role's, a step's or a
+# workflow's.
+def step_names() -> dict[str, str]:
+    names = {"hubnode": "/jig:hubnode", "subnode": "/jig:subnode"}
+    for flow in FLOWS:
+        names[flow.lower()] = f"the {flow} workflow (`jig flows`)"
+        for _, part in flow_steps(flow):
+            for step in part.split(" + "):
+                if step_owner(step):
+                    names[step] = owner_said(step_owner(step))
+    for role, r in ROLES.items():
+        for step in r["steps"]:
+            names[step] = owner_said(role)
+        names[role] = owner_said(role)
+    for step in HUBNODE_STEPS:
+        names[step] = "/jig:hubnode"
+    return names
+
+
+SKILL_DIRS = (*next(p for name, _, p in COORDINATION if name == "skills directory"),
+              ".claude/commands", ".claude/agents")
+
+
+def overlapping_skills(root: Path, files: list[str]) -> list[tuple[str, str]]:
+    """The repo's skills, commands and agents that do one of jig's steps, by their name or by
+    what their text runs, each with the standard skill that owns that step. Only the folders at
+    the repo's root: a skill another product ships (a plugin's own skills/) is that product's.
+    Never edited or deleted: a custom skill is the repo's, and the owner decides."""
+    names = step_names()
+    items: dict[str, list[str]] = {}
+    for f in files:
+        d = next((d for d in SKILL_DIRS if f.startswith(d + "/")), None)
+        if d is None or not f.endswith(".md"):
+            continue
+        rest = f[len(d) + 1:]
+        key = f"{d}/{rest.split('/')[0]}" + ("/" if "/" in rest else "")
+        if key.rstrip("/").endswith("_skill-template"):
+            continue
+        items.setdefault(key, []).append(f)
+    out = []
+    for key, members in sorted(items.items()):
+        text = "\n".join((root / m).read_text(errors="replace") for m in members if (root / m).is_file())
+        name = re.search(r"(?m)^name:\s*([\w-]+)", text)
+        own = {(name.group(1) if name else ""), Path(key.rstrip("/")).stem}
+        by_name = [names[n] for n in own if n in names]
+        hits = step_hits(text)
+        if not (by_name or hits):
+            continue
+        what = "; ".join(x for x in [f"{', '.join(dict.fromkeys(by_name))} (its name)" if by_name else "",
+                                     hits] if x)
+        out.append((key, f"a skill of the repo's that does a step of jig's; what owns it now: "
+                    f"{what}. Never edited or deleted by jig: the owner keeps, changes or retires it"))
+    return out
+
+
 def agents_lines(root: Path, template: Path | None, arriving: set[str]) -> list[tuple[str, str]]:
     """The lines of AGENTS.md that jig's template still needs there, each proposed by itself.
     The rest of the file is the repo's to word: jig keeps no copy of its own to diff it with.
@@ -9712,17 +9959,13 @@ def agents_lines(root: Path, template: Path | None, arriving: set[str]) -> list[
     text = mine.read_text(errors="replace")
     lines = text.splitlines()
     rulebook = next((l for l in tpl if l.startswith("- Rulebook ")), "")
-    blocks = []
-    for i, line in enumerate(lines):
-        if line.strip() in RETIRED_BLOCKS:
-            end = next((j for j in range(i + 1, len(lines)) if lines[j].startswith("## ")), len(lines))
-            while end > i + 1 and not lines[end - 1].strip():
-                end -= 1
-            blocks.append((i, end))
+    blocks = retired_blocks(lines)
     outside = "\n".join(l for k, l in enumerate(lines) if not any(i <= k < e for i, e in blocks))
     # A citation of one section, `.jig/RULES.md` (Documentation) or § Roles, doesn't load the
     # rulebook; a plain mention or an aside, `.jig/RULES.md` (the rulebook), does.
     has_rulebook = re.search(r"\.jig/RULES\.md(?!`?[ \t]*(?:\([A-Z]|§))", outside)
+    # A retired Rulebook line is replaced by the template's, so it is the line already there.
+    has_rulebook = has_rulebook or any(RETIRED.get(squeeze(l)) == "- Rulebook " for l in outside.split("\n"))
     out = []
     for i, end in blocks:
         fix = ("delete it, heading to the next heading: the Rulebook line is already outside it"
@@ -9817,7 +10060,8 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
     homes = [h for h in homeless if h["path"] not in reviewed]
     rec = findings_record(board)
     # The old contract outside the pages: listed for the owner, converted with the pages, never edited here.
-    out = [(h["label"], h["fix"]) for h in contract_holders(root, after, board) if h["label"] not in reviewed]
+    out = [(h["label"], h["fix"]) for h in contract_holders(root, after, board, read)
+           if h["label"] not in reviewed]
     out += [(h["path"], home_fix(h) + state_tag(h, rec)) for h in homes if h["kind"] in ("rules", "copy", "reserved")]
     # A metarepo page with no genre in its path has no move to propose: the remap places it.
     pages = [h for h in homes if h["kind"] == "page" and h["to"]]
@@ -10057,6 +10301,19 @@ def cmd_update(root: Path, args) -> int:
     plan = plan_moves(files, board_at, version, hardware_rows(root, files) + flat_rows)
     new_board, edits, board_warn, gone = rewrite_board(data, files, plan)
     board_gone += gone
+    back = {n: o for o, n in plan["moves"].items()}
+
+    def read_after(f: str) -> str:
+        p = root / back.get(f, f)
+        return p.read_text(errors="replace") if p.is_file() else ""
+    # A counter over page headings that numbers nothing, with no run under way, holds nothing a
+    # redocument could convert: the board is jig's, so update removes it.
+    for h in contract_holders(root, plan["after"], new_board, read_after):
+        if h.get("removable") and h["name"] in (new_board.get("reserve") or {}):
+            del new_board["reserve"][h["name"]]
+            board_gone.append(f"board: reserve.{h['name']} (a counter over numbered page headings, "
+                              "and no line holds one: the hook refuses a page's second heading of "
+                              "one name instead)")
     warnings = plan["warn"] + board_warn
     # plan_moves sees tracked files only; `git mv` onto an untracked one dies mid-apply, with
     # the renames before it staged.
@@ -10146,11 +10403,6 @@ def cmd_update(root: Path, args) -> int:
                             "outside comments): code or config the repo's checks may run")
     arriving = set(plan["after"]) | set(replace) | {SETUP for s in steps if s[2] is add_setup}
     # The owner's recorded yeses, judged on the repo as the layout moves will leave it.
-    back = {n: o for o, n in plan["moves"].items()}
-
-    def read_after(f: str) -> str:
-        p = root / back.get(f, f)
-        return p.read_text(errors="replace") if p.is_file() else ""
     carried, gone_ids, held = approved_moves(root, plan["after"], new_board, read_after)
     review = files_to_review(root, plan, here.parent / "AGENTS.md", arriving)
     review += home_findings(root, plan, new_board, board_at, [f for f, _ in review])
@@ -10158,6 +10410,22 @@ def cmd_update(root: Path, args) -> int:
                 f"it touches, a term as `{GLOSSARY} § <term>`, or {NONE_FORM} ({DIR}/RULES.md, Decision log)") for e in untouched_entries(root, trunk)]
     review += superseded_kept(root)
     review += check_levels_review(root)
+    # jig's retired AGENTS.md lines are jig's words, so update replaces them; a metarepo's
+    # AGENTS.md changes only in a job (M4), so there they are listed as a job's.
+    check_sh = f"{DIR}/scripts/check.sh"
+    check_full = ("--full" in read_after(check_sh)) if (root / back.get(check_sh, check_sh)).is_file() \
+        else check_sh in arriving
+    template = here.parent / "AGENTS.md"
+    retired, waiting = retired_lines(root, template, check_full)
+    review += waiting
+    if retired and (root / META).exists():
+        review += [(f"AGENTS.md:{i + 1}", f"jig's retired line: " + (f"replace it with `{new}`" if new
+                    else "remove it: the file already holds its replacement")
+                    + " in a job (M4: a metarepo's trunk takes no edit outside .jig/)")
+                   for i, _, new in retired]
+        retired = []
+    review += procedure_lines(root, files, template)
+    review += overlapping_skills(root, files)
     review += project_review(root, files, [f for f, _ in review])
     have_ignores = {l.strip() for l in ignore.read_text().splitlines()} if ignore.exists() else set()
     if (new_board.get("reference_files") == "ignore" and not ref_line
@@ -10210,7 +10478,7 @@ def cmd_update(root: Path, args) -> int:
     moved_board = board_at != CONFIG or not (root / JOBS).exists()
     actions = bool(plan["moves"] or replace or edits or moved_board or steps or ignore_lines
                    or stale_hooks or aidev_state or untracked or cache_line or ref_line or removed
-                   or gate_left)
+                   or gate_left or retired)
     if not actions:
         print("up to date")
         for w in warnings:
@@ -10280,6 +10548,11 @@ def cmd_update(root: Path, args) -> int:
         print("\nBoard:")
         for e in edits:
             print(f"  {e}")
+    if retired:
+        print("\nAGENTS.md, jig's retired lines (every other line stays as it is):")
+        for i, old, new in retired:
+            print(f"  {i + 1}: `{old.strip()}` → " + (f"`{new}`" if new else
+                  "removed: the file already holds its replacement"))
     if steps:
         print("\nSteps:")
         for s in steps:
@@ -10363,7 +10636,9 @@ def cmd_update(root: Path, args) -> int:
         raw = re.sub(rf"(?m)^[ \t]*{re.escape(OLD_REFERENCE_IGNORE)}[ \t]*$",
                      lambda _: "\n".join(REFERENCE_IGNORES), raw)
         ignore.write_bytes(re.sub(r"(?m)^[ \t]*jig/meta-cache/[ \t]*$", f"{CACHE}/", raw).encode())
-    git("add", "--", CONFIG, JOBS, *replace,
+    if retired:
+        apply_retired(root, retired)
+    git("add", "--", CONFIG, JOBS, *replace, *(["AGENTS.md"] if retired else []),
         *([".gitignore"] if ignore_lines or cache_line or ref_line else []), check=True)
     # git mv leaves a flattened note's subfolder behind, empty.
     for folder in ({o for o, _ in plan["rows"] if o.endswith("/")} | flat

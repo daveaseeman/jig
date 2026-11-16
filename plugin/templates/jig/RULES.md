@@ -199,7 +199,9 @@ under its Talks to — since a page holds each heading once. It also lists the r
 still hold the old page shape — a check of the Now / Rules / Checks headings, a counter over
 numbered page headings, an always-loaded line that makes page rules bind or cites a page by
 number — and the files that declare the docs structure beside the docmap. Those convert with
-the pages; jig never edits them.
+the pages; jig never edits them, except a counter that matches no line with no
+`/jig:redocument` run under way: it numbers nothing, and `jig update --apply` removes it from
+the board, which is jig's.
 
 A page describes what is built: what is true of its system on trunk today, in present-tense
 prose. It is not a rulebook; this file holds the rules about documentation, and no page
@@ -677,12 +679,11 @@ with the defaults.
 in `config.json`, each entry with its reason:
 `"roles": {"review": {"tier": 1, "effort": 0, "reason": "..."}}`. An override that breaks the
 last column, has no reason, or weakens a fixed rule is refused by `jig roles` and by the
-commit hook. There is no per-task override: a task that needs other settings means the owner
-changes the config. The key's older name, `workflow`, with the old step names (`execute` for
-work), is still read until `jig update --apply` rewrites it as `roles`; the hook refuses a new
-override under it, and an old `recheck` entry is dropped, since review-change runs at the
-review role's settings. `jig workflow`, the older command, prints the settings under the old
-step names, then the flows.
+commit hook. There is no per-task override: an instruction about settings for one run stays in
+that run's sessions, and `roles` changes only on the owner's word that a setting is standing.
+The key's older name, `workflow`, is not read: `jig update --apply` removes it, and jig's
+standard replaces what it held; the hook refuses a config holding it. `jig workflow`, the older
+command, prints the settings under the old step names (`execute` for work), then the flows.
 
 A spec's `## Roles` section is `jig roles`' output when it was written. The review records the
 review role's configured settings (`jig reviewed --tier N --effort N --ran "..."`), the

@@ -59,7 +59,9 @@ model or effort once it holds context: the change discards its cache.
 `jig roles` gives each role a tier and an effort; `tiers.json` maps them: `model[tier]`
 and `effort[effort]`. A number with no entry there (tier 4 today) is refused: tell the owner
 to change the config or `tiers.json`, and start nothing. You never pick a setting for one
-task; a task that needs others is a config change.
+task. The owner's instruction about models for a run applies to that run's sessions only:
+`roles` changes only when the owner says a setting is standing, and the commit quotes their words
+as each entry's reason.
 
 To continue a session, message it (its `local_…` id) with the step. To start one, use the
 role skill's **Brief**: every brief opens with `running <model> at <effort>`, the role's
