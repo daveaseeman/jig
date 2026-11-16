@@ -8012,8 +8012,19 @@ def cmd_staging_check(args) -> int:
             print(f"{f}: no such file")
             bad = True
             continue
-        head, _, problems = read_staged(f)
+        head, body, problems = read_staged(f)
         notes = []
+        if head.get("kind") == "decisions":
+            # A warning only: resolve logs an Accepted entry as decided, and a chat can write
+            # Accepted for what was only discussed; the owner says which. Outside any repo no
+            # config names the prefix, so the entries' own headings do.
+            prefix = log_prefix_of(body)
+            for e in log_entries(body, prefix):
+                parts = status_parts(e["status"], prefix)
+                if parts and parts[0] == "Accepted":
+                    said = f"{parts[1]}, {parts[2]}" if parts[1] else parts[2]
+                    notes.append(f"{e['id']} says Accepted ({said}): resolve logs it as decided; "
+                                 f"confirm {parts[1] or 'who'} accepted it, else write Proposed")
         dest = head.get("destination", "")
         if dest and escapes(dest):
             problems.append(f"destination {dest!r} is outside the target: give a path relative "
