@@ -7382,6 +7382,16 @@ a=$($J rig --json); b=$($J rig --json)
 expect_pass test -n "$a" -a "$a" = "$b"
 rm .jig/specs/c1.md .jig/specs/c2.md
 
+msg="rig: two staged files waiting on each other are a cycle; removing one name from its after: header breaks it"
+rstage r1.md 'n/1.txt' r2 && rstage r2.md 'n/2.txt' r1
+printf '{"call": "ready"}' | $J rig --store-put .jig/staging/r1.md >/dev/null; printf '{"call": "ready"}' | $J rig --store-put .jig/staging/r2.md >/dev/null
+c6() { rstate "assert 'a dependency cycle with .jig/staging/r2.md' in i['.jig/staging/r1.md']['waits_on'], i['.jig/staging/r1.md']" || return 1
+  sed -i.bak '/^after: r1$/d' .jig/staging/r2.md && rm .jig/staging/r2.md.bak
+  printf '{"call": "ready"}' | $J rig --store-put .jig/staging/r2.md >/dev/null
+  rstate "r1, r2 = i['.jig/staging/r1.md'], i['.jig/staging/r2.md']; assert not any('cycle' in w for w in r1['waits_on'] + r2['waits_on']) and r2['opens'] == 'now' and r1['opens'] == 'after', (r1, r2)"; }
+expect_pass c6
+rm .jig/staging/r1.md .jig/staging/r2.md
+
 rm .jig/specs/zeta.md
 
 msg="rig: overlapping Touches are one job to answer; a spec built after an open job waits on it"

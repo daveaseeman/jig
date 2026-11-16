@@ -17,16 +17,16 @@ make, store them, and draw what it printed. Never reorder, regroup or reword its
 `waits_on`, its `group`, and `judged`: the judgment stored for it, or null when there is none
 or its item or the board changed since.
 
-For each staged file, and each next-step item whose `state` is `open`, whose `judged` is null
-(a next-step item whose `state` is `taken` is already under way: it is listed under Waiting on,
-and gets no judgment and no question):
+For each item whose `judged` is null: each staged file, and the next-step item whose `state`
+is `open` (a next-step item whose `state` is `taken` is already under way: it is listed under
+Waiting on, and gets no judgment and no question):
 
 - **A staged file:** read it whole. Call it `ready` when a spec can be written from it as it
   is, with no answer from the owner; `open` when it can't. An open file gets the questions the
   owner must answer, each with two to four options, one recommended, from what the file and
   the repo say. A ready file gets its recommendation: the spec it becomes, in one line.
-- **The next step** (the open one): its question: take it now (a spec for it), or leave it where it is, with
-  one recommended and why.
+- **The next step** (the open one): its question: take it now (a spec for it), or leave it
+  where it is, with one recommended and why.
 
 Store each: `jig rig --store-put <path>` with a JSON object on stdin,
 `{"call": "ready"|"open", "about": "…", "context": "…", "questions": [{"ask": "…", "options": ["…"], "recommended": 0}], "recommend": "…"}`.
@@ -74,11 +74,11 @@ Nothing is ever dropped for it.
   interpreted into a spec, with the spec role where the hubnode's rules say). Its `after:`
   header becomes a `` Build after `<spec>` `` line in that spec, naming the spec each file it
   waited for became, so the order survives the staging file.
-- **A cycle's answer:** the item chosen to go first stops building after the ring member it
+- **A cycle's answer:** the item chosen to go first stops building after each ring member it
   names, so it has nothing left to wait for in the ring, however many items the ring holds. In
-  a spec, remove that name from its own `Build after` line. In a staged file, the header is
-  its own text: record the answer under `## Owner's answers`, and the spec written from it
-  leaves that name out of its `Build after` line.
+  a spec, remove those names from its own `Build after` line. In a staged file, remove them
+  from its own `after:` header, as `/jig:stage` breaks a cycle: `jig rig` and `jig staging`
+  read only the header, so nothing else breaks it.
 - **Start a job:** open it and start its subnode as `/jig:hubnode` says (Assigning a step).
 - **The next step taken:** a spec for it, with the spec role. The roadmap itself is the
   owner's to edit: never change it here.
@@ -94,10 +94,10 @@ file, then run `jig rig --json` again (judging what comes back null, as in step 
 start every spec whose `opens` is `now` in that output. An overlapping pair needs the owner's
 answer, and an item that comes `after` another waits for that job, so neither starts. Answer
 no open question, break no cycle and take no roadmap step: those are proposed, as blocks, for
-the owner. End with the picture and a short list of what
-you did.
+the owner. End with the picture and a short list of what you did.
 
 ## Never
 
 Run on a phrase: only `/jig:rig` by name starts it. Change `jig next`, the roadmap or a staged
-file's own text above `## Owner's answers`.
+file's own text above `## Owner's answers`, but for one thing: the owner's answer to a cycle
+removes ring members from that file's `after:` header.
