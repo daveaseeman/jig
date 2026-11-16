@@ -218,7 +218,7 @@ the roadmap cites pages and decisions freely, and a page or a decision entry nev
 not. The hook refuses an added line in a page under `docs/`, in `.jig/decisions.md` or in a
 metarepo's entry file that names `.jig/specs/`, `.jig/handoffs/` or `.jig/roadmap.md`, or a
 scope id the roadmap has in code quotes (`` `alpha/screen` ``), and names the line; a moved
-page's old lines aren't new. What can be product text too, it can't judge: `ROADMAP.md`, a
+page's old lines, or a line moved within a file, aren't new. What can be product text too, it can't judge: `ROADMAP.md`, a
 bare scope id ("the v1/api endpoint"), a phase name, prose like "phase 3" or "spec step 6", a
 `## Status` heading. Nothing searches for those, at commit or after: words like these are often
 the product's own (a status call, a three-phase motor, a launch configuration), so whoever

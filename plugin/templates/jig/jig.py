@@ -559,9 +559,13 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     # which may match the marker anywhere, judges every update of it.
     code = [p for p in paths if (p.endswith(CODE_EXT) or Path(p).name == "Kconfig")
             and p != f"{DIR}/jig.py"]
-    # Raw, so a lone CR can't split one added line into a "+" line and an unmarked one.
-    diff = git_raw("diff", "-U0", base(trunk), *(["--cached"] if staged else []), "--", *code) if code else ""
-    if re.search(r"^\+(?:.*(?:#|//|/\*)|\s*\*)\s*WORKAROUND:", diff, re.M) and WORKAROUNDS not in paths:
+    # Raw, so a lone CR can't split one added line into a "+" line and an unmarked one; counted
+    # by net_added, so a comment only moved within its file (functions reordered) isn't new.
+    diff = git_raw("-c", "core.quotePath=false", "diff", "-U0", "--no-ext-diff", "--no-color",
+                   "--src-prefix=a/", "--dst-prefix=b/", base(trunk), *(["--cached"] if staged else []),
+                   "--", *code) if code else ""
+    marked = re.compile(r"(?:.*(?:#|//|/\*)|\s*\*)\s*WORKAROUND:")
+    if any(marked.match(t) for _, _, t in net_added(diff, set(code))) and WORKAROUNDS not in paths:
         # The ledger is made by its first row, so the refusal says where that row goes.
         out.append(f"R7 the diff adds a WORKAROUND: comment but {WORKAROUNDS} is not staged: "
                    f"add its row there in this commit (the first row creates the file from "
@@ -649,7 +653,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
             # a metarepo job for its line. It only adds, outside ## Open where an open entry's
             # status changes in place: a rewrite would take what others recorded with it.
             if p == LOG:
-                since = git("merge-base", trunk, "HEAD") or base(trunk)
+                since = since_trunk(trunk)
                 now = in_index(LOG, staged)
                 if now and not outside_open_deleted(at_rev(since, LOG), now):
                     continue
@@ -8806,23 +8810,48 @@ def scope_quoted(sids: list[str]) -> list[re.Pattern]:
 
 def added_lines(trunk: str, staged: bool, files: list[str]) -> list[tuple[str, int, str]]:
     """(path, line number, text) for each line the change adds to FILES. Renames are followed,
-    so a moved page's old lines aren't new; the prefixes are fixed, whatever the user's diff
-    settings."""
+    so a moved page's old lines aren't new, and a line counts as added only while the file's
+    diff adds its text more times than it removes it, so a line moved within a file isn't new
+    either: a line diff shows every move as a delete plus an add. The prefixes are fixed,
+    whatever the user's diff settings."""
     # Both sides of every rename are in the pathspec, or git can't see the rename.
     gone = [f for f in changed_paths(trunk, staged, removed=True) if f.endswith(".md") and f not in files]
-    diff = git("-c", "core.quotePath=false", "diff", "-M", "-U0", "--no-ext-diff", "--no-color",
-               "--src-prefix=a/", "--dst-prefix=b/", base(trunk), *(["--cached"] if staged else []),
-               "--", *files, *gone)
-    out, at, n, want = [], "", 0, set(files)
-    for line in diff.splitlines():
-        if line.startswith("+++ "):
-            at = line[6:] if line.startswith("+++ b/") and line[6:] in want else ""
+    diff = git_raw("-c", "core.quotePath=false", "diff", "-M", "-U0", "--no-ext-diff", "--no-color",
+                   "--src-prefix=a/", "--dst-prefix=b/", base(trunk), *(["--cached"] if staged else []),
+                   "--", *files, *gone)
+    return net_added(diff, set(files))
+
+
+def net_added(diff: str, want: set[str]) -> list[tuple[str, int, str]]:
+    """(path, line number, text) for each line a `-U0` diff with a/ and b/ prefixes adds to a
+    file in WANT, kept only while that file's diff adds the text more times than it removes it:
+    a line diff shows every move as a delete plus an add, so a moved line isn't new. DIFF is
+    read raw and split on newlines only, so a form feed or lone CR in a line can't split off a
+    line that reads as a header."""
+    out, at, n = [], "", 0
+    net: dict[str, Counter] = {}
+    hunk = False  # the ---/+++ headers sit outside hunks, so they are never counted as text
+    for line in diff.split("\n"):
+        if line.startswith("diff "):
+            hunk = False
+        elif not hunk and line.startswith("+++ "):
+            # git ends the header with a tab when the name holds a space
+            name = line[6:].removesuffix("\t") if " " in line[6:] else line[6:]
+            at = name if line.startswith("+++ b/") and name in want else ""
         elif m := re.match(r"@@ -\S+ \+(\d+)", line):
-            n = int(m.group(1))
-        elif line.startswith("+") and at:
+            n, hunk = int(m.group(1)), True
+        elif hunk and at and line.startswith("+"):
             out.append((at, n, line[1:]))
+            net.setdefault(at, Counter())[line[1:]] += 1
             n += 1
-    return out
+        elif hunk and at and line.startswith("-"):
+            net.setdefault(at, Counter())[line[1:]] -= 1
+    kept = []
+    for f, n, text in out:
+        if net[f][text] > 0:
+            net[f][text] -= 1
+            kept.append((f, n, text))
+    return kept
 
 
 def dead_touches(text: str, have: set[str]) -> set[tuple[str, str]]:
