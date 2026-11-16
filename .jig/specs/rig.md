@@ -37,7 +37,8 @@ blocks.
    - **Waiting on you:** open staged items and the next step;
    - **Running:** open jobs, each with its next step, the role that does it, and whether it
      continues a session or starts one, read from `jig next <job>`, which is unchanged.
-2. **Then one block per question**, open staged items first, then the next step. Each block
+2. **Then one block per question**, drawn with the `decision-cards` skill (its card, or its
+   text form where the host can't draw one), open staged items first, then the next step. Each block
    has a line saying what it's about ("fixing X in Y"), a line of context ("in Y, X is used
    for Z, so it needs to…"), then the options with one marked recommended, plus "not now".
 3. **After the owner answers**, the picture again, so the owner sees items move from open to
@@ -94,7 +95,7 @@ blocks.
   reader, the roadmap parser, `next_step` (read, not changed), and consolidate's overlap check;
   the parser)
 - `plugin/templates/jig/RULES.md` (Staging, Roadmap, Workflow: rig)
-- new `plugin/skills/rig/SKILL.md`; `plugin/skills/hubnode/SKILL.md` (its description and any
+- new `plugin/skills/rig/SKILL.md`, which loads `plugin/skills/decision-cards/SKILL.md` for its question blocks; `plugin/skills/hubnode/SKILL.md` (its description and any
   "what's next" text)
 - `README.md` (Who does what), `tests/smoke.sh` (a new `rig` section)
 

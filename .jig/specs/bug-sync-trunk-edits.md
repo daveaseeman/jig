@@ -220,6 +220,7 @@ Both parts:
   codes — this reason is [assumed].
 
 ## Decisions
+- The owner approved the RULES.md clause (the boundary paragraph), 2026-11-16: "approve the RULES.md clause".
 - The count is per file, as `added_lines` is: a line moved from one page to another is new to
   the page it lands on, as it is today.
 - One spec, two parts with their own Done when. Both are small rule-reading fixes in jig.py,

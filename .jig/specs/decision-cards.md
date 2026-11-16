@@ -36,9 +36,8 @@ between answers. Where the host can't draw a card, the same content goes out as 
 - [ ] The hubnode skill points to it where it puts decisions to the owner (the merge, the
       release, a ruling a subnode raised, a reconfiguration), and nowhere restates the card's
       rules. `grep -n "; and" plugin/skills/hubnode/SKILL.md` finds nothing.
-- [ ] The rig spec (`.jig/specs/rig.md`) names `decision-cards` as how its question blocks are
-      drawn, in its Touches and its "What it shows", so the rig job uses the skill rather
-      than restating it.
+- [x] The rig spec (`.jig/specs/rig.md`) names `decision-cards` as how its question blocks are
+      drawn, in its Touches and its "What it shows" (done on trunk before the jobs opened).
 - [ ] Nothing tool-specific reaches the templates: `grep -rn "decision-cards" plugin/templates`
       is empty, and RULES.md names no card. A rule a repo must follow stays in RULES.md, in
       words any host can follow.
@@ -57,7 +56,6 @@ between answers. Where the host can't draw a card, the same content goes out as 
 ## Touches
 - new `plugin/skills/decision-cards/SKILL.md`
 - `plugin/skills/hubnode/SKILL.md` (pointers where it asks the owner)
-- `.jig/specs/rig.md` (names the skill)
 - `marketing/FEATURES.md` (a row, the hubnode's)
 
 ## Alternatives considered
