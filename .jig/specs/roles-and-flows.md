@@ -228,6 +228,10 @@ with the defaults.
 - Interpreted (hubnode, 2026-11-15): the smoke's `gated <job>` helper sets a job's state on trunk
   in place of gate, check and mark, since about 80 smoke merges never gated their job; the `next`
   section walks the real gate → check → mark path.
+- Interpreted (hubnode, 2026-11-15): an old `workflow.recheck` override is dropped, not mapped
+  onto review, replacing the literal "recheck → review" mapping above. Review-change runs at the
+  review role's settings, so a cheaper recheck mapped onto review would lower every full review;
+  and `recheck` was never released. `jig update` lists the drop, and `jig roles` notes it on stderr.
 - Consolidated: `rename-check-rules` (2026-11-11) is folded in, and its spec file is deleted in
   the commit that adds this one.
 

@@ -1945,8 +1945,8 @@ expect_pass sh -c "$J roles | grep -qx 'review: tier 1, effort 0'"
 
 # The pre-roles key: read and mapped, then rewritten by update --apply.
 python3 -c "import json; c = json.load(open('.jig/config.json')); del c['roles']; c['workflow'] = {'execute': {'effort': 4}, 'recheck': {'tier': 1}}; c['bogus'] = 1; json.dump(c, open('.jig/config.json', 'w'), indent=2)"
-msg="roles: an old workflow key is read with no reasons, execute as work and recheck as review"
-expect_pass sh -c "$J roles | grep -qx 'work: tier 2, effort 4' && $J roles | grep -qx 'review: tier 1, effort 2'"
+msg="roles: an old workflow key is read with no reasons, execute as work; its recheck entry is dropped, with a note"
+expect_pass sh -c "$J roles 2>/dev/null | grep -qx 'work: tier 2, effort 4' && $J roles 2>/dev/null | grep -qx 'review: tier 2, effort 2' && $J roles 2>&1 >/dev/null | grep -qx 'note: workflow.recheck: dropped, review-change runs at the review role.s settings'"
 msg="roles: an old workflow key that breaks a rule is refused under its own name"
 setwf '{"execute": {"effort": 2}}'
 expect_pass sh -c "$J roles 2>&1 | grep -q 'workflow.work: effort 2 is not below'"
@@ -1956,13 +1956,13 @@ git add -A; out=$(git commit -qm wf 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '.workflow. is the pre-roles key'" "$out"
 git -c core.hooksPath=/dev/null commit -qm "older config, an unknown key"
 out=$($J update 2>&1)
-msg="update: lists the old workflow key's rename to roles, with each step renamed"
-expect_pass sh -c "echo \"\$0\" | grep -q 'workflow: renamed roles (execute → work, recheck → review)' && ! echo \"\$0\" | grep -q 'board key .workflow. is not one jig knows'" "$out"
+msg="update: lists the old workflow key's rename to roles, each step renamed, and the recheck entry dropped"
+expect_pass sh -c "echo \"\$0\" | grep -q 'workflow: renamed roles (execute → work)\$' && echo \"\$0\" | grep -q 'workflow.recheck: dropped, review-change runs at the review role.s settings' && ! echo \"\$0\" | grep -q 'board key .workflow. is not one jig knows'" "$out"
 msg="update: a truly unknown board key is still named"
 expect_pass sh -c "echo \"\$0\" | grep -q 'board key .bogus. is not one jig knows'" "$out"
 $J update --apply >/dev/null 2>&1
 msg="update --apply rewrites workflow as roles, each entry with a reason"
-expect_pass python3 -c "import json; c = json.load(open('.jig/config.json')); assert 'workflow' not in c and c['roles'] == {'work': {'effort': 4, 'reason': 'carried over from \`workflow\` by jig update'}, 'review': {'tier': 1, 'reason': 'carried over from \`workflow\` by jig update'}}, c.get('roles')"
+expect_pass python3 -c "import json; c = json.load(open('.jig/config.json')); assert 'workflow' not in c and c['roles'] == {'work': {'effort': 4, 'reason': 'carried over from \`workflow\` by jig update'}}, c.get('roles')"
 python3 -c "import json; c = json.load(open('.jig/config.json')); del c['roles'], c['bogus']; c['version'] = 8; json.dump(c, open('.jig/config.json', 'w'), indent=2)"
 git add -A && git commit -qm "older config, no override"
 $J update --apply >/dev/null 2>&1

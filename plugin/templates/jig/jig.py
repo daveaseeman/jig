@@ -116,8 +116,11 @@ FIXED_RULES = ["the owner's word before merge, push and publish",
 # A job's review rounds with blocking findings before the next is refused and Bug runs.
 FIX_ROUNDS = 3
 # The pre-roles config key, read until `jig update --apply` rewrites it, and its step names.
+# `recheck` was the old name of review-change, which runs at the review role's settings, so a
+# recheck override is dropped: mapped onto review, it would change what full reviews run at.
 OLD_STEPS = {"spec": "spec", "bug": "bug", "execute": "work", "review": "review",
              "recheck": "review", "check": "check"}
+RECHECK_DROPPED = "workflow.recheck: dropped, review-change runs at the review role's settings"
 
 
 # ---------------------------------------------------------------- git helpers
@@ -299,13 +302,12 @@ def role_overrides(config: dict) -> tuple[str, dict, list[str]]:
     if not isinstance(old, dict):
         return "workflow", {}, ["workflow: must map step names to {\"tier\": N, \"effort\": N}"]
     over, bad = {}, []
-    # review before recheck: a repo that set both keeps review's, which recheck followed anyway.
-    for step in sorted(old, key=lambda k: k == "recheck"):
+    for step, vals in old.items():
         role = OLD_STEPS.get(step)
         if role is None:
             bad.append(f"workflow.{step}: no such step; the steps were {', '.join(OLD_STEPS)}")
-        elif role not in over:
-            over[role] = old[step]
+        elif step != "recheck":
+            over[role] = vals
     return "workflow", over, bad
 
 
@@ -360,7 +362,10 @@ def role_settings(config: dict) -> tuple[dict, list[str]]:
 
 def settings_or_refuse(root: Path) -> dict:
     # The working tree's config, so the hubnode sees a refusal before committing the edit.
-    roles, bad = role_settings(Board.load(root, working_tree=True).data)
+    data = Board.load(root, working_tree=True).data
+    roles, bad = role_settings(data)
+    if "roles" not in data and "recheck" in (data.get("workflow") or {}):
+        print(f"note: {RECHECK_DROPPED}", file=sys.stderr)
     # Refused, nothing goes to stdout: a skill copying the roles into a spec must get none.
     for b in bad:
         print(b, file=sys.stderr)
@@ -2016,16 +2021,21 @@ def review_kind(data: dict) -> str:
     return "change" if data.get("kind") in ("change", "recheck") else "full"
 
 
-def blocking_rounds(chain: list[str]) -> int:
-    """How many fix rounds CHAIN has had that ended in blocking findings: review-changes whose
-    record says so. The review-work that found the first ones starts round 1; it ends none."""
+def blocking_reviews(chain: list[str]) -> int:
+    """How many reviews of CHAIN's commits recorded blocking findings, full or change: a review
+    recorded either way still ends a round."""
     on = set(chain)
     latest: dict[str, dict] = {}
     for sha, data in review_log():
         if sha in on:
             latest[sha] = data
-    return sum(1 for d in latest.values()
-               if review_kind(d) == "change" and isinstance(d.get("blocking"), int) and d["blocking"] > 0)
+    return sum(1 for d in latest.values() if isinstance(d.get("blocking"), int) and d["blocking"] > 0)
+
+
+def blocking_rounds(chain: list[str]) -> int:
+    """The fix rounds that ended in blocking findings. The first blocking review starts round 1
+    and ends none; each one after it ends a round."""
+    return max(0, blocking_reviews(chain) - 1)
 
 
 def bug_spec_for(job: str, revs: list[str]) -> str:
@@ -2075,7 +2085,8 @@ def cmd_reviewed(root: Path, args) -> int:
     print(f"recorded {'review-change' if change else 'review'} of {head[:12]}"
           + (f", {args.blocking} blocking" if args.blocking else ""))
     if args.blocking:
-        done = rounds + (1 if change else 0)
+        # This record is the first blocking review (it starts round 1), or it ends round `done`.
+        done = blocking_reviews(chain) - 1
         print(f"Fix round {done + 1} of {FIX_ROUNDS}: the work session fixes them, then review-change"
               if done < FIX_ROUNDS else
               f"That was fix round {FIX_ROUNDS}: the next review is refused until the bug role's "
@@ -9464,12 +9475,15 @@ def rewrite_board(data: dict, files: list[str], plan: dict) -> tuple[dict, list[
         roles = {r: {**v, "reason": v.get("reason") or "carried over from `workflow` by jig update"}
                  for r, v in mapped.items() if isinstance(v, dict) and r in ROLES}
         renamed = ", ".join(f"{k} → {OLD_STEPS[k]}" for k in new["workflow"] if k in OLD_STEPS
-                            and OLD_STEPS[k] != k)
+                            and OLD_STEPS[k] != k and k != "recheck")
+        dropped = "recheck" in new["workflow"]
         del new["workflow"]
         if roles:
             new["roles"] = roles
         edits.append("workflow: renamed roles" + (f" ({renamed})" if renamed else "")
                      + ("" if roles else ", empty, so dropped"))
+        if dropped:
+            edits.append(RECHECK_DROPPED)
     for name, spec in (new.get("reserve") or {}).items():
         if isinstance(spec, dict) and "next" in spec:
             del spec["next"]
