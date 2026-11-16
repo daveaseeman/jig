@@ -61,7 +61,8 @@ shares, refusing one another open job owns.
 
 **Overlapping specs are answered before they open.** A spec is *waiting* when no open job names
 it, no handoff note's `Spec:` line names it, and the newest release tag doesn't hold it (any spec,
-with no tag yet). Two waiting specs overlap when their `## Touches` meet: one path, a glob
+with no tag yet), unless it carries a `Bug-for: <job>` line: a bug spec is built in the job it
+names and reaches trunk only when that job merges, so it never waits. Two waiting specs overlap when their `## Touches` meet: one path, a glob
 covering the other's path, or the same `<page> § <term>` (a whole page meets any term on it).
 `jig consolidate` lists each group of overlapping waiting specs with the paths they share, as
 one proposed job. A group is answered one of two ways: one spec carries every input's `Source:`
@@ -722,7 +723,9 @@ is in the same group and opens after it, with nothing to answer; one that depend
 job, named or by its spec's name, or on an item not ready, waits on it, and a dependency
 cycle waits on the owner. An item that could start but overlaps any waiting spec, one that
 waits included, is to answer first, since `jig open` refuses it. The order is
-fixed (kind, dependency, path), so the same state prints the same bytes; `--json` prints it as
+fixed (kind, dependency, path), so the same state prints the same bytes. Its count of what
+waits on the owner's answers counts every question: each open or unjudged staged file, the
+open next step, each overlapping pair and each dependency cycle, a ring once; `--json` prints it as
 data. A model's open/ready call, its questions and its recommendation are kept per item in
 `.git/jig/rig.json` (never committed) with a key of the item's content and the board, and
 replayed while both are unchanged: `jig rig --store-put <path>` stores one (a JSON object on

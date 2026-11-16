@@ -7528,6 +7528,24 @@ c5() { rstate "t=i['.jig/specs/theta.md']; assert t['opens'] == 'answer' and ['.
   && $J rig | head -1 | grep -q '; 0 can start now.$' && ! $J open T --spec .jig/specs/theta.md --owns 'j/**' >/dev/null 2>&1; }
 expect_pass c5
 
+msg="rig: an overlapping pair and a dependency cycle each count once as a question, each with its line under Waiting on you"
+n0=$($J rig --json | python3 -c "import json,sys; print(json.load(sys.stdin)['waiting_on_you'])")
+rspec p1 'q/x.txt' && rspec p2 'q/x.txt' && rspec k1 'k/1.txt' 'Build after `k2`.' && rspec k2 'k/2.txt' 'Build after `k1`.'
+c7() { out=$($J rig); n=$($J rig --json | python3 -c "import json,sys; print(json.load(sys.stdin)['waiting_on_you'])")
+  test "$n" = $((n0 + 2)) && echo "$out" | head -1 | grep -q "^$n things waiting on your answers;" \
+    && test "$(echo "$out" | sed -n '/^Waiting on you:/,/^$/p' | grep -c '^  overlap .jig/specs/p1.md and .jig/specs/p2.md: ')" = 1 \
+    && test "$(echo "$out" | sed -n '/^Waiting on you:/,/^$/p' | grep -c '^  cycle   .jig/specs/k1.md, .jig/specs/k2.md: ')" = 1; }
+expect_pass c7
+rm .jig/specs/p1.md .jig/specs/p2.md .jig/specs/k1.md .jig/specs/k2.md
+
+msg="rig: a spec carrying Bug-for: is no waiting spec, in jig rig and jig consolidate; without the line it is"
+rspec bugx 'w/x.txt' 'Bug-for: j' && rspec wp 'w/x.txt' && git add -A && git commit -qm "bug spec" >/dev/null
+c8() { rstate "assert '.jig/specs/bugx.md' not in i, i.keys()" && ! $J consolidate | grep -q bugx \
+  && sed -i.bak '/^Bug-for: j$/d' .jig/specs/bugx.md && rm .jig/specs/bugx.md.bak \
+  && rstate "assert '.jig/specs/bugx.md' in i, i.keys()" && $J consolidate | grep -q 'bugx and wp share: w/x.txt'; }
+expect_pass c8
+git rm -qf .jig/specs/bugx.md .jig/specs/wp.md && git commit -qm "drop bug spec" >/dev/null
+
 msg="rig: a run writes neither the roadmap nor staging"
 $J rig >/dev/null; $J rig --json >/dev/null
 expect_pass test "$(cat .jig/roadmap.md .jig/staging/s2.md | shasum) $(shasum < .jig/staging/s1.md)" = "$before $s1hash"

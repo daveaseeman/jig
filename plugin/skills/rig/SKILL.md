@@ -38,11 +38,14 @@ Then `jig rig --json` once more: ready staged files now sit in its groups.
 Draw it from that last output, in this order, the same every run. Where the host can draw an
 inline visual, it may; the sections and their contents stay these.
 
-1. The count line: how many things wait on the owner's answers, and how many can start now.
+1. The count line: how many things wait on the owner's answers (every question: the open
+   staged files, the open next step, each overlapping pair and each dependency cycle, a ring
+   once), and how many can start now.
 2. **Can start now:** each `group`, its items in the order given, each with what it comes
    after, and each overlapping pair the group's `overlaps` names.
 3. **Waiting on:** each item and what it waits for: a job, a spec or a staged file.
-4. **Waiting on you:** the open staged files and the next step whose `state` is `open`.
+4. **Waiting on you:** the open staged files, the next step whose `state` is `open`, each
+   overlapping pair (`overlaps`) and each dependency cycle (`cycles`).
 5. **Running:** each open job with its step, who takes it, and whether it continues a session
    or starts one, as `jig rig` printed it from `jig next`.
 
@@ -75,7 +78,7 @@ Nothing is ever dropped for it.
   header becomes a `` Build after `<spec>` `` line in that spec, naming the spec each file it
   waited for became, so the order survives the staging file.
 - **A cycle's answer:** the item chosen to go first stops building after each ring member it
-  names, so it has nothing left to wait for in the ring, however many items the ring holds. In
+  names, so it has nothing left to wait for in the ring. In
   a spec, remove those names from its own `Build after` line. In a staged file, remove them
   from its own `after:` header, as `/jig:stage` breaks a cycle: `jig rig` and `jig staging`
   read only the header, so nothing else breaks it.
@@ -100,4 +103,4 @@ the owner. End with the picture and a short list of what you did.
 
 Run on a phrase: only `/jig:rig` by name starts it. Change `jig next`, the roadmap or a staged
 file's own text above `## Owner's answers`, but for one thing: the owner's answer to a cycle
-removes ring members from that file's `after:` header.
+removes ring members from the chosen file's own `after:` header.

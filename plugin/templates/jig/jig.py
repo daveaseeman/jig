@@ -1285,7 +1285,11 @@ def waiting_specs(root: Path, board: "Board") -> dict[str, str]:
             continue
         if tag and git("cat-file", "-t", f"{tag}:{rel}"):
             continue
-        out[rel] = f.read_text(errors="replace")
+        text = f.read_text(errors="replace")
+        # A bug spec is built in the job it names and reaches trunk only with that job's merge.
+        if re.search(r"^Bug-for:[ \t]*\S", text, re.M):
+            continue
+        out[rel] = text
     return out
 
 
@@ -11836,11 +11840,13 @@ def rig_state(root: Path, board: "Board") -> dict:
                                | set(i.pop("covered", [])))
     # A dependency cycle never opens on its own: it waits on the owner to break it.
     deps = {i["path"]: i["deps"] for i in items}
+    cycles: set[tuple[str, ...]] = set()
     for i in items:
         seen = reach_of(i["path"], deps)
         if i["path"] in seen:
             ring = sorted(x for x in seen if x != i["path"] and i["path"] in reach_of(x, deps))
             i["waits_on"].append(f"a dependency cycle with {', '.join(ring)}")
+            cycles.add(tuple(sorted(ring + [i["path"]])))
     # What waits, directly or through an item that isn't ready or itself waits.
     changed = True
     while changed:
@@ -11908,12 +11914,15 @@ def rig_state(root: Path, board: "Board") -> dict:
     for name in sorted(board.open_jobs()):
         step, who, session, why = next_step(root, board, name)
         jobs.append({"name": name, "step": step, "who": who, "session": session, "why": why})
+    # Every block that asks the owner something counts once: a ring is one question, not one per member.
     asks = [i for i in items if i["state"] in ("open", "unjudged")]
-    return {"items": sorted(items, key=sort_key),
+    pairs = sorted({tuple(p) for p in overlaps})
+    return {"items": sorted(items, key=sort_key), "overlaps": [list(p) for p in pairs],
+            "cycles": [list(c) for c in sorted(cycles)],
             "groups": [{"paths": [i["path"] for i in g],
                         "overlaps": sorted(p for p in overlaps if set(p) & {i["path"] for i in g})}
                        for g in ordered],
-            "waiting_on_you": len(asks), "can_start": sum(i["opens"] == "now" for i in start), "jobs": jobs}
+            "waiting_on_you": len(asks) + len(pairs) + len(cycles), "can_start": sum(i["opens"] == "now" for i in start), "jobs": jobs}
 
 
 def rig_text(state: dict) -> str:
@@ -11942,7 +11951,9 @@ def rig_text(state: dict) -> str:
             out.append(f"  next    {i['id']} ({i['from']}): {i['what']}")
         else:
             out.append(f"  {i['kind']:<7} {i['path']}  {'not judged yet' if i['state'] == 'unjudged' else 'open'}")
-    if not asks:
+    out += [f"  overlap {a} and {b}: one job, or kept apart" for a, b in state["overlaps"]]
+    out += [f"  cycle   {', '.join(c)}: which goes first" for c in state["cycles"]]
+    if not asks and not state["overlaps"] and not state["cycles"]:
         out.append("  nothing")
     out.append("\nRunning:")
     out += [f"  {j['name']}: {j['step']} — {j['who']}, {j['session']}" + (f" ({j['why']})" if j["why"] else "")
