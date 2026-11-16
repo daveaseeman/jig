@@ -399,8 +399,11 @@ def cmd_flows(root: Path, args) -> int:
 
 
 def cmd_workflow(root: Path, args) -> int:
-    """The pre-roles command, kept until every repo's skills say `jig roles` and `jig flows`."""
-    print(role_lines(settings_or_refuse(root)))
+    """The pre-roles command, kept until every repo's skills say `jig roles` and `jig flows`.
+    Its step lines keep the old names, execute and recheck too, for the skills that read them."""
+    roles = settings_or_refuse(root)
+    print("\n".join(f"{step}: tier {roles[role]['tier']}, effort {roles[role]['effort']}"
+                    for step, role in OLD_STEPS.items()))
     print()
     return cmd_flows(root, args)
 
@@ -533,7 +536,17 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     out += heading_rules(trunk, staged, paths, board.data.get("not_docs") or [])
     if CONFIG in paths and (raw := in_index(CONFIG, staged)):
         try:
-            out += role_settings(json.loads(raw))[1]
+            new_cfg = json.loads(raw)
+            out += role_settings(new_cfg)[1]
+            # The old key is only read, so a repo keeps working until update renames it; an
+            # override written under it now would skip the reason a `roles` entry needs.
+            try:
+                was = json.loads(git("show", f"HEAD:{CONFIG}") or "{}").get("workflow")
+            except ValueError:
+                was = None
+            if "workflow" in new_cfg and new_cfg["workflow"] != was:
+                out.append(f"{CONFIG}: `workflow` is the pre-roles key, read until `jig update "
+                           "--apply` renames it: write the override under `roles`, with its reason")
         except ValueError as e:
             out.append(f"{CONFIG} is not JSON: {e}")
     # A remap that keeps a page where survey moves it overrides jig's rule: the owner's
@@ -2004,13 +2017,15 @@ def review_kind(data: dict) -> str:
 
 
 def blocking_rounds(chain: list[str]) -> int:
-    """How many reviews of CHAIN's commits recorded blocking findings: each is a fix round."""
+    """How many fix rounds CHAIN has had that ended in blocking findings: review-changes whose
+    record says so. The review-work that found the first ones starts round 1; it ends none."""
     on = set(chain)
     latest: dict[str, dict] = {}
     for sha, data in review_log():
         if sha in on:
             latest[sha] = data
-    return sum(1 for d in latest.values() if isinstance(d.get("blocking"), int) and d["blocking"] > 0)
+    return sum(1 for d in latest.values()
+               if review_kind(d) == "change" and isinstance(d.get("blocking"), int) and d["blocking"] > 0)
 
 
 def bug_spec_for(job: str, revs: list[str]) -> str:
@@ -2040,13 +2055,13 @@ def cmd_reviewed(root: Path, args) -> int:
         die("no full review of this job on HEAD's first-parent chain: a review-change reviews "
             "what changed since one. Run review-work, then `jig reviewed` without --change")
     rounds = blocking_rounds(chain)
-    if change and rounds >= FIX_ROUNDS:
-        name = board.job_for_branch(git("branch", "--show-current"))[0] or \
-            git("branch", "--show-current") or "work"
-        if not bug_spec_for(name, ["HEAD", board.trunk]):
-            die(f"{rounds} reviews of this job recorded blocking findings: a fix round past "
-                f"{FIX_ROUNDS} is refused, and Bug runs. Commit the bug role's spec for it, with "
-                f"`Bug-for: {name}` on a line of its own, then review again")
+    name = board.job_for_branch(git("branch", "--show-current"))[0] or \
+        git("branch", "--show-current") or "work"
+    # Any review, full or change: a fix round past the limit is refused whichever way it's recorded.
+    if rounds >= FIX_ROUNDS and not bug_spec_for(name, ["HEAD", board.trunk]):
+        die(f"{rounds} fix rounds of this job ended in blocking findings: a round past "
+            f"{FIX_ROUNDS} is refused, and Bug runs. Commit the bug role's spec for it, with "
+            f"`Bug-for: {name}` on a line of its own, then review again")
     ran = {k: v for k, v in (("tier", args.tier), ("effort", args.effort), ("ran", args.ran),
                              ("blocking", args.blocking)) if v is not None}
     if change:
@@ -2060,10 +2075,11 @@ def cmd_reviewed(root: Path, args) -> int:
     print(f"recorded {'review-change' if change else 'review'} of {head[:12]}"
           + (f", {args.blocking} blocking" if args.blocking else ""))
     if args.blocking:
-        left = FIX_ROUNDS - rounds - 1
-        print(f"Fix: the work session fixes them, then review-change. "
-              + (f"{left} more round{'s' if left != 1 else ''} before Bug runs" if left > 0
-                 else "This was the last round: the next blocking review needs a bug spec"))
+        done = rounds + (1 if change else 0)
+        print(f"Fix round {done + 1} of {FIX_ROUNDS}: the work session fixes them, then review-change"
+              if done < FIX_ROUNDS else
+              f"That was fix round {FIX_ROUNDS}: the next review is refused until the bug role's "
+              f"spec, with `Bug-for: {name}`, is committed")
     return 0
 
 
@@ -2102,9 +2118,9 @@ def next_step(root: Path, board: "Board", name: str) -> tuple[str, str, str, str
     reviewed, ran = found
     rounds = blocking_rounds(chain)
     blocked = isinstance(ran.get("blocking"), int) and ran["blocking"] > 0
-    if blocked and rounds >= FIX_ROUNDS and not bug_spec_for(name, [branch, trunk]):
-        return "bug", "bug", "new session", (f"Bug; {rounds} reviews had blocking findings, and "
-                                             f"a fix round past {FIX_ROUNDS} is refused")
+    if rounds >= FIX_ROUNDS and not bug_spec_for(name, [branch, trunk]):
+        return "bug", "bug", "new session", (f"Bug; {rounds} fix rounds ended in blocking "
+                                             f"findings, and a round past {FIX_ROUNDS} is refused")
     if changed_since(reviewed, branch, board):
         flow = f"Fix, round {rounds + 1}" if blocked else "Fix or Sync"
         return ("review-change", "review", "new session",

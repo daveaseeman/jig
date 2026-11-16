@@ -1908,8 +1908,8 @@ msg="roles: prints jig's defaults, one role per line, in order"
 expect_pass sh -c "$J roles | grep -qx 'work: tier 2, effort 3' && $J roles | grep -qx 'review: tier 2, effort 2' && test \"\$($J roles | cut -d: -f1 | tr '\n' ' ')\" = 'spec bug work review check '"
 msg="flows: each workflow's steps with the role or node of each, and its session links"
 expect_pass sh -c "$J flows | grep -qx 'Job: spec (spec) ⇢ work (work) ⇢ review-work (review) → handoff (work) → gate (hubnode) ⇢ check (check) → merge (hubnode)' && $J flows | grep -qx 'Fix: work (work) ⇢ review-change (review) → handoff (work)' && $J flows | grep -qx 'Bug: bug (bug) → spec (spec) ⇢ Job'"
-msg="workflow: the old command prints the roles, then the flows"
-expect_pass sh -c "$J workflow | head -1 | grep -qx 'spec: tier 2, effort 2' && $J workflow | grep -q '^Job: spec (spec) ⇢'"
+msg="workflow: the old command prints the old step names (execute as work, recheck as review), then the flows"
+expect_pass sh -c "$J workflow | head -1 | grep -qx 'spec: tier 2, effort 2' && $J workflow | grep -qx 'execute: tier 2, effort 3' && $J workflow | grep -qx 'recheck: tier 2, effort 2' && $J workflow | grep -q '^Job: spec (spec) ⇢'"
 msg="rules: prints ok on a clean repo, and the old name check prints the same"
 expect_pass sh -c "test \"\$($J rules)\" = ok && test \"\$($J check)\" = ok"
 for rule in \
@@ -1951,14 +1951,17 @@ msg="roles: an old workflow key that breaks a rule is refused under its own name
 setwf '{"execute": {"effort": 2}}'
 expect_pass sh -c "$J roles 2>&1 | grep -q 'workflow.work: effort 2 is not below'"
 setwf '{"execute": {"effort": 4}, "recheck": {"tier": 1}}'
-git add -A && git commit -qm "older config, an unknown key"
+msg="roles: the commit hook refuses a new override under the old workflow key, naming roles"
+git add -A; out=$(git commit -qm wf 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '.workflow. is the pre-roles key'" "$out"
+git -c core.hooksPath=/dev/null commit -qm "older config, an unknown key"
 out=$($J update 2>&1)
 msg="update: lists the old workflow key's rename to roles, with each step renamed"
 expect_pass sh -c "echo \"\$0\" | grep -q 'workflow: renamed roles (execute → work, recheck → review)' && ! echo \"\$0\" | grep -q 'board key .workflow. is not one jig knows'" "$out"
 msg="update: a truly unknown board key is still named"
 expect_pass sh -c "echo \"\$0\" | grep -q 'board key .bogus. is not one jig knows'" "$out"
 $J update --apply >/dev/null 2>&1
-msg="update --apply rewrites workflow as roles, each entry with a reason, and the hook takes it"
+msg="update --apply rewrites workflow as roles, each entry with a reason"
 expect_pass python3 -c "import json; c = json.load(open('.jig/config.json')); assert 'workflow' not in c and c['roles'] == {'work': {'effort': 4, 'reason': 'carried over from \`workflow\` by jig update'}, 'review': {'tier': 1, 'reason': 'carried over from \`workflow\` by jig update'}}, c.get('roles')"
 python3 -c "import json; c = json.load(open('.jig/config.json')); del c['roles'], c['bogus']; c['version'] = 8; json.dump(c, open('.jig/config.json', 'w'), indent=2)"
 git add -A && git commit -qm "older config, no override"
@@ -2018,18 +2021,25 @@ nx "an opened job with no commits is work, in a new session" k "k: work — work
 cd .git/jig/worktrees/k && mkdir k && printf 'x\n' > k/x.txt && git add -A && git commit -qm x
 nx "in the job, work committed is review-work, in a new session" "" "k: review-work — review, new session (Job; once the work's checks pass)"
 $J reviewed --tier 2 --effort 2 --blocking 2 >/dev/null
-nx "a review with blocking findings is Fix, in the work session" "" "k: fix — work, continue the work session (Fix, round 2; 2 blocking findings)"
+nx "a review-work with blocking findings is Fix round 1, in the work session" "" "k: fix — work, continue the work session (Fix, round 1; 2 blocking findings)"
 msg="handoff: refused while the newest review of HEAD has blocking findings, naming Fix"
 out=$($J handoff 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'recorded 2 blocking findings: Fix first' && test -z \"\$(ls .jig/handoffs 2>/dev/null)\"" "$out"
 printf 'y\n' >> k/x.txt && git commit -qam fix1
-nx "a fix committed is review-change, in a new session" "" "k: review-change — review, new session (Fix, round 2; once the checks pass, of what changed since $(git rev-parse --short=12 HEAD~1))"
+nx "a fix committed is review-change, in a new session" "" "k: review-change — review, new session (Fix, round 1; once the checks pass, of what changed since $(git rev-parse --short=12 HEAD~1))"
 $J reviewed --change --tier 2 --effort 2 --blocking 1 >/dev/null && printf 'y\n' >> k/x.txt && git commit -qam fix2
 $J reviewed --change --tier 2 --effort 2 --blocking 1 >/dev/null && printf 'y\n' >> k/x.txt && git commit -qam fix3
-nx "after three blocking reviews, the next step is bug, in a new session" "" "k: bug — bug, new session (Bug; 3 reviews had blocking findings, and a fix round past 3 is refused)"
-msg="reviewed: a fourth --change after three blocking rounds is refused, naming Bug-for"
+nx "two rounds ended blocking: round 3's review-change is next" "" "k: review-change — review, new session (Fix, round 3; once the checks pass, of what changed since $(git rev-parse --short=12 HEAD~1))"
+msg="reviewed: the third round's review-change, blocking again, says it was the last round"
+out=$($J reviewed --change --tier 2 --effort 2 --blocking 1 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'That was fix round 3: the next review is refused until the bug role.s spec, with .Bug-for: k., is committed'" "$out"
+nx "after three fix rounds ended blocking, the next step is bug, in a new session" "" "k: bug — bug, new session (Bug; 3 fix rounds ended in blocking findings, and a round past 3 is refused)"
+printf 'y\n' >> k/x.txt && git commit -qam fix4
+msg="reviewed: a fourth round's review-change is refused, naming Bug-for"
 out=$($J reviewed --change --tier 2 --effort 2 --blocking 0 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'Bug-for: k'" "$out"
+msg="reviewed: a full review in its place is refused too"
+expect_refuse $J reviewed --tier 2 --effort 2 --blocking 0
 mkdir -p .jig/specs && printf '# k bug\n\nBug-for: k\n' > .jig/specs/k-bug.md && git add -A && git commit -qm "k: bug spec"
 msg="reviewed: with the job's bug spec committed, the fourth round is recorded"
 expect_pass $J reviewed --change --tier 2 --effort 2 --blocking 0
