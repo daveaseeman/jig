@@ -1,14 +1,29 @@
 ---
 name: review
-description: Adversarial fresh-context review of a diff before a handoff. Run after the checks pass, before writing the handoff note.
+description: The review role - an adversarial fresh-context review of a job's diff (review-work) or of what changed since its last review (review-change), recorded with its blocking findings. Use when `jig next` names review-work or review-change, or working alone after the checks pass, before the handoff note.
 ---
 
-Runs once per handoff — a mergeable chunk — not once per commit. The spec is written at that
-scope, so that is the scope at which these questions can be answered.
+Your settings are the review role's (`jig roles`). Your steps are review-work, the job's whole
+diff once per handoff, and review-change, only what changed since the last recorded review
+after a fix or a hand-resolved sync. Always a fresh context: never the session that built it.
+`jig next` decides what comes after.
+
+## Brief
+
+The hubnode starts this role, as a subagent where there is one, with:
+
+```
+running <model> at <effort>
+If your own model differs from this line, reply with only your running line and stop.
+Run /jig:review (<review-work or review-change>) on job <name> in <worktree>: <the diff or
+delta, below>, with only the spec <spec> and AGENTS.md<, and the previous review's findings:
+<findings>>. Rerun no check the builder's report shows for the same commit: <report>.
+Run only the narrowest check a specific finding needs.
+```
 
 ## Dispatch
 
-Run the subagent at the `review` step's settings: `jig workflow` gives its tier and effort,
+Run the subagent at the `review` role's settings: `jig roles` gives its tier and effort,
 `${CLAUDE_PLUGIN_ROOT}/tiers.json` maps them to a model and an effort level. A number with no
 entry there is refused: say so and stop. Its prompt starts with `running <model> at
 <effort>`, the configured settings. The first line of its reply is `running <model>`, the
@@ -74,22 +89,21 @@ Its job is to find the reason this change is wrong. Its questions:
 A file in `.jig/staging/` is not decided; a finding that rests on one says so.
 
 Rerun no check the builder's report shows for the same commit: the author ran it and showed
-the output, and the gate's check step runs the complete check. Run only the narrowest check a specific finding needs (one smoke section, one command),
+the output, and the check role runs the complete check. Run only the narrowest check a specific finding needs (one smoke section, one command),
 and say which one and why.
 
 A reviewer that runs jig to test a finding does it in a throwaway repo. There, set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched.
 
-## Recheck
+## Review-change
 
-The first review of a job is full. After it, a fix or a sync resolved by hand is rechecked:
-run the subagent at the `recheck` step's settings (`jig workflow`'s `recheck` line), as
-Dispatch says, and give it the delta, the previous review's findings, the spec and
-`AGENTS.md`. The delta of a fix is `git diff <last recorded review>..HEAD` (the commit `jig
+The first review of a job is review-work. After it, a fix or a sync resolved by hand gets a
+review-change: the subagent at the same review role's settings, as Dispatch says, given the
+delta, the previous review's findings, the spec and `AGENTS.md`. The delta of a fix is `git diff <last recorded review>..HEAD` (the commit `jig
 handoff` named when it refused); of a sync resolved by hand, `git show --remerge-diff <merge>`
 and `git diff <merge>..HEAD`, never trunk's work the merge brought in. It asks: does the delta
 fix what the findings named, and does it break anything they didn't? When the delta changes
-anything the findings didn't name, the recheck stops and says so, and a full review runs at
-the review step's settings, recorded without `--recheck`. A clean `jig sync` needs neither:
+anything the findings didn't name, the review-change stops and says so, and a review-work
+runs instead, recorded without `--change`. A clean `jig sync` needs neither:
 `jig handoff` accepts it as it is.
 
 ## What counts
@@ -105,24 +119,27 @@ because the reviewer suggested them.
 
 ## Then
 
-Fix blocking items and re-run the checks. One round of should-fix is enough. If a third
-round of fixes still leaves something blocking, don't start a fourth: run `/jig:bug` on why
-the fixes aren't converging (in a repo with a hubnode, ask the hubnode to run it). Every should-fix or optional finding you
-don't take gets a row in `.jig/ledgers/DEFERRED.md` with its rank and one reason, tagged `[seen]` or
-`[assumed]`. The first row creates the file from `${CLAUDE_PLUGIN_ROOT}/templates/ledgers/DEFERRED.md`.
+Blocking findings go to the work session as a fix (Fix in `jig flows`); one round of
+should-fix is enough. Every should-fix or optional finding the work session doesn't take gets
+a row in `.jig/ledgers/DEFERRED.md` there. Three fix rounds that end blocking are the limit:
+`jig reviewed` refuses the next until the bug role's spec for the job, with `Bug-for: <job>`,
+is committed. Bug runs only then, or when the owner calls it.
 
 ## Record it
 
-When no blocking findings remain, with everything committed:
+Record every review, blocking findings or none, on the commit it reviewed, in the job's
+worktree:
 
 ```sh
-python3 .jig/jig.py reviewed --tier N --effort N --ran "<model> at <effort>"
+python3 .jig/jig.py reviewed --tier N --effort N --ran "<model> at <effort>" --blocking N
 ```
 
-The tier and effort the review ran at, from `jig workflow`'s `review` line, and the model its
-first line said it ran on, with the effort from the host's readout or the configured one. A recheck records `--recheck` and the `recheck` line's numbers. `jig gate` warns when they fall short of the spec's Workflow
-section.
+`--change` for a review-change. The tier and effort are the review role's configured ones,
+from `jig roles`; `--ran` is the model its first line said it ran on, with the effort from
+the host's readout or the configured one. `--blocking` counts the blocking findings it left:
+`jig handoff` refuses while the newest review recorded any, and the rounds are counted from
+it. `jig gate` warns when the settings fall short of the spec's `## Roles`.
 
 `jig handoff` refuses without a record for that commit, or for one under it that only a
-clean sync or the note's bookkeeping follows. Only record a review you
-actually ran, and carry its findings into the note's Review heading.
+clean sync or the note's bookkeeping follows. Only record a review you actually ran, and
+carry its findings into the note's Review heading.

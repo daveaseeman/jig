@@ -3,6 +3,9 @@ name: survey
 description: Read-only inventory of this repo against the jig shape - stray documents, oversized always-loaded files, docs that drifted from the code, missing pieces. Use to check a repo, or periodically to catch strays.
 ---
 
+A standalone tool, and the check role's survey step when a workflow runs it (Survey, in
+`jig flows`): the plan from what it finds is the spec role's.
+
 Run it. Nothing is written, and nothing needs to be installed first:
 
 ```sh

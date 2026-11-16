@@ -1,11 +1,13 @@
 ---
 name: subnode
-description: Work one job in a repo with parallel jobs. Use at the start of a feature session, on a kickoff message, or on "work on job X", "hand off", "sync my job".
+description: Check in as a subnode - a session that takes one role (spec, bug, work, review or check) on one job, works only in its worktree, and reports back to the hubnode. Use at the start of any session a hubnode started, on a kickoff message, or on "work on job X".
 ---
 
 Read `.jig/RULES.md` first. `jig` below is `python3 .jig/jig.py`.
 
-One job, one branch, one worktree. You never commit on trunk, never push trunk, never merge.
+One job, one role, one worktree. You never commit on trunk, never push, never merge, never
+edit the board. Your settings are your role's (`jig roles`); what comes after your step is
+`jig next`'s, and the hubnode's to start.
 
 ## Check in
 
@@ -16,59 +18,25 @@ briefing it.
 
 1. Find your job on the board: `jig job`. If this branch is on no job, stop and ask
    the hubnode to open one. Never create a job branch yourself.
-2. Work in the worktree the board names, nowhere else.
-3. `jig check`. If you are behind trunk, `jig sync` and run the checks before changing
-   anything.
-4. Say in three lines: the job, its reserved numbers, what you will build first.
+2. Work in the worktree the board names, nowhere else. A check session works in the gate's
+   scratch checkout, or on trunk for a batch, as its brief says.
+3. `jig rules`. If you are behind trunk and your role builds (work), `jig sync` and run the
+   checks before changing anything.
+4. Load the role the kickoff names: `/jig:spec`, `/jig:bug`, `/jig:work`, `/jig:review` or
+   `/jig:check`. No role named: ask the hubnode which.
+5. Say in three lines: the job, your role, and what you will do first.
 
-## Build
+## Report back
 
-While working, run `.jig/scripts/check.sh` and the parts of the suite your change touched,
-never `check.sh --full`: the complete check is the check step's, once per gate or batch.
+When your step is done, message the hubnode: the job, your role, the commit or the record
+you made, and the commands you ran with their output. Then `jig next` says what follows;
+continue only when it is yours and the hubnode says so.
 
-- Your files are your `owns`, your `shares`, `common`, and anything new you create. If you
-  need another, ask the hubnode to add it to `shares` and build elsewhere meanwhile.
-- Your numbers are the board's. Never take one by looking at what seems free.
-- A choice that outlives your spec, or a change a release's reader can act on, goes in
-  `.jig/decisions.md` (`.jig/RULES.md`, Decision log), which any job may add to. Write a new
-  decision as `### D-?<slug> <title>`; `jig merge` numbers it. To change an accepted entry
-  trunk has, supersede it with a new accepted entry and remove the old one in the same commit.
-- When you write or change a `Proposed` entry, or meet a question only the owner can answer,
-  message the hubnode then, with the rule sentence and the alternative you rejected, and keep
-  building. A ruling that waits for the gate costs a round.
-- Keep merges mechanical: append rather than edit shared prose; new routes in your own
-  handler registered by one line; new tests in your own file; a new fixture as a new file.
-- Commit often. The hook runs the rules; when it refuses, fix the cause. Never `--no-verify`.
-
-## Hand off
-
-A handoff is a mergeable chunk, not the whole job — hand off as often as a coherent piece
-is done.
-
-1. Run the project's quick checks (`.jig/scripts/check.sh` and the parts your change touched,
-   plus whatever `/jig:verify` calls for), and report the commands with their output.
-   A check that can outlast your shell's foreground limit is waited on as `/jig:verify` says:
-   background, output to a file, its exit notice or its pid, never a match.
-2. Have the diff adversarially reviewed. If a hubnode started you, report the commit and
-   wait: it runs the review at the review step's settings and sends blocking findings back
-   here as fixes. Working alone, `/jig:review`. Fix anything blocking.
-3. `jig handoff --spec .jig/specs/<task>.md`. A clean `jig sync` since the review needs no new
-   one; a fix or a hand-resolved sync is rechecked (`/jig:review`, Recheck) first. A chunk that doesn't finish its spec hands off
-   with `--partial`, so the roadmap doesn't count the spec complete. The review is already recorded: by the hubnode
-   when it ran it, by `/jig:review` when you did. Never run a bare `jig reviewed` after the
-   hubnode's review — it overwrites the tier and effort the hubnode recorded.
-4. Fill every heading in the note. Commit it with the work, and with the DEFERRED.md rows
-   for the review's untaken findings: rows added there after the review don't count as a change.
-5. Message the hubnode: the job, the commit, the note's path. Then keep building, or wait.
-
-Do not push. Every push and merge happens in the hubnode's session.
-
-## When trunk moves
-
-`jig sync`. Append-only collisions resolve themselves; anything else stops with the files
-named — resolve those with the other job's section open, then run the checks.
+When you write or change a `Proposed` entry, or meet a question only the owner can answer,
+message the hubnode then, with your reading and the alternative you rejected, and keep going.
+A ruling that waits for the gate costs a round.
 
 ## Never
 
 Work in the trunk checkout. Switch anyone's branch. Touch a file outside your lists. Push or
-merge. Edit the board.
+merge. Edit the board. Take a step that isn't your role's.

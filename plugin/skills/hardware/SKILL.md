@@ -3,6 +3,8 @@ name: hardware
 description: Spec a board from a hardware definition the user supplies, as its own page under docs/, in a folder named for the board once it holds files, check it against the code, and install the skills the page lists. Use when a board is ready to spec, when a handoff's fold-in asks for a board page, or when asked to install hardware skills.
 ---
 
+A standalone tool; the page it writes is the spec role's work, at its settings (`jig roles`).
+
 A board page records what a board is, so the code can be checked against it. It is written
 from a hardware definition the user gives you, never from the code alone: a page copied from
 the code always matches it, and the check at the gate would catch nothing.

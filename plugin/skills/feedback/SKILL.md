@@ -7,11 +7,13 @@ disable-model-invocation: true
 Runs only when the owner asks for it. A session that finds a bug in jig says what broke and
 tells the owner; it never starts this on its own.
 
-This is `/jig:bug` pointed at the tool. The user decides which one applies; don't guess.
+This is a wrapper: it loads the bug role (`/jig:bug`), pointed at the tool, and stages what
+it finds. The user decides which one applies; don't guess.
 
-Investigate exactly as `/jig:bug` does — whys, givens tagged `[seen]`/`[assumed]`, one
-layer up, workaround or correction, spec — reading `.jig/jig.py`, `.jig/RULES.md`, the
-hook output, and the skill involved.
+Load `/jig:bug` and investigate exactly as it says — whys, givens tagged `[seen]`/`[assumed]`,
+one layer up, workaround or correction, spec — reading `.jig/jig.py`, `.jig/RULES.md`, the
+hook output, and the skill involved. Its spec is not written into this repo: it becomes the
+staged report below.
 
 Then:
 

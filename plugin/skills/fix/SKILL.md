@@ -1,7 +1,11 @@
 ---
 name: fix
-description: In the jig repo, work through the feedback reports other repos staged - group them by root cause, investigate each group with /jig:bug against jig's own code, and turn each into a spec, a drop with its reason shown, or a note of what's missing. Use on "fix the feedback", or when jig staging lists feedback.
+description: In the jig repo, start the Feedback workflow on the reports other repos staged - group them by root cause, investigate each group with the bug role against jig's own code, and turn each into a spec, a drop with its reason shown, or a note of what's missing. Use on "fix the feedback", or when jig staging lists feedback.
 ---
+
+An entry point: it starts Feedback (`jig flows`). Its grouping is the spec role's
+consolidate, each group's investigation the bug role's, and the jobs that follow are Job's.
+The roles' settings are `jig roles`'s; the hubnode starts each from its skill's brief.
 
 Run this in the jig repo only: its `.jig/jig.py`, `RULES.md` and skills are the code under
 investigation. Elsewhere, stop and say where to run it. If `jig staging` refuses
@@ -10,8 +14,8 @@ investigation. Elsewhere, stop and say where to run it. If `jig staging` refuses
 1. **Read.** `python3 .jig/jig.py staging` lists what's staged, and the `feedback/` folder
    beside your repos list too. Read every file whose kind is `feedback`. Group those that look
    like one root cause; a report with two unrelated issues joins two groups.
-2. **Investigate.** Per group, run `/jig:bug` against jig's own code (`plugin/`), at the `bug`
-   step's settings (`jig workflow`; the hubnode's *Who runs each step*). The reporters'
+2. **Investigate.** Per group, the bug role (`/jig:bug`) against jig's own code (`plugin/`),
+   at its settings (`jig roles`; the hubnode's *Assigning a step*). The reporters'
    givens are inputs: tag one `[seen]` only once you've reproduced it here, else `[assumed]`.
    Note each report's `jig_version`: the bug may be in an older copy than this one.
 3. **General?** Picture another repo using the same feature the way RULES.md describes
@@ -29,7 +33,7 @@ investigation. Elsewhere, stop and say where to run it. If `jig staging` refuses
    - **a correction**: write the spec through `/jig:spec`, carrying the line
      `Source: <source> (staged as <file name>): <symptom>` for every report in the group, the
      symptom copied from the report in its words. Once every group's spec is written, run
-     `jig consolidate`, answer each group it lists (`/jig:consolidate`, or a
+     `jig consolidate`, answer each group it lists (the spec role's consolidate, `/jig:spec`, or a
      `Kept separate from <spec>: <reason>` line per pair), then `jig staging resolve <file>`
      for each: `resolve` refuses while a report's spec is in an unanswered group.
    - **a workaround for one repo** (`/jig:bug` step 4): `jig staging drop <file>`, saying why and what that repo

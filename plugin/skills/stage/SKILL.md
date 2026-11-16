@@ -54,7 +54,7 @@ that spec carries the mark.
   each, run it again, and say the batch is staged only once it passes. A warning that the target
   has a near-identical name beside it doesn't fail the check: confirm with the user that the
   target is the repo they mean.
-- **Workflow.** Leave a spec's `## Workflow` empty: you can't run `jig workflow` against the
+- **Roles.** Leave a spec's `## Roles` empty: you can't run `jig roles` against the
   target's config, and `resolve` fills it.
 - **A sweep** that skips work the target already has must read its `.jig/specs/`,
   `.jig/roadmap.md` and `.jig/decisions.md`. Request read access to each; if you can't get it,
@@ -65,9 +65,9 @@ that spec carries the mark.
 `python3 .jig/jig.py staging` lists what's there, each file after the ones its `after:`
 names: resolve them in that order. A file whose `after` names one no longer staged is free to
 resolve: that file was resolved, dropped or forwarded. A cycle is listed as one: show the
-user, and fix one header's `after:` with them. A new spec whose `## Workflow` is
-empty or missing resolves with `jig workflow`'s lines in it, or is refused while
-`jig workflow` refuses. For each file, with the user:
+user, and fix one header's `after:` with them. A new spec whose `## Roles` (or an older `## Workflow`) is
+empty or missing resolves with `jig roles`' lines in it, or is refused while
+`jig roles` refuses. For each file, with the user:
 
 - **spec / doc, new**: `jig staging resolve <file>` writes it, with its source.
 - **spec / doc, update**: find the page — the path, else search for the filename, else ask
@@ -97,7 +97,7 @@ empty or missing resolves with `jig workflow`'s lines in it, or is refused while
   don't replace it); and lists under that spec's Decisions each thing it filled in that the request didn't say, starting `Interpreted:`.
   Show the spec; `resolve` once the owner accepts it. It refuses until a spec carries the mark.
 - A story's, request's or report's `resolve` refuses while its spec overlaps another waiting
-  spec unanswered: run `jig consolidate`, then `/jig:consolidate` or a `Kept separate` line.
+  spec unanswered: run `jig consolidate`, then the spec role's consolidate (`/jig:spec`) or a `Kept separate` line.
 - **feedback**: work through it with `/jig:fix` in the jig repo. Elsewhere, `resolve` forwards it
   there.
 - **another repo's**: `resolve` forwards it into that repo's `.jig/staging/`; it is resolved

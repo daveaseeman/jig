@@ -4,6 +4,9 @@ description: Bring a repo already running jig to the current layout - move jig's
 disable-model-invocation: true
 ---
 
+An entry point: what its dry run finds starts the Survey workflow (`jig flows`) when it needs
+a plan, which is the spec role's; the `--apply` and the fixes after it are the work role's.
+
 Run the plugin's copy, not the repo's — the repo's is older and may have no `update`:
 
 ```sh
