@@ -649,7 +649,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
             # a metarepo job for its line. It only adds, outside ## Open where an open entry's
             # status changes in place: a rewrite would take what others recorded with it.
             if p == LOG:
-                since = git("merge-base", trunk, "HEAD") or base(trunk)
+                since = since_trunk(trunk)
                 now = in_index(LOG, staged)
                 if now and not outside_open_deleted(at_rev(since, LOG), now):
                     continue
@@ -8806,23 +8806,37 @@ def scope_quoted(sids: list[str]) -> list[re.Pattern]:
 
 def added_lines(trunk: str, staged: bool, files: list[str]) -> list[tuple[str, int, str]]:
     """(path, line number, text) for each line the change adds to FILES. Renames are followed,
-    so a moved page's old lines aren't new; the prefixes are fixed, whatever the user's diff
-    settings."""
+    so a moved page's old lines aren't new, and a line counts as added only while the file's
+    diff adds its text more times than it removes it, so a line moved within a file isn't new
+    either: a line diff shows every move as a delete plus an add. The prefixes are fixed,
+    whatever the user's diff settings."""
     # Both sides of every rename are in the pathspec, or git can't see the rename.
     gone = [f for f in changed_paths(trunk, staged, removed=True) if f.endswith(".md") and f not in files]
     diff = git("-c", "core.quotePath=false", "diff", "-M", "-U0", "--no-ext-diff", "--no-color",
                "--src-prefix=a/", "--dst-prefix=b/", base(trunk), *(["--cached"] if staged else []),
                "--", *files, *gone)
     out, at, n, want = [], "", 0, set(files)
+    net: dict[str, Counter] = {}
+    hunk = False  # the ---/+++ headers sit outside hunks, so they are never counted as text
     for line in diff.splitlines():
-        if line.startswith("+++ "):
+        if line.startswith("diff "):
+            hunk = False
+        elif not hunk and line.startswith("+++ "):
             at = line[6:] if line.startswith("+++ b/") and line[6:] in want else ""
         elif m := re.match(r"@@ -\S+ \+(\d+)", line):
-            n = int(m.group(1))
-        elif line.startswith("+") and at:
+            n, hunk = int(m.group(1)), True
+        elif hunk and at and line.startswith("+"):
             out.append((at, n, line[1:]))
+            net.setdefault(at, Counter())[line[1:]] += 1
             n += 1
-    return out
+        elif hunk and at and line.startswith("-"):
+            net.setdefault(at, Counter())[line[1:]] -= 1
+    kept = []
+    for f, n, text in out:
+        if net[f][text] > 0:
+            net[f][text] -= 1
+            kept.append((f, n, text))
+    return kept
 
 
 def dead_touches(text: str, have: set[str]) -> set[tuple[str, str]]:
