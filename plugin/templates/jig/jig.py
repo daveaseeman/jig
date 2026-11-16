@@ -66,20 +66,20 @@ BOARD_OPTIONAL = (
 # tier 1 is the tool's best model, a higher number a lesser one; effort 0 is its highest, each
 # number up one level lower. Effort 0 is left unused so a repo can raise any role. Overridden
 # per repo by config.json's "roles", each with a reason, never per task: a model would be
-# choosing its own budget.
+# choosing its own budget. "session" is where the role runs, as README's drawing says it.
 ROLES = {
-    "spec":   {"tier": 2, "effort": 2, "steps": ["spec", "consolidate"]},
+    "spec":   {"session": "new session", "tier": 2, "effort": 2, "steps": ["spec", "consolidate"]},
     # Before any diff exists; it ends with the spec for what it found.
-    "bug":    {"tier": 2, "effort": 1, "steps": ["bug"]},
+    "bug":    {"session": "new session", "tier": 2, "effort": 1, "steps": ["bug"]},
     # One session keeps the build through every fix and sync.
-    "work":   {"tier": 2, "effort": 3, "steps": ["work", "handoff", "fix", "sync"]},
+    "work":   {"session": "one session per job", "tier": 2, "effort": 3, "steps": ["work", "handoff", "fix", "sync"]},
     # Always a fresh session: a reviewer who saw the build judges what it meant, not what it did.
-    "review": {"tier": 2, "effort": 2, "steps": ["review-work", "review-change"], "fresh": True},
+    "review": {"session": "fresh session", "tier": 2, "effort": 2, "steps": ["review-work", "review-change"], "fresh": True},
     # Fixed commands: the complete suite, its trace, a survey, a release run.
-    "check":  {"tier": 3, "effort": 4, "steps": ["check", "trace", "survey", "release run"]},
+    "check":  {"session": "new session", "tier": 3, "effort": 4, "steps": ["check", "trace", "survey", "release run"]},
 }
-# The hubnode's steps are no role's: it runs at the owner's settings, and jig only warns below
-# HUBNODE_FLOOR.
+# The hubnode's steps are no role's: it runs at the owner's settings, which should be at least
+# HUBNODE_FLOOR. The hubnode skill says so when it reads lower; jig can't see a session's model.
 HUBNODE_STEPS = ["assign", "gate", "merge", "push", "publish"]
 HUBNODE_FLOOR = {"tier": 2, "effort": 1}
 # A workflow is its steps with the link before each: "→" goes to a session that already
@@ -1347,7 +1347,7 @@ def group_of(root: Path, board: "Board", spec: str) -> tuple[list[str], dict] | 
 def group_refusal(group: tuple[list[str], dict], what: str) -> str:
     specs, edges = group
     return (f"{what} is in a group of waiting specs whose Touches overlap: {', '.join(specs)}. "
-            "Answer it first: merge them into one spec (/jig:consolidate), or add "
+            "Answer it first: merge them into one spec (the spec role's consolidate, /jig:spec), or add "
             "`Kept separate from <spec>: <reason>` to one spec of each pair. `jig consolidate` lists it.")
 
 
@@ -1363,7 +1363,7 @@ def cmd_consolidate(root: Path, args) -> int:
             print(f"  {s}")
         for (a, b), shared in edges.items():
             print(f"    {Path(a).stem} and {Path(b).stem} share: {', '.join(shared)}")
-    print("\nAnswer each group before opening any of it: /jig:consolidate merges a group into one "
+    print("\nAnswer each group before opening any of it: the spec role's consolidate (/jig:spec) merges a group into one "
           "spec, or one spec of a pair says `Kept separate from <spec>: <reason>`.")
     return 0
 

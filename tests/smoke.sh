@@ -6945,7 +6945,22 @@ msg="role line: the hook is registered for startup, resume and compact"
 expect_pass sh -c "python3 -c \"import json,sys; h=json.load(open('$P/../hooks/hooks.json'))['hooks']['SessionStart'][0]; sys.exit(not (h['matcher']=='startup|resume|compact' and 'session-start.sh' in h['hooks'][0]['command']))\""
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next"
+# ---------------------------------------------------------------- README's drawing
+sec_svg() {
+SV="$T/svg"; mkdir -p "$SV/plugin/templates/jig" "$SV/scripts" "$SV/assets"
+cp "$JR/plugin/templates/jig/jig.py" "$SV/plugin/templates/jig/" && cp "$JR/scripts/roles_svg.py" "$SV/scripts/" \
+  && cp "$JR"/assets/roles-and-flows-*.svg "$SV/assets/" && cd "$SV"
+msg="svg: the committed drawings are what roles_svg.py draws from jig.py"
+expect_pass python3 scripts/roles_svg.py --check
+sed -i.bak 's/"review": {"session": "fresh session", "tier": 2, "effort": 2,/"review": {"session": "fresh session", "tier": 2, "effort": 3,/' plugin/templates/jig/jig.py && rm plugin/templates/jig/jig.py.bak
+msg="svg: a role's effort changed in a scratch copy fails the check, naming each SVG"
+out=$(python3 scripts/roles_svg.py --check 2>&1); rc=$?
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q '^assets/roles-and-flows-light.svg differs' && echo \"\$0\" | grep -q '^assets/roles-and-flows-dark.svg differs'" "$out"
+msg="svg: redrawn, it passes, and the light drawing shows the new effort"
+expect_pass sh -c "python3 scripts/roles_svg.py >/dev/null && python3 scripts/roles_svg.py --check && grep -q '>2,3 · fresh session<' assets/roles-and-flows-light.svg"
+}
+
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file

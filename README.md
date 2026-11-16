@@ -96,10 +96,10 @@ repo already has.
 
 This repo holds two things:
 
-- **A Claude Code plugin** in `plugin/`. Its skills run the loop (`spec`, `bug`, `verify`,
-  `review`, `retro`), set a repo up (`init`, `survey`, `adopt`, `update`), move its docs onto the current page
-  contract (`redocument`), coordinate parallel
-  sessions (`hubnode`, `subnode`), spec a circuit board and install the skills it needs
+- **A Claude Code plugin** in `plugin/`. Two node skills (`hubnode`, `subnode`) and five role
+  skills (`spec`, `bug`, `work`, `review`, `check`) run the loop; others set a repo up (`init`,
+  `survey`, `adopt`, `update`), move its docs onto the current page contract (`redocument`),
+  turn a repeat into a skill (`retro`), spec a circuit board and install the skills it needs
   (`hardware`), land files from other chats (`stage`, `repos`), cut releases (`release`), and report bugs in jig itself
   (`feedback`).
 - **A checker**, `plugin/templates/jig/jig.py`, which `init` copies into a hidden `.jig/` folder
@@ -116,6 +116,63 @@ A task moves through:
 ```
 spec → plan → do → commit (hook-checked) → … → checks → review → handoff → gate → merge
 ```
+
+## 🧑‍🤝‍🧑 Who does what
+
+Every session is a node: the hubnode, which is yours, or a subnode. A subnode takes one of five
+roles, each with its own model tier and effort. The workflows are data in `jig.py`, so
+`jig next` names each job's next step, who takes it, and whether it continues a session or
+starts one, and jig refuses a step taken out of order. The pictures are drawn from that data
+by `scripts/roles_svg.py`.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/roles-and-flows-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/roles-and-flows-light.svg">
+  <img src="assets/roles-and-flows-light.svg" alt="Roles: the hubnode (the owner's session) assigns, gates, merges, pushes and publishes; spec (tier 2, effort 2) writes and consolidates specs; bug (2,1) investigates and writes the spec for what it found; work (2,3, one session per job) builds, hands off, fixes and syncs; review (2,2, always a fresh session) runs review-work and review-change; check (3,4) runs the complete suite, traces a failed batch, surveys and runs releases; jig itself refuses steps out of order. Workflows: Job is spec, work, review-work, handoff, gate, check, merge; Fix and Sync are work, review-change, handoff; Bug is bug, spec, then a Job; Feedback, Batch, Release, Survey and Redocument follow, each with its trigger and controls. The tables below say the same in text.">
+</picture>
+
+<details>
+<summary>The same, as tables</summary>
+
+**Nodes.**
+
+| Node | Settings | What it does | Roles it may load |
+|---|---|---|---|
+| hubnode | the owner's session; tier 2, effort 1 or better | talks, decides, assigns, gates, merges, pushes, publishes | spec (only for specs drafted from the conversation) |
+| subnode | the role's | takes one role on one job, works only in its worktree, reports back, never touches trunk | any of the five |
+
+**Roles.**
+
+| Role | Tier, effort | Steps it owns |
+|---|---|---|
+| spec | 2, 2 | spec, consolidate |
+| bug | 2, 1 | bug, then the spec for what it found |
+| work | 2, 3 | work, handoff, fixes, hand-resolved syncs |
+| review | 2, 2 | review-work (the job's whole diff), review-change (only what changed since the last review); always a fresh session |
+| check | 3, 4 | check (the complete suite), trace a failed batch, survey, release run |
+
+The hubnode's own steps, which are no role's: assign, gate, merge, push, publish. jig itself
+(no model) refuses a step out of order. Tiers and efforts are numbers; `plugin/tiers.json`
+maps them to models and effort levels.
+
+**Workflows.** `→` continues a session that already exists, named by its letter; `⇢` starts a new one.
+
+| Workflow | Steps | Trigger | Controls |
+|---|---|---|---|
+| Job | spec ⇢ work ⇢ review-work → handoff → gate ⇢ check → merge | `jig open` | merge only on the owner's word |
+| Fix | work ⇢ review-change → handoff | a review with blocking findings | three rounds at most; a fourth is refused and Bug runs |
+| Sync | work ⇢ review-change → handoff | a sync with a hand-resolved conflict | a clean sync needs nothing |
+| Bug | bug → spec ⇢ Job | a fourth fix round, a feedback group, or the owner's `/jig:bug` | never on a session's own reading that something is broken |
+| Feedback | consolidate ⇢ bug + spec → consolidate ⇢ Job | staged feedback, in the jig repo | one bug + spec per group; overlaps answered before any job opens |
+| Batch | gate → merge ⇢ check → trace | two or more gated jobs | one check on trunk; a failure is traced to its merge, then Fix on that job |
+| Release | check → release run → push → publish | the owner's word | refused while a batch check is owed; push and publish only on the owner's word |
+| Survey | survey ⇢ spec ⇢ Jobs | `/jig:survey`, `/jig:adopt`, `/jig:update` | |
+| Redocument | spec ⇢ Jobs ⇢ Batch ⇢ Job | `/jig:redocument` | the spec is the remap; the last job is the cleanup |
+
+Fixed, whatever the config says: the owner's word before merge, push and publish; a fresh
+session for every review; a complete check before a release.
+
+</details>
 
 ## 🚀 Usage
 
@@ -161,8 +218,9 @@ Day to day:
 jig roadmap --write      # print the roadmap's state and rewrite ROADMAP.md
 /jig:repos add repo      # register this folder so other chats can stage files to it
 /jig:release             # build and tag a version, the way this repo ships
-/jig:hubnode             # the session that owns trunk, the board and merges
-/jig:subnode             # a session that works one job
+/jig:hubnode             # your session: owns trunk, the board and merges, and assigns each step
+/jig:subnode             # a session that takes one role on one job
+jig next                 # each job's next step, who takes it, continue or new session
 ```
 
 Every rule the hooks enforce is written in `.jig/RULES.md` after init.
