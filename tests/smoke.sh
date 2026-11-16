@@ -238,13 +238,15 @@ git add -A; expect_pass git commit -qm py
 git reset -q --hard "$keep"
 
 keep=$(git rev-parse HEAD)
-printf 'def a():\n    # %s x\n    return 1\n\ndef b():\n    return 2\n' "$W" > src/mv.py && git add -A && git -c core.hooksPath=/dev/null commit -qm planted
+printf 'def a():\n    # %s x\n    return 1\n\ndef b():\n    y = 2\n    z = 3\n    w = 4\n    return y + z + w\n' "$W" > src/mv.py && git add -A && git -c core.hooksPath=/dev/null commit -qm planted
 msg="R7: moving a WORKAROUND: comment and adding a second copy of it in the same commit is refused"
-printf 'def b():\n    return 2\n\ndef a():\n    # %s x\n    return 1\n\ndef c():\n    # %s x\n    return 3\n' "$W" "$W" > src/mv.py && git add -A; expect_refuse git commit -qm copy; undo
+printf 'def b():\n    y = 2\n    z = 3\n    w = 4\n    return y + z + w\n\ndef a():\n    # %s x\n    return 1\n\ndef c():\n    # %s x\n    return 3\n' "$W" "$W" > src/mv.py && git add -A; out=$(git commit -qm copy 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'R7 the diff adds'" "$out"
 msg="R7: a WORKAROUND: comment only moved within its file (functions reordered) commits with no ledger row"
-printf 'def b():\n    return 2\n\ndef a():\n    # %s x\n    return 1\n' "$W" > src/mv.py && git add -A; expect_pass git commit -qm reorder
+printf 'def b():\n    y = 2\n    z = 3\n    w = 4\n    return y + z + w\n\ndef a():\n    # %s x\n    return 1\n' "$W" > src/mv.py && git add -A; expect_pass git commit -qm reorder
 msg="R7: a WORKAROUND: comment in a file whose name holds a space is refused"
-printf '# %s x\n' "$W" > 'src/my file.py' && git add -A; expect_refuse git commit -qm space; undo
+printf '# %s x\n' "$W" > 'src/my file.py' && git add -A; out=$(git commit -qm space 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'R7 the diff adds'" "$out"
 git reset -q --hard "$keep"
 
 msg="sync: a conflicted merge of trunk can be committed"
