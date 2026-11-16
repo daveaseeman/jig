@@ -1,6 +1,6 @@
 ---
 name: hubnode
-description: Run the hubnode session for a repo with parallel jobs - the owner's session, which owns trunk, the board, worktrees, gates and merges, and assigns each step to a role. Use at the start of a hubnode session, or on "open a job", "what's next", "gate X", "merge X".
+description: Run the hubnode session for a repo with parallel jobs - the owner's session, which owns trunk, the board, worktrees, gates and merges, and assigns each step to a role. Use at the start of a hubnode session, or on "open a job", "gate X", "merge X".
 ---
 
 Read `.jig/RULES.md` first. `jig` below is `python3 .jig/jig.py`.
@@ -47,6 +47,10 @@ conversation, whose decisions live here.
    /jig:update first" and stop.
 7. Work in this order: open the jobs asked for, gate the handoffs waiting, then each job's
    next step.
+
+The repo's whole picture, and one batch of decisions for the owner, is `/jig:rig`, run when
+it is called by name: what can start, what waits on what and on the owner, and the roadmap's
+next step.
 
 ## Assigning a step
 

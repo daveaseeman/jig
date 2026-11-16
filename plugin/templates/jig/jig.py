@@ -11664,6 +11664,226 @@ def update_blocked(why: list[str]) -> int:
     return 2
 
 
+# ----------------------------------------------------------------------- rig
+
+# The order every list in `jig rig` keeps, so the same state prints the same bytes.
+RIG_KINDS = ("spec", "staged", "next-step")
+
+
+def rig_store() -> Path:
+    """The skill's open/ready calls, kept in the git dir: local to this clone, never committed."""
+    return git_common() / "jig" / "rig.json"
+
+
+def rig_load_store() -> dict:
+    try:
+        data = json.loads(rig_store().read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def rig_key(content: str, board: "Board") -> str:
+    """A judgment holds while its item and the board are as they were: either changing re-judges."""
+    jobs = json.dumps(board.jobs, sort_keys=True)
+    return hashlib.sha256(f"{content}\0{jobs}".encode()).hexdigest()[:16]
+
+
+def built_after(text: str) -> list[str]:
+    """The names a spec says it builds after, by its `Build after` lines, as stems."""
+    out = []
+    for m in re.finditer(r"^[ \t]*(?:[-*][ \t]*)?Build after (.+)$", text, re.M):
+        out += [Path(n).stem for n in re.findall(r"`([^`\n]+)`", m.group(1))]
+    return out
+
+
+def rig_items(root: Path, board: "Board") -> list[dict]:
+    """Every waiting spec, every staged file and the roadmap's next step, unjudged, in kind
+    then path order. A staged file's open or ready is the skill's call, read back from the store."""
+    items = []
+    specs = waiting_specs(root, board)
+    for path, text in specs.items():
+        items.append({"kind": "spec", "id": Path(path).stem, "path": path, "content": text,
+                      "touches": touches_spans(text), "after": built_after(text),
+                      "kept": sorted(kept_separate(text)), "scopes": spec_scopes(text)})
+    for f in staged_files(main_root()):
+        head, body, _ = read_staged(f)
+        items.append({"kind": "staged", "id": f.name, "path": f"{STAGING}/{f.name}",
+                      "content": f.read_text(errors="replace"), "header": head,
+                      "touches": touches_spans(body), "after": [Path(n).stem for n in after_names(head)],
+                      "kept": sorted(kept_separate(body)), "scopes": spec_scopes(body)})
+    step = rig_next_step(board, [s for i in items for s in i["scopes"]])
+    if step:
+        items.append(step)
+    return items
+
+
+def rig_next_step(board: "Board", taken: list[str]) -> dict | None:
+    """One step ahead on trunk's roadmap: the first Up next item, else the current phase's first
+    scope, that no spec, waiting or staged, takes."""
+    snap = Snapshot(board.trunk)
+    text = snap.show(ROADMAP)
+    if not text:
+        return None
+    for i in parse_up_next(text):
+        if i["id"] not in taken:
+            return {"kind": "next-step", "id": i["id"], "path": f"{ROADMAP}#{i['id']}",
+                    "content": f"{UP_NEXT}\0{i['id']}\0{i['what']}\0{i['touches']}",
+                    "what": i["what"], "from": UP_NEXT, "touches": i["touches"], "after": [],
+                    "kept": [], "scopes": []}
+    for p in roadmap_state(snap) or []:
+        if p["state"] != "current":
+            continue
+        for s in p["scopes"]:
+            if s["state"] == "open" and s["id"] not in taken:
+                return {"kind": "next-step", "id": s["id"], "path": f"{ROADMAP}#{s['id']}",
+                        "content": f"{p['name']}\0{s['id']}\0{s['what']}", "what": s["what"],
+                        "from": f"phase {p['name']}", "touches": [], "after": [], "kept": [], "scopes": []}
+    return None
+
+
+def rig_state(root: Path, board: "Board") -> dict:
+    """The picture as data: each item with its judgment, what it waits on and its proposed job
+    group, then the open jobs with `jig next`'s step for each."""
+    items = rig_items(root, board)
+    store = rig_load_store()
+    for i in items:
+        i["key"] = rig_key(i.pop("content"), board)
+        held = store.get(i["path"])
+        i["judged"] = held["judgment"] if isinstance(held, dict) and held.get("key") == i["key"] else None
+        call = (i["judged"] or {}).get("call")
+        i["state"] = ("ready" if i["kind"] == "spec" else "open" if i["kind"] == "next-step"
+                      else call if call in ("ready", "open") else "unjudged")
+    by_name = {}
+    for i in items:
+        if i["kind"] != "next-step":
+            by_name.setdefault(i["id"], i)
+            by_name.setdefault(Path(i["id"]).stem, i)
+    # What each item waits on: an open job, or an item that isn't ready, directly or through one.
+    for i in items:
+        i["deps"] = sorted({by_name[n]["path"] for n in i["after"] if n in by_name and by_name[n] is not i})
+        i["waits_on"] = sorted(f"job {n}" for n in set(i["after"]) if n in board.jobs and n not in by_name)
+    changed = True
+    while changed:
+        changed = False
+        for i in items:
+            if i["state"] != "ready":
+                continue
+            for d in i["deps"]:
+                dep = next(x for x in items if x["path"] == d)
+                if (dep["state"] != "ready" or dep["waits_on"]) and f"{dep['kind']} {d}" not in i["waits_on"]:
+                    i["waits_on"].append(f"{dep['kind']} {d}")
+                    changed = True
+    for i in items:
+        i["waits_on"].sort()
+    start = [i for i in items if i["state"] == "ready" and not i["waits_on"]]
+    # Proposed jobs: overlapping Touches no `Kept separate` line answers, and dependencies, join items.
+    parent = {i["path"]: i["path"] for i in start}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            x = parent[x]
+        return x
+    for n, a in enumerate(start):
+        for b in start[n + 1:]:
+            apart = Path(b["id"]).stem in a["kept"] or Path(a["id"]).stem in b["kept"]
+            meet = any(touches_meet(x, y) for x in a["touches"] for y in b["touches"])
+            if (meet and not apart) or b["path"] in a["deps"] or a["path"] in b["deps"]:
+                parent[find(b["path"])] = find(a["path"])
+    rank = {k: n for n, k in enumerate(RIG_KINDS)}
+    sort_key = lambda i: (rank[i["kind"]], i["path"])
+    groups: dict[str, list[dict]] = {}
+    for i in sorted(start, key=sort_key):
+        groups.setdefault(find(i["path"]), []).append(i)
+    ordered = []
+    for members in groups.values():
+        # Dependency order within a group, kind then path between items that don't depend.
+        left, out = list(members), []
+        while left:
+            free = [i for i in left if not any(d in {x["path"] for x in left} for d in i["deps"])] or left
+            pick = min(free, key=sort_key)
+            out.append(pick)
+            left.remove(pick)
+        ordered.append(out)
+    for g, members in enumerate(ordered, 1):
+        for i in members:
+            i["group"] = g
+    for i in items:
+        i.setdefault("group", None)
+        del i["kept"]
+    jobs = []
+    for name in sorted(board.open_jobs()):
+        step, who, session, why = next_step(root, board, name)
+        jobs.append({"name": name, "step": step, "who": who, "session": session, "why": why})
+    asks = [i for i in items if i["state"] in ("open", "unjudged")]
+    return {"items": sorted(items, key=sort_key), "groups": [[i["path"] for i in g] for g in ordered],
+            "waiting_on_you": len(asks), "can_start": len(start), "jobs": jobs}
+
+
+def rig_text(state: dict) -> str:
+    items = state["items"]
+    n, m = state["waiting_on_you"], state["can_start"]
+    out = [f"{n} thing{'s' if n != 1 else ''} waiting on your answers; {m} can start now."]
+    out.append("\nCan start now:")
+    for g, paths in enumerate(state["groups"], 1):
+        out.append(f"  job {g}:")
+        for p in paths:
+            i = next(x for x in items if x["path"] == p)
+            after = [d for d in i["deps"] if d in paths]
+            out.append(f"    {i['kind']:<7} {p}" + (f"  (after {', '.join(after)})" if after else ""))
+    if not state["groups"]:
+        out.append("  nothing")
+    out.append("\nWaiting on:")
+    waits = [i for i in items if i["waits_on"]]
+    out += [f"  {i['kind']:<7} {i['path']}  waits on {', '.join(i['waits_on'])}" for i in waits] or ["  nothing"]
+    out.append("\nWaiting on you:")
+    asks = [i for i in items if i["state"] in ("open", "unjudged")]
+    for i in asks:
+        if i["kind"] == "next-step":
+            out.append(f"  next    {i['id']} ({i['from']}): {i['what']}")
+        else:
+            out.append(f"  {i['kind']:<7} {i['path']}  {'not judged yet' if i['state'] == 'unjudged' else 'open'}")
+    if not asks:
+        out.append("  nothing")
+    out.append("\nRunning:")
+    out += [f"  {j['name']}: {j['step']} — {j['who']}, {j['session']}" + (f" ({j['why']})" if j["why"] else "")
+            for j in state["jobs"]] or ["  no open jobs"]
+    return "\n".join(out)
+
+
+def cmd_rig(root: Path, args) -> int:
+    """The repo's picture: what can start, what waits on what, what waits on the owner, and the
+    running jobs. It reads and never writes the roadmap or staging; its one file is the store."""
+    board = Board.load(root)
+    if args.fresh:
+        rig_store().unlink(missing_ok=True)
+    if args.store_get or args.store_put:
+        path = args.store_get or args.store_put
+        item = next((i for i in rig_state(root, board)["items"] if i["path"] == path), None)
+        if not item:
+            die(f"{path} is no item of `jig rig`: name it by the path `jig rig --json` prints")
+        if args.store_get:
+            if item["judged"] is None:
+                return 1
+            print(json.dumps(item["judged"], indent=2, sort_keys=True))
+            return 0
+        try:
+            judgment = json.loads(sys.stdin.read())
+        except ValueError as e:
+            die(f"--store-put reads a JSON object on stdin: {e}", 2)
+        if not isinstance(judgment, dict) or judgment.get("call", "ready") not in ("ready", "open"):
+            die('--store-put reads a JSON object whose "call", if given, is "ready" or "open"', 2)
+        store = rig_load_store()
+        store[path] = {"key": item["key"], "judgment": judgment}
+        rig_store().parent.mkdir(parents=True, exist_ok=True)
+        rig_store().write_text(json.dumps(store, indent=2, sort_keys=True) + "\n")
+        print(f"stored the judgment of {path}")
+        return 0
+    state = rig_state(root, board)
+    print(json.dumps(state, indent=2, sort_keys=True) if args.json else rig_text(state))
+    return 0
+
+
 # ----------------------------------------------------------------------- main
 
 def main(argv: list[str] | None = None) -> int:
@@ -11792,6 +12012,11 @@ def main(argv: list[str] | None = None) -> int:
     up.add_argument("--merge-log", action="store_true", help=f"on the owner's yes: merge CHANGELOG.md and the decision register into {LOG}")
     up.add_argument("--sweep", action="store_true", help=f"on the owner's yes: move pages' ## Undefined entries to {UP_NEXT} in {ROADMAP}")
     up.add_argument("--glossary", action="store_true", help=f"on the owner's yes: move the README's glossary, or GLOSSARY.md, to {GLOSSARY}, rewriting what points to it")
+    rg = sub.add_parser("rig", help="the repo's picture: what can start, what waits on what and on the owner")
+    rg.add_argument("--json", action="store_true")
+    rg.add_argument("--fresh", action="store_true", help="forget every stored judgment first")
+    rg.add_argument("--store-get", metavar="PATH", help="print an item's stored judgment, if it still holds")
+    rg.add_argument("--store-put", metavar="PATH", help="store an item's judgment, a JSON object on stdin")
     hk = sub.add_parser("hook")
     hk.add_argument("name")
     hk.add_argument("rest", nargs="*")
@@ -11816,6 +12041,7 @@ def main(argv: list[str] | None = None) -> int:
         "workflow": cmd_workflow, "roles": cmd_roles, "flows": cmd_flows, "next": cmd_next,
         "survey": cmd_survey, "reading-list": cmd_reading_list, "update": cmd_update, "repos": cmd_repos, "staging": cmd_staging,
         "release": cmd_release, "propose": cmd_propose, "roadmap": cmd_roadmap,
+        "rig": cmd_rig,
     }[args.cmd]
     return fn(root, args)
 

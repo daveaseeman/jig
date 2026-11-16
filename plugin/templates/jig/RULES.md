@@ -711,6 +711,21 @@ A `Proposed` entry the job adds or changes is a ruling the owner still owes. The
 hubnode when it writes one, the hubnode sends it up while the job builds, and `jig gate` warns,
 naming each, but never refuses: the owner may say to gate a job as proposed.
 
+`jig rig` is the repo's picture, the hubnode's entry point: what can start now, what waits on
+what, what waits on the owner, and the open jobs with `jig next`'s step for each. It lists four
+kinds of item: a **ready spec** (a waiting spec, as The board defines it), a **staged file**,
+which a model reading it calls **ready** (it can become a spec as it is) or **open** (it needs
+the owner's answers first), and the roadmap's **next step** (Roadmap). Ready items whose Touches
+overlap, with no `Kept separate` line, are proposed as one job; an item that depends on another
+(a staged file's `after:` header, a spec's `Build after <name>` line) comes after it in the same
+job, and one that depends on an open job, or on an item not ready, waits on it. The order is
+fixed (kind, dependency, path), so the same state prints the same bytes; `--json` prints it as
+data. A model's open/ready call, its questions and its recommendation are kept per item in
+`.git/jig/rig.json` (never committed) with a key of the item's content and the board, and
+replayed while both are unchanged: `jig rig --store-put <path>` stores one (a JSON object on
+stdin), `--store-get <path>` prints one that still holds, and `--fresh` forgets them all. It
+never writes the roadmap or staging. It is called by name only: `jig next` is unchanged.
+
 ### Two levels of check
 
 `.jig/scripts/check.sh` has two levels. With no argument it runs the quick part: what runs
@@ -793,6 +808,10 @@ The product is the repo, so there is one roadmap and no product level in it.
 - **The hook refuses** a spec whose `Scope:` names a scope trunk's roadmap doesn't have (on
   trunk, the commit's own roadmap), and on trunk a roadmap change that drops or renames a scope
   a spec still takes, naming the spec: re-point it in the same commit.
+- **The next step** is one step ahead, as if staging and the waiting specs were cleared: the
+  first Up next item, else the current phase's first open scope, that no waiting spec or
+  staged file takes by its `Scope:` line. `jig rig` (Workflow) proposes it to the owner and
+  never writes the roadmap.
 
 ## Decision log
 
@@ -997,6 +1016,8 @@ other. The warning doesn't fail anything, since both may be meant.
 `check` also warns on each entry of a `decisions` file whose status says Accepted, naming its id
 and who: `resolve` logs it as decided, so the owner confirms they accepted it, else it says
 Proposed. It doesn't fail the check, since an entry accepted in the chat is right as written.
+`jig rig` (Workflow) lists every staged file with its header, and leaves whether it is ready to
+become a spec or open on the owner's answers to the model that reads it.
 
 A feature request is `kind: feature-request`: the owner's own words for what the product
 should do ("I want it to do xyz"), with no required shape. A story names who wants what and
@@ -1237,6 +1258,8 @@ jig repos [add repo|meta|para | rename <new>]  where your repos live (user confi
 jig open ... --reserve K    allocate scarce counter K to this job
 jig reserve <job> <K>       hubnode: give an open job the next number of counter K too
 jig consolidate             hubnode: groups of waiting specs whose Touches overlap, to answer before opening
+jig rig [--json] [--fresh]  the repo's picture: what can start, what waits on what and on the owner, the open jobs
+jig rig --store-put|--store-get <path>   store, or print, a model's judgment of one item
 jig share <job> <path>…     hubnode: add paths to an open job's shares
 jig reading-list <paths>    what to read before touching these files, and the pages above
 jig install-hooks           rewrite the hooks
