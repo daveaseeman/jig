@@ -559,9 +559,13 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     # which may match the marker anywhere, judges every update of it.
     code = [p for p in paths if (p.endswith(CODE_EXT) or Path(p).name == "Kconfig")
             and p != f"{DIR}/jig.py"]
-    # Raw, so a lone CR can't split one added line into a "+" line and an unmarked one.
-    diff = git_raw("diff", "-U0", base(trunk), *(["--cached"] if staged else []), "--", *code) if code else ""
-    if re.search(r"^\+(?:.*(?:#|//|/\*)|\s*\*)\s*WORKAROUND:", diff, re.M) and WORKAROUNDS not in paths:
+    # Raw, so a lone CR can't split one added line into a "+" line and an unmarked one; counted
+    # by net_added, so a comment only moved within its file (functions reordered) isn't new.
+    diff = git_raw("-c", "core.quotePath=false", "diff", "-U0", "--no-ext-diff", "--no-color",
+                   "--src-prefix=a/", "--dst-prefix=b/", base(trunk), *(["--cached"] if staged else []),
+                   "--", *code) if code else ""
+    marked = re.compile(r"(?:.*(?:#|//|/\*)|\s*\*)\s*WORKAROUND:")
+    if any(marked.match(t) for _, _, t in net_added(diff, set(code))) and WORKAROUNDS not in paths:
         # The ledger is made by its first row, so the refusal says where that row goes.
         out.append(f"R7 the diff adds a WORKAROUND: comment but {WORKAROUNDS} is not staged: "
                    f"add its row there in this commit (the first row creates the file from "
@@ -8812,13 +8816,22 @@ def added_lines(trunk: str, staged: bool, files: list[str]) -> list[tuple[str, i
     whatever the user's diff settings."""
     # Both sides of every rename are in the pathspec, or git can't see the rename.
     gone = [f for f in changed_paths(trunk, staged, removed=True) if f.endswith(".md") and f not in files]
-    diff = git("-c", "core.quotePath=false", "diff", "-M", "-U0", "--no-ext-diff", "--no-color",
-               "--src-prefix=a/", "--dst-prefix=b/", base(trunk), *(["--cached"] if staged else []),
-               "--", *files, *gone)
-    out, at, n, want = [], "", 0, set(files)
+    diff = git_raw("-c", "core.quotePath=false", "diff", "-M", "-U0", "--no-ext-diff", "--no-color",
+                   "--src-prefix=a/", "--dst-prefix=b/", base(trunk), *(["--cached"] if staged else []),
+                   "--", *files, *gone)
+    return net_added(diff, set(files))
+
+
+def net_added(diff: str, want: set[str]) -> list[tuple[str, int, str]]:
+    """(path, line number, text) for each line a `-U0` diff with a/ and b/ prefixes adds to a
+    file in WANT, kept only while that file's diff adds the text more times than it removes it:
+    a line diff shows every move as a delete plus an add, so a moved line isn't new. DIFF is
+    read raw and split on newlines only, so a form feed or lone CR in a line can't split off a
+    line that reads as a header."""
+    out, at, n = [], "", 0
     net: dict[str, Counter] = {}
     hunk = False  # the ---/+++ headers sit outside hunks, so they are never counted as text
-    for line in diff.splitlines():
+    for line in diff.split("\n"):
         if line.startswith("diff "):
             hunk = False
         elif not hunk and line.startswith("+++ "):

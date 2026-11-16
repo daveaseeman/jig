@@ -236,6 +236,12 @@ mkdir -p .jig/ledgers && cp "$P/ledgers/WORKAROUNDS.md" .jig/ledgers/ && printf 
 git add -A; expect_pass git commit -qm py
 git reset -q --hard HEAD~1
 
+msg="R7: a WORKAROUND: comment only moved within its file (functions reordered) commits with no ledger row"
+printf 'def a():\n    # %s x\n    return 1\n\ndef b():\n    return 2\n' "$W" > src/mv.py && git add -A && git -c core.hooksPath=/dev/null commit -qm planted
+printf 'def b():\n    return 2\n\ndef a():\n    # %s x\n    return 1\n' "$W" > src/mv.py && git add -A; expect_pass git commit -qm reorder
+msg="R7: a second WORKAROUND: comment in that file is still refused"
+printf '\ndef c():\n    # %s x\n    return 3\n' "$W" >> src/mv.py && git add -A; expect_refuse git commit -qm c; undo; git reset -q --hard HEAD~2
+
 msg="sync: a conflicted merge of trunk can be committed"
 ( cd "$T" && printf 'x=2\n' > src/a.py && git add -A && git commit -qm trunk1 )
 printf 'x=3\n' > src/a.py; git add -A; git commit -qm lane1
