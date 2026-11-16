@@ -9839,10 +9839,12 @@ def apply_retired(root: Path, edits: list) -> None:
 # which a product uses for its own things.
 STEP_SKILL = re.compile(r"/jig:(hubnode|subnode|spec|bug|work|review|check)\b")
 STEP_COMMAND = re.compile(r"\bjig(?:\.py)?\s+(reviewed|handoff|gate|checked|mark|merge|release)\b")
-# jig's settings are written lower-case, beside a role, step or node, or as the pair: "Tier 1
-# suppliers" and "effort: 3 days" are a product's words.
-STEP_SETTING = re.compile(r"\btier \d+, effort \d+\b|(?=.*\b(?:tier|effort):? \d)"
-                          r".*\b(?:spec|bug|work|review|reviews|check|hubnode|subnode|execute|recheck)\b")
+# A setting as jig writes it: the pair, or a lower-case tier or effort number on a line that
+# names a role, step or node. The bare phrase, "Tier 1 suppliers" or "effort: 3 days", is a
+# product's; a line that also says work or check is still listed, and a listing edits nothing.
+# Anchored at the line's start, so the lookahead runs once per line, not once per character.
+STEP_SETTING = re.compile(r"\btier \d+, effort \d+\b|(?m:^)(?=.*\b(?:tier|effort):? \d)"
+                          r".*\b(?i:spec|bug|work|review|check|hubnode|subnode|execute|recheck)s?\b")
 COMMAND_STEP = {"reviewed": "review-work", "handoff": "handoff", "gate": "gate", "checked": "check",
                 "mark": "gate", "merge": "merge", "release": "release"}
 ROLES_SAID = f"`roles` in {CONFIG} ({DIR}/RULES.md § Workflow)"

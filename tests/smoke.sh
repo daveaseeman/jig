@@ -7154,6 +7154,8 @@ cat >> AGENTS.md <<'MD'
 - Every commit: review the staged diff (/jig:review), then commit; record it with `jig reviewed`
 - Docs-only diffs get review at tier 2, effort 3
 - 'hubnode', 'gate' and 'merge' in the owner's words mean the app's own
+- Review at tier 1
+- Tier 1 suppliers ship within effort: 3 days
 MD
 printf '@AGENTS.md\n\nAfter each chunk, run `jig handoff` yourself.\n' > CLAUDE.md && ur_commit G
 cp AGENTS.md "$T/G.a"; cp CLAUDE.md "$T/G.c"
@@ -7165,6 +7167,8 @@ msg="update roles G: the tier line names roles in config.json"
 expect_pass sh -c "echo \"\$0\" | grep -q '^  AGENTS.md:$((n + 1)): runs a step.*.roles. in .jig/config.json (.jig/RULES.md § Workflow)'" "$out"
 msg="update roles G: the CLAUDE.md line names /jig:work; the product line is not listed"
 expect_pass sh -c "echo \"\$0\" | grep -q '^  CLAUDE.md:3: runs a step.*/jig:work (jig handoff)' && ! echo \"\$0\" | grep -q 'AGENTS.md:$((n + 2)):'" "$out"
+msg="update roles G: a role word beside one tier is listed with roles; a product's Tier and effort are not"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  AGENTS.md:$((n + 3)): runs a step.*.roles. in .jig/config.json' && ! echo \"\$0\" | grep -q 'AGENTS.md:$((n + 4)):'" "$out"
 msg="update roles G: after --apply both files are byte-identical"
 expect_pass sh -c "cmp -s AGENTS.md \"\$0\" && cmp -s CLAUDE.md \"\$1\"" "$T/G.a" "$T/G.c"
 
