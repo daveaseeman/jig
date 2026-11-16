@@ -123,6 +123,7 @@ blocks.
   git dir, local and never committed.
 - Interpreted: `jig rig` prints plain text and JSON; drawing the picture is the skill's, so
   `jig.py` and the templates stay tool-agnostic.
+- Kept separate from bug-sync-trunk-edits: different code in jig.py (rig adds a command; the bug fix changes the R3 check and added-line counting), and the fix shouldn't wait on rig. The owner, 2026-11-16: "Keep separate".
 
 ## Workflow
 spec: tier 2, effort 2
