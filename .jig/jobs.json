@@ -14,19 +14,5 @@
       "tests/smoke.sh"
     ],
     "reserved": {}
-  },
-  "bug-staging-research": {
-    "spec": ".jig/specs/bug-staging-research.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/skills/stage/SKILL.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh"
-    ],
-    "reserved": {}
   }
 }

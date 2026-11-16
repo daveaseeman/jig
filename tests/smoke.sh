@@ -1596,6 +1596,41 @@ expect_pass sh -c "test \"\$(echo \"\$0\" | grep -c '^.jig/decisions.md:.* cites
 
 msg="plugin: no instance names or the instance's decision prefix"
 expect_refuse grep -rnE 'Maige|maige|"E-' "$P/.."
+
+# The replay: a pararepo stages unsettled research about a product its metarepo has a page
+# for, as its own specs and Accepted decisions; then the batch staged where it belongs.
+export JIG_CONFIG="$T/rp-repos.json"
+RM="$T/rm"; mkdir -p "$RM/docs/products/widget" && cd "$RM" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && printf '# Widget\n\nA board.\n' > docs/products/widget/widget.md
+git add -A && git commit -qm init && $J init --meta --name hub >/dev/null
+python3 -c "import json; f='.jig/meta.json'; d=json.load(open(f)); d['pararepos']=['rp']; json.dump(d, open(f,'w'), indent=2)" && git add -A && git commit -qm meta-init && $J release >/dev/null
+RP="$T/rp"; mkdir -p "$RP" && cd "$RP" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p api && printf 'x=1\n' > api/a.py
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+git clone -q "$RM" hubclone && $J init --para hub --location hubclone --contract 'api/**' >/dev/null && git add -A && git commit -qm para-init
+stage widget-power.md this spec new widget-power.md '# Widget power\n\n## Intent\nPower the widget.\n'
+stage widget-radio.md this spec new widget-radio.md '# Widget radio\n\n## Intent\nA radio for the widget.\n'
+stage widget-dec.md this decisions new .jig/decisions.md '### D-?cell one cell\nAccepted (Dave, 2026-11-13).\n\n### D-?usb usb charge\nAccepted (Dave, 2026-11-13).\n\n### D-?ant chip antenna\nAccepted (Dave, 2026-11-13).\n\n### D-?mcu one mcu\nAccepted (Dave, 2026-11-13).\n'
+msg="staging replay: the pararepo's own batch passes check with four warnings, one per Accepted entry"
+out=$(cd .jig/staging && python3 "$P/jig/jig.py" staging check widget-power.md widget-radio.md widget-dec.md 2>&1); rc=$?
+expect_pass sh -c "test $rc -eq 0 && test \$(echo \"\$0\" | grep -c 'says Accepted (Dave') = 4 && for i in cell usb ant mcu; do echo \"\$0\" | grep -q \"warning: D-?\$i says Accepted\" || exit 1; done" "$out"
+for f in widget-power widget-radio widget-dec; do $J staging drop $f.md >/dev/null; done
+stage widget-research.md hub doc new docs/products/widget/widget-research.md '# Widget research\n\nProposed: one cell, USB charge, a chip antenna.\n'
+stage widget-page.md hub doc update docs/products/widget/widget.md '- Link widget-research.md from the page.\n'
+sbafter widget-page.md widget-research.md
+msg="staging replay: the corrected batch, for the metarepo by name, passes check with no warning"
+out=$(cd .jig/staging && python3 "$P/jig/jig.py" staging check widget-research.md widget-page.md 2>&1); rc=$?
+expect_pass sh -c "test $rc -eq 0 && ! echo \"\$0\" | grep -q warning" "$out"
+msg="staging replay: resolve in the pararepo forwards both into the metarepo's staging"
+$J staging resolve widget-research.md >/dev/null 2>&1; $J staging resolve widget-page.md >/dev/null 2>&1
+expect_pass sh -c "test -f hubclone/.jig/staging/widget-research.md && test -f hubclone/.jig/staging/widget-page.md && test ! -e .jig/staging/widget-research.md"
+cd "$RP/hubclone"
+msg="staging replay: there the research page resolves to its path carrying its Source: line"
+$J staging resolve widget-research.md >/dev/null 2>&1
+expect_pass sh -c "grep -q '^Source: .*(staged as widget-research.md)' docs/products/widget/widget-research.md"
+msg="staging replay: the page update waits until the product page carries its mark"
+out=$($J staging resolve widget-page.md 2>&1); rc=$?
+expect_pass sh -c "test $rc -ne 0 && echo \"\$0\" | grep -q 'needs judgment' && test -f .jig/staging/widget-page.md" "$out"
 }
 
 # ---------------------------------------------------------------- release
@@ -5833,6 +5868,25 @@ expect_pass sh -c "$J repos add North_Star '$T' | grep -q 'warning: North_Star'"
 msg="repos rename: renaming to a near-duplicate name warns"
 $J repos rename North_Star other >/dev/null
 expect_pass sh -c "$J repos rename other north.star | grep -q 'warning: .*north.star'"
+
+# A chat writes Accepted for what was only discussed; resolve would log it as decided.
+dhdr() { printf -- '---\nstaged: true\ntarget: this\nkind: %s\nchange: new\ndestination: %s\nsource: chat\nstatus: staged\n---\n%b' "$2" "$3" "$4" > "$OUT/$1"; }
+dhdr dec.md decisions .jig/decisions.md '### D-?a a\nAccepted (Dave, 2026-11-13).\n\n### D-?b b\nProposed (2026-11-13).\n'
+msg="staging check: a decisions file warns once, on the Accepted entry, naming its id and who, and passes"
+out=$(cd "$OUT" && python3 "$P/jig/jig.py" staging check dec.md 2>&1); rc=$?
+expect_pass sh -c "test $rc -eq 0 && test \$(echo \"\$0\" | grep -c 'warning:') = 1 && echo \"\$0\" | grep -q 'warning: D-?a says Accepted (Dave, 2026-11-13): .*confirm Dave accepted it'" "$out"
+dhdr xdec.md decisions .jig/decisions.md '### X-?a a\nAccepted (Dave, 2026-11-13).\n\n### X-?b b\nAccepted (Ann, 2026-11-14).\n'
+msg="staging check: entries with another prefix are warned alike, run outside any repo"
+out=$(cd "$OUT" && python3 "$P/jig/jig.py" staging check xdec.md 2>&1); rc=$?
+expect_pass sh -c "test $rc -eq 0 && echo \"\$0\" | grep -q 'warning: X-?a says Accepted (Dave' && echo \"\$0\" | grep -q 'warning: X-?b says Accepted (Ann'" "$out"
+dhdr ddoc.md doc docs/d.md '### D-?a a\nAccepted (Dave, 2026-11-13).\n'
+msg="staging check: a file of another kind gets no Accepted warning"
+out=$(cd "$OUT" && python3 "$P/jig/jig.py" staging check ddoc.md 2>&1); rc=$?
+expect_pass sh -c "test $rc -eq 0 && echo \"\$0\" | grep -q '^ddoc.md: ok' && ! echo \"\$0\" | grep -q 'says Accepted'" "$out"
+msg="stage skill: the target rule names What the metarepo holds, Accepted only for what was accepted, and Resolving asks"
+expect_pass sh -c "f='$P/../skills/stage/SKILL.md'; grep -q 'repo that owns the subject' \"\$f\" && grep -q 'What the metarepo holds' \"\$f\" && grep -q 'only for what that person accepted' \"\$f\" && grep -q 'is it as settled as it says' \"\$f\""
+msg="RULES.md § Staging: the target sentence and the Accepted warning"
+expect_pass sh -c "sed -n '/^## Staging/,/^## Metarepo/p' '$P/jig/RULES.md' | tr '\n' ' ' > '$T/st' && grep -q 'repo that owns the subject' '$T/st' && grep -q 'warns on each entry of a .decisions. file whose status says Accepted' '$T/st'"
 }
 
 

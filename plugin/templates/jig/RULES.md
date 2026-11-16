@@ -968,7 +968,8 @@ for context, never cite it. Each file's header names its `target` (a repo name, 
 path, with no space and no `:`, `,` or `;`: a spec, doc or decisions file whose destination
 carries anything else (`.jig/decisions.md, on branch x`, `see docs/x.md`) is refused, never
 guessed at. Decisions land only in `.jig/decisions.md`: an open or proposed entry under
-`## Open`, an accepted one under `## Unreleased`.
+`## Open`, an accepted one under `## Unreleased`. The `target` is the repo that owns the subject, as
+a claim's home is chosen (What the metarepo holds), never the repo the chat happens to run in.
 
 `jig staging resolve <file>` lands it: a new spec or doc is written with its source, new
 decision entries are added to the log; an update, a story's or request's spec, or decisions
@@ -992,6 +993,9 @@ A spec resolved new, whose `## Roles` (or an older `## Workflow`) is empty or mi
 and `repos rename` warn when two names are equal once case and punctuation are dropped, printing
 both paths, and `check` warns on a target that has such a twin: a file staged for one lands in the
 other. The warning doesn't fail anything, since both may be meant.
+`check` also warns on each entry of a `decisions` file whose status says Accepted, naming its id
+and who: `resolve` logs it as decided, so the owner confirms they accepted it, else it says
+Proposed. It doesn't fail the check, since an entry accepted in the chat is right as written.
 
 A feature request is `kind: feature-request`: the owner's own words for what the product
 should do ("I want it to do xyz"), with no required shape. A story names who wants what and
