@@ -1,17 +1,4 @@
 {
-  "decision-cards": {
-    "spec": ".jig/specs/decision-cards.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/skills/decision-cards/**"
-    ],
-    "shares": [
-      "plugin/skills/hubnode/SKILL.md"
-    ],
-    "reserved": {},
-    "check": "batch"
-  },
   "rig": {
     "spec": ".jig/specs/rig.md",
     "state": "claimed",
