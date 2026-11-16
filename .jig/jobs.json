@@ -1,1 +1,25 @@
-{}
+{
+  "roles-and-flows": {
+    "spec": ".jig/specs/roles-and-flows.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/**",
+      "plugin/hooks/hooks.json",
+      "plugin/scripts/session-start.sh",
+      "plugin/templates/specs/_template.md",
+      "plugin/templates/AGENTS.md",
+      "AGENTS.md",
+      "README.md",
+      "assets/**",
+      "scripts/roles_svg.py",
+      ".jig/scripts/check.sh"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh"
+    ],
+    "reserved": {}
+  }
+}
