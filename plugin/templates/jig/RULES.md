@@ -8,12 +8,12 @@ A handoff is a *pull request*; the gate is a *merge queue* with *branch protecti
 *orchestrator*, or *manager*; a **subnode** is a *teammate* or *worker*. If you already run any of those, you already run most
 of a job — `jig survey` names what you have and what it maps to.
 
-## Roles
+## Nodes
 
-- **The hubnode** is one session. It owns the trunk branch, the board, the worktrees, and
-  the merges. It opens jobs, gates handoffs, merges. It builds no feature.
-- **A subnode** is every other session. One job each: its branch, its worktree, its files.
-  It never commits on trunk, never pushes trunk, never merges.
+- **The hubnode** is one session, the owner's. It owns the trunk branch, the board, the
+  worktrees, and the merges. It opens jobs, gates handoffs, merges. It builds no feature.
+- **A subnode** is every other session. One job and one role each (Workflow): its branch,
+  its worktree, its files. It never commits on trunk, never pushes trunk, never merges.
 
 **Working alone?** Open no jobs and you are the hubnode of a one-job repo. R1–R5 and R8 go
 quiet — a feature branch in your one checkout is nobody else's problem — while R7, the review
@@ -25,7 +25,7 @@ identical; only the coordination disappears.
 
 Two files on trunk, written only by the hubnode. `.jig/config.json` holds what rarely
 changes: `name`, `trunk`, `common`, `append_files`, `reserve`, `docmap`, `not_docs`,
-`release`, `reference_files`, `workflow` (optional; see Workflow), `deep_subsystems`,
+`release`, `reference_files`, `roles` (optional; see Workflow), `deep_subsystems`,
 `boards` and `findings` (all optional; see Documentation), `derived_files` (optional; globs
 naming every file `.jig/scripts/derive.sh` writes, which `jig merge` commits) and the layout's
 `version`.
@@ -62,7 +62,7 @@ with no tag yet). Two waiting specs overlap when their `## Touches` meet: one pa
 covering the other's path, or the same `<page> § <term>` (a whole page meets any term on it).
 `jig consolidate` lists each group of overlapping waiting specs with the paths they share, as
 one proposed job. A group is answered one of two ways: one spec carries every input's `Source:`
-lines and the inputs are deleted (`/jig:consolidate` writes it), or either spec of a pair says
+lines and the inputs are deleted (the spec role's consolidate writes it), or either spec of a pair says
 `Kept separate from <spec>: <reason>`, one line per pair. Until then `jig open` refuses a spec
 in the group, and so does `jig staging resolve` for a file whose mark a spec in it carries.
 A consolidated spec that takes in metarepo proposals lists their branches under `## Proposals`,
@@ -71,7 +71,7 @@ to `jig sync` and merge each into the job's branch in that order.
 
 ## The rules
 
-Checked before every commit by a git hook, and by `jig check`. A delete changes its path, and
+Checked before every commit by a git hook, and by `jig rules`. A delete changes its path, and
 a rename changes both of its paths: R3–R5, P1, P2 and P4 count each.
 
 - **R1** The trunk checkout stays on trunk. Work in `.git/jig/worktrees/<branch>`.
@@ -551,12 +551,13 @@ else stops with the files named, and a person resolves it.
    change since the check. A job may hand off several times.
    The review needn't be HEAD itself. A clean `jig sync` of a reviewed commit hands off with
    no new `jig reviewed`: the merge carries nothing a reviewer didn't see. A fix, or a sync
-   resolved by hand, is refused, naming the files, until it is rechecked (Workflow; working
-   alone, a fix after a committed note gets a full review).
+   resolved by hand, is refused, naming the files, until it has a review-change (Workflow;
+   working alone, a fix after a committed note gets a full review). So is a review whose
+   record has blocking findings: Fix first.
 2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it sets
    up a **detached scratch checkout of the commit the note names**, with trunk merged in the
    way `jig sync` merges it, and prints the complete check to run there
-   (`.jig/scripts/check.sh --full`), the check step's tier and effort, and the `jig checked`
+   (`.jig/scripts/check.sh --full`), the check role's tier and effort, and the `jig checked`
    that records it. It never runs the check: whoever runs it runs the same command. Never the
    job's live worktree, which the subnode may still be building in.
    The scratch checkout lives until the job is marked gated or merged: `jig mark <job> gated`
@@ -570,7 +571,8 @@ else stops with the files named, and a person resolves it.
    That means a merge runs the merged-in `setup.sh`: review a change to it like any other
    code, because the next merge executes it. The same goes for `derive.sh`, whose output the
    merge commits.
-3. **The hubnode merges** with `jig merge <job>`, which deletes the job's entry and numbers its
+3. **The hubnode merges** with `jig merge <job>`, on the owner's word. It refuses a job not
+   marked gated. It deletes the job's entry and numbers its
    `D-?<slug>` ids (Decision log) in the merge commit itself, then syncs the clean jobs. A job synced since its note still merges: only
    the job's own commits count as changes since the check, and what a sync's resolution
    carries beyond what `jig sync` would make of it (this replay needs git 2.38 or later).
@@ -598,70 +600,122 @@ else stops with the files named, and a person resolves it.
 
 ## Workflow
 
-The hubnode writes specs, talks with the owner and decides. The work goes to sessions it
-starts, each at a model tier and an effort the owner set, never one a model picks for
-itself.
+Every session is a node: the hubnode or a subnode (Nodes). A subnode takes one of five roles,
+each with its own model tier and effort. Workflows are data in `jig.py`: `jig flows` prints
+them, `jig next [<job>]` names a job's next step, the node or role that does it, and whether
+it continues a session or starts one, and each recording command refuses a step taken out of
+order.
 
-| Step | Who | Tier | Effort | An override must keep |
-|---|---|---|---|---|
-| `spec`: spec, decide, retro, hardware page | hubnode | 2 | 2 | — |
-| `bug`: a bug investigation | a fresh context it starts | 2 | 1 | tier no worse than spec's; effort no lower |
-| `execute`: execute, fix | a subnode it starts | 2 | 3 | tier no better than spec's; effort lower |
-| `review` | a subnode, always a fresh context | 2 | 1 | tier no worse than execute's; any effort |
-| `recheck`: a later round's review | a fresh context | review's | review's | nothing |
-| `check`: gate check, release run, survey | a subnode it starts | 3 | 4 | nothing: fixed commands |
+**Nodes.**
+
+| Node | Settings | What it does | Roles it may load |
+|---|---|---|---|
+| hubnode | the owner's session; tier 2, effort 1 or better | talks, decides, assigns, gates, merges, pushes, publishes | spec (only for specs drafted from the conversation) |
+| subnode | the role's | takes one role on one job, works only in its worktree, reports back, never touches trunk | any of the five |
+
+**Roles.**
+
+| Role | Tier, effort | Steps it owns | An override must keep |
+|---|---|---|---|
+| spec | 2, 2 | spec, consolidate | — |
+| bug | 2, 1 | bug, then the spec for what it found | tier no worse than spec's; effort no lower |
+| work | 2, 3 | work, handoff, fixes, hand-resolved syncs | tier no better than spec's; effort lower |
+| review | 2, 2 | review-work (the job's whole diff), review-change (only what changed since the last review); always a fresh session | tier no worse than work's; any effort |
+| check | 3, 4 | check (the complete suite), trace a failed batch, survey, release run | nothing: fixed commands |
+
+The hubnode's own steps, which are no role's: assign, gate, merge, push, publish. jig itself
+(no model) refuses a step out of order.
 
 Tier 1 is the best model the tool has; a higher number is a lesser model. Effort 0 is the
 tool's highest; each number up is one level lower. The defaults leave effort 0 free, so a
-repo can raise any step. Which model and level a number means is the tool's business, not
-`.jig/`'s.
+repo can raise any role. Which model and level a number means is the tool's business, not
+`.jig/`'s: the plugin maps them in `plugin/tiers.json`.
 
-`jig workflow` prints the steps in effect. A repo overrides them in `config.json`:
-`"workflow": {"review": {"tier": 1, "effort": 0}}`. An override that breaks the last column
-is refused by `jig workflow` and by the commit hook. There is no per-task override: a task
-that needs other settings means the owner changes the config.
+**Workflows.** `→` continues a session that already exists (the same one, the hubnode, the
+job's work session); `⇢` starts a new one.
 
-A spec's `## Workflow` section is `jig workflow`'s output when it was written. The review
-records the review step's configured settings (`jig reviewed --tier N --effort N --ran
-"..."`), the handoff note carries them, and `jig gate` warns when they are a worse tier or a
-lower effort than the spec asks. So the warning catches a review recorded without them, or a
-config changed after the spec was written; it can't see a review that actually ran weaker
-than it was set to.
+| Workflow | Steps | Trigger | Controls |
+|---|---|---|---|
+| Job | spec ⇢ work ⇢ review-work → handoff → gate ⇢ check → merge | `jig open` | merge only on the owner's word |
+| Fix | work ⇢ review-change → handoff | a review with blocking findings | three rounds at most; a fourth is refused and Bug runs |
+| Sync | work ⇢ review-change → handoff | a sync with a hand-resolved conflict | a clean sync needs nothing |
+| Bug | bug → spec ⇢ Job | a fourth fix round, a feedback group, or the owner's `/jig:bug` | never on a session's own reading that something is broken |
+| Feedback | consolidate ⇢ bug + spec → consolidate ⇢ Job | staged feedback, in the jig repo | one bug + spec per group; overlaps answered before any job opens |
+| Batch | gate → merge ⇢ check → trace | two or more gated jobs | one check on trunk; a failure is traced to its merge, then Fix on that job |
+| Release | check → release run → push → publish | the owner's word | refused while a batch check is owed; push and publish only on the owner's word |
+| Survey | survey ⇢ spec ⇢ Jobs | `/jig:survey`, `/jig:adopt`, `/jig:update` | |
+| Redocument | spec ⇢ Jobs ⇢ Batch ⇢ Job | `/jig:redocument` | the spec is the remap; the last job is the cleanup |
 
-The first review of a job is always full. After it, a round costs what it changed: a fix, or a
-sync resolved by hand, takes a **recheck**, a fresh review of the delta against the previous findings, at the
-`recheck` step's settings: `git diff <last recorded review>..HEAD` for a fix, and for a sync
-resolved by hand `git show --remerge-diff <merge>` and what follows it, never trunk's work. Unset,
-`recheck` is whatever `review` is, so a repo that moves review moves recheck with it; a
-`recheck` override wins. `jig reviewed --recheck --tier N --effort N` records it, refused
-unless a full review of the job is on HEAD's first-parent chain. The note carries a
-`Recheck:` line beside `Review:`, and `jig gate` warns when either is below its line in the
-spec (a spec without a `recheck:` line is read against `review:`). A recheck widens to a
-full review when the diff changes anything the findings didn't name. What needs no new review at
-all: a clean `jig sync` of a reviewed commit, and DEFERRED.md rows whose net change deletes
-no line (Handoff, gate, merge). Working alone, a recheck leans only on a full review made
-since the last handoff note: history can't tell a new task from a fix after a note, so either
-gets a full review.
+**Fixed, whatever the config says:** the owner's word before merge, push and publish; a fresh
+session for every review; a complete check before a release. Everything else the hubnode may
+propose to reconfigure, with a reason, and apply only on the owner's yes; on a no it continues
+with the defaults.
+
+**Session rules.**
+1. A session never changes model or effort once it holds context: a model change discards its
+   cache, and the next turn re-reads everything at full price.
+2. One session per role per job. The work session keeps the build through every fix and sync.
+3. A new session starts only when the role changes and the new role needs a fresh context
+   (review), different settings, or nothing but files (check).
+
+**Contracts.** Each is a refusal naming the missing step.
+- `jig merge <job>` refuses a job not marked gated.
+- `jig reviewed --blocking N` records the blocking findings a review left; `jig handoff`
+  refuses while the newest review of HEAD has any.
+- Fix rounds are counted per part of a job (a handoff note, `--partial` too, ends a part):
+  the first blocking review starts round 1, and each blocking review after it ends one. After
+  three, `jig reviewed` is refused, full or `--change`, until a spec for the job carrying
+  `Bug-for: <job>` on a line of its own is committed: the Bug workflow.
+
+**Settings in effect.** `jig roles` prints each role's tier and effort. A repo overrides them
+in `config.json`, each entry with its reason:
+`"roles": {"review": {"tier": 1, "effort": 0, "reason": "..."}}`. An override that breaks the
+last column, has no reason, or weakens a fixed rule is refused by `jig roles` and by the
+commit hook. There is no per-task override: a task that needs other settings means the owner
+changes the config. The key's older name, `workflow`, with the old step names (`execute` for
+work), is still read until `jig update --apply` rewrites it as `roles`; the hook refuses a new
+override under it, and an old `recheck` entry is dropped, since review-change runs at the
+review role's settings. `jig workflow`, the older command, prints the settings under the old
+step names, then the flows.
+
+A spec's `## Roles` section is `jig roles`' output when it was written. The review records the
+review role's configured settings (`jig reviewed --tier N --effort N --ran "..."`), the
+handoff note carries them, and `jig gate` warns when they are a worse tier or a lower effort
+than the spec asks. So the warning catches a review recorded without them, or a config
+changed after the spec was written; it can't see a review that actually ran weaker than it
+was set to. A spec written before roles has `## Workflow` (with `execute:` and `recheck:`
+lines), read alike.
+
+The first review of a job is review-work. After it, a round costs what it changed: a fix, or
+a sync resolved by hand, takes a **review-change**, a fresh review of the delta against the
+previous findings, at the review role's settings: `git diff <last recorded review>..HEAD` for
+a fix, and for a sync resolved by hand `git show --remerge-diff <merge>` and what follows it,
+never trunk's work. `jig reviewed --change --tier N --effort N` records it, refused unless a
+full review of the job is on HEAD's first-parent chain. The note carries a `Review-change:`
+line beside `Review:` (an older note's `Recheck:` reads alike), and `jig gate` warns when
+either is below the spec's review line. A review-change widens to a review-work when the diff
+changes anything the findings didn't name. What needs no new review at all: a clean `jig sync`
+of a reviewed commit, and DEFERRED.md rows whose net change deletes no line (Handoff, gate,
+merge). Working alone, a review-change leans only on a full review made since the last
+handoff note: history can't tell a new task from a fix after a note, so either gets a full
+review.
 
 A `Proposed` entry the job adds or changes is a ruling the owner still owes. The job tells the
 hubnode when it writes one, the hubnode sends it up while the job builds, and `jig gate` warns,
 naming each, but never refuses: the owner may say to gate a job as proposed.
-
-A fix goes back to the session that executed. A third round that doesn't converge is a
-bug in the spec or the approach: investigate it, don't start a fourth.
 
 ### Two levels of check
 
 `.jig/scripts/check.sh` has two levels. With no argument it runs the quick part: what runs
 on every stop and while working (lint, type-check, unit tests). With `--full` it runs the
 quick part, then the complete one (the full suite, slow and end-to-end tests). While working,
-execute and fix run `check.sh` and the parts their change touched, never `--full`. Review
-reruns no check the builder's report shows for the same commit. Only the check step runs
+the work role runs `check.sh` and the parts its change touched, never `--full`. Review
+reruns no check the builder's report shows for the same commit. Only the check role runs
 `--full`.
 
 `jig checked --tier N --effort N --seconds S` records a complete run that passed: HEAD, the
-check step's numbers, the seconds and the date, in `.git/jig/checked.log` (never committed;
-shared by every worktree). It warns when the numbers differ from the check step's. `jig
+check role's numbers, the seconds and the date, in `.git/jig/checked.log` (never committed;
+shared by every worktree). It warns when the numbers differ from the check role's. `jig
 status` prints the last one's seconds and date: what a complete check costs here.
 
 A single job keeps its own gate check: `check.sh --full` once in the gate's checkout, `jig
@@ -927,8 +981,8 @@ refuses a file while one it waits for is still staged, naming the cycle if there
 and fails on an unknown kind, a missing key, a destination outside the target (absolute, or
 climbing out with `..`, as `resolve` judges it), a target `jig repos` doesn't list (case ignored, as
 `resolve` matches it), an `after` naming no file in the batch or the target's staging, or a cycle.
-A spec resolved new, whose `## Workflow` is empty or missing, gets `jig workflow`'s lines, as
-`/jig:spec` writes them; while `jig workflow` refuses, so does `resolve`. `jig repos`, `repos add`
+A spec resolved new, whose `## Roles` (or an older `## Workflow`) is empty or missing, gets
+`jig roles`' lines, as `/jig:spec` writes them; while `jig roles` refuses, so does `resolve`. `jig repos`, `repos add`
 and `repos rename` warn when two names are equal once case and punctuation are dropped, printing
 both paths, and `check` warns on a target that has such a twin: a file staged for one lands in the
 other. The warning doesn't fail anything, since both may be meant.
@@ -1178,16 +1232,19 @@ jig install-hooks           rewrite the hooks
 jig status                  jobs, states, distance from trunk, dirt
 jig open <name> --spec … --owns … --shares … --after … --reserve schema
 jig mark <name> <state>     claimed|building|ready|gated|parked; gated needs `jig checked`, or --batch
-jig merge <name> [-m msg] [--subject text]   merge a job, numbering its D-?<slug> ids; its entry is deleted in the merge commit
+jig merge <name> [-m msg] [--subject text]   merge a gated job, numbering its D-?<slug> ids; its entry is deleted in the merge commit
 jig merge --number          in a merge stopped on conflicts, once resolved: number the ids it brings in, then setup.sh and derive.sh
-jig check [--staged]        run the rules here
+jig rules [--staged]        run the rules here (`jig check`, its old name, too)
 jig job                    this branch's manifest
 jig decision <id>           a decision entry and its supersedes chain
 jig sync                    merge trunk in, append rule applied; on a pararepo's trunk, the metarepo
-jig reviewed [--recheck] [--tier N --effort N] [--ran text]   record that HEAD has been reviewed (or rechecked), and at what
+jig reviewed [--change] [--tier N --effort N] [--ran text] [--blocking N]   record that HEAD has had its review-work (or review-change), at what, and its blocking findings
 jig checked --tier N --effort N --seconds S   record that the complete check passed on HEAD
 jig checked --trace [command]   on trunk: the merges since the last complete check, and the bisect that finds the breaking one
-jig workflow                each step's model tier and effort in effect
+jig roles                   each role's model tier and effort in effect
+jig flows                   each workflow's steps, who does each, and its session links
+jig next [<job>]            a job's next step, the node or role that does it, and continue or new session
+jig workflow                the older command: the roles under the old step names, then the flows
 jig handoff [--spec path] [--partial]   write the note for HEAD; --partial: it doesn't finish the spec
 jig roadmap [--write]       the roadmap's states on trunk; --write regenerates ROADMAP.md
 jig gate <name>             hubnode: verify, set up the scratch checkout, print its check
