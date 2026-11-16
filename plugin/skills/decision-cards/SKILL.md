@@ -20,7 +20,8 @@ is the answer.
   `; and`. Not ", and": answers carry their own commas and "and"s.
 - **Fill, never send.** The host's button writes into the owner's reply box and appends to
   what is there. So the button says "Fill reply", the hint says to press Enter, and nothing on
-  the card claims to send.
+  the card claims to send. Because the host appends, the button fills once and reads "Filled"
+  until a pick changes; a second fill would double the reply.
 - **The sent reply is the answer, not the card.** A card can go stale. Before acting on a
   reply, check the current state it decides (the board, the staged file, the job); if it moved,
   say what changed and ask again. A filled reply the owner hasn't sent is no answer.
@@ -40,7 +41,7 @@ decisions, lettered options, the recommended one marked, and the two standing an
    Or: elaborate, hold.
 2. Release 0.14.0 — three merges since 0.13.0.
    a. release after the merge (recommended)
-   b. hold the release
+   b. skip 0.14.0; release with the next merges
    Or: elaborate, hold.
 Reply like: 1a; and 2 hold
 ```
@@ -69,13 +70,14 @@ const decisions = [
   { name: "merge auth-retry", context: "Gated; the check passed on 4f2c1a0.",
     options: ["merge auth-retry now", "wait for the cache job"], recommended: 0 },
   { name: "release 0.14.0", context: "Three merges since 0.13.0.",
-    options: ["release 0.14.0 after the merge", "hold the release"], recommended: 0 }
+    options: ["release 0.14.0 after the merge", "skip 0.14.0; release with the next merges"], recommended: 0 }
 ];
 const standing = {
   Elaborate: d => `on ${d}: show me these options with more context`,
   Hold: d => `on ${d}: hold until I can provide more context`
 };
 const picks = decisions.map(() => null);
+let filled = false;
 const blocks = document.getElementById("dc-blocks");
 const preview = document.getElementById("dc-preview");
 
@@ -96,6 +98,9 @@ function reply() {
   return picks.filter(p => p !== null).join("; and ");
 }
 function render() {
+  const fill = document.getElementById("dc-fill");
+  fill.disabled = filled;
+  fill.textContent = filled ? "Filled" : "Fill reply ↗";
   blocks.querySelectorAll("button[data-i]").forEach(b => {
     mark(b, picks[+b.dataset.i] === b.dataset.answer);
   });
@@ -137,12 +142,15 @@ blocks.addEventListener("click", e => {
   if (!b) return;
   const i = +b.dataset.i;
   picks[i] = picks[i] === b.dataset.answer ? null : b.dataset.answer;
+  filled = false;
   render();
 });
 document.getElementById("dc-fill").addEventListener("click", () => {
   const text = reply();
   if (!text) { preview.textContent = "pick an answer first"; return; }
   sendPrompt(text);
+  filled = true;
+  render();
 });
 render();
 </script>
