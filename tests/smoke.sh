@@ -1629,7 +1629,8 @@ msg="staging replay: there the research page resolves to its path carrying its S
 $J staging resolve widget-research.md >/dev/null 2>&1
 expect_pass sh -c "grep -q '^Source: .*(staged as widget-research.md)' docs/products/widget/widget-research.md"
 msg="staging replay: the page update waits until the product page carries its mark"
-expect_refuse $J staging resolve widget-page.md
+out=$($J staging resolve widget-page.md 2>&1); rc=$?
+expect_pass sh -c "test $rc -ne 0 && echo \"\$0\" | grep -q 'needs judgment' && test -f .jig/staging/widget-page.md" "$out"
 }
 
 # ---------------------------------------------------------------- release
@@ -5881,7 +5882,7 @@ expect_pass sh -c "test $rc -eq 0 && echo \"\$0\" | grep -q 'warning: X-?a says 
 dhdr ddoc.md doc docs/d.md '### D-?a a\nAccepted (Dave, 2026-11-13).\n'
 msg="staging check: a file of another kind gets no Accepted warning"
 out=$(cd "$OUT" && python3 "$P/jig/jig.py" staging check ddoc.md 2>&1); rc=$?
-expect_pass sh -c "test $rc -eq 0 && ! echo \"\$0\" | grep -q 'says Accepted'" "$out"
+expect_pass sh -c "test $rc -eq 0 && echo \"\$0\" | grep -q '^ddoc.md: ok' && ! echo \"\$0\" | grep -q 'says Accepted'" "$out"
 msg="stage skill: the target rule names What the metarepo holds, Accepted only for what was accepted, and Resolving asks"
 expect_pass sh -c "f='$P/../skills/stage/SKILL.md'; grep -q 'repo that owns the subject' \"\$f\" && grep -q 'What the metarepo holds' \"\$f\" && grep -q 'only for what that person accepted' \"\$f\" && grep -q 'is it as settled as it says' \"\$f\""
 msg="RULES.md § Staging: the target sentence and the Accepted warning"

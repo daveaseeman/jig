@@ -8014,9 +8014,9 @@ def cmd_staging_check(args) -> int:
             for e in log_entries(body, prefix):
                 parts = status_parts(e["status"], prefix)
                 if parts and parts[0] == "Accepted":
-                    who = parts[1] or "who"
-                    notes.append(f"{e['id']} says Accepted ({parts[1]}, {parts[2]}): resolve logs it "
-                                 f"as decided; confirm {who} accepted it, else write Proposed")
+                    said = f"{parts[1]}, {parts[2]}" if parts[1] else parts[2]
+                    notes.append(f"{e['id']} says Accepted ({said}): resolve logs it as decided; "
+                                 f"confirm {parts[1] or 'who'} accepted it, else write Proposed")
         dest = head.get("destination", "")
         if dest and escapes(dest):
             problems.append(f"destination {dest!r} is outside the target: give a path relative "
