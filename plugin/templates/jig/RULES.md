@@ -719,7 +719,9 @@ the owner's answers first), and the roadmap's **next step** (Roadmap). Ready ite
 overlap, with no `Kept separate` line, are one job to answer (merged, or kept apart); an item
 that depends on another (a staged file's `after:` header, a spec's `Build after <name>` line)
 is in the same group and opens after it, with nothing to answer; one that depends on an open
-job, named or by its spec's name, or on an item not ready, waits on it. The order is
+job, named or by its spec's name, or on an item not ready, waits on it, and a dependency
+cycle waits on the owner. An item that could start but overlaps any waiting spec, one that
+waits included, is to answer first, since `jig open` refuses it. The order is
 fixed (kind, dependency, path), so the same state prints the same bytes; `--json` prints it as
 data. A model's open/ready call, its questions and its recommendation are kept per item in
 `.git/jig/rig.json` (never committed) with a key of the item's content and the board, and
@@ -810,9 +812,11 @@ The product is the repo, so there is one roadmap and no product level in it.
   trunk, the commit's own roadmap), and on trunk a roadmap change that drops or renames a scope
   a spec still takes, naming the spec: re-point it in the same commit.
 - **The next step** is one step ahead, as if staging and the waiting specs were cleared: the
-  first Up next item whose pages no open job's, waiting spec's or staged file's Touches already
-  cover (an Up next item has no scope id to take), else the current phase's first open scope
-  that no waiting spec or staged file takes by its `Scope:` line. `jig rig` (Workflow) proposes it to the owner and
+  first Up next item whose pages no open job's, waiting spec's or staged file's Touches names
+  (by the page itself: a glob or a folder doesn't count, and an Up next item has no scope id
+  to take), else the current phase's first open scope that no waiting spec or staged file
+  takes by its `Scope:` line. An Up next item passed over is listed as waiting on what names
+  its pages. `jig rig` (Workflow) proposes it to the owner and
   never writes the roadmap.
 
 ## Decision log

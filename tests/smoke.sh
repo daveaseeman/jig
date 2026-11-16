@@ -7350,23 +7350,41 @@ msg="rig: a spec built after another, Touches apart, opens after it in its group
 rspec delta 'other/x.txt' 'Build after `alpha` merges.'
 expect_pass rstate "a, d = i['.jig/specs/alpha.md'], i['.jig/specs/delta.md']; assert a['group'] == d['group'] and a['opens'] == 'now' and d['opens'] == 'after' and d['waits_on'] == [] and d['deps'] == ['.jig/specs/alpha.md'] and all(g['overlaps'] == [] for g in dd['groups']), (d, dd['groups'])"
 
-msg="rig: a changed board voids a stored judgment"
 printf '{"call": "ready"}' | $J rig --store-put .jig/staging/s1.md >/dev/null
+msg="rig: the judgment stored before the board changes reads back"
+expect_pass $J rig --store-get .jig/staging/s1.md
+msg="rig: a changed board voids a stored judgment"
 git add -A && git commit -qm delta && $J open A --spec .jig/specs/alpha.md --owns 'docs/**' >/dev/null && git add -A && git commit -qm "open A"
 expect_refuse $J rig --store-get .jig/staging/s1.md
 
 msg="rig: the spec opened as job A under another name: what builds after it waits on job A"
 expect_pass rstate "assert i['.jig/specs/delta.md']['waits_on'] == ['job A'] and i['.jig/specs/delta.md']['group'] is None, i['.jig/specs/delta.md']"
 
-msg="rig: an Up next item whose pages a waiting spec's Touches cover is taken, so the next step is the phase's open scope"
+msg="rig: a spec touching a folder glob doesn't take an Up next item on one page of it"
+rspec wide 'docs/**'
+expect_pass rstate "s=[x for x in d['items'] if x['kind'] == 'next-step']; assert [(x['id'], x['state']) for x in s] == [('offline', 'open')], s"
+
+msg="rig: an Up next item whose page a waiting spec names waits on it, and the next step is the phase's open scope"
 rspec zeta docs/off.md
-expect_pass rstate "s=[x for x in d['items'] if x['kind'] == 'next-step']; assert [x['id'] for x in s] == ['one/panel'], s"
+expect_pass rstate "s=[x for x in d['items'] if x['kind'] == 'next-step']; assert [(x['id'], x['state'], x['waits_on']) for x in s] == [('offline', 'taken', ['spec .jig/specs/zeta.md']), ('one/panel', 'open', [])], s"
+rm .jig/specs/wide.md
+
+msg="rig: a dependency cycle waits on the owner, and neither item can start"
+rspec c1 'm/1.txt' 'Build after `c2`.' && rspec c2 'm/2.txt' 'Build after `c1`.'
+expect_pass rstate "c, e = i['.jig/specs/c1.md'], i['.jig/specs/c2.md']; assert 'a dependency cycle with .jig/specs/c2.md' in c['waits_on'] and 'a dependency cycle with .jig/specs/c1.md' in e['waits_on'] and c['group'] is e['group'] is None, (c, e)"
+rm .jig/specs/c1.md .jig/specs/c2.md
 
 rm .jig/specs/zeta.md
 
 msg="rig: overlapping Touches are one job to answer; a spec built after an open job waits on it"
 rspec beta 'lib/b.py' && rspec eps 'lib/**' && rspec gamma 'j/x.txt' 'Build after `j` merges.'
 expect_pass rstate "b, e = i['.jig/specs/beta.md'], i['.jig/specs/eps.md']; assert b['group'] == e['group'] and b['opens'] == e['opens'] == 'answer' and ['.jig/specs/beta.md', '.jig/specs/eps.md'] in dd['groups'][b['group'] - 1]['overlaps'] and i['.jig/specs/gamma.md']['waits_on'] == ['job j'] and i['.jig/specs/gamma.md']['group'] is None, dd['groups']"
+
+msg="rig: a spec that could start but overlaps a waiting one is to answer, as jig open would refuse it, and isn't counted as starting"
+rspec theta 'j/x.txt'
+c5() { rstate "t=i['.jig/specs/theta.md']; assert t['opens'] == 'answer' and ['.jig/specs/gamma.md', '.jig/specs/theta.md'] in dd['groups'][t['group'] - 1]['overlaps'] and d['can_start'] == sum(x['opens'] == 'now' for x in d['items']) == 0, (t, dd['groups'], d['can_start'])" \
+  && $J rig | head -1 | grep -q '; 0 can start now.$' && ! $J open T --spec .jig/specs/theta.md --owns 'j/**' >/dev/null 2>&1; }
+expect_pass c5
 
 msg="rig: a run writes neither the roadmap nor staging"
 $J rig >/dev/null; $J rig --json >/dev/null

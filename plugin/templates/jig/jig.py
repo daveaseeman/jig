@@ -11721,39 +11721,60 @@ def rig_items(root: Path, board: "Board") -> list[dict]:
                       "content": f.read_text(errors="replace"), "header": head,
                       "touches": touches_spans(body), "after": [Path(n).stem for n in after_names(head)],
                       "kept": sorted(kept_separate(body)), "scopes": spec_scopes(body)})
-    covering = [t for i in items for t in i["touches"]]
-    covering += [t for ts in job_touches(root, board).values() for t in ts]
-    step = rig_next_step(board, [s for i in items for s in i["scopes"]], covering)
-    if step:
-        items.append(step)
-    return items
+    covering = [(f"{i['kind']} {i['path']}", i["touches"]) for i in items]
+    covering += [(f"job {n}", ts) for n, ts in job_touches(root, board).items()]
+    return items + rig_next_step(board, [s for i in items for s in i["scopes"]], covering)
 
 
-def rig_next_step(board: "Board", taken: list[str], covering: list[str]) -> dict | None:
-    """One step ahead on trunk's roadmap: the first Up next item whose pages no open job's,
-    waiting spec's or staged file's Touches already cover, else the current phase's first open
-    scope that no waiting spec or staged file takes by its `Scope:` line. An Up next item has no
-    scope id to take, so its pages are what says work on it is under way."""
+def covered_by(page: str, covering: list[tuple[str, list[str]]]) -> list[str]:
+    """Who names PAGE itself in their Touches: a glob or a folder is a spec's reach, not a
+    sign that it builds a parked item on one page of it."""
+    return [who for who, ts in covering
+            if any(t.partition(" § ")[0] == page and not re.search(r"[*?\[]", t) for t in ts)]
+
+
+def rig_next_step(board: "Board", taken: list[str], covering: list[tuple[str, list[str]]]) -> list[dict]:
+    """One step ahead on trunk's roadmap: the first Up next item whose pages no open job, waiting
+    spec or staged file names in its Touches, else the current phase's first open scope that no
+    waiting spec or staged file takes by its `Scope:` line. An Up next item has no scope id to
+    take, so its pages say work on it is under way: each one passed over comes first, waiting
+    on what names its pages, so it never drops out of the picture unexplained."""
     snap = Snapshot(board.trunk)
     text = snap.show(ROADMAP)
     if not text:
-        return None
+        return []
+    out = []
     for i in parse_up_next(text):
-        if i["touches"] and all(any(touches_meet(p, t) for t in covering) for p in i["touches"]):
-            continue
-        return {"kind": "next-step", "id": i["id"], "path": f"{ROADMAP}#{i['id']}",
+        item = {"kind": "next-step", "id": i["id"], "path": f"{ROADMAP}#{i['id']}",
                 "content": f"{UP_NEXT}\0{i['id']}\0{i['what']}\0{i['touches']}",
                 "what": i["what"], "from": UP_NEXT, "touches": i["touches"], "after": [],
                 "kept": [], "scopes": []}
+        by = [covered_by(p, covering) for p in i["touches"]]
+        if i["touches"] and all(by):
+            item["covered"] = sorted({w for ws in by for w in ws})
+            out.append(item)
+            continue
+        return out + [item]
     for p in roadmap_state(snap) or []:
         if p["state"] != "current":
             continue
         for s in p["scopes"]:
             if s["state"] == "open" and s["id"] not in taken:
-                return {"kind": "next-step", "id": s["id"], "path": f"{ROADMAP}#{s['id']}",
-                        "content": f"{p['name']}\0{s['id']}\0{s['what']}", "what": s["what"],
-                        "from": f"phase {p['name']}", "touches": [], "after": [], "kept": [], "scopes": []}
-    return None
+                return out + [{"kind": "next-step", "id": s["id"], "path": f"{ROADMAP}#{s['id']}",
+                               "content": f"{p['name']}\0{s['id']}\0{s['what']}", "what": s["what"],
+                               "from": f"phase {p['name']}", "touches": [], "after": [], "kept": [],
+                               "scopes": []}]
+    return out
+
+
+def reach_of(start: str, deps: dict[str, list[str]]) -> set[str]:
+    seen, todo = set(), list(deps.get(start, []))
+    while todo:
+        x = todo.pop()
+        if x not in seen:
+            seen.add(x)
+            todo += deps.get(x, [])
+    return seen
 
 
 def rig_state(root: Path, board: "Board") -> dict:
@@ -11767,7 +11788,8 @@ def rig_state(root: Path, board: "Board") -> dict:
         held = store.get(i["path"])
         i["judged"] = held["judgment"] if isinstance(held, dict) and held.get("key") == i["key"] else None
         call = (i["judged"] or {}).get("call")
-        i["state"] = ("ready" if i["kind"] == "spec" else "open" if i["kind"] == "next-step"
+        i["state"] = ("ready" if i["kind"] == "spec" else "taken" if "covered" in i
+                      else "open" if i["kind"] == "next-step"
                       else call if call in ("ready", "open") else "unjudged")
     by_name = {}
     for i in items:
@@ -11781,7 +11803,15 @@ def rig_state(root: Path, board: "Board") -> dict:
             job_of.setdefault(Path(j["spec"]).stem, n)
     for i in items:
         i["deps"] = sorted({by_name[n]["path"] for n in i["after"] if n in by_name and by_name[n] is not i})
-        i["waits_on"] = sorted({f"job {job_of[n]}" for n in i["after"] if n in job_of and n not in by_name})
+        i["waits_on"] = sorted({f"job {job_of[n]}" for n in i["after"] if n in job_of and n not in by_name}
+                               | set(i.pop("covered", [])))
+    # A dependency cycle never opens on its own: it waits on the owner to break it.
+    deps = {i["path"]: i["deps"] for i in items}
+    for i in items:
+        seen = reach_of(i["path"], deps)
+        if i["path"] in seen:
+            ring = sorted(x for x in seen if x != i["path"] and i["path"] in reach_of(x, deps))
+            i["waits_on"].append(f"a dependency cycle with {', '.join(ring)}")
     # What waits, directly or through an item that isn't ready or itself waits.
     changed = True
     while changed:
@@ -11804,14 +11834,21 @@ def rig_state(root: Path, board: "Board") -> dict:
             x = parent[x]
         return x
     overlaps = []
+    meet = lambda a, b: (Path(b["id"]).stem not in a["kept"] and Path(a["id"]).stem not in b["kept"]
+                         and any(touches_meet(x, y) for x in a["touches"] for y in b["touches"]))
     for n, a in enumerate(start):
         for b in start[n + 1:]:
-            apart = Path(b["id"]).stem in a["kept"] or Path(a["id"]).stem in b["kept"]
-            if not apart and any(touches_meet(x, y) for x in a["touches"] for y in b["touches"]):
+            if meet(a, b):
                 overlaps.append(sorted([a["path"], b["path"]]))
                 parent[find(b["path"])] = find(a["path"])
             elif b["path"] in a["deps"] or a["path"] in b["deps"]:
                 parent[find(b["path"])] = find(a["path"])
+    # `jig open` refuses a spec overlapping any waiting spec, one that waits included.
+    starting = {i["path"] for i in start}
+    for a in start:
+        for b in items:
+            if b["kind"] == "spec" and b["path"] not in starting and meet(a, b):
+                overlaps.append(sorted([a["path"], b["path"]]))
     rank = {k: n for n, k in enumerate(RIG_KINDS)}
     sort_key = lambda i: (rank[i["kind"]], i["path"])
     groups: dict[str, list[dict]] = {}
@@ -11845,9 +11882,9 @@ def rig_state(root: Path, board: "Board") -> dict:
     asks = [i for i in items if i["state"] in ("open", "unjudged")]
     return {"items": sorted(items, key=sort_key),
             "groups": [{"paths": [i["path"] for i in g],
-                        "overlaps": sorted(p for p in overlaps if p[0] in {i["path"] for i in g})}
+                        "overlaps": sorted(p for p in overlaps if set(p) & {i["path"] for i in g})}
                        for g in ordered],
-            "waiting_on_you": len(asks), "can_start": len(start), "jobs": jobs}
+            "waiting_on_you": len(asks), "can_start": sum(i["opens"] == "now" for i in start), "jobs": jobs}
 
 
 def rig_text(state: dict) -> str:

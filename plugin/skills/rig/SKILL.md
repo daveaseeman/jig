@@ -52,11 +52,15 @@ in this order:
 1. Each open staged file's questions, from its stored judgment.
 2. The next step.
 3. Each ready staged file: write its spec? The stored recommendation is the recommended option.
-4. Each item whose `opens` is `now`: start it as a job?
-5. Each pair in a group's `overlaps` (items whose `opens` is `answer`): merge them into one spec
-   (the spec role's consolidate), or keep one apart (`Kept separate from <spec>: <reason>`).
-   Only an overlap gets this block. An item whose `opens` is `after` gets none: it builds
-   after another item in its group, and once that opens as a job, it waits on that job.
+4. Each spec whose `opens` is `now`: start it as a job? A staged file is never opened as a
+   job: block 3 writes its spec, and the next run offers that spec.
+5. Each pair in a group's `overlaps`, whatever its items' `opens`, one of them perhaps a
+   waiting spec outside the group: merge them into one spec (the spec role's consolidate), or
+   keep one apart (`Kept separate from <spec>: <reason>`). Only an overlap gets this block.
+   An item whose `opens` is `after` gets no other: it builds after another item in its group,
+   and once that opens as a job, it waits on that job.
+6. Each dependency cycle named under Waiting on: which item goes first? The answer removes the
+   other's `Build after` line, or `after:` header, naming it.
 
 Every block has "not now". It is an answer: the item stays as it is and comes back next run.
 Nothing is ever dropped for it.
@@ -80,7 +84,8 @@ show the new picture, so the owner sees items move from open to ready to running
 ## `/jig:rig auto`
 
 The same run, without asking for what needs no answer: write a spec from every ready staged
-file, then open and start every item whose `opens` is `now`. An overlapping pair needs the
+file, then run `jig rig --json` again (judging what comes back null, as in step 1) and open and
+start every spec whose `opens` is `now` in that output. An overlapping pair needs the
 owner's answer, and an item that comes `after` another waits for that job, so neither starts. Answer no open question and take no roadmap step:
 those are proposed, as blocks, for the owner. End with the picture and a short list of what
 you did.
