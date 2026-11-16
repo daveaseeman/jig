@@ -1,7 +1,7 @@
 {
   "roles-and-flows": {
     "spec": ".jig/specs/roles-and-flows.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/**",
