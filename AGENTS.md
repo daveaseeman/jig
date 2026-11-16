@@ -3,7 +3,7 @@
 ## Project
 jig: a Claude Code plugin plus a portable repo-side checker (`jig.py`, git hooks) for
 prototyping software and firmware with AI agents. Working = `tests/smoke.sh` passes, the plugin validates, and a
-fresh repo set up with `/jig:init` runs one full brief → review → handoff → gate cycle.
+fresh repo set up with `/jig:init` runs one full spec → work → review → handoff → gate cycle.
 Risk: R0 — one user, nothing shipped. Optimize for simplicity and clarity, not assurance.
 `.jig/` is jig running on this repo — the installed release. `plugin/` is the product. Edit `plugin/`; `.jig/` changes only by `/jig:update`.
 

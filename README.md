@@ -152,10 +152,10 @@ by `scripts/roles_svg.py`.
 | check | 3, 4 | check (the complete suite), trace a failed batch, survey, release run |
 
 The hubnode's own steps, which are no role's: assign, gate, merge, push, publish. jig itself
-(no model) refuses a step out of order. Tiers and efforts are numbers; `plugin/tiers.json`
+(no model) refuses a step out of order, and removes a merged job's clean worktree and branch. Tiers and efforts are numbers; `plugin/tiers.json`
 maps them to models and effort levels.
 
-**Workflows.** `→` continues a session that already exists, named by its letter; `⇢` starts a new one.
+**Workflows.** `→` continues a session that already exists; `⇢` starts a new one.
 
 | Workflow | Steps | Trigger | Controls |
 |---|---|---|---|

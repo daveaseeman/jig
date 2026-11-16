@@ -593,6 +593,9 @@ else stops with the files named, and a person resolves it.
    else it wrote: a tracked file left changed outside them is named and not committed. A failing
    derive stops the merge before its commit, as a conflict does: fix it, `jig merge --number`,
    `git commit`.
+   After its commit, the merge removes the job's worktree when `git status` there is clean, then
+   its branch (`git branch -d`); a worktree holding an uncommitted or untracked file is named,
+   and nothing is removed. A merge finished by hand after conflicts removes nothing.
    A hand `git merge` on trunk runs `setup.sh` but not `derive.sh`: run it and commit what it
    wrote, or the derived files stay stale until the next `jig merge`. In a metarepo, don't run
    `derive.sh` on trunk after a hand merge: M4 refuses the commit, and what it writes blocks the
@@ -624,7 +627,7 @@ order.
 | check | 3, 4 | check (the complete suite), trace a failed batch, survey, release run | nothing: fixed commands |
 
 The hubnode's own steps, which are no role's: assign, gate, merge, push, publish. jig itself
-(no model) refuses a step out of order.
+(no model) refuses a step out of order, and removes a merged job's clean worktree and branch.
 
 Tier 1 is the best model the tool has; a higher number is a lesser model. Effort 0 is the
 tool's highest; each number up is one level lower. The defaults leave effort 0 free, so a

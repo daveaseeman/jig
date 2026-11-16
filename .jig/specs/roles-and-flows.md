@@ -122,6 +122,10 @@ with the defaults.
         and the check fails, naming the SVG.
       - **Text as well:** the same three tables follow the image as Markdown, inside
         `<details>`, for search, screen readers and copying.
+- [ ] After its merge commit, `jig merge` removes the job's worktree when `git status` there is
+      clean, then runs `git branch -d`; otherwise it names what's left and removes nothing (the
+      owner, 2026-11-15: "Build it in Part 2"). Smoke covers both, and the cases that read a
+      job's branch after its merge are updated. The hubnode skill's after-merge step matches.
 - [ ] RULES.md § Workflow states the tables and the session rules with the contracts, as text.
       Neither it nor the README names Claude, Opus, Sonnet or a session tool: tiers and efforts
       only, with `plugin/tiers.json` named as where they map.

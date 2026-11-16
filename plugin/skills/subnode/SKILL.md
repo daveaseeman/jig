@@ -22,8 +22,8 @@ briefing it.
    scratch checkout, or on trunk for a batch, as its brief says.
 3. `jig rules`. If you are behind trunk and your role builds (work), `jig sync` and run the
    checks before changing anything.
-4. Load the role the kickoff names: `/jig:spec`, `/jig:bug`, `/jig:work`, `/jig:review` or
-   `/jig:check`. No role named: ask the hubnode which.
+4. Load the role your brief names: `/jig:spec`, `/jig:bug`, `/jig:work`, `/jig:review` or
+   `/jig:check`. No role named (a session resumed after compaction, say): ask the hubnode which.
 5. Say in three lines: the job, your role, and what you will do first.
 
 ## Report back

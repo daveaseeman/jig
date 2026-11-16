@@ -99,15 +99,17 @@ def draw(jig, theme: str) -> str:
     body: list[str] = []
     y = PAD
 
-    # Roles: one card per node and role, and jig itself, four to a row.
+    # Roles: one card per node and role, and jig itself, three to a row.
     body.append(t(PAD, y + BIG, "Roles", BIG, c["text"], 600))
     y += BIG + 12
-    cols, gap = 4, 12
+    cols, gap = 3, 12
     cw = (W - 2 * PAD - (cols - 1) * gap) / cols
     floor = jig.HUBNODE_FLOOR
-    cards = [("hubnode", f"the owner's · {floor['tier']},{floor['effort']} or better", jig.HUBNODE_STEPS)]
+    cards = [("hubnode", f"the owner's · {floor['tier']},{floor['effort']} or better", jig.HUBNODE_STEPS),
+             ("subnode", "the role's settings", ["one role on one job, in its worktree"])]
     for name, r in roles.items():
-        cards.append((name, f"{r['tier']},{r['effort']} · {r['session']}", r["steps"]))
+        cards.append((name, f"{r['tier']},{r['effort']} · {r['session']}",
+                      r["steps"] + ([f"then {r['then']}"] if r.get("then") else [])))
     cards.append(("jig itself", "no model", ["refuses steps out of order", "cleans up"]))
     lines = [wrap(steps, cw - 24, SMALL) for _, _, steps in cards]
     ch = 16 + BIG + 8 + SMALL + 10 + max(len(l) for l in lines) * (SMALL + 5) + 8

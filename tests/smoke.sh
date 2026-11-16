@@ -2057,8 +2057,15 @@ nx "a gate's checkout with no check recorded is the check, in a new session" k "
 nx "a recorded check is the hubnode's mark" k "k: gate — hubnode, continue the hubnode (Job; checked: \`jig mark k gated\`)"
 $J mark k gated >/dev/null && git add -A && git commit -qm "k gated"
 nx "a gated job is the merge, on the owner's word" k "k: merge — hubnode, continue the hubnode (Job; on the owner's word)"
-msg="merge: a gated job merges"
-expect_pass $J merge k
+msg="merge: a gated job merges, then its clean worktree and its branch are removed"
+out=$($J merge k 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q \"removed k's worktree and branch k\" && test ! -e .git/jig/worktrees/k && ! git rev-parse -q --verify refs/heads/k" "$out"
+$J open k3 --owns 'k3/**' >/dev/null && git add -A && git commit -qm "open k3"
+(cd .git/jig/worktrees/k3 && mkdir k3 && printf 'x\n' > k3/x.txt && git add -A && git commit -qm x && $J reviewed >/dev/null \
+  && $J handoff >/dev/null && foldin && git add -A && git commit -qm "note k3" && printf 'draft\n' > k3/draft.txt)
+msg="merge: a job whose worktree holds an untracked file merges, and its worktree and branch are left, named"
+gated k3; out=$($J merge k3 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'left .*worktrees/k3 and its branch k3: it holds 1 uncommitted or untracked file' && test -f .git/jig/worktrees/k3/k3/draft.txt && git rev-parse -q --verify refs/heads/k3 >/dev/null" "$out"
 # Rounds: a fix round recorded as a full review still counts; a --partial handoff starts the next part at round 1.
 $J open k2 --owns 'k2/**' >/dev/null && git add -A && git commit -qm "open k2"
 cd .git/jig/worktrees/k2 && mkdir k2 && printf 'x\n' > k2/x.txt && git add -A && git commit -qm x
@@ -2885,9 +2892,9 @@ msg="merge: with a git older than 2.38, L, unsynced, conflicting only in CHANGEL
 gated L; out=$(PATH="$SHIM:$PATH" $J merge L 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig sync. the job, then merge' && ! git rev-parse -q --verify MERGE_HEAD && test -z \"\$(git status --porcelain --untracked-files=no)\" && grep -q '\"L\"' .jig/jobs.json" "$out"
 ltip=$(git rev-parse L)
-msg="merge: L, unsynced, conflicts only in CHANGELOG.md: merged with no sync, K's line then L's, L's branch untouched"
+msg="merge: L, unsynced, conflicts only in CHANGELOG.md: merged with no sync, K's line then L's, L's branch merged as it was"
 gated L; out=$($J merge L 2>&1); rc=$?
-expect_pass sh -c "test $rc = 0 && ! grep -q '\"L\"' .jig/jobs.json && test \"\$(grep '^- ' CHANGELOG.md | tr '\n' ' ')\" = '- K - L ' && ! grep -q '^[<|=>]\\{7\\}' CHANGELOG.md && test \"\$(git rev-parse L)\" = $ltip" "$out"
+expect_pass sh -c "test $rc = 0 && ! grep -q '\"L\"' .jig/jobs.json && test \"\$(grep '^- ' CHANGELOG.md | tr '\n' ' ')\" = '- K - L ' && ! grep -q '^[<|=>]\\{7\\}' CHANGELOG.md && git merge-base --is-ancestor $ltip HEAD^2 && test \"\$(git rev-parse HEAD^2)\" = $ltip" "$out"
 msg="merge: it says it resolved CHANGELOG.md as jig sync would, and the commit is 'merge L' with no Conflicts lines"
 expect_pass sh -c "echo \"\$0\" | grep -q 'resolved CHANGELOG.md as .jig sync. would' && test \"\$(git log -1 --format=%B | sed '/^\$/d')\" = 'merge L'" "$out"
 msg="merge: O deleted CHANGELOG.md, which trunk appended to: refused, naming jig sync, trunk clean and the file kept"
@@ -2945,11 +2952,11 @@ msg="merge: with a git older than 2.38, B, whose row meets A's, is refused, nami
 gated B; out=$(PATH="$SHIM:$PATH" $J merge B 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig sync. the job, then merge' && ! git rev-parse -q --verify MERGE_HEAD && test -z \"\$(git status --porcelain --untracked-files=no)\"" "$out"
 btip=$(git rev-parse B)
-msg="merge: then B merges with no sync and no new note: the base row, A's, then B's, B's branch untouched"
+msg="merge: then B merges with no sync and no new note: the base row, A's, then B's, B's branch merged as it was"
 gated B; out=$($J merge B 2>&1); rc=$?
-expect_pass sh -c "test $rc = 0 && test \"\$(grep -o '| \\(base\\|A\\|B\\) |' .jig/ledgers/DEFERRED.md | tr -d '| ' | tr '\n' ' ')\" = 'base A B ' && ! grep -q '^[<|=>]\\{7\\}' .jig/ledgers/DEFERRED.md && test \"\$(git rev-parse B)\" = $btip && echo \"\$0\" | grep -q 'resolved .jig/ledgers/DEFERRED.md as .jig sync. would'" "$out"
+expect_pass sh -c "test $rc = 0 && test \"\$(grep -o '| \\(base\\|A\\|B\\) |' .jig/ledgers/DEFERRED.md | tr -d '| ' | tr '\n' ' ')\" = 'base A B ' && ! grep -q '^[<|=>]\\{7\\}' .jig/ledgers/DEFERRED.md && test \"\$(git rev-parse HEAD^2)\" = $btip && echo \"\$0\" | grep -q 'resolved .jig/ledgers/DEFERRED.md as .jig sync. would'" "$out"
 msg="merge: B's merge tree is the one jig sync, then jig merge, writes"
-git ls-tree -r HEAD > "$T/fu-defer.fix" && git reset -q --hard HEAD^ && (cd "$FD/.git/jig/worktrees/B" && $J sync >/dev/null 2>&1) \
+git ls-tree -r HEAD > "$T/fu-defer.fix" && git reset -q --hard HEAD^ && { git rev-parse -q --verify refs/heads/B >/dev/null || wt -b B .git/jig/worktrees/B $btip; } && (cd "$FD/.git/jig/worktrees/B" && $J sync >/dev/null 2>&1) \
   && gated B && $J merge B >/dev/null 2>&1 && git ls-tree -r HEAD > "$T/fu-defer.sync"
 expect_pass cmp "$T/fu-defer.fix" "$T/fu-defer.sync"
 msg="merge: E, whose edit of the base row meets A's append, is refused, naming jig sync, trunk clean"
@@ -4986,7 +4993,7 @@ git switch -q -c rows && printf '| D-002 | which wire format? | proposed (Ann) |
 msg="old shape: a branch adding a .jig/decisions.md doesn't switch the old M2 off"
 git switch -q -c sneak && printf '| D-009 | x | maybe | 2026-11-02 |\n' >> DECISIONS.md && printf -- '- D-009\n' >> CHANGELOG.md && printf '# log\n' > .jig/decisions.md && git add -A
 expect_refuse git commit -qm "D-009: x"; undo; git switch -q main && git branch -qD sneak
-git worktree remove --force .git/jig/worktrees/o1
+git worktree remove --force .git/jig/worktrees/o1 2>/dev/null   # jig merge removed it when it was clean
 # A pararepo pinned before the migration, to read the bump across it.
 PA="$T/old-para"; pcnew "$PA" && mkdir -p api && printf 'x=1\n' > api/a.py && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 $J init --para om --location "$OM" --contract 'api/**' >/dev/null 2>&1 && git add -A && git commit -qm "init --para"; cd "$OM"

@@ -66,7 +66,9 @@ role skill's **Brief**: every brief opens with `running <model> at <effort>`, th
 configured settings. Its first reply starts with `running <model>`, the model read from its
 own settings, and no effort: a session's read of its own effort has been wrong too often to
 act on. You check the effort with the host's readout of that session when it has one, and
-record the configured numbers (`--tier N --effort N`) either way. A self-read the host
+record a review you dispatched, once, with the configured numbers and its blocking findings
+(`jig reviewed --tier N --effort N --ran "..." --blocking N`, `--change` for a
+review-change), as `/jig:review` says. A self-read the host
 contradicts is never a mismatch; only a model that differs is. A mismatch stops a raised
 session: tell the owner, don't brief it. A subagent, or a session started at or below your
 settings, gets its brief in the same prompt, so that prompt also says: "if your own model
@@ -169,9 +171,10 @@ tell that job to sync before its next handoff. A merge that stops on conflicts: 
 After it, run `jig sync` in every open job's worktree that is clean, and say which jobs must
 sync themselves. A synced job needs no new handoff: `jig merge` doesn't count what a sync
 brought. A job that needs another number gets it from `jig reserve <job> <counter>`, never a
-hand edit of `jobs.json`. Look at the merged job's worktree: if its `git status` is clean,
-`git worktree remove <it>` and `git branch -d <branch>`; otherwise tell the owner and leave
-both.
+hand edit of `jobs.json`. The merge removed the job's worktree and branch when the worktree was
+clean; when it says it left them, it names what is in it: tell the owner, and remove both by
+hand once that is saved. A merge you finished by hand after conflicts removes nothing: do the
+same yourself.
 
 `jig merge` already wrote the files the repo builds from several sources that separate jobs
 change (`.jig/RULES.md`, Keeping merges mechanical), with `.jig/scripts/derive.sh`, in the

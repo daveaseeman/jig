@@ -127,8 +127,11 @@ is committed. Bug runs only then, or when the owner calls it.
 
 ## Record it
 
-Record every review, blocking findings or none, on the commit it reviewed, in the job's
-worktree:
+The session that dispatched the review records it, once: the hubnode, or the work session
+working alone. The reviewer never records its own review, and nobody records a second one on
+the same commit: the newest record of a commit is the one jig reads, so a second without
+`--blocking` would erase the findings. Record every review, blocking findings or none, on the
+commit it reviewed, in the job's worktree:
 
 ```sh
 python3 .jig/jig.py reviewed --tier N --effort N --ran "<model> at <effort>" --blocking N

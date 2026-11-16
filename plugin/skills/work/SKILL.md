@@ -66,8 +66,8 @@ newest review recorded some.
 
 1. `jig handoff --spec .jig/specs/<task>.md`. A chunk that doesn't finish its spec hands off
    with `--partial`, so the roadmap doesn't count the spec complete. The review is already
-   recorded, by the review role. Never run `jig reviewed` yourself after it: it overwrites
-   the tier and effort recorded.
+   recorded, once, by whoever dispatched it (the hubnode, or you working alone). Never record
+   it again: a second record of the same commit replaces the first, its blocking findings too.
 2. Fill every heading in the note. Commit it with the work, and with the DEFERRED.md rows
    for the review's untaken findings: rows added there after the review don't count as a change.
 3. Message the hubnode: the job, the commit, the note's path. Then keep building, or wait.

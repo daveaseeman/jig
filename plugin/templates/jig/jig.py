@@ -70,7 +70,8 @@ BOARD_OPTIONAL = (
 ROLES = {
     "spec":   {"session": "new session", "tier": 2, "effort": 2, "steps": ["spec", "consolidate"]},
     # Before any diff exists; it ends with the spec for what it found.
-    "bug":    {"session": "new session", "tier": 2, "effort": 1, "steps": ["bug"]},
+    "bug":    {"session": "new session", "tier": 2, "effort": 1, "steps": ["bug"],
+               "then": "the spec for what it found"},
     # One session keeps the build through every fix and sync.
     "work":   {"session": "one session per job", "tier": 2, "effort": 3, "steps": ["work", "handoff", "fix", "sync"]},
     # Always a fresh session: a reviewer who saw the build judges what it meant, not what it did.
@@ -331,8 +332,10 @@ def role_settings(config: dict) -> tuple[dict, list[str]]:
             least = {"tier": 1, "effort": 0}.get(k)
             if k == "reason":
                 continue
-            if k in ("fresh", "session"):
-                bad.append(f"{key}.{role}.{k}: fixed whatever the config says: {FIXED_RULES[1]}")
+            if k in ("fresh", "session", "steps", "then"):
+                why = FIXED_RULES[1] if k == "fresh" or role == "review" else \
+                    "where a role runs and which steps it owns are jig's, not a repo's"
+                bad.append(f"{key}.{role}.{k}: fixed whatever the config says: {why}")
             elif least is None:
                 bad.append(f"{key}.{role}.{k}: only tier, effort and reason are set")
             elif type(v) is not int or v < least:
@@ -1749,9 +1752,38 @@ def cmd_merge(root: Path, args) -> int:
               file=sys.stderr)
         return 1
     print(f"merged {name}; its entry is gone from {JOBS} in the same commit. Sync the clean jobs.")
+    clean_up_job(name, branch)
     for l in later:
         print(l)
     return 0
+
+
+def clean_up_job(name: str, branch: str) -> None:
+    """After a job's merge commit: remove its worktree when nothing is left in it, then its
+    branch, which the merge holds. Anything left (an uncommitted edit, an untracked file) is
+    named and nothing is removed: it may be work no commit carries."""
+    where = None
+    for block in git("worktree", "list", "--porcelain").split("\n\n"):
+        lines = block.splitlines()
+        if f"branch refs/heads/{branch}" in lines:
+            where = lines[0].removeprefix("worktree ")
+    if where:
+        left = git("status", "--porcelain", cwd=where)
+        if left:
+            print(f"left {where} and its branch {branch}: it holds {len(left.splitlines())} "
+                  f"uncommitted or untracked file(s). Save what matters, then `git worktree "
+                  f"remove {where}` and `git branch -d {branch}`")
+            return
+        p = subprocess.run(["git", "worktree", "remove", where], capture_output=True, text=True)
+        if p.returncode:
+            print(f"left {where} and its branch {branch}: git worktree remove: "
+                  f"{(p.stderr or p.stdout).strip()}")
+            return
+    p = subprocess.run(["git", "branch", "-d", branch], capture_output=True, text=True)
+    if p.returncode:
+        print(f"left the branch {branch}: git branch -d: {(p.stderr or p.stdout).strip()}")
+        return
+    print(f"removed {name}'s " + ("worktree and " if where else "") + f"branch {branch}")
 
 
 def append_globs(board: "Board") -> list[str]:
