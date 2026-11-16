@@ -1,7 +1,7 @@
 {
   "name": "jig",
   "version": "0.12.2",
-  "description": "Minimal scaffolding for prototyping software and firmware with AI agents: spec, bug, verify, review, retro; init/survey/adopt to set up a repo, update to bring it to the current layout; hubnode/subnode for parallel jobs; hardware to spec a board and install its skills; stage to land chat-born files through .jig/staging/; release to build and tag a version by the repo's own protocol; feedback for bugs in the tool itself, staged in the jig repo; fix to work through those reports there.",
+  "description": "Minimal scaffolding for prototyping software and firmware with AI agents: every session is a hubnode or a subnode, and each subnode takes one role (spec, bug, work, review, check) at its own settings, with workflows run in order and enforced by jig. init, survey, adopt and update set up a repo and keep it current; stage lands chat-born files; release builds and tags by the repo's own protocol; feedback and fix carry bugs in jig itself back to the jig repo.",
   "author": {
     "name": "Dave Seeman",
     "email": "dave@squarish.com"
