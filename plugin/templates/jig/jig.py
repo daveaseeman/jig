@@ -9839,7 +9839,10 @@ def apply_retired(root: Path, edits: list) -> None:
 # which a product uses for its own things.
 STEP_SKILL = re.compile(r"/jig:(hubnode|subnode|spec|bug|work|review|check)\b")
 STEP_COMMAND = re.compile(r"\bjig(?:\.py)?\s+(reviewed|handoff|gate|checked|mark|merge|release)\b")
-STEP_SETTING = re.compile(r"(?i)\b(?:tier|effort)\b\s*[:=]?\s*\d")
+# jig's settings are written lower-case, beside a role, step or node, or as the pair: "Tier 1
+# suppliers" and "effort: 3 days" are a product's words.
+STEP_SETTING = re.compile(r"\btier \d+, effort \d+\b|(?=.*\b(?:tier|effort):? \d)"
+                          r".*\b(?:spec|bug|work|review|reviews|check|hubnode|subnode|execute|recheck)\b")
 COMMAND_STEP = {"reviewed": "review-work", "handoff": "handoff", "gate": "gate", "checked": "check",
                 "mark": "gate", "merge": "merge", "release": "release"}
 ROLES_SAID = f"`roles` in {CONFIG} ({DIR}/RULES.md § Workflow)"
@@ -10059,7 +10062,8 @@ def home_findings(root: Path, plan: dict, board: dict, board_at: str,
                          board.get("deep_subsystems"), docmap)
     homes = [h for h in homeless if h["path"] not in reviewed]
     rec = findings_record(board)
-    # The old contract outside the pages: listed for the owner, converted with the pages, never edited here.
+    # The old contract outside the pages: listed for the owner and converted with the pages. A
+    # counter that numbers nothing is already gone from BOARD: cmd_update removed it.
     out = [(h["label"], h["fix"]) for h in contract_holders(root, after, board, read)
            if h["label"] not in reviewed]
     out += [(h["path"], home_fix(h) + state_tag(h, rec)) for h in homes if h["kind"] in ("rules", "copy", "reserved")]

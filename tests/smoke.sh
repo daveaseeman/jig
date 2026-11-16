@@ -7036,7 +7036,7 @@ expect_pass sh -c "echo \"\$0\" | grep -qxF \"  board: workflow (review 2,2; jig
 # Fixture C: no override.
 ur_reset; out=$($UP 2>&1)
 msg="update roles C: with no override update says nothing about workflow, and jig roles prints the standard"
-expect_pass sh -c "! echo \"\$0\" | grep -q workflow && test \"\$($J roles 2>&1)\" = \"\$1\"" "$out" "$roles_std"
+expect_pass sh -c "echo \"\$0\" | grep -qE '^up to date|^Dry run:' && ! echo \"\$0\" | grep -q workflow && test \"\$($J roles 2>&1)\" = \"\$1\"" "$out" "$roles_std"
 
 # Fixture D: both keys. workflow goes, roles stays.
 ur_reset; setwf '{"execute": {"tier": 1, "effort": 3}}'; setroles '{"review": {"tier": 1, "effort": 0, "reason": "the owner wants the best reviews"}}'; ur_commit both
@@ -7051,7 +7051,7 @@ expect_pass sh -c "test \"\$(python3 -c \"import json; c = json.load(open('.jig/
 ur_reset; setroles '{"review": {"tier": 1, "effort": 0, "reason": "r"}}'; ur_commit roles
 out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
 msg="update roles E: roles alone is not mentioned, and --apply keeps it"
-expect_pass sh -c "! echo \"\$0\" | grep -qE 'roles|workflow' && python3 -c \"import json; assert json.load(open('.jig/config.json'))['roles'] == {'review': {'tier': 1, 'effort': 0, 'reason': 'r'}}\"" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -qE '^up to date|^Dry run:' && ! echo \"\$0\" | grep -qE 'roles|workflow' && python3 -c \"import json; assert json.load(open('.jig/config.json'))['roles'] == {'review': {'tier': 1, 'effort': 0, 'reason': 'r'}}\"" "$out"
 
 msg="update roles: the mapping is gone: no carried-over reason, no recheck note"
 expect_refuse grep -qE "carried over from|RECHECK_DROPPED" "$P/jig/jig.py"
@@ -7135,10 +7135,11 @@ ur_reset
 { echo '# AGENTS.md'; echo; echo '<!-- jig:meta — generated from .jig/para.json by `jig init --para`; edit that, not this -->'
   echo '- Rulebook `.jig/RULES.md`, enforced by `python3 .jig/jig.py`. Roles: /jig:hubnode, /jig:subnode.'
   echo '- Each contract change waits for `jig handoff` in the metarepo.'; echo '<!-- jig:meta end -->'
-  tline "- Rulebook "; } > AGENTS.md && ur_commit para
+  tline "- Rulebook "
+  echo '- Bug reported → /jig:bug before editing. Prefer the fix that makes the odd path look like the healthy ones over one that patches the symptom.'; } > AGENTS.md && ur_commit para
 out=$($UP 2>&1)
-msg="update roles: lines inside a pararepo's generated header are not read"
-expect_pass sh -c "! echo \"\$0\" | grep -qE '^  (4|5): |AGENTS.md:(4|5):'" "$out"
+msg="update roles: lines inside a pararepo's generated header are not read; the retired line after it is"
+expect_pass sh -c "! echo \"\$0\" | grep -qE '^  (4|5): |AGENTS.md:(4|5):' && echo \"\$0\" | grep -q '^  8: .- Bug reported'" "$out"
 ur_reset
 { cat "$P/AGENTS.md"; echo '- Bug reported → /jig:bug before editing. Prefer the fix that makes the odd path look like the healthy ones over one that patches the symptom.'; } > AGENTS.md
 echo '{}' > .jig/meta.json && ur_commit meta && cp AGENTS.md "$T/M.before"
