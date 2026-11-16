@@ -1,7 +1,7 @@
 {
   "update-adopts-standard": {
     "spec": ".jig/specs/update-adopts-standard.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/update/SKILL.md",
