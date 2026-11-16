@@ -13,6 +13,7 @@ Risk: R0 — one user, nothing shipped. Optimize for simplicity and clarity, not
 - reload in a session: `/reload-plugins`
 - check: `.jig/scripts/check.sh` (the validator and a syntax check of `jig.py`); the full smoke is the complete check
 - setup:  `.jig/scripts/setup.sh` (runs itself in new worktrees and after merges; run it after changing dependencies)
+- derive: `.jig/scripts/derive.sh` (writes the files built from several sources that separate jobs change; `jig merge` runs it and commits what `derived_files` in `.jig/config.json` lists; branches don't commit them)
 
 ## Workflow
 - Task bigger than a one-sentence diff → `.jig/specs/<task>.md` first (/jig:spec).
