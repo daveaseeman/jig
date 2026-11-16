@@ -32,7 +32,7 @@
   },
   "bug-sync-trunk-edits": {
     "spec": ".jig/specs/bug-sync-trunk-edits.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
@@ -40,6 +40,7 @@
       "plugin/templates/jig/RULES.md",
       "tests/smoke.sh"
     ],
-    "reserved": {}
+    "reserved": {},
+    "check": "batch"
   }
 }
