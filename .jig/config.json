@@ -1,5 +1,5 @@
 {
-  "version": 9,
+  "version": 10,
   "name": "jig",
   "trunk": "main",
   "common": [
@@ -15,18 +15,13 @@
   "reserve": {},
   "docmap": {},
   "not_docs": [
-    "plugin/**"
+    "plugin/**",
+    "tests/fixtures/**"
   ],
   "release": {
     "artifacts": [
       "dist/jig-*.plugin"
     ]
   },
-  "reference_files": "",
-  "workflow": {
-    "review": {
-      "tier": 2,
-      "effort": 2
-    }
-  }
+  "reference_files": ""
 }

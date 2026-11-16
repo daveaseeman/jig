@@ -12,6 +12,7 @@ Risk: R0 — one user, nothing shipped. Optimize for simplicity and clarity, not
 - validate: `claude plugin validate ./plugin`
 - reload in a session: `/reload-plugins`
 - check: `.jig/scripts/check.sh` (the validator and a syntax check of `jig.py`); the full smoke is the complete check
+- setup:  `.jig/scripts/setup.sh` (runs itself in new worktrees and after merges; run it after changing dependencies)
 
 ## Workflow
 - Task bigger than a one-sentence diff → `.jig/specs/<task>.md` first (/jig:spec).
@@ -20,6 +21,7 @@ Risk: R0 — one user, nothing shipped. Optimize for simplicity and clarity, not
 - A mergeable chunk is a handoff: checks pass → /jig:review → `jig reviewed` → `jig handoff`. `jig next` names each job's next step and who takes it (`jig roles`, `jig flows`).
 - A diff that changes only skill text, docs or specs (no `jig.py`, hooks, templates or `tests/`) gets a lighter review: tier 2, effort 3. Anything else gets the review role's settings. This is the owner's setting, not a hubnode's pick; `jig gate` warns that it ran below the spec's review line, and that warning is expected.
 - A release, on the owner's word: write `dist/notes-X.Y.Z.md` (install line, then New / Changed / Fixed), then `python3 .jig/jig.py release --minor` (or `--patch`, `--major`). After the tag, `.jig/scripts/publish.sh` pushes main and the tag (the marketplace serves `./plugin` from main) and publishes `dist/jig-X.Y.Z.plugin` as the GitHub release, failing unless the release lists it. Then the hubnode archives the subnode sessions it started whose jobs have merged: the release is the owner's yes for those. A session whose job is still open, or that is still working, stays.
+- Rulebook `.jig/RULES.md`, enforced by `python3 .jig/jig.py`. Nodes: /jig:hubnode, /jig:subnode. Roles: /jig:spec, /jig:bug, /jig:work, /jig:review, /jig:check, each at its `jig roles` settings; `jig next` names the next step.
 
 ## Code
 - `jig.py` is stdlib Python, one file, no AI-tool dependency. Enforcement lives there and in git hooks; skills are thin wrappers that call it.
