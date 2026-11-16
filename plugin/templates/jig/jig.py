@@ -8835,7 +8835,9 @@ def net_added(diff: str, want: set[str]) -> list[tuple[str, int, str]]:
         if line.startswith("diff "):
             hunk = False
         elif not hunk and line.startswith("+++ "):
-            at = line[6:] if line.startswith("+++ b/") and line[6:] in want else ""
+            # git ends the header with a tab when the name holds a space
+            name = line[6:].removesuffix("\t") if " " in line[6:] else line[6:]
+            at = name if line.startswith("+++ b/") and name in want else ""
         elif m := re.match(r"@@ -\S+ \+(\d+)", line):
             n, hunk = int(m.group(1)), True
         elif hunk and at and line.startswith("+"):

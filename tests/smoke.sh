@@ -232,15 +232,20 @@ out=$(git commit -qm py 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'R7 .*\.jig/ledgers/WORKAROUNDS.md is not staged: add its row there in this commit (the first row creates'" "$out"
 
 msg="R7: the first row creates the ledger from the plugin's template, and the commit is accepted"
+keep=$(git rev-parse HEAD)
 mkdir -p .jig/ledgers && cp "$P/ledgers/WORKAROUNDS.md" .jig/ledgers/ && printf '| 2026-10-29 | src/a.py | x | t | t | t [seen] | t |\n' >> .jig/ledgers/WORKAROUNDS.md
 git add -A; expect_pass git commit -qm py
-git reset -q --hard HEAD~1
+git reset -q --hard "$keep"
 
-msg="R7: a WORKAROUND: comment only moved within its file (functions reordered) commits with no ledger row"
+keep=$(git rev-parse HEAD)
 printf 'def a():\n    # %s x\n    return 1\n\ndef b():\n    return 2\n' "$W" > src/mv.py && git add -A && git -c core.hooksPath=/dev/null commit -qm planted
+msg="R7: moving a WORKAROUND: comment and adding a second copy of it in the same commit is refused"
+printf 'def b():\n    return 2\n\ndef a():\n    # %s x\n    return 1\n\ndef c():\n    # %s x\n    return 3\n' "$W" "$W" > src/mv.py && git add -A; expect_refuse git commit -qm copy; undo
+msg="R7: a WORKAROUND: comment only moved within its file (functions reordered) commits with no ledger row"
 printf 'def b():\n    return 2\n\ndef a():\n    # %s x\n    return 1\n' "$W" > src/mv.py && git add -A; expect_pass git commit -qm reorder
-msg="R7: a second WORKAROUND: comment in that file is still refused"
-printf '\ndef c():\n    # %s x\n    return 3\n' "$W" >> src/mv.py && git add -A; expect_refuse git commit -qm c; undo; git reset -q --hard HEAD~2
+msg="R7: a WORKAROUND: comment in a file whose name holds a space is refused"
+printf '# %s x\n' "$W" > 'src/my file.py' && git add -A; expect_refuse git commit -qm space; undo
+git reset -q --hard "$keep"
 
 msg="sync: a conflicted merge of trunk can be committed"
 ( cd "$T" && printf 'x=2\n' > src/a.py && git add -A && git commit -qm trunk1 )
