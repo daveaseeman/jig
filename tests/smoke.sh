@@ -2059,6 +2059,21 @@ $J mark k gated >/dev/null && git add -A && git commit -qm "k gated"
 nx "a gated job is the merge, on the owner's word" k "k: merge — hubnode, continue the hubnode (Job; on the owner's word)"
 msg="merge: a gated job merges"
 expect_pass $J merge k
+# Rounds: a fix round recorded as a full review still counts; a --partial handoff starts the next part at round 1.
+$J open k2 --owns 'k2/**' >/dev/null && git add -A && git commit -qm "open k2"
+cd .git/jig/worktrees/k2 && mkdir k2 && printf 'x\n' > k2/x.txt && git add -A && git commit -qm x
+$J reviewed --tier 2 --effort 2 --blocking 1 >/dev/null && printf 'y\n' >> k2/x.txt && git commit -qam fix1
+msg="reviewed: a fix round's review recorded without --change still ends the round"
+out=$($J reviewed --tier 2 --effort 2 --blocking 1 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'Fix round 2 of 3'" "$out"
+printf 'y\n' >> k2/x.txt && git commit -qam fix2 && $J reviewed --change --tier 2 --effort 2 --blocking 0 >/dev/null \
+  && $J handoff --partial >/dev/null && foldin && git add -A && git commit -qm "note k2 part 1"
+printf 'z\n' > k2/z.txt && git add -A && git commit -qm part2
+msg="reviewed: after a --partial handoff, the next part's first blocking review starts round 1"
+out=$($J reviewed --tier 2 --effort 2 --blocking 1 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'Fix round 1 of 3'" "$out"
+nx "the next part's blocking review is that part's Fix round 1" "" "k2: fix — work, continue the work session (Fix, round 1; 1 blocking finding)"
+cd "$NX"
 }
 
 # ---------------------------------------------------------------- init beside an old board

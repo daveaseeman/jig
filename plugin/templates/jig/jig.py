@@ -2022,8 +2022,15 @@ def review_kind(data: dict) -> str:
 
 
 def blocking_reviews(chain: list[str]) -> int:
-    """How many reviews of CHAIN's commits recorded blocking findings, full or change: a review
-    recorded either way still ends a round."""
+    """How many reviews of this part's commits recorded blocking findings, full or change: a
+    review recorded either way still ends a round. A part ends at a commit adding a handoff
+    note (a `--partial` one too), so each part's rounds start again at 1."""
+    if chain:
+        # --no-merges: a sync bringing trunk's notes in ended no part of this job.
+        noted = set(git("log", "--first-parent", "--no-merges", "--diff-filter=A", "--format=%H",
+                        chain[0], "--", f"{DIR}/handoffs/").splitlines())
+        cut = next((i for i, c in enumerate(chain) if c in noted), None)
+        chain = chain[:cut] if cut is not None else chain
     on = set(chain)
     latest: dict[str, dict] = {}
     for sha, data in review_log():
