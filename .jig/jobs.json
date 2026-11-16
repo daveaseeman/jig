@@ -17,7 +17,7 @@
   },
   "bug-staging-research": {
     "spec": ".jig/specs/bug-staging-research.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/stage/SKILL.md"
