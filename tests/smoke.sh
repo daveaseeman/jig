@@ -7364,6 +7364,11 @@ msg="rig: a spec touching a folder glob doesn't take an Up next item on one page
 rspec wide 'docs/**'
 expect_pass rstate "s=[x for x in d['items'] if x['kind'] == 'next-step']; assert [(x['id'], x['state']) for x in s] == [('offline', 'open')], s"
 
+msg="rig: a spec naming docs/off.md.bak doesn't take an Up next item on docs/off.md"
+rspec bak docs/off.md.bak
+expect_pass rstate "s=[x for x in d['items'] if x['kind'] == 'next-step']; assert [(x['id'], x['state']) for x in s] == [('offline', 'open')], s"
+rm .jig/specs/bak.md
+
 msg="rig: an Up next item whose page a waiting spec names waits on it, and the next step is the phase's open scope"
 rspec zeta docs/off.md
 expect_pass rstate "s=[x for x in d['items'] if x['kind'] == 'next-step']; assert [(x['id'], x['state'], x['waits_on']) for x in s] == [('offline', 'taken', ['spec .jig/specs/zeta.md']), ('one/panel', 'open', [])], s"
@@ -7372,6 +7377,9 @@ rm .jig/specs/wide.md
 msg="rig: a dependency cycle waits on the owner, and neither item can start"
 rspec c1 'm/1.txt' 'Build after `c2`.' && rspec c2 'm/2.txt' 'Build after `c1`.'
 expect_pass rstate "c, e = i['.jig/specs/c1.md'], i['.jig/specs/c2.md']; assert 'a dependency cycle with .jig/specs/c2.md' in c['waits_on'] and 'a dependency cycle with .jig/specs/c1.md' in e['waits_on'] and c['group'] is e['group'] is None, (c, e)"
+msg="rig: with taken and cycle states present, two --json runs print identical bytes"
+a=$($J rig --json); b=$($J rig --json)
+expect_pass test -n "$a" -a "$a" = "$b"
 rm .jig/specs/c1.md .jig/specs/c2.md
 
 rm .jig/specs/zeta.md
