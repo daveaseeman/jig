@@ -232,9 +232,22 @@ out=$(git commit -qm py 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'R7 .*\.jig/ledgers/WORKAROUNDS.md is not staged: add its row there in this commit (the first row creates'" "$out"
 
 msg="R7: the first row creates the ledger from the plugin's template, and the commit is accepted"
+keep=$(git rev-parse HEAD)
 mkdir -p .jig/ledgers && cp "$P/ledgers/WORKAROUNDS.md" .jig/ledgers/ && printf '| 2026-10-29 | src/a.py | x | t | t | t [seen] | t |\n' >> .jig/ledgers/WORKAROUNDS.md
 git add -A; expect_pass git commit -qm py
-git reset -q --hard HEAD~1
+git reset -q --hard "$keep"
+
+keep=$(git rev-parse HEAD)
+printf 'def a():\n    # %s x\n    return 1\n\ndef b():\n    y = 2\n    z = 3\n    w = 4\n    return y + z + w\n' "$W" > src/mv.py && git add -A && git -c core.hooksPath=/dev/null commit -qm planted
+msg="R7: moving a WORKAROUND: comment and adding a second copy of it in the same commit is refused"
+printf 'def b():\n    y = 2\n    z = 3\n    w = 4\n    return y + z + w\n\ndef a():\n    # %s x\n    return 1\n\ndef c():\n    # %s x\n    return 3\n' "$W" "$W" > src/mv.py && git add -A; out=$(git commit -qm copy 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'R7 the diff adds'" "$out"
+msg="R7: a WORKAROUND: comment only moved within its file (functions reordered) commits with no ledger row"
+printf 'def b():\n    y = 2\n    z = 3\n    w = 4\n    return y + z + w\n\ndef a():\n    # %s x\n    return 1\n' "$W" > src/mv.py && git add -A; expect_pass git commit -qm reorder
+msg="R7: a WORKAROUND: comment in a file whose name holds a space is refused"
+printf '# %s x\n' "$W" > 'src/my file.py' && git add -A; out=$(git commit -qm space 2>&1); rc=$?; undo
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'R7 the diff adds'" "$out"
+git reset -q --hard "$keep"
 
 msg="sync: a conflicted merge of trunk can be committed"
 ( cd "$T" && printf 'x=2\n' > src/a.py && git add -A && git commit -qm trunk1 )
@@ -4908,6 +4921,80 @@ $J open M --spec .jig/specs/y.md --owns 'docs/**' >/dev/null && git add -A && gi
 gated M; $J merge M >/dev/null 2>&1
 expect_pass sh -c "grep -q 'touches docs/d.md' .jig/roadmap.md && git show --name-only --format= HEAD | grep -qx .jig/roadmap.md"
 
+# A line only moved within a file isn't added: accepting entries moves them, and old text moves with them.
+BV="$T/boundary-move"; pcnew "$BV" && mkdir -p docs && printf '# Shared\n\nThe shared page.\n\nSee `exits/capital-event` for the plan.\n\nAnother paragraph.\n' > docs/shared.md
+printf '# Roadmap\n\n## exits\nScopes:\n- `capital-event`: the capital event (touches docs/shared.md)\n' > .jig/roadmap.md
+git add -A && git -c core.hooksPath=/dev/null commit -qm init && $J init >/dev/null && git add -A && git -c core.hooksPath=/dev/null commit -qm board
+logset() { python3 -c "import sys; f='.jig/decisions.md'; s=open(f).read(); a, b = sys.argv[1:]; assert a in s, a; open(f,'w').write(s.replace(a, b, 1))" "$1" "$2"; }
+ent() { printf '### D-%s %s\n%s\nTouches: docs/shared.md\n\n%s\n' "$1" "$2" "$3" "$4"; }
+OP='Open (2026-11-01).'; AC='Accepted (owner, 2026-11-16).'
+RS=$(printf "Line 1 of the entry's reasoning.\nLine 2 of the entry's reasoning.")
+A=$(ent 003 alpha "$OP" "$RS"); C=$(ent 004 charlie "$OP" "$RS"); X=$(ent 002 xray "$AC" 'Already accepted.')
+B=$(printf '### D-001 bravo\n%s\n\nWaits on `exits/capital-event`, the project.s.' "$OP")
+logset $'## Open\n\n## Unreleased\n' "## Open
+
+$A
+
+$B
+
+$C
+
+## Unreleased
+
+$X
+" && git add -A && git -c core.hooksPath=/dev/null commit -qm "log before the rules"
+msg="boundary: accepting A and C moves them past B, which names a quoted scope; it commits, jig rules says ok, and B is unchanged"
+logset "## Open
+
+$A
+
+$B
+
+$C
+
+## Unreleased
+
+$X
+" "## Open
+
+$B
+
+## Unreleased
+
+${A/$OP/$AC}
+
+${C/$OP/$AC}
+
+$X
+" && git add -A
+out=$(git commit -qm "D-003, D-004: accepted" 2>&1); rc=$?; r=$($J rules 2>&1)
+expect_pass sh -c "test $rc = 0 && test \"\$1\" = ok && ! echo \"\$0\" | grep -q 'capital-event' && python3 -c 'import sys; assert sys.argv[1] in open(\".jig/decisions.md\").read()' \"\$2\"" "$out" "$r" "$B"
+msg="boundary: an entry whose own body names the quoted scope, moved and accepted, commits"
+E=$(ent 005 echo "$OP" 'Built for `exits/capital-event`.')
+logset $'## Open\n' "## Open
+
+$E
+" && git add -A && git -c core.hooksPath=/dev/null commit -qm "E before the rules"
+logset "$E
+
+" "" && logset $'## Unreleased\n' "## Unreleased
+
+${E/$OP/$AC}
+" && git add -A && expect_pass git commit -qm "D-005: accepted"
+msg="boundary: a page's old line naming the quoted scope, moved within the page, commits"
+printf '# Shared\n\nThe shared page.\n\nAnother paragraph.\n\nSee `exits/capital-event` for the plan.\n' > docs/shared.md && git add -A && expect_pass git commit -qm "shared: reorder"
+msg="boundary: a new log line naming the quoted scope is still refused"
+logset $'## Unreleased\n' "## Unreleased
+
+$(ent 006 new "$AC" 'Built for `exits/capital-event` again.')
+" && git add -A && refused new
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'names .exits/capital-event., the project'" "$out"
+msg="boundary: a second copy of an old line naming the quoted scope, in a new entry, is still refused"
+logset $'## Unreleased\n' "## Unreleased
+
+$(ent 006 new "$AC" 'Waits on `exits/capital-event`, the project.s.')
+" && git add -A && refused copy
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'names .exits/capital-event., the project'" "$out"
 BM="$T/boundary-meta"; mkdir -p "$BM" && cd "$BM" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init && $J init --meta >/dev/null 2>&1 && git add -A && git commit -qm "GLOSSARY: board"
 setentry .jig/decisions.md README.md 'products/**' ROADMAP.md && git add -A && git commit -qm "GLOSSARY: entry files"
@@ -5142,6 +5229,43 @@ expect_pass sh -c "grep -qx 'Proposed (runtime team, from the 2026-10-27 identit
 msg="migration: what has no home stays in the old file, as written, and the run names it"
 expect_pass sh -c "echo \"\$0\" | grep -q 'no home, move by hand: DECISIONS.md' && grep -qx '## Pending delivery' DECISIONS.md && grep -qx 'Accepted (Dave): hold the queue.' DECISIONS.md && ! grep -q '^| D-' DECISIONS.md && grep -qx 'Owner note: older history is in the wiki.' CHANGELOG.md && ! grep -q '^## ' CHANGELOG.md" "$out"
 cd "$DL"
+# A sync that brings in trunk's in-place edit of an accepted entry is judged against trunk (R3, since_trunk).
+dlsync() {  # dlsync <dir> <conflict|clean>: a job adds D-? (and a DEFERRED row), trunk rewrites D-001's line (and adds one)
+  pcnew "$1" && mkdir -p docs .jig/ledgers && cp "$P/ledgers/DEFERRED.md" .jig/ledgers/ && printf '# Shared\n\nThe shared page.\n' > docs/shared.md
+  git add -A && git commit -qm init && $J init >/dev/null
+  ulog '### D-001 ids are numbers
+Accepted (owner, 2026-11-01).
+Touches: docs/shared.md
+
+Ids are numbers.'
+  git add -A && git commit -qm "board, D-001" && $J open tj >/dev/null && git add -A && git commit -qm "open tj"
+  ( cd .git/jig/worktrees/tj && ulog '### D-?tj-slug the job decides
+Open (2026-11-13).
+Touches: docs/shared.md' Open && { [ "$2" = clean ] || printf -- '| 2026-11-13 | tj | job finding | should-fix | deferred | why [seen] |\n' >> .jig/ledgers/DEFERRED.md; } \
+    && git add -A && git commit -qm "tj: D-?tj-slug" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note tj" )
+  sed -i.bak 's/^Ids are numbers\.$/Ids are numbers, never reused./' .jig/decisions.md && rm .jig/decisions.md.bak
+  [ "$2" = clean ] || printf -- '| 2026-11-13 | other | trunk finding | should-fix | deferred | why [seen] |\n' >> .jig/ledgers/DEFERRED.md
+  git add -A && git commit -qm "D-001: one line, on the owner's word"; }
+dlsync "$T/dl-sync" conflict >/dev/null 2>&1
+msg="decisions R3: a sync bringing in trunk's rewrite of an accepted line, with an append conflict, commits the merge"
+out=$(cd .git/jig/worktrees/tj && $J sync 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'append conflicts resolved automatically' && ! echo \"\$0\" | grep -q 'R3 .jig/decisions.md' && ! git -C .git/jig/worktrees/tj rev-parse -q --verify MERGE_HEAD && git -C .git/jig/worktrees/tj rev-parse -q --verify HEAD^2" "$out"
+msg="decisions R3: after that sync, jig merge merges with no new handoff, keeping trunk's line and numbering the job's entry"
+gated tj; out=$($J merge tj 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && grep -qx 'Ids are numbers, never reused.' .jig/decisions.md && grep -q '^### D-002 the job decides' .jig/decisions.md && ! grep -q 'D-?' .jig/decisions.md" "$out"
+dlsync "$T/dl-sync-clean" clean >/dev/null 2>&1
+msg="decisions R3: the same sync with nothing to resolve (pre-merge-commit) commits too"
+out=$(cd .git/jig/worktrees/tj && $J sync 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'nothing to resolve' && ! echo \"\$0\" | grep -q 'R3' && git -C .git/jig/worktrees/tj rev-parse -q --verify HEAD^2" "$out"
+msg="decisions R3: a sync merge whose resolution rewrites an accepted line trunk has is still refused"
+printf 'trunk\n' > docs/t.md && git add -A && git commit -qm "trunk page" >/dev/null
+out=$(cd .git/jig/worktrees/tj && git merge -q --no-commit main >/dev/null 2>&1; sed -i.bak 's/^Ids are numbers, never reused\.$/Ids are words./' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A && git commit -q --no-edit 2>&1); rc=$?
+(cd .git/jig/worktrees/tj && git merge --abort 2>/dev/null; git reset -q --hard)
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'R3 .jig/decisions.md'" "$out"
+msg="decisions R3: a plain job commit rewriting an accepted line is still refused"
+out=$(cd .git/jig/worktrees/tj && sed -i.bak 's/^Ids are numbers, never reused\.$/Ids are words./' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A && git commit -qm rewrite 2>&1); rc=$?
+(cd .git/jig/worktrees/tj && git reset -q --hard)
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'R3 .jig/decisions.md'" "$out"
 }
 
 # ---------------------------------------------------------------- a superseded entry is removed

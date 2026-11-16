@@ -1,1 +1,20 @@
-{}
+{
+  "rig": {
+    "spec": ".jig/specs/rig.md",
+    "state": "claimed",
+    "after": [
+      "decision-cards"
+    ],
+    "owns": [
+      "plugin/skills/rig/**"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "plugin/skills/hubnode/SKILL.md",
+      "README.md",
+      "tests/smoke.sh"
+    ],
+    "reserved": {}
+  }
+}
