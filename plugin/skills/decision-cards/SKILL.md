@@ -21,7 +21,8 @@ is the answer.
 - **Fill, never send.** The host's button writes into the owner's reply box and appends to
   what is there. So the button says "Fill reply", the hint says to press Enter, and nothing on
   the card claims to send. Because the host appends, the button fills once and reads "Filled"
-  until a pick changes; a second fill would double the reply.
+  until a pick changes; a second fill would double the reply. Clear your reply box before
+  filling again.
 - **The sent reply is the answer, not the card.** A card can go stale. Before acting on a
   reply, check the current state it decides (the board, the staged file, the job); if it moved,
   say what changed and ask again. A filled reply the owner hasn't sent is no answer.
@@ -41,7 +42,7 @@ decisions, lettered options, the recommended one marked, and the two standing an
    Or: elaborate, hold.
 2. Release 0.14.0 — three merges since 0.13.0.
    a. release after the merge (recommended)
-   b. skip 0.14.0; release with the next merges
+   b. skip 0.14.0 and wait for more merges
    Or: elaborate, hold.
 Reply like: 1a; and 2 hold
 ```
@@ -61,7 +62,7 @@ external scripts. Replace the `decisions` array; everything else stays.
     <div style="font-size:13px; color:var(--text-secondary);">Reply: <span id="dc-preview" style="color:var(--text-primary);">pick an answer above</span></div>
     <div style="display:flex; align-items:center; gap:12px;">
       <button type="button" id="dc-fill">Fill reply ↗</button>
-      <span style="font-size:12px; color:var(--text-muted);">Fills your reply box. Press Enter to send.</span>
+      <span style="font-size:12px; color:var(--text-muted);">Fills your reply box. Press Enter to send. Clear your reply box before filling again.</span>
     </div>
   </div>
 </div>
@@ -70,7 +71,7 @@ const decisions = [
   { name: "merge auth-retry", context: "Gated; the check passed on 4f2c1a0.",
     options: ["merge auth-retry now", "wait for the cache job"], recommended: 0 },
   { name: "release 0.14.0", context: "Three merges since 0.13.0.",
-    options: ["release 0.14.0 after the merge", "skip 0.14.0; release with the next merges"], recommended: 0 }
+    options: ["release 0.14.0 after the merge", "skip 0.14.0 and wait for more merges"], recommended: 0 }
 ];
 const standing = {
   Elaborate: d => `on ${d}: show me these options with more context`,
