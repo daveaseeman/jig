@@ -219,6 +219,15 @@ with the defaults.
 - Interpreted: the README's drawing is a generated SVG pair, because GitHub's Markdown strips the
   styling the chat's pills and cards use; drawing it from `ROLES` and `FLOWS` keeps it from
   stating the tables a second time by hand.
+- Interpreted (hubnode, 2026-11-15): `→` continues a session that already exists (the work
+  session, the hubnode, the check session), named by its letter; `⇢` starts a new one. Read
+  literally as "the same session", handoff would run in the review session.
+- Interpreted (hubnode, 2026-11-15): `jig check` stays as an alias of `jig rules`, and
+  `jig reviewed --recheck` as a hidden alias of `--change`, for one release like `jig workflow`;
+  old `recheck` review records read as review-change.
+- Interpreted (hubnode, 2026-11-15): the smoke's `gated <job>` helper sets a job's state on trunk
+  in place of gate, check and mark, since about 80 smoke merges never gated their job; the `next`
+  section walks the real gate → check → mark path.
 - Consolidated: `rename-check-rules` (2026-11-11) is folded in, and its spec file is deleted in
   the commit that adds this one.
 

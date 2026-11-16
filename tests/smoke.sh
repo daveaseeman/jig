@@ -94,7 +94,7 @@ mrel() { $J release 2>&1; }
 branch_commit() {  # branch_commit <branch> <subject>: commit what's staged on a new branch
   git switch -q -c "$1" && git commit -qm "$2"; }
 m2() { ulog "$1" && git add -A
-  $J check --staged; local rc=$?; git reset -q; git checkout -q -- .jig/decisions.md; return $rc; }
+  $J rules --staged; local rc=$?; git reset -q; git checkout -q -- .jig/decisions.md; return $rc; }
 stage() {  # stage <file> <target> <kind> <change> <destination> [body]
   printf -- '---\nstaged: true\ntarget: %s\nkind: %s\nchange: %s\ndestination: %s\nsource: chat %s\nstatus: staged\n---\n%b' \
     "$2" "$3" "$4" "$5" "$1" "${6:-# Title\n\nbody\n}" > ".jig/staging/$1"
@@ -104,7 +104,16 @@ dec() { ulog "### D-$1 x
 Accepted (owner, 2026-10-30).
 Touches: docs/shared.md" && git add -A; }
 foldin() { sed -i.bak -e 's/^- \[ \]/- [x]/' -e '/ vs .* § /s/___/agrees/' -e 's/___/smoke/g' .jig/handoffs/*.md && rm .jig/handoffs/*.bak; }
+setroles() { python3 -c "import json, sys; c = json.load(open('.jig/config.json')); c['roles'] = json.loads(sys.argv[1]); json.dump(c, open('.jig/config.json', 'w'), indent=2)" "$1"; }
 setwf() { python3 -c "import json, sys; c = json.load(open('.jig/config.json')); c['workflow'] = json.loads(sys.argv[1]); json.dump(c, open('.jig/config.json', 'w'), indent=2)" "$1"; }
+gated() {  # gated <job>: its board state set to gated on trunk and committed, standing in for the gate,
+  # the complete check and `jig mark`, which jig merge requires; a job not on the board, or gated, is left
+  local top; top=$(git rev-parse --show-toplevel) || return 1
+  python3 -c "import json, sys; f = sys.argv[1] + '/.jig/jobs.json'; d = json.load(open(f)); j = d.get(sys.argv[2])
+if not isinstance(j, dict) or j.get('state') == 'gated': sys.exit(1)
+j['state'] = 'gated'; open(f, 'w').write(json.dumps(d, indent=2) + '\\n')" "$top" "$1" 2>/dev/null \
+    && git -C "$top" commit -q -m "TOOL: board: $1 gated" -- .jig/jobs.json >/dev/null 2>&1
+  return 0; }
 hooksnap() { find .git/hooks -type f | sort | xargs shasum 2>/dev/null; }
 hrsurvey() { python3 -c "
 import json, subprocess
@@ -140,7 +149,7 @@ emergejob() {  # emergejob <job> <subject>: open a job in $EM, hand it off, and 
   (cd "$EM" && $J open "$1" --branch "b-$1" --owns "products/$1.md" >/dev/null && git add -A && git commit -qm "TOOL: open $1" \
     && cd ".git/jig/worktrees/b-$1" && printf '# x\n' > "products/$1.md" && ulog "- $1" \
     && git add -A && git commit -qm "PRODUCTS: $1" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
-    && git add -A && git commit -qm "TOOL: note $1" && cd "$EM" && $J merge "$1" --subject "$2" >/dev/null); }
+    && git add -A && git commit -qm "TOOL: note $1" && cd "$EM" && gated "$1" && $J merge "$1" --subject "$2" >/dev/null); }
 sbprops() { git -C "$SM" branch --list 'propose/*' | wc -l | tr -d ' '; }
 brow() { printf '| %s | DECISIONS.md § D-001: %s | api/a.py, %s (%s) | owner, 2026-11-02 | %s |\n' "$@"; }
 sbland() {  # sbland <proposal branch> <term>: the metarepo writes it, merges and releases
@@ -770,12 +779,12 @@ expect_pass sh -c "echo \"\$0\" | grep -q '\"branch\": \"A\"' && echo \"\$0\" | 
 
 msg="open: a branch adopted under another name stores only its branch"
 git branch feat && $J open F --branch feat >/dev/null && git add -A && git commit -qm "adopt feat"
-expect_pass sh -c "python3 -c \"import json; r = json.load(open('.jig/jobs.json'))['F']; assert r['branch'] == 'feat' and 'worktree' not in r, r\" && cd .git/jig/worktrees/feat && $J check"
+expect_pass sh -c "python3 -c \"import json; r = json.load(open('.jig/jobs.json'))['F']; assert r['branch'] == 'feat' and 'worktree' not in r, r\" && cd .git/jig/worktrees/feat && $J rules"
 msg="open: a branch checked out elsewhere stores only its worktree, and R2 reads that, not the default"
 git branch side && git worktree add -q "$T/jobs-side" side 2>/dev/null
 $J open side --worktree "$T/jobs-side" >/dev/null && git add -A && git commit -qm "adopt side"
 mkdir -p .git/jig/worktrees/side
-expect_pass sh -c "python3 -c \"import json; r = json.load(open('.jig/jobs.json'))['side']; assert r['worktree'] == '$T/jobs-side' and 'branch' not in r, r\" && cd '$T/jobs-side' && $J check"
+expect_pass sh -c "python3 -c \"import json; r = json.load(open('.jig/jobs.json'))['side']; assert r['worktree'] == '$T/jobs-side' and 'branch' not in r, r\" && cd '$T/jobs-side' && $J rules"
 rmdir .git/jig/worktrees/side
 
 cd .git/jig/worktrees/A
@@ -788,7 +797,7 @@ printf '\n## 2 Two\n' >> docs/d.md && git add -A && expect_pass git commit -qm t
 $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && git add -A && git commit -qm note
 printf 'x=2\n' > src/a.py && git commit -qam "after the note"
 msg="merge: a job whose branch moved past the commit its note names is refused"
-expect_refuse sh -c "cd '$B' && $J merge A"
+gated A; expect_refuse sh -c "cd '$B' && $J merge A"
 git reset -q --hard HEAD~1
 first=$(git rev-parse HEAD)   # past the first note's commit: a merge checked against that note refuses
 printf 'x=3\n' > src/a.py && git commit -qam three
@@ -810,11 +819,11 @@ expect_refuse $J open Y --reserve section=3
 
 msg="merge: R8 refuses a job whose after has not merged"
 $J open E --after B2 >/dev/null && git add -A && git commit -qm "open E"
-expect_refuse $J merge E
+gated E; expect_refuse $J merge E
 msg="mark: merged is not a state; jig merge is how a job merges"
 expect_refuse $J mark B2 merged
 msg="merge: the job's entry is deleted in the merge commit itself, and trunk takes the number it held (checked against the -3 note; the first names an older commit)"
-$J merge A -m "shared: none" >/dev/null 2>&1
+gated A; $J merge A -m "shared: none" >/dev/null 2>&1
 expect_pass sh -c "test \"\$(git rev-list --parents -n1 HEAD | wc -w | tr -d ' ')\" = 3 && git show --format= --name-only HEAD | grep -qx .jig/jobs.json && ! git show HEAD:.jig/jobs.json | grep -q '\"A\"' && git log -1 --format=%B | grep -q 'shared: none' && test -z \"\$(git status --porcelain --untracked-files=no)\""
 msg="open: after A merged, the next section is above trunk's 2 and B2's 3"
 $J open G --reserve section >/dev/null
@@ -911,7 +920,7 @@ expect_refuse m2 '### D-001 use JSON'
 msg="meta M2: an open question is an entry under ## Open"
 ulog '### D-001 which wire format?
 Open (2026-10-29).
-Touches: docs/shared.md' Open && git add -A; expect_pass $J check --staged; git reset -q; git checkout -q -- .jig/decisions.md
+Touches: docs/shared.md' Open && git add -A; expect_pass $J rules --staged; git reset -q; git checkout -q -- .jig/decisions.md
 msg="meta M2: an open entry under ## Unreleased is refused"
 expect_refuse m2 '### D-001 which wire format?
 Open (2026-10-29).
@@ -1059,7 +1068,7 @@ printf '# D\n\nWe follow D-?retry-cap.\n' > pages/d.md
 msg="merge: jig merge numbers D-?retry-cap after the log's highest, in the log and in the page citing it, in the merge commit"
 mkdir -p .jig/specs && printf 'x\n' > .jig/specs/d7.md && git add -A && git -c core.hooksPath=/dev/null commit -qm "TOOL: page d"
 cd .git/jig/worktrees/b-d7 && printf '# E\n\nAs D-?retry-cap says.\n' > pages/e.md && git add -A && git commit -qm "D-?retry-cap: page" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note again" && cd "$MF"
-out=$($J merge d7 2>&1)
+gated d7; out=$($J merge d7 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'D-?retry-cap → D-021' && grep -qx '### D-021 retries are capped' .jig/decisions.md && grep -q 'As D-021 says' pages/e.md && test \"\$(git log -1 --format=%P | wc -w | tr -d ' ')\" = 2 && ! git status --porcelain | grep -q ." "$out"
 msg="merge: a page on trunk the merge didn't change keeps its placeholder"
 expect_pass grep -q 'D-?retry-cap' pages/d.md
@@ -1392,16 +1401,16 @@ for j in pk pl pj; do (cd .git/jig/worktrees/$j && $J reviewed >/dev/null && $J 
 msg="para P2: the gate's scratch merge of a job answered by its one-line board spec passes"
 expect_pass gate_ok pl
 msg="para P2: jig merge of a job answered by its one-line board spec passes"
-expect_pass $J merge pl
+gated pl; expect_pass $J merge pl
 msg="para P2: the gate's scratch merge of a job answered by a spec on its branch passes"
 expect_pass gate_ok pk
 msg="para P2: jig merge of a job answered by a spec on its branch passes"
-expect_pass $J merge pk
+gated pk; expect_pass $J merge pk
 msg="para P2: the gate still waits for a proposal <branch> the pinned release doesn't hold"
 out=$($J gate pj 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-pj 2>/dev/null
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'cites proposal propose/pr-fmt, which is not in docs'" "$out"
 msg="para P2: jig merge of a job answered by meta: <name> proposal <branch> in its trunk spec passes"
-expect_pass $J merge pj
+gated pj; expect_pass $J merge pj
 
 # meta: <name> pointers <branch>: pointer rewrites worked ahead of, no claim change. The gate
 # checks the branch is real and doesn't wait for its release.
@@ -1427,7 +1436,7 @@ for j in pp pq pr; do (cd .git/jig/worktrees/$j && $J reviewed >/dev/null && $J 
 msg="para gate: a pointers branch that exists passes, its proposal unreleased"
 expect_pass gate_ok pp
 msg="para P2: jig merge of the pointers job passes, the proposal unreleased"
-expect_pass $J merge pp
+gated pp; expect_pass $J merge pp
 msg="para gate: a pointers branch the metarepo doesn't have is refused"
 out=$($J gate pq 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-pq 2>/dev/null
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'pointers branch propose/pr-nope, which docs has no branch for'" "$out"
@@ -1443,7 +1452,7 @@ msg="update: a contract file a job deleted, answered by its trunk spec, is not a
 printf 'dead=1\n' > api/dead.py && printf '# dead\n\n- meta: none — a file to delete\n' > .jig/specs/dead.md && git add -A && git commit -qm "api: dead" >/dev/null 2>&1
 $J open p1 --spec "meta: none — dead code, no contract" --owns api/dead.py >/dev/null 2>&1 && git add -A && git commit -qm "open p1" >/dev/null 2>&1
 (cd .git/jig/worktrees/p1 && git rm -q api/dead.py && git commit -qm "api: drop dead" >/dev/null 2>&1); pnote p1
-$J merge p1 >/dev/null 2>&1
+gated p1; $J merge p1 >/dev/null 2>&1
 expect_pass sh -c "test -z \"\$(git ls-files api/dead.py)\" && ! $UP 2>&1 | sed -n '/^Contract removals/,/^\$/p' | grep -q 'api/dead.py'"
 
 # One job per merge: a job stacked on another, or an octopus, gets no job's answer.
@@ -1492,7 +1501,7 @@ git add api/none.md .jig/specs/none.md && git commit -qm "api: none" >/dev/null 
 $J open pn --spec "meta: none — rename inside the api docs" --owns api/none.md >/dev/null 2>&1 && git add -A && git commit -qm "open pn" >/dev/null 2>&1
 printf '| D-078 | the none doc (`pr/api/none.md § Gone`) | accepted | 2026-11-01 |\n' >> .jig/meta-cache/DECISIONS.md
 (cd .git/jig/worktrees/pn && sed -i.bak 's/^## Gone$/## Here/' api/none.md && rm api/none.md.bak && git add api/none.md && git commit -qm "api: rename Gone" >/dev/null 2>&1); pnote pn
-$J merge pn >/dev/null 2>&1
+gated pn; $J merge pn >/dev/null 2>&1
 pointed=$($UP 2>&1 | sed -n '/^Metarepo pointers/,/^$/p')
 expect_pass sh -c "git log --oneline -1 | grep -q 'merge pn' && echo \"\$0\" | grep 'api/none.md § Gone' | grep -q 'BUFFER.md' && ! echo \"\$0\" | grep 'api/none.md' | grep -q 'pending on'" "$pointed"
 
@@ -1695,13 +1704,13 @@ msg="R6 take: ### 1.2 under a section trunk has, with no reservation, is accepte
 printf '\n### 1.2 Second\n' >> docs/d.md; git add -A; expect_pass git commit -qm rule
 msg="R6 take: a new page with ### 12.1, holding no section, is refused as taking section 12"
 printf '### 12.1 New\n' > docs/n.md; git add -A
-out=$($J check --staged 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'takes section 12, but this branch holds no section'" "$out"; undo
+out=$($J rules --staged 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'takes section 12, but this branch holds no section'" "$out"; undo
 msg="R6 unique: a second SCHEMA_VERSION = 17 where trunk has one is refused as 17 already exists"
 printf 'SCHEMA_VERSION = 17\n' >> src/storage.py; git add -A
-out=$($J check --staged 2>&1); expect_pass sh -c "! git commit -qm dup 2>/dev/null && echo \"\$0\" | grep -q 'schema 17 already exists'" "$out"; undo
+out=$($J rules --staged 2>&1); expect_pass sh -c "! git commit -qm dup 2>/dev/null && echo \"\$0\" | grep -q 'schema 17 already exists'" "$out"; undo
 msg="R6 unique: a new number added twice is refused as appearing twice in this change"
 printf 'SCHEMA_VERSION = 18\nSCHEMA_VERSION = 18\n' >> src/storage.py; git add -A
-out=$($J check --staged 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'schema 18 appears twice in this change'" "$out"; undo
+out=$($J rules --staged 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'schema 18 appears twice in this change'" "$out"; undo
 msg="R6 unique: without unique, the same duplicate is accepted and takes nothing"
 printf 'SCHEMA_VERSION = 17\n' >> src/plain.py; git add -A; expect_pass git commit -qm dup2
 cd "$R/.git/jig/worktrees/S"
@@ -1723,9 +1732,9 @@ git add -A && git commit -qm "TOOL: decision counter"
 $J open D --reserve decision=2 >/dev/null && git add -A && git commit -qm "TOOL: open D"
 cd "$MJ/.git/jig/worktrees/D"
 msg="R6 ints: a job holding decision 2 adds ### D-002, and check prints ok"
-dec 002; expect_pass sh -c "$J check --staged | grep -qx ok"; undo
+dec 002; expect_pass sh -c "$J rules --staged | grep -qx ok"; undo
 msg="R6 ints: ### D-003 instead is refused, naming 003 and the held 2"
-dec 003; out=$($J check --staged 2>&1)
+dec 003; out=$($J rules --staged 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'R6 this change takes decision 003, but job D holds decision 2'" "$out"; undo
 dec 002 && git commit -qm "D-002: x"
 ( cd "$MJ" && mkdir -p .jig/specs && printf '# s\n' > .jig/specs/s.md && git add -A && git commit -qm "TOOL: spec" )
@@ -1740,7 +1749,7 @@ g=.git/jig/worktrees/gate-D
 expect_pass sh -c "$J gate D >/dev/null 2>&1 && test \"\$(git -C $g rev-list --parents -n1 HEAD | wc -w | tr -d ' ')\" = 3 && test -z \"\$(git -C $g branch --show-current)\""
 git worktree remove --force "$g"
 msg="M5: jig merge of a job whose tip is the note committed after its review succeeds, and removes the entry"
-expect_pass sh -c "$J merge D >/dev/null 2>&1 && ! grep -q '\"D\"' .jig/jobs.json"
+gated D; expect_pass sh -c "$J merge D >/dev/null 2>&1 && ! grep -q '\"D\"' .jig/jobs.json"
 msg="M5: jig release and pre-push accept that history"
 git init -q --bare "$T/metajob-remote.git" && git remote add origin "$T/metajob-remote.git"
 expect_pass sh -c "$J release >/dev/null 2>&1 && git tag | grep -qx v0.1.0 && git push -q origin main 2>/dev/null"
@@ -1751,7 +1760,7 @@ ulog '- D-003 more' && git commit -qm "D-003: more" .jig/decisions.md; foldin
 git add -A && git commit -qm "HANDOFF: E"
 cd "$MJ"
 msg="M5: content committed after the review, then a note: jig merge refuses"
-expect_refuse $J merge E
+gated E; expect_refuse $J merge E
 msg="M5: and a plain merge of that tip is refused by M5"
 out=$(git merge --no-ff --no-edit E 2>&1); git merge --abort 2>/dev/null
 expect_pass sh -c "echo \"\$0\" | grep -q 'M5 '" "$out"
@@ -1760,7 +1769,7 @@ $J open F --reserve decision=4 >/dev/null && git add -A && git commit -qm "TOOL:
 printf '# u\n' > .jig/specs/u.md && git add -A && git commit -qm "TOOL: spec u"
 ( cd "$MJ/.git/jig/worktrees/F" && $J sync >/dev/null 2>&1 )
 msg="M5: review, then a note, then a sync of trunk: jig merge is accepted, and so is the release"
-expect_pass sh -c "$J merge F >/dev/null 2>&1 && ! grep -q '\"F\"' .jig/jobs.json && $J release >/dev/null 2>&1 && git tag | grep -qx v0.2.0"
+gated F; expect_pass sh -c "$J merge F >/dev/null 2>&1 && ! grep -q '\"F\"' .jig/jobs.json && $J release >/dev/null 2>&1 && git tag | grep -qx v0.2.0"
 
 cd "$R" && mkdir -p .jig/staging
 msg="staging: a decisions destination with prose after the path refuses, naming the header field"
@@ -1827,13 +1836,13 @@ msg="merge: a job synced after its handoff, append conflict resolved by the sync
 msg="gate: a gate folder deleted by hand is pruned, so the next gate checks out there again"
 $J gate K >/dev/null 2>&1; rm -rf $s
 expect_pass sh -c "$J gate K >/dev/null 2>&1 && test -d $s"
-expect_pass $J merge K
+gated K; expect_pass $J merge K
 msg="merge: jig merge K, gated again and never marked, leaves no gate checkout"
 expect_pass sh -c "test ! -e $s && ! git worktree list | grep -q gate-K"
 msg="merge: a commit of the job's own after the note refuses, naming its files"
-out=$($J merge L 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'changed since .*(L.py)'" "$out"
+gated L; out=$($J merge L 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'changed since .*(L.py)'" "$out"
 msg="merge: a sync whose resolution adds an edit jig sync wouldn't make refuses, naming the file"
-out=$($J merge M 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'changed since .*(M.py)'" "$out"
+gated M; out=$($J merge M 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'changed since .*(M.py)'" "$out"
 
 msg="reserve: jig reserve adds the next free number to an open job; a second hands out the next"
 $J open R --shares 'docs/**' --reserve section >/dev/null
@@ -1895,60 +1904,68 @@ expect_refuse sh -c "$J repos | grep -q 'tool reports wait'"
 sec_workflow() {
 WF="$T/wf"; mkdir -p "$WF" && cd "$WF" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && chmod +x .jig/scripts/*.sh && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
-msg="workflow: prints jig's defaults, one step per line"
-expect_pass sh -c "$J workflow | grep -qx 'execute: tier 2, effort 3' && $J workflow | grep -qx 'review: tier 2, effort 1'"
-msg="workflow: the bug step is printed after spec, recheck after review"
-expect_pass test "$($J workflow | cut -d: -f1 | tr '\n' ' ')" = "spec bug execute review recheck check "
+msg="roles: prints jig's defaults, one role per line, in order"
+expect_pass sh -c "$J roles | grep -qx 'work: tier 2, effort 3' && $J roles | grep -qx 'review: tier 2, effort 2' && test \"\$($J roles | cut -d: -f1 | tr '\n' ' ')\" = 'spec bug work review check '"
+msg="flows: each workflow's steps with the role or node of each, and its session links"
+expect_pass sh -c "$J flows | grep -qx 'Job: spec (spec) ⇢ work (work) ⇢ review-work (review) → handoff (work) → gate (hubnode) ⇢ check (check) → merge (hubnode)' && $J flows | grep -qx 'Fix: work (work) ⇢ review-change (review) → handoff (work)' && $J flows | grep -qx 'Bug: bug (bug) → spec (spec) ⇢ Job'"
+msg="workflow: the old command prints the roles, then the flows"
+expect_pass sh -c "$J workflow | head -1 | grep -qx 'spec: tier 2, effort 2' && $J workflow | grep -q '^Job: spec (spec) ⇢'"
+msg="rules: prints ok on a clean repo, and the old name check prints the same"
+expect_pass sh -c "test \"\$($J rules)\" = ok && test \"\$($J check)\" = ok"
 for rule in \
-  '{"execute": {"tier": 1}}|workflow.execute: tier 1 is above the spec.s tier 2' \
-  '{"execute": {"effort": 2}}|workflow.execute: effort 2 is not below the spec.s effort 2' \
-  '{"bug": {"tier": 3}}|workflow.bug: tier 3 is below the spec.s tier 2' \
-  '{"bug": {"effort": 3}}|workflow.bug: effort 3 is lower than the spec.s effort 2' \
-  '{"review": {"tier": 3}}|workflow.review: tier 3 is below execute.s tier 2'; do
-  setwf "${rule%%|*}"
-  msg="workflow: $(echo "${rule%%|*}") is refused by jig workflow, naming the rule"
-  expect_pass sh -c "! $J workflow >/dev/null 2>&1 && $J workflow 2>&1 | grep -q '${rule#*|}' && test -z \"\$($J workflow 2>/dev/null)\""
-  msg="workflow: $(echo "${rule%%|*}") is refused by the commit hook"
+  '{"work": {"tier": 1, "reason": "r"}}|roles.work: tier 1 is above the spec.s tier 2' \
+  '{"work": {"effort": 2, "reason": "r"}}|roles.work: effort 2 is not below the spec.s effort 2' \
+  '{"bug": {"tier": 3, "reason": "r"}}|roles.bug: tier 3 is below the spec.s tier 2' \
+  '{"bug": {"effort": 3, "reason": "r"}}|roles.bug: effort 3 is lower than the spec.s effort 2' \
+  '{"review": {"tier": 3, "reason": "r"}}|roles.review: tier 3 is below work.s tier 2' \
+  '{"review": {"effort": 3}}|roles.review: no reason' \
+  '{"review": {"effort": 3, "reason": " "}}|roles.review: no reason' \
+  '{"review": {"fresh": false, "reason": "r"}}|roles.review.fresh: fixed whatever the config says: a fresh session for every review' \
+  '{"execute": {"effort": 4, "reason": "r"}}|roles.execute: no such role'; do
+  setroles "${rule%%|*}"
+  msg="roles: $(echo "${rule%%|*}") is refused by jig roles, naming the rule"
+  expect_pass sh -c "! $J roles >/dev/null 2>&1 && $J roles 2>&1 | grep -q '${rule#*|}' && test -z \"\$($J roles 2>/dev/null)\""
+  msg="roles: $(echo "${rule%%|*}") is refused by the commit hook"
   git add -A; expect_refuse git commit -qm wf; undo
 done
-setwf '{"review": {"effort": 2}}'
-msg="workflow: review at effort 2 with execute at 3 is accepted: review is judged against execute, not spec"
-expect_pass sh -c "$J workflow | grep -qx 'review: tier 2, effort 2'"
-setwf '{"review": {"effort": 3}}'
-msg="workflow: review at effort 3 with execute at 3 is accepted: review's effort has no rule"
-expect_pass sh -c "$J workflow | grep -qx 'review: tier 2, effort 3'"
-setwf '{"spec": {"tier": 1, "effort": 1}, "review": {"tier": 1}}'
-msg="workflow: a raised spec raises a bug step left at its default, field by field"
-expect_pass sh -c "$J workflow | grep -qx 'bug: tier 1, effort 1' && $J workflow | grep -qx 'spec: tier 1, effort 1'"
-msg="workflow: a bug field the repo sets is kept; only the unset one follows spec"
-setwf '{"spec": {"tier": 1, "effort": 1}, "review": {"tier": 1}, "bug": {"effort": 0}}'
-expect_pass sh -c "$J workflow | grep -qx 'bug: tier 1, effort 0'"
-setwf '{"bug": {"tier": 1, "effort": 2}}'
-msg="workflow: a bug step at spec's effort and a better tier is accepted"
-expect_pass sh -c "$J workflow | grep -qx 'bug: tier 1, effort 2'"
-setwf '{"review": {"tier": 1, "effort": 0}}'
-msg="workflow: an override that keeps the rules is accepted by the hook"
+setroles '{"review": {"effort": 3, "reason": "r"}}'
+msg="roles: review at effort 3 with work at 3 is accepted: review's effort has no rule"
+expect_pass sh -c "$J roles | grep -qx 'review: tier 2, effort 3'"
+setroles '{"spec": {"tier": 1, "effort": 1, "reason": "r"}, "review": {"tier": 1, "reason": "r"}}'
+msg="roles: a raised spec raises a bug role left at its default, field by field"
+expect_pass sh -c "$J roles | grep -qx 'bug: tier 1, effort 1' && $J roles | grep -qx 'spec: tier 1, effort 1'"
+msg="roles: a bug field the repo sets is kept; only the unset one follows spec"
+setroles '{"spec": {"tier": 1, "effort": 1, "reason": "r"}, "review": {"tier": 1, "reason": "r"}, "bug": {"effort": 0, "reason": "r"}}'
+expect_pass sh -c "$J roles | grep -qx 'bug: tier 1, effort 0'"
+setroles '{"review": {"tier": 1, "effort": 0, "reason": "the owner wants the best reviews"}}'
+msg="roles: an override with a reason that keeps the rules is accepted by the hook"
 git add -A; expect_pass git commit -qm wf
-msg="workflow: the accepted override is the step in effect"
-expect_pass sh -c "$J workflow | grep -qx 'review: tier 1, effort 0'"
+msg="roles: the accepted override is the role in effect"
+expect_pass sh -c "$J roles | grep -qx 'review: tier 1, effort 0'"
 
-# update knows `workflow`: an optional key, read but never written by default.
-python3 -c "import json; c = json.load(open('.jig/config.json')); c['version'] = 8; c['bogus'] = 1; json.dump(c, open('.jig/config.json', 'w'), indent=2)"
+# The pre-roles key: read and mapped, then rewritten by update --apply.
+python3 -c "import json; c = json.load(open('.jig/config.json')); del c['roles']; c['workflow'] = {'execute': {'effort': 4}, 'recheck': {'tier': 1}}; c['bogus'] = 1; json.dump(c, open('.jig/config.json', 'w'), indent=2)"
+msg="roles: an old workflow key is read with no reasons, execute as work and recheck as review"
+expect_pass sh -c "$J roles | grep -qx 'work: tier 2, effort 4' && $J roles | grep -qx 'review: tier 1, effort 2'"
+msg="roles: an old workflow key that breaks a rule is refused under its own name"
+setwf '{"execute": {"effort": 2}}'
+expect_pass sh -c "$J roles 2>&1 | grep -q 'workflow.work: effort 2 is not below'"
+setwf '{"execute": {"effort": 4}, "recheck": {"tier": 1}}'
 git add -A && git commit -qm "older config, an unknown key"
 out=$($J update 2>&1)
-msg="update: a board's workflow override is not called unknown"
-expect_pass sh -c "! echo \"\$0\" | grep -q 'board key .workflow. is not one jig knows'" "$out"
+msg="update: lists the old workflow key's rename to roles, with each step renamed"
+expect_pass sh -c "echo \"\$0\" | grep -q 'workflow: renamed roles (execute → work, recheck → review)' && ! echo \"\$0\" | grep -q 'board key .workflow. is not one jig knows'" "$out"
 msg="update: a truly unknown board key is still named"
 expect_pass sh -c "echo \"\$0\" | grep -q 'board key .bogus. is not one jig knows'" "$out"
 $J update --apply >/dev/null 2>&1
-msg="update --apply leaves the workflow override unchanged"
-expect_pass python3 -c "import json; assert json.load(open('.jig/config.json'))['workflow'] == {'review': {'tier': 1, 'effort': 0}}"
-python3 -c "import json; c = json.load(open('.jig/config.json')); del c['workflow'], c['bogus']; c['version'] = 8; json.dump(c, open('.jig/config.json', 'w'), indent=2)"
+msg="update --apply rewrites workflow as roles, each entry with a reason, and the hook takes it"
+expect_pass python3 -c "import json; c = json.load(open('.jig/config.json')); assert 'workflow' not in c and c['roles'] == {'work': {'effort': 4, 'reason': 'carried over from \`workflow\` by jig update'}, 'review': {'tier': 1, 'reason': 'carried over from \`workflow\` by jig update'}}, c.get('roles')"
+python3 -c "import json; c = json.load(open('.jig/config.json')); del c['roles'], c['bogus']; c['version'] = 8; json.dump(c, open('.jig/config.json', 'w'), indent=2)"
 git add -A && git commit -qm "older config, no override"
 $J update --apply >/dev/null 2>&1
-msg="update --apply adds no workflow key to a board without one"
-expect_pass python3 -c "import json; assert 'workflow' not in json.load(open('.jig/config.json'))"
-setwf '{"review": {"tier": 1, "effort": 0}}' && git add -A && git commit -qm "override back"
+msg="update --apply adds no roles key to a board without one"
+expect_pass python3 -c "import json; c = json.load(open('.jig/config.json')); assert 'roles' not in c and 'workflow' not in c"
+setroles '{"review": {"tier": 1, "effort": 0, "reason": "r"}}' && git add -A && git commit -qm "override back"
 
 # Written before the bug step: four Workflow lines. It must still gate, and warn.
 mkdir -p .jig/specs && printf '# t\n\n## Workflow\nspec: tier 2, effort 2\nexecute: tier 2, effort 3\nreview: tier 2, effort 1\ncheck: tier 3, effort 4\n' > .jig/specs/t.md
@@ -1973,13 +1990,65 @@ sed -i.bak 's/^- \[ \]/- [x]/' "$note" .jig/handoffs/g-$(date +%F)-2.md && rm .j
 msg="gate: a review at the spec's settings or better gives no warning"
 out=$($J gate 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'from .jig/handoffs/g-.*-2.md on g' && ! echo \"\$0\" | grep -q warning" "$out"
-git switch -q main
+# Today's template: ## Roles, with no line for review-change, which runs at review's.
+printf '# r\n\n## Roles\nspec: tier 2, effort 2\nbug: tier 2, effort 1\nwork: tier 2, effort 3\nreview: tier 2, effort 1\ncheck: tier 3, effort 4\n' > .jig/specs/r.md
+git switch -q main && git add -A && git commit -qm "spec r" && git switch -q -c g2
+printf 'r\n' > r.txt && git add -A && git commit -qm r && $J reviewed --tier 2 --effort 1 >/dev/null
+printf 'r2\n' >> r.txt && git commit -qam r2 && $J reviewed --change --tier 2 --effort 3 >/dev/null && $J handoff --spec .jig/specs/r.md >/dev/null
+sed -i.bak 's/^- \[ \]/- [x]/' .jig/handoffs/g2-*.md && rm .jig/handoffs/*.bak && git add -A && git commit -qm "note g2"
+msg="gate: a spec's ## Roles is read: a review-change below its review line is warned about, the full review not"
+out=$($J gate 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'warning: review-change ran at tier 2, effort 3; the spec asks for tier 2, effort 1' && ! echo \"\$0\" | grep -q 'review ran at'" "$out"
+git worktree remove --force .git/jig/worktrees/gate-g2 2>/dev/null; git switch -q main
 $J open k --spec .jig/specs/t.md --owns 'k/**' >/dev/null && git add -A && git commit -qm "open k"
 (cd .git/jig/worktrees/k && mkdir k && printf 'x\n' > k/x.txt && git add -A && git commit -qm x \
   && $J reviewed >/dev/null && $J handoff >/dev/null && sed -i.bak 's/^- \[ \]/- [x]/' .jig/handoffs/k-*.md \
   && rm .jig/handoffs/*.bak && git add -A && git commit -qm note)
 msg="gate: a note with no --spec is judged by the board's spec, and an unrecorded review is warned about"
 expect_pass sh -c "$J gate k 2>&1 | grep -q 'warning: the review.s tier and effort are not recorded; the spec asks for tier 2, effort 1'"
+}
+
+# ---------------------------------------------------------------- jig next and the contracts
+sec_next() {
+NX="$T/nx"; pcnew "$NX" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+nx() { msg="next: $1"; out=$($J next $2 2>&1); expect_pass test "$out" = "$3"; [ "$out" = "$3" ] || echo "      got: $out"; }
+nx "no open job points at jig open" "" "no open jobs: the next job starts at \`jig open\`"
+$J open k --owns 'k/**' >/dev/null && git add -A && git commit -qm "open k"
+nx "an opened job with no commits is work, in a new session" k "k: work — work, new session (Job)"
+cd .git/jig/worktrees/k && mkdir k && printf 'x\n' > k/x.txt && git add -A && git commit -qm x
+nx "in the job, work committed is review-work, in a new session" "" "k: review-work — review, new session (Job; once the work's checks pass)"
+$J reviewed --tier 2 --effort 2 --blocking 2 >/dev/null
+nx "a review with blocking findings is Fix, in the work session" "" "k: fix — work, continue the work session (Fix, round 2; 2 blocking findings)"
+msg="handoff: refused while the newest review of HEAD has blocking findings, naming Fix"
+out=$($J handoff 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'recorded 2 blocking findings: Fix first' && test -z \"\$(ls .jig/handoffs 2>/dev/null)\"" "$out"
+printf 'y\n' >> k/x.txt && git commit -qam fix1
+nx "a fix committed is review-change, in a new session" "" "k: review-change — review, new session (Fix, round 2; once the checks pass, of what changed since $(git rev-parse --short=12 HEAD~1))"
+$J reviewed --change --tier 2 --effort 2 --blocking 1 >/dev/null && printf 'y\n' >> k/x.txt && git commit -qam fix2
+$J reviewed --change --tier 2 --effort 2 --blocking 1 >/dev/null && printf 'y\n' >> k/x.txt && git commit -qam fix3
+nx "after three blocking reviews, the next step is bug, in a new session" "" "k: bug — bug, new session (Bug; 3 reviews had blocking findings, and a fix round past 3 is refused)"
+msg="reviewed: a fourth --change after three blocking rounds is refused, naming Bug-for"
+out=$($J reviewed --change --tier 2 --effort 2 --blocking 0 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'Bug-for: k'" "$out"
+mkdir -p .jig/specs && printf '# k bug\n\nBug-for: k\n' > .jig/specs/k-bug.md && git add -A && git commit -qm "k: bug spec"
+msg="reviewed: with the job's bug spec committed, the fourth round is recorded"
+expect_pass $J reviewed --change --tier 2 --effort 2 --blocking 0
+nx "a clean review is the handoff, in the work session" "" "k: handoff — work, continue the work session (Job)"
+$J handoff >/dev/null && foldin && git add -A && git commit -qm "note k"
+nx "a handoff is the gate, the hubnode's" "" "k: gate — hubnode, continue the hubnode (Job; \`jig gate k\`)"
+cd "$NX"
+nx "on trunk, every open job is listed" "" "k: gate — hubnode, continue the hubnode (Job; \`jig gate k\`)"
+msg="merge: a job not marked gated is refused, naming the gate"
+out=$($J merge k 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'job k is claimed, not gated: gate it first' && git diff --quiet HEAD" "$out"
+$J gate k >/dev/null 2>&1
+nx "a gate's checkout with no check recorded is the check, in a new session" k "k: check — check, new session (Job; the complete check in .git/jig/worktrees/gate-k)"
+(cd .git/jig/worktrees/gate-k && $J checked --tier 3 --effort 4 --seconds 1 >/dev/null)
+nx "a recorded check is the hubnode's mark" k "k: gate — hubnode, continue the hubnode (Job; checked: \`jig mark k gated\`)"
+$J mark k gated >/dev/null && git add -A && git commit -qm "k gated"
+nx "a gated job is the merge, on the owner's word" k "k: merge — hubnode, continue the hubnode (Job; on the owner's word)"
+msg="merge: a gated job merges"
+expect_pass $J merge k
 }
 
 # ---------------------------------------------------------------- init beside an old board
@@ -2549,7 +2618,7 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'propose/pa-t'" "$out
 (cd "$PM" && $J open tj --branch propose/pa-t --owns README.md CHANGELOG.md >/dev/null && git add -A && git commit -qm "TOOL: open tj" \
   && cd .git/jig/worktrees/propose/pa-t && printf '\n### tee\n' >> README.md && ulog '- tee' \
   && git add -A && git commit -qm "GLOSSARY: tee" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
-  && git add -A && git commit -qm "TOOL: note tj" && cd "$PM" && $J merge tj >/dev/null && $J release >/dev/null \
+  && git add -A && git commit -qm "TOOL: note tj" && cd "$PM" && gated tj && $J merge tj >/dev/null && $J release >/dev/null \
   && git worktree remove --force .git/jig/worktrees/propose/pa-t && git branch -q -D propose/pa-t)
 setjson .jig/para.json pin v0.3.0 && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: pm v0.2.0 → v0.3.0"
 msg="gate: a proposal landed by jig merge, its branch deleted, is found by the merge's job and passes"
@@ -2676,7 +2745,7 @@ git add .jig/specs/t.md && git commit -qm "specs: t" && $J open E1 --spec .jig/s
 (cd "$EM" && $J open J --branch propose/ep-t --owns products/t.md CHANGELOG.md >/dev/null && git add -A && git commit -qm "TOOL: open J" \
   && cd .git/jig/worktrees/propose/ep-t && printf '# t\n' > products/t.md && ulog '- t' \
   && git add -A && git commit -qm "PRODUCTS: t" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
-  && git add -A && git commit -qm "TOOL: note J" && cd "$EM" && $J merge J --subject "D-001, D-002" >/dev/null && $J release >/dev/null \
+  && git add -A && git commit -qm "TOOL: note J" && cd "$EM" && gated J && $J merge J --subject "D-001, D-002" >/dev/null && $J release >/dev/null \
   && git worktree remove --force .git/jig/worktrees/propose/ep-t && git branch -q -D propose/ep-t)
 msg="merge --subject: the subject is '<ids>: merge J'"
 expect_pass sh -c "git -C '$EM' log -1 --merges --format=%s v0.5.0 | grep -qx 'D-001, D-002: merge J'"
@@ -2781,26 +2850,26 @@ chmod -x .jig/scripts/check.sh && git add .jig/scripts/check.sh && git commit -q
 msg="gate: a check.sh that isn't executable is printed as bash ./.jig/scripts/check.sh"
 out=$($J gate L 2>&1); git worktree remove --force .git/jig/worktrees/gate-L 2>/dev/null
 expect_pass sh -c "echo \"\$0\" | grep -q '&& bash ./.jig/scripts/check.sh'" "$out"
-$J merge K >/dev/null 2>&1
+gated K; $J merge K >/dev/null 2>&1
 msg="gate: M conflicts with trunk in common.txt: the gate stops, naming it, and removes its own checkout"
 out=$($J gate M 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'needs a hand in common.txt' && echo \"\$0\" | grep -q 'The checkout is removed' && test ! -e .git/jig/worktrees/gate-M && ! git worktree list | grep -q gate-M" "$out"
 SHIM="$T/fu-shim"; mkdir -p "$SHIM" && realgit=$(command -v git)
 printf '#!/bin/sh\n[ "$1" = version ] && { echo "git version 2.30.0"; exit 0; }\nfor a in "$@"; do [ "$a" = --write-tree ] && exit 129; done\nexec %s "$@"\n' "$realgit" > "$SHIM/git" && chmod +x "$SHIM/git"
 msg="merge: with a git older than 2.38, L, unsynced, conflicting only in CHANGELOG.md, is refused, naming jig sync, with trunk left clean"
-out=$(PATH="$SHIM:$PATH" $J merge L 2>&1); rc=$?
+gated L; out=$(PATH="$SHIM:$PATH" $J merge L 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig sync. the job, then merge' && ! git rev-parse -q --verify MERGE_HEAD && test -z \"\$(git status --porcelain --untracked-files=no)\" && grep -q '\"L\"' .jig/jobs.json" "$out"
 ltip=$(git rev-parse L)
 msg="merge: L, unsynced, conflicts only in CHANGELOG.md: merged with no sync, K's line then L's, L's branch untouched"
-out=$($J merge L 2>&1); rc=$?
+gated L; out=$($J merge L 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && ! grep -q '\"L\"' .jig/jobs.json && test \"\$(grep '^- ' CHANGELOG.md | tr '\n' ' ')\" = '- K - L ' && ! grep -q '^[<|=>]\\{7\\}' CHANGELOG.md && test \"\$(git rev-parse L)\" = $ltip" "$out"
 msg="merge: it says it resolved CHANGELOG.md as jig sync would, and the commit is 'merge L' with no Conflicts lines"
 expect_pass sh -c "echo \"\$0\" | grep -q 'resolved CHANGELOG.md as .jig sync. would' && test \"\$(git log -1 --format=%B | sed '/^\$/d')\" = 'merge L'" "$out"
 msg="merge: O deleted CHANGELOG.md, which trunk appended to: refused, naming jig sync, trunk clean and the file kept"
-out=$($J merge O 2>&1); rc=$?
+gated O; out=$($J merge O 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'append files (CHANGELOG.md): .jig sync.' && ! echo \"\$0\" | grep -q resolved && ! git rev-parse -q --verify MERGE_HEAD && test -z \"\$(git status --porcelain --untracked-files=no)\" && test -f CHANGELOG.md" "$out"
 msg="merge: M conflicts in CHANGELOG.md and common.txt: refused, naming jig sync and only the append file"
-out=$($J merge M 2>&1); rc=$?
+gated M; out=$($J merge M 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'append files (CHANGELOG.md): .jig sync.' && ! git rev-parse -q --verify MERGE_HEAD && grep -q '\"M\"' .jig/jobs.json" "$out"
 msg="merge: M's sync resolves CHANGELOG.md and stops on common.txt"
 out=$(cd "$FS/.git/jig/worktrees/M" && $J sync 2>&1); rc=$?
@@ -2808,10 +2877,10 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^  common.txt' && ! 
 (cd "$FS/.git/jig/worktrees/M" && git merge --abort)
 (cd "$FS/.git/jig/worktrees/N" && $J sync >/dev/null 2>&1)
 msg="merge: with a git older than 2.38, a synced job is refused, saying 2.38 is needed"
-out=$(PATH="$SHIM:$PATH" $J merge N 2>&1); rc=$?
+gated N; out=$(PATH="$SHIM:$PATH" $J merge N 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'needs git 2.38'" "$out"
 msg="merge: once synced, N merges with no new handoff"
-expect_pass sh -c "$J merge N && ! grep -q '\"N\"' .jig/jobs.json && grep -q '^- K' CHANGELOG.md && grep -q '^- N' CHANGELOG.md"
+gated N; expect_pass sh -c "$J merge N && ! grep -q '\"N\"' .jig/jobs.json && grep -q '^- K' CHANGELOG.md && grep -q '^- N' CHANGELOG.md"
 
 # An append file holding bytes that aren't UTF-8: merge and sync write them back unchanged.
 FE="$T/fu-bytes"; pcnew "$FE" && printf '# Changelog\n' > CHANGELOG.md && git add -A && git commit -qm init \
@@ -2821,9 +2890,9 @@ for j in Q R S; do
   ( cd "$FE/.git/jig/worktrees/$j" && printf -- '- %s caf\xe9\n' "$j" >> CHANGELOG.md && git add -A && git commit -qm "$j" \
     && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note $j" )
 done
-$J merge Q >/dev/null 2>&1
+gated Q; $J merge Q >/dev/null 2>&1
 msg="merge: R, unsynced, appended a Latin-1 line: the merged CHANGELOG.md has Q's bytes, then R's, unchanged"
-out=$($J merge R 2>&1); rc=$?
+gated R; out=$($J merge R 2>&1); rc=$?
 printf '# Changelog\n- Q caf\xe9\n- R caf\xe9\n' > "$T/fu-bytes.want"
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'resolved CHANGELOG.md' && git show HEAD:CHANGELOG.md | cmp -s - '$T/fu-bytes.want'" "$out"
 msg="sync: S, which appended a Latin-1 line, resolves CHANGELOG.md with every line's bytes unchanged"
@@ -2846,28 +2915,28 @@ for j in A B E C C2 X; do
     && { [ $j = X ] && printf 'more\n' >> AGENTS.md && git commit -qam "after the note" || true; } )
 done
 msg="merge: A's DEFERRED.md row merges"
-expect_pass $J merge A
+gated A; expect_pass $J merge A
 msg="merge: with a git older than 2.38, B, whose row meets A's, is refused, naming jig sync, trunk clean"
-out=$(PATH="$SHIM:$PATH" $J merge B 2>&1); rc=$?
+gated B; out=$(PATH="$SHIM:$PATH" $J merge B 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig sync. the job, then merge' && ! git rev-parse -q --verify MERGE_HEAD && test -z \"\$(git status --porcelain --untracked-files=no)\"" "$out"
 btip=$(git rev-parse B)
 msg="merge: then B merges with no sync and no new note: the base row, A's, then B's, B's branch untouched"
-out=$($J merge B 2>&1); rc=$?
+gated B; out=$($J merge B 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && test \"\$(grep -o '| \\(base\\|A\\|B\\) |' .jig/ledgers/DEFERRED.md | tr -d '| ' | tr '\n' ' ')\" = 'base A B ' && ! grep -q '^[<|=>]\\{7\\}' .jig/ledgers/DEFERRED.md && test \"\$(git rev-parse B)\" = $btip && echo \"\$0\" | grep -q 'resolved .jig/ledgers/DEFERRED.md as .jig sync. would'" "$out"
 msg="merge: B's merge tree is the one jig sync, then jig merge, writes"
 git ls-tree -r HEAD > "$T/fu-defer.fix" && git reset -q --hard HEAD^ && (cd "$FD/.git/jig/worktrees/B" && $J sync >/dev/null 2>&1) \
-  && $J merge B >/dev/null 2>&1 && git ls-tree -r HEAD > "$T/fu-defer.sync"
+  && gated B && $J merge B >/dev/null 2>&1 && git ls-tree -r HEAD > "$T/fu-defer.sync"
 expect_pass cmp "$T/fu-defer.fix" "$T/fu-defer.sync"
 msg="merge: E, whose edit of the base row meets A's append, is refused, naming jig sync, trunk clean"
-out=$($J merge E 2>&1); rc=$?
+gated E; out=$($J merge E 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'jig sync. the job, then merge' && ! git rev-parse -q --verify MERGE_HEAD && test -z \"\$(git status --porcelain --untracked-files=no)\" && grep -q '\"E\"' .jig/jobs.json" "$out"
 msg="merge: C, its note and a DEFERRED.md row in one commit after the review, merges with no second record"
-expect_pass $J merge C
+gated C; expect_pass $J merge C
 msg="merge: C2, whose note commit also rewords the base row, is refused, naming DEFERRED.md"
-out=$($J merge C2 2>&1); rc=$?
+gated C2; out=$($J merge C2 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'changed since.*DEFERRED.md'" "$out"
 msg="merge: X, with a line added to AGENTS.md after its note, is refused, naming AGENTS.md"
-out=$($J merge X 2>&1); rc=$?
+gated X; out=$($J merge X 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'changed since.*AGENTS.md'" "$out"
 
 # The plugin's hooks: a repo's check.sh may be in another language.
@@ -3872,8 +3941,8 @@ frefused() { out=$(git commit -qm "$1" 2>&1); rc=$?; git reset -q --hard; git cl
 HF="$T/homes-form"; pcnew "$HF" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 ipage docs/a/a.md && ipage docs/a/c.md && ipage docs/a/d/d.md && mkf docs/a/d/wiring.pdf src/x.py
 git add -A && git -c core.hooksPath=/dev/null commit -qm pages
-msg="form: a lone docs/a/b/b.md is refused by jig check --staged and the hook, naming docs/a/b.md"
-ipage docs/a/b/b.md && git add -A && chk=$($J check --staged 2>&1); crc=$?; frefused lone
+msg="form: a lone docs/a/b/b.md is refused by jig rules --staged and the hook, naming docs/a/b.md"
+ipage docs/a/b/b.md && git add -A && chk=$($J rules --staged 2>&1); crc=$?; frefused lone
 expect_pass sh -c "test $crc != 0 && test $rc != 0 && echo \"\$0\" | grep -q '^docs/a/b/b.md: flat at docs/a/b.md: its folder holds nothing else' && echo \"\$1\" | grep -q 'docs/a/b/b.md: flat at docs/a/b.md'" "$chk" "$out"
 msg="form: the refusal holds survey's line for the same page"
 ipage docs/a/b/b.md && git add -A
@@ -3941,9 +4010,9 @@ msg="form: adding a system page above a lone page gives it a home, and the hook 
 ipage docs/v/b/b.md && board "b['docmap']['docs/v/b/b.md'] = []" && git add -A && git -c core.hooksPath=/dev/null commit -qm "lone v/b"
 ipage docs/v/v.md && git add -A && frefused "v page"
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'docs/v/b/b.md: flat at docs/v/b.md'" "$out"
-msg="form: jig check run from a subfolder judges the whole tree"
+msg="form: jig rules run from a subfolder judges the whole tree"
 board "b['docmap']['docs/z/z.md'] = []" && git commit -qam "z named" && ipage docs/z/z.md && git add -A
-out=$(cd docs && python3 ../.jig/jig.py check --staged 2>&1); rc=$?; undo
+out=$(cd docs && python3 ../.jig/jig.py rules --staged 2>&1); rc=$?; undo
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^docs/z/z.md: flat at docs/z.md'" "$out"
 msg="form: a one-page edit in a tree of hundreds of pages is judged in seconds, not minutes"
 # 30 systems of 10 pages, each mapped to code of its own with a README beside it: a stray .md apiece.
@@ -3961,15 +4030,14 @@ for i in range(30):
         b['docmap'][page] = [f'src/t{i}/p{j}/**']
 json.dump(b, open('.jig/config.json', 'w'), indent=2)"
 git add -A && git -c core.hooksPath=/dev/null commit -qm many && printf -- '- e\n' >> docs/t1/p1.md && git add -A
-start=$(date +%s); out=$($J check --staged 2>&1); took=$(( $(date +%s) - start ))
+start=$(date +%s); out=$($J rules --staged 2>&1); took=$(( $(date +%s) - start ))
 expect_pass sh -c "test $took -lt 20 && test \"\$0\" = ok" "$out"
 git reset -q --hard
 msg="form: jig merge of a job that slipped a lone page in stops with the refusal and commits no merge"
 $J open pf --branch b-pf --owns 'docs/**' >/dev/null && git add -A && git commit -qm "TOOL: open pf"
-tip=$(git rev-parse HEAD)
 (cd .git/jig/worktrees/b-pf && ipage docs/h/h.md && git add -A && git -c core.hooksPath=/dev/null commit -qm "h: page" \
   && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note pf")
-out=$($J merge pf 2>&1); rc=$?
+gated pf; tip=$(git rev-parse HEAD); out=$($J merge pf 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'docs/h/h.md: flat at docs/h.md' && test \"\$(git rev-parse HEAD)\" = $tip" "$out"
 git merge --abort 2>/dev/null
 msg="form: the merge's hint says to abort and fix it on the job's branch"
@@ -4381,7 +4449,7 @@ out=$(cd "$PG" && { gate_ok U1; rc=$?; echo "$out"; exit $rc; }); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'departed needs its why'" "$out"
 answer $note "n = n.replace('(touches', '(touches').replace('parked 2026-11-01\" — departed', 'parked 2026-11-01\" — built: the cache serves offline')"
 git commit -qam "offline built"
-cd "$PG" && $J merge U1 >/dev/null 2>&1
+cd "$PG" && gated U1 && $J merge U1 >/dev/null 2>&1
 msg="up next: jig merge removes the item answered built from .jig/roadmap.md in the merge commit, and keeps the rest"
 expect_pass sh -c "git show --name-only --format= HEAD | grep -qx .jig/roadmap.md && ! grep -q offline .jig/roadmap.md && grep -q '\`dark\`' .jig/roadmap.md && grep -q '\`export\`' .jig/roadmap.md"
 msg="up next: and ROADMAP.md, rewritten in the same commit, no longer shows it"
@@ -4503,12 +4571,12 @@ $J open J --spec .jig/specs/s3.md >/dev/null && git add -A && git commit -qm "op
 msg="roadmap: a bare jig handoff in a job writes the board's spec as its Spec:"
 expect_pass grep -qx 'Spec: .jig/specs/s3.md' .git/jig/worktrees/J/.jig/handoffs/J-*.md
 msg="roadmap: the hook refuses .jig/roadmap.md and ROADMAP.md edits on a branch (R5)"
-out=$(cd .git/jig/worktrees/J && printf 'x\n' >> .jig/roadmap.md && printf 'x\n' >> ROADMAP.md && git add -A && $J check --staged; git reset -q --hard)
+out=$(cd .git/jig/worktrees/J && printf 'x\n' >> .jig/roadmap.md && printf 'x\n' >> ROADMAP.md && git add -A && $J rules --staged; git reset -q --hard)
 expect_pass sh -c "echo \"\$0\" | grep -q 'R5 the roadmap is the owner.s: .jig/roadmap.md' && echo \"\$0\" | grep -q 'R5 the roadmap is the owner.s: ROADMAP.md'" "$out"
 msg="roadmap: the hook refuses a spec on a branch citing a scope the roadmap doesn't have"
 out=$(cd .git/jig/worktrees/J && rspec bad alpha/nope && git add -A && git commit -qm bad 2>&1; git reset -q --hard; git clean -fdq)
 expect_pass sh -c "echo \"\$0\" | grep -q 'bad.md takes alpha/nope'" "$out"
-$J merge J >/dev/null
+gated J; $J merge J >/dev/null
 msg="roadmap: jig merge rewrites ROADMAP.md in the merge commit, moving the job's scope to Done"
 expect_pass sh -c "git show --name-only --format= HEAD | grep -qx ROADMAP.md && git show HEAD:ROADMAP.md | python3 -c \"
 import sys; beta = sys.stdin.read().split('## beta')[1]
@@ -4586,7 +4654,7 @@ $J open C --spec .jig/specs/s1.md --owns 'src/**' >/dev/null && git add -A && gi
 ( cd .git/jig/worktrees/C && printf 'x=2\n' > src/x.py && git commit -qam two && $J reviewed >/dev/null \
   && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note C" )
 printf 'x=3\n' > src/x.py && git commit -qam three
-out=$($J merge C 2>&1)
+gated C; out=$($J merge C 2>&1)
 printf 'x=2\n' > src/x.py && git add src/x.py && $J roadmap --write >/dev/null && git add ROADMAP.md && git commit -q --no-edit
 msg="roadmap: on a conflicted merge, following jig's steps (resolve, --write, add, commit) moves the job's scope to Done"
 expect_pass sh -c "echo \"\$0\" | grep -q 'jig roadmap --write' && git show HEAD:ROADMAP.md | grep -q '^|  |  | \*\*x\*\*'" "$out"
@@ -4618,7 +4686,7 @@ $J open N --spec .jig/specs/s1.md >/dev/null && git add -A && git commit -qm "op
 ( cd .git/jig/worktrees/N && printf 'n\n' > n.txt && git add -A && git commit -qm n \
   && $J reviewed >/dev/null && $J handoff --spec .jig/specs/s1.md >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note N" )
 msg="roadmap: with no roadmap, jig merge writes no ROADMAP.md"
-expect_pass sh -c "$J merge N >/dev/null && test ! -e ROADMAP.md && ! git show --name-only --format= HEAD | grep -q ROADMAP"
+gated N; expect_pass sh -c "$J merge N >/dev/null && test ! -e ROADMAP.md && ! git show --name-only --format= HEAD | grep -q ROADMAP"
 printf '# Our roadmap\nhand written\n' > ROADMAP.md && git add -A && git commit -qm "hand roadmap"
 msg="roadmap: with no roadmap, a hand-written ROADMAP.md is edited on a branch freely (no R5)"
 git switch -q -c feat && printf 'more\n' >> ROADMAP.md && git add -A && expect_pass git commit -qm "edit hand roadmap"
@@ -4755,7 +4823,7 @@ msg="boundary: jig merge re-points a page the job moved in every (touches …) n
 $J open M --spec .jig/specs/y.md --owns 'docs/**' >/dev/null && git add -A && git commit -qm "open M"
 ( cd .git/jig/worktrees/M && git mv docs/c.md docs/d.md && git commit -qm move && $J reviewed >/dev/null \
   && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note M" )
-$J merge M >/dev/null 2>&1
+gated M; $J merge M >/dev/null 2>&1
 expect_pass sh -c "grep -q 'touches docs/d.md' .jig/roadmap.md && git show --name-only --format= HEAD | grep -qx .jig/roadmap.md"
 
 BM="$T/boundary-meta"; mkdir -p "$BM" && cd "$BM" && git init -q -b main && git config user.email t@t && git config user.name t
@@ -4805,7 +4873,7 @@ Touches: docs/shared.md'
 msg="decisions M2: an open entry under a release heading is refused, as M2"
 ulog '### D-002 which port?
 Open (2026-11-02).
-Touches: docs/shared.md' "v0.1.0 - $day" && git add -A; out=$($J check --staged 2>&1); git reset -q; git checkout -q -- .jig/decisions.md
+Touches: docs/shared.md' "v0.1.0 - $day" && git add -A; out=$($J rules --staged 2>&1); git reset -q; git checkout -q -- .jig/decisions.md
 expect_pass sh -c "echo \"\$0\" | grep -q 'M2 .*D-002 is open: release v0.1.0 holds accepted entries only'" "$out"
 msg="decisions: a commit editing a line under ## v0.1.0 is refused"
 sed -i.bak 's/^### D-001 ids are numbers$/### D-001 ids are strings/' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A
@@ -4834,7 +4902,7 @@ msg="decisions: the same job editing a released line is refused"
 sed -i.bak 's/^Ids broke; pin v0.2.0\.$/Ids broke./' .jig/decisions.md && rm .jig/decisions.md.bak && git add -A; expect_refuse git commit -qm edit; undo
 $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note st" && cd "$DL"
 msg="decisions: jig merge numbers it D-003, in the log and the page, in the merge commit"
-out=$($J merge st 2>&1)
+gated st; out=$($J merge st 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'numbered D-?store-ro → D-003' && git show HEAD:.jig/decisions.md | grep -qx '### D-003 the store opens read-only' && git show HEAD:docs/store/store.md | grep -q '(D-003)' && ! grep -rq 'D-?store-ro' .jig/decisions.md docs && test \"\$(git log -1 --format=%P | wc -w | tr -d ' ')\" = 2 && test -z \"\$(git status --porcelain)\"" "$out"
 msg="decisions: the merge commit's message lists each number it gave"
 expect_pass sh -c "git log -1 --format=%B | grep -q 'Numbered: D-?store-ro → D-003'"
@@ -4848,7 +4916,7 @@ Accepted (owner, 2026-11-05).
 Touches: docs/shared.md' && printf '# Store\n\nThe store, uncached (D-?cache-off).\n' > docs/store/store.md && git add -A \
   && git commit -qm "D-?cache-off: off" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note cf")
 printf '# Store\n\nThe store, on trunk.\n' > docs/store/store.md && git add -A && git commit -qm "docs: trunk edit"
-out=$($J merge cf 2>&1)
+gated cf; out=$($J merge cf 2>&1)
 msg="decisions: a conflicted merge's hint names jig merge --number before the commit"
 expect_pass sh -c "echo \"\$0\" | grep -q 'jig merge --number'" "$out"
 printf '# Store\n\nThe store, on trunk, uncached (D-?cache-off).\n' > docs/store/store.md && git add -A
@@ -4882,7 +4950,7 @@ printf '| D-001 | ids | accepted | 2026-11-01 |\n' >> DECISIONS.md && printf -- 
 expect_pass git commit -qm "D-001: ids"
 $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note o1" && cd "$OM"
 msg="old shape: it merges, and the release writes CHANGELOG.md's heading and no log"
-$J merge o1 >/dev/null 2>&1; out=$($J release 2>&1)
+gated o1; $J merge o1 >/dev/null 2>&1; out=$($J release 2>&1)
 expect_pass sh -c "git tag | grep -qx v0.2.0 && grep -q '^## v0.2.0 — ' CHANGELOG.md && test ! -e .jig/decisions.md && test -z \"\$(git status --porcelain)\"" "$out"
 
 # The migration: jig update lists both old files, changes nothing without a yes, and merges on one.
@@ -4937,13 +5005,13 @@ ulog '### D-009 x
 Accepted (owner, 2026-11-03).' && git add -A; out=$(git commit -qm "D-009: x" 2>&1); git reset -q --hard "$A"
 expect_pass sh -c "echo \"\$0\" | grep -q 'D-009 names no page it touches'" "$out"
 msg="branch log: reverting the conversion, staged and committed, passes with the counter on the register's rows"
-git revert --no-commit HEAD && ck=$($J check 2>&1) && out=$(git commit -qm "TOOL: revert the log" 2>&1); rc=$?; git reset -q --hard "$A"
+git revert --no-commit HEAD && ck=$($J rules 2>&1) && out=$(git commit -qm "TOOL: revert the log" 2>&1); rc=$?; git reset -q --hard "$A"
 expect_pass sh -c "test $rc = 0" "$out"
-msg="branch log: jig check on the reverted tree, unstaged, agrees with the hook"
+msg="branch log: jig rules on the reverted tree, unstaged, agrees with the hook"
 expect_pass sh -c "test \"\$0\" = ok" "$ck"
 $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note ml" && cd "$OM"
 msg="migration: the job merges into main, and --apply --merge-log there then rewrites only the board: append_files and the counter"
-$J merge ml >/dev/null 2>&1; out=$($UP --apply --merge-log 2>&1)
+gated ml; $J merge ml >/dev/null 2>&1; out=$($UP --apply --merge-log 2>&1)
 expect_pass sh -c "git log -1 --format=%s | grep -qx 'merge ml' && python3 -c \"import json; c=json.load(open('.jig/config.json')); assert 'CHANGELOG.md' not in c['append_files'] and '.jig/decisions.md' in c['append_files'], c; assert c['reserve']['decision']['files']==['.jig/decisions.md'], c\" && git diff --cached --name-only | grep -qx .jig/config.json && git commit -qm 'TOOL: board after the log'" "$out"
 msg="branch log: on trunk after the merge, the status-line edit is refused as frozen on main"
 restate && git add -A; out=$(git commit -qm "D-001: restated" 2>&1); undo
@@ -4953,7 +5021,7 @@ $J open o2 >/dev/null && git add -A && git commit -qm "TOOL: open o2"
 (cd .git/jig/worktrees/o2 && ulog '### D-?cache cache off
 Accepted (owner, 2026-11-03).
 Touches: docs/shared.md' && git add -A && git commit -qm "D-?cache: off" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note o2")
-$J merge o2 >/dev/null 2>&1; out=$($J release 2>&1)
+gated o2; $J merge o2 >/dev/null 2>&1; out=$($J release 2>&1)
 expect_pass sh -c "git tag | grep -qx v0.3.0 && grep -qx '### D-004 cache off' .jig/decisions.md && grep -A2 '^## Unreleased\$' .jig/decisions.md | grep -q '^## v0.3.0 - ' && $J status | grep -qx 'reserve decision: next free 5'" "$out"
 msg="migration: a second --merge-log has nothing to merge"
 out=$($UP --merge-log 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'nothing to merge'" "$out"
@@ -4988,7 +5056,7 @@ expect_pass sh -c "echo \"\$0\" | grep -q '^Written .jig/decisions.md'" "$out"
 msg="migration: a range in a release line places each id; [Unreleased] is the one Unreleased; a # column is the id and Binds stays named"
 expect_pass sh -c "sed -n '/^## v1.0.0 - 2026-01-01/,\$p' .jig/decisions.md | grep -qx '### D-001 a' && sed -n '/^## v1.0.0 - 2026-01-01/,\$p' .jig/decisions.md | grep -qx '### D-002 b' && test \$(grep -ci '^## \[*unreleased' .jig/decisions.md) = 1 && grep -qx -- '- D-003 later' .jig/decisions.md && grep -qx 'Proposed (Bo, 2026-02-01).' .jig/decisions.md && grep -qx 'Binds: api' .jig/decisions.md"
 msg="migration: a row's note with commas and a date in it converts to a status line M2 takes, and the result checks clean"
-expect_pass sh -c "grep -qx 'Proposed (runtime team, from the 2026-10-27 identity research, 2026-10-27).' .jig/decisions.md && grep -qx 'Accepted (Dave, after review, 2026-10-28).' .jig/decisions.md && $J check --staged | grep -qx ok"
+expect_pass sh -c "grep -qx 'Proposed (runtime team, from the 2026-10-27 identity research, 2026-10-27).' .jig/decisions.md && grep -qx 'Accepted (Dave, after review, 2026-10-28).' .jig/decisions.md && $J rules --staged | grep -qx ok"
 msg="migration: what has no home stays in the old file, as written, and the run names it"
 expect_pass sh -c "echo \"\$0\" | grep -q 'no home, move by hand: DECISIONS.md' && grep -qx '## Pending delivery' DECISIONS.md && grep -qx 'Accepted (Dave): hold the queue.' DECISIONS.md && ! grep -q '^| D-' DECISIONS.md && grep -qx 'Owner note: older history is in the wiki.' CHANGELOG.md && ! grep -q '^## ' CHANGELOG.md" "$out"
 cd "$DL"
@@ -5046,7 +5114,7 @@ Touches: docs/shared.md' && rment D-002 && git add -A
 expect_pass git commit -qm "D-?ids-uuid: uuids"
 $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note sj" && cd "$SR"
 msg="supersede: jig merge numbers it D-003, and trunk's log has no D-002"
-out=$($J merge sj 2>&1); expect_pass sh -c "grep -qx '### D-003 ids are uuids' .jig/decisions.md && ! grep -q '^### D-002' .jig/decisions.md" "$out"
+gated sj; out=$($J merge sj 2>&1); expect_pass sh -c "grep -qx '### D-003 ids are uuids' .jig/decisions.md && ! grep -q '^### D-002' .jig/decisions.md" "$out"
 msg="supersede: jig decision D-001 walks two removals to D-003"
 out=$($J decision D-001 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'D-002 is superseded by D-003' && echo \"\$0\" | grep -q 'What holds now is D-003'" "$out"
 msg="supersede: on trunk, D-004 superseding D-003, an id given only in a merge commit, removes it and passes M2"
@@ -5056,7 +5124,7 @@ Touches: docs/shared.md' && rment D-003 && git add -A; expect_pass git commit -q
 git clone -q --depth 1 "file://$SR" "$T/shallow" && cd "$T/shallow"
 msg="supersede: in a shallow clone, a log commit passes M2 though D-003's entry is in history it lacks"
 ulog '### Changed
-- IDS: Shallow.' && git add -A; expect_pass $J check --staged; undo
+- IDS: Shallow.' && git add -A; expect_pass $J rules --staged; undo
 msg="supersede: in a shallow clone, jig decision D-003 says the clone is shallow"
 out=$($J decision D-003 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'this clone is shallow'" "$out"
 cd "$SR"
@@ -5230,13 +5298,13 @@ Accepted (owner, 2026-11-01).
 
 When anything happens, log it.' && git add -A
 msg="touches M2: the first numbered entry in a fresh log, with no Touches, is refused: only update's register merge is exempt"
-expect_refuse $J check --staged
+expect_refuse $J rules --staged
 git -c core.hooksPath=/dev/null commit -qm "board, D-001 (written before Touches)"
 msg="touches M2: a new entry with no Touches line is refused, naming the line"
 ulog '### D-002 a rules
 Accepted (owner, 2026-11-02).
 
-When a is idle, it sleeps.' && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
+When a is idle, it sleeps.' && git add -A; out=$($J rules --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'D-002 names no page it touches'" "$out"
 msg="touches M2: a Touches naming a page that isn't there is refused"
 expect_refuse m2 '### D-002 a rules
@@ -5300,13 +5368,13 @@ board "b['release']['artifacts'] = ['dist/*.zip']" && printf 'dist/\n' >> .gitig
   && git commit -qm "release protocol" && $J release --minor >/dev/null 2>&1
 touch_d1() { python3 -c "import sys; f='.jig/decisions.md'; s=open(f).read(); a='### D-001 old one\nAccepted (owner, 2026-11-01).\n'; assert a in s; s=s.replace(a, a+'Touches: '+sys.argv[1]+'\n'); open(f,'w').write(s.replace('log it.', sys.argv[2]) if len(sys.argv) > 2 else s)" "$@"; }
 msg="touches release: backfilling Touches on a released entry passes"
-touch_d1 docs/a.md && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
+touch_d1 docs/a.md && git add -A; out=$($J rules --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
 expect_pass sh -c "test $rc = 0 && git show HEAD:.jig/decisions.md | grep -q '^## v0.1.0 - '" "$out"
 msg="touches release: the same backfill with the entry's body edited too is refused as frozen"
-touch_d1 docs/a.md 'log everything.' && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
+touch_d1 docs/a.md 'log everything.' && git add -A; out=$($J rules --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'release v0.1.0 is frozen on main'" "$out"
 msg="touches release: a backfill naming no docs page is refused by M2"
-touch_d1 AGENTS.md && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
+touch_d1 AGENTS.md && git add -A; out=$($J rules --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'D-001 touches AGENTS.md' && ! echo \"\$0\" | grep -q frozen" "$out"
 
 # The reported symptom: a pararepo entry and the metarepo's on one feature, put side by side.
@@ -5398,7 +5466,7 @@ Touches: docs/identity.md
 When $j runs, the lock waits." && git add -A && git commit -qm "D-?$j: $j" && $J reviewed >/dev/null \
     && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note $j")
 done
-gate_ok one && $J merge one >/dev/null 2>&1
+gated one; gate_ok one && $J merge one >/dev/null 2>&1
 msg="touches gate: a pair with a job merged since the handoff is refused, naming it"
 out=$($J gate two 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-two 2>/dev/null
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"doesn't answer these pairs\" && echo \"\$0\" | grep -qF 'D-?two vs .jig/decisions.md § D-' && echo \"\$0\" | grep -q 'jig sync'" "$out"
@@ -5498,7 +5566,7 @@ Touches: none — this repo points, and never copies'
 msg="touches terms M2: a term the glossary lacks is refused, naming it"
 ulog '### D-001 naming
 Accepted (owner, 2026-11-13).
-Touches: docs/glossary.md § nosuchterm' && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
+Touches: docs/glossary.md § nosuchterm' && git add -A; out=$($J rules --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'is no term in docs/glossary.md'" "$out"
 msg="touches terms M2: § on a page other than the glossary is refused"
 expect_refuse m2 '### D-001 naming
@@ -5526,13 +5594,13 @@ Touches: none — how each index.md is laid out'
 msg="touches terms M2: a reason naming a root document is no page beside none (the root-document check still names it)"
 ulog '### D-001 points
 Accepted (owner, 2026-11-13).
-Touches: none — how AGENTS.md is written' && git add -A; out=$($J check --staged 2>&1); git reset -q; git checkout -q -- .jig/decisions.md
+Touches: none — how AGENTS.md is written' && git add -A; out=$($J rules --staged 2>&1); git reset -q; git checkout -q -- .jig/decisions.md
 expect_pass sh -c "! echo \"\$0\" | grep -q '^M2 ' && echo \"\$0\" | grep -q 'names AGENTS.md, a root document'" "$out"
 msg="touches terms M2: none in another shape is refused, naming the form"
 for t in 'none: whole repo' '`none` — x' 'None — x'; do
   ulog "### D-001 points
 Accepted (owner, 2026-11-13).
-Touches: $t" && git add -A; out=$($J check --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
+Touches: $t" && git add -A; out=$($J rules --staged 2>&1); rc=$?; git reset -q; git checkout -q -- .jig/decisions.md
   expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'write it \`Touches: none — <reason>\`'" "$out"
 done
 msg="touches terms M2: a term holding a comma is one term, and the pointer after it another"
@@ -5600,7 +5668,7 @@ Always, a product name fits a button.' && git add -A && git commit -qm "D-?nk: l
 cd "$TA"
 msg="touches terms gate: term pair lines answered agrees pass the gate"
 expect_pass gate_ok tj
-$J merge tj >/dev/null 2>&1
+gated tj; $J merge tj >/dev/null 2>&1
 msg="touches terms gate: a term pair with an entry trunk took after the handoff is refused, naming it"
 out=$($J gate tk 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-tk 2>/dev/null
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"doesn't answer these pairs\" && echo \"\$0\" | grep -qF 'D-?nk vs .jig/decisions.md § D-00' && echo \"\$0\" | grep -qF '(docs/glossary.md § products)'" "$out"
@@ -5651,29 +5719,30 @@ msg="staging: resolve's refusal of a file in a cycle names the cycle"
 expect_pass sh -c "$J staging resolve a.md 2>&1 | grep -q 'in a cycle with b.md'"
 for f in a b c; do $J staging drop $f.md >/dev/null; done
 
-$J workflow > "$T/wf"
-msg="staging: a spec with an empty ## Workflow resolves with jig workflow's lines in it"
-stage w.md this spec new w.md '# W\n\n## Intent\nx\n\n## Workflow\n<!-- fill -->\n\n## After\ny\n'
+$J roles > "$T/wf"
+msg="staging: a spec with an empty ## Roles resolves with jig roles' lines in it"
+stage w.md this spec new w.md '# W\n\n## Intent\nx\n\n## Roles\n<!-- fill -->\n\n## After\ny\n'
 $J staging resolve w.md >/dev/null
-expect_pass sh -c "sed -n '/^## Workflow/,/^## After/p' .jig/specs/w.md | grep -vE '^(## |<!--|\$)' | diff - '$T/wf' && grep -q '^## After' .jig/specs/w.md"
-msg="staging: a spec with no ## Workflow gets one"
+expect_pass sh -c "sed -n '/^## Roles/,/^## After/p' .jig/specs/w.md | grep -vE '^(## |<!--|\$)' | diff - '$T/wf' && grep -q '^## After' .jig/specs/w.md"
+msg="staging: a spec with no ## Roles gets one"
 stage v.md this spec new v.md '# V\n\n## Intent\nx\n'
 $J staging resolve v.md >/dev/null
-expect_pass sh -c "sed -n '/^## Workflow/,\$p' .jig/specs/v.md | tail -n +2 | diff - '$T/wf'"
-msg="staging: a spec whose ## Workflow holds lines keeps them"
-stage u.md this spec new u.md '# U\n\n## Workflow\nspec: tier 1, effort 1\n'
+expect_pass sh -c "sed -n '/^## Roles/,\$p' .jig/specs/v.md | tail -n +2 | diff - '$T/wf'"
+msg="staging: a spec whose ## Roles holds lines keeps them"
+stage u.md this spec new u.md '# U\n\n## Roles\nspec: tier 1, effort 1\n'
 $J staging resolve u.md >/dev/null
-expect_pass test "$(sed -n '/^## Workflow/,$p' .jig/specs/u.md | tail -n +2)" = "spec: tier 1, effort 1"
-msg="staging: a Workflow heading with text after it, lower case or at the end with no newline is filled once"
-stage t1.md this spec new t1.md '# T\n\n## Workflow (from the repo)\n\n## After\ny\n'
-stage t2.md this spec new t2.md '# T\n\n## workflow\n'
-stage t3.md this spec new t3.md '# T\n\n## Workflow'
-for f in t1 t2 t3; do $J staging resolve $f.md >/dev/null; done
-expect_pass sh -c "for f in t1 t2 t3; do test \$(grep -ci '^## workflow' .jig/specs/\$f.md) = 1 && grep -q '^review: tier [0-9], effort [0-9]$' .jig/specs/\$f.md || exit 1; done; grep -q '^## After' .jig/specs/t1.md"
-msg="staging: a spec to fill while jig workflow refuses is refused, and stays staged"
-setwf '{"execute": {"effort": 2}}'
-stage x.md this spec new x.md '# X\n\n## Workflow\n'
-expect_pass sh -c "! $J staging resolve x.md 2>/dev/null && $J staging resolve x.md 2>&1 | grep -q 'jig workflow. refuses' && test -f .jig/staging/x.md && test ! -e .jig/specs/x.md"
+expect_pass test "$(sed -n '/^## Roles/,$p' .jig/specs/u.md | tail -n +2)" = "spec: tier 1, effort 1"
+msg="staging: a Roles heading with text after it, lower case, at the end with no newline, or an older template's Workflow, is filled once"
+stage t1.md this spec new t1.md '# T\n\n## Roles (from the repo)\n\n## After\ny\n'
+stage t2.md this spec new t2.md '# T\n\n## roles\n'
+stage t3.md this spec new t3.md '# T\n\n## Roles'
+stage t4.md this spec new t4.md '# T\n\n## Workflow\n'
+for f in t1 t2 t3 t4; do $J staging resolve $f.md >/dev/null; done
+expect_pass sh -c "for f in t1 t2 t3 t4; do test \$(grep -ciE '^## (roles|workflow)' .jig/specs/\$f.md) = 1 && grep -q '^review: tier [0-9], effort [0-9]$' .jig/specs/\$f.md || exit 1; done; grep -q '^## After' .jig/specs/t1.md"
+msg="staging: a spec to fill while jig roles refuses is refused, and stays staged"
+setroles '{"work": {"effort": 2, "reason": "r"}}'
+stage x.md this spec new x.md '# X\n\n## Roles\n'
+expect_pass sh -c "! $J staging resolve x.md 2>/dev/null && $J staging resolve x.md 2>&1 | grep -q 'jig roles. refuses' && test -f .jig/staging/x.md && test ! -e .jig/specs/x.md"
 git checkout -q -- .jig/config.json; $J staging drop x.md >/dev/null
 
 $J repos add north-star "$SB" >/dev/null
@@ -5851,7 +5920,7 @@ $J open o1 --shares DECISIONS.md CHANGELOG.md >/dev/null && git add -A && git co
 (cd .git/jig/worktrees/o1 && printf '| D-001 | radio first | superseded by D-002 | 2026-11-01 |\n| D-002 | Demo priorities: 1) radio 2) screen | accepted | 2026-11-02 |\n| D-003 | ids are numbers | accepted | 2026-11-02 |\n' >> DECISIONS.md \
   && printf -- '- D-001, D-002, D-003\n' >> CHANGELOG.md && git add -A && git commit -qm "D-001, D-002, D-003: rows" && $J reviewed >/dev/null \
   && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "TOOL: note o1")
-$J merge o1 >/dev/null 2>&1
+gated o1; $J merge o1 >/dev/null 2>&1
 msg="sweep: old-shape metarepo: update doesn't list the priority row by its words before --merge-log"
 out=$($UP 2>&1); expect_pass sh -c "! echo \"\$0\" | grep -q 'reads as project scope'" "$out"
 $J open ml --shares DECISIONS.md CHANGELOG.md README.md >/dev/null && git add -A && git commit -qm "TOOL: open ml"
@@ -5891,12 +5960,12 @@ parents() { git log -1 --format=%P | wc -w | tr -d ' '; }
 
 mdjob H0 c0.py; git merge -q --no-ff --no-edit H0 2>/dev/null
 msg="derive: with no derived_files, a job already in trunk merges without the stale-files line"
-out=$($J merge H0 2>&1); rc=$?
+gated H0; out=$($J merge H0 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && ! echo \"\$0\" | grep -q \"didn't run\"" "$out"
 
 mdjob T0 c.py
 msg="derive: with the template's derive.sh, jig merge prints no derived: line and commits the job's files and its entry, nothing more"
-out=$($J merge T0 2>&1)
+gated T0; out=$($J merge T0 2>&1)
 want=$( { git diff --name-only HEAD^1 HEAD^2; echo .jig/jobs.json; } | sort -u)
 expect_pass sh -c "! echo \"\$0\" | grep -q '^derived:' && test \"\$(git diff --name-only HEAD^1 HEAD | sort)\" = \"\$1\"" "$out" "$want"
 
@@ -5913,26 +5982,26 @@ derived INDEX.md && .jig/scripts/derive.sh && git add -A && git commit -qm "deri
 mdjob A a.py; mdjob B e.py
 for j in A B; do
   msg="derive: jig merge $j, which never touched INDEX.md, exits 0, prints derived: INDEX.md, and commits it current in the merge commit"
-  out=$($J merge $j 2>&1); rc=$?
+  gated $j; out=$($J merge $j 2>&1); rc=$?
   expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'derived: INDEX.md' && test -z \"\$(git status --porcelain)\" && test $(parents) = 2 && git diff --name-only HEAD^1 HEAD | grep -qx INDEX.md && $(declare -f fresh); fresh" "$out"
 done
 
 # The symptom: two jobs regenerate from their own sources; git merges their copies cleanly, wrong.
 mdjob C a0.py regen; mdjob D z9.py regen
-$J merge C >/dev/null 2>&1
+gated C; $J merge C >/dev/null 2>&1
 msg="derive: two jobs that each committed a regenerated INDEX.md merge cleanly, and trunk's INDEX.md counts both"
-out=$($J merge D 2>&1); rc=$?
+gated D; out=$($J merge D 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && grep -qx 'count: 12' INDEX.md && grep -qx a0.py INDEX.md && grep -qx z9.py INDEX.md && test -z \"\$(git status --porcelain)\"" "$out"
 
 mdjob E k.py; touch "$FLAG"
 msg="derive: a derive.sh that exits 3 stops jig merge before its commit: exit 1, MERGE_HEAD, stderr naming derive.sh, 3 and jig merge --number"
-err=$($J merge E 2>&1 >/dev/null); rc=$?
+gated E; err=$($J merge E 2>&1 >/dev/null); rc=$?
 expect_pass sh -c "test $rc = 1 && git rev-parse -q --verify MERGE_HEAD && echo \"\$0\" | grep -q '.jig/scripts/derive.sh exited 3' && echo \"\$0\" | grep -q 'jig merge --number'" "$err"
 rm "$FLAG"
 msg="derive: once fixed, jig merge --number and git commit leave INDEX.md current and the tree clean"
 expect_pass sh -c "$J merge --number && git commit -q --no-edit && test -z \"\$(git status --porcelain)\" && grep -qx k.py INDEX.md && $(declare -f fresh); fresh"
 
-mdjob F m.py; touch "$FLAG"; $J merge F >/dev/null 2>&1
+mdjob F m.py; touch "$FLAG"; gated F; $J merge F >/dev/null 2>&1
 msg="derive: after a failed derive, git merge --abort puts F's entry back"
 expect_pass sh -c "git merge --abort && grep -q '\"F\"' .jig/jobs.json && test -z \"\$(git status --porcelain --untracked-files=no)\""
 rm "$FLAG"
@@ -5941,7 +6010,7 @@ mdjob G n.py
 (cd .git/jig/worktrees/G && printf 'job\n' > shared.txt && git commit -qam "G: shared" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note G again")
 printf 'trunk\n' > shared.txt && git commit -qam "trunk: shared"
 msg="derive: a merge that stops on a source conflict no longer says to run setup.sh after the commit"
-err=$($J merge G 2>&1); rc=$?
+gated G; err=$($J merge G 2>&1); rc=$?
 expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q '^  shared.txt' && ! echo \"\$0\" | grep -q 'then run .*setup.sh'" "$err"
 printf 'both\n' > shared.txt && git add shared.txt && : > "$LOG"
 msg="derive: once resolved, jig merge --number runs setup.sh once and writes INDEX.md; the commit leaves the tree clean"
@@ -5950,27 +6019,27 @@ expect_pass sh -c "test \$(wc -l < '$LOG' | tr -d ' ') = 1 && echo \"\$0\" | gre
 
 mdjob H o.py; git merge -q --no-ff --no-edit H 2>/dev/null; touch "$FLAG"
 msg="derive: a job already in trunk merges with no derive run, saying derived files may be stale: exit 0, its entry gone, the tree clean"
-out=$($J merge H 2>&1); rc=$?
+gated H; out=$($J merge H 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && ! grep -q '\"H\"' .jig/jobs.json && test -z \"\$(git status --porcelain)\" && ! echo \"\$0\" | grep -q '^derived:' && echo \"\$0\" | grep -q \"derive.sh didn't run: a hand merge leaves derived files stale\"" "$out"
 rm "$FLAG"
 
 printf 'cp INDEX.md índice.md\n' >> .jig/scripts/derive.sh && derived INDEX.md índice.md && .jig/scripts/derive.sh && git add -A && git commit -qm "derive: a non-ASCII name"
 mdjob U p.py
 msg="derive: a file derive.sh writes under a non-ASCII name is staged and committed with the merge"
-out=$($J merge U 2>&1); rc=$?
+gated U; out=$($J merge U 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'derived: INDEX.md, índice.md' && test -z \"\$(git status --porcelain)\" && grep -qx p.py índice.md" "$out"
 
 printf '#!/bin/sh\n.jig/scripts/derive.sh\n' > .jig/scripts/setup.sh && git commit -qam "setup runs the generator too"
 mdjob V q.py
 msg="derive: when setup.sh writes the derived file too, the merge still commits it and leaves trunk clean"
-out=$($J merge V 2>&1); rc=$?
+gated V; out=$($J merge V 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q '^derived: INDEX.md' && test -z \"\$(git status --porcelain)\" && grep -qx q.py INDEX.md" "$out"
 
 printf '{}\n' > lock.json && printf '#!/bin/sh\n[ "$(git branch --show-current)" = main ] || exit 0\necho $$ > lock.json\n' > .jig/scripts/setup.sh
 git add -A && git commit -qm "setup rewrites a tracked lockfile on trunk"
 mdjob W r.py
 msg="derive: a tracked file setup.sh rewrote is warned about and left out of the merge commit"
-out=$($J merge W 2>&1); rc=$?
+gated W; out=$($J merge W 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'changed and not committed: lock.json' && ! echo \"\$0\" | grep '^derived:' | grep -q lock.json && ! git diff --name-only HEAD^1 HEAD | grep -qx lock.json" "$out"
 git checkout -q -- lock.json && printf '#!/bin/sh\nexit 0\n' > .jig/scripts/setup.sh && git commit -qam "setup quiet"
 
@@ -5982,7 +6051,7 @@ cd "\$(dirname "\$0")/../.."
 [ ! -e "$FLAG" ] || exit 3
 DER
 git commit -qam "derive writes, then may fail"
-mdjob X s.py; touch "$FLAG"; $J merge X >/dev/null 2>&1; rm "$FLAG"
+mdjob X s.py; touch "$FLAG"; gated X; $J merge X >/dev/null 2>&1; rm "$FLAG"
 msg="derive: a derived file a failed run already wrote lands: --number and the commit leave it current and the tree clean"
 out=$($J merge --number 2>&1)
 expect_pass sh -c "git commit -q --no-edit && test -z \"\$(git status --porcelain)\" && git show HEAD:INDEX.md | grep -qx s.py && $(declare -f fresh); fresh" "$out"
@@ -5990,7 +6059,7 @@ expect_pass sh -c "git commit -q --no-edit && test -z \"\$(git status --porcelai
 printf 'old\n' > old.md && printf 'rm -f old.md\n' >> .jig/scripts/derive.sh && derived INDEX.md old.md && git add -A && git commit -qm "derive deletes old.md"
 mdjob Y t.py
 msg="derive: a tracked file derive.sh deletes is staged as deleted: listed, gone from the merge commit, the tree clean"
-out=$($J merge Y 2>&1); rc=$?
+gated Y; out=$($J merge Y 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'derived: INDEX.md, old.md' && ! git cat-file -e HEAD:old.md 2>/dev/null && test -z \"\$(git status --porcelain)\"" "$out"
 
 # Writes INDEX.md only on a difference, and recreates gen/: a failed run's correct write must
@@ -6005,7 +6074,7 @@ rm -rf gen && mkdir gen && : > gen/index.md
 [ ! -e "$FLAG" ] || exit 3
 DER
 derived INDEX.md "gen/**" && .jig/scripts/derive.sh && git add -A && git commit -qm "derive writes on a difference"
-mdjob Z u.py; touch "$FLAG"; $J merge Z >/dev/null 2>&1; rm "$FLAG"; touch gen/stray.md
+mdjob Z u.py; touch "$FLAG"; gated Z; $J merge Z >/dev/null 2>&1; rm "$FLAG"; touch gen/stray.md
 msg="derive: after a failed run, a rerun that finds INDEX.md current and removes an untracked file still commits INDEX.md current and leaves the tree clean"
 out=$($J merge --number 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && git commit -q --no-edit && test -z \"\$(git status --porcelain)\" && git show HEAD:INDEX.md | grep -qx u.py" "$out"
@@ -6021,20 +6090,20 @@ tmp=\$(mktemp INDEX.md.XXXXXX)
 cmp -s "\$tmp" INDEX.md && rm -f "\$tmp" || mv "\$tmp" INDEX.md
 DER
 derived INDEX.md && git add -A && git commit -qm "derive: atomic, writes on a difference"
-mdjob N1 v.py; touch "$FLAG"; $J merge N1 >/dev/null 2>&1; rm "$FLAG"
+mdjob N1 v.py; touch "$FLAG"; gated N1; $J merge N1 >/dev/null 2>&1; rm "$FLAG"
 msg="derive: a failed run's temp file is not committed; --number and the commit leave INDEX.md current"
 out=$($J merge --number 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'derived: INDEX.md' && git commit -q --no-edit && ! git diff --name-only HEAD^1 HEAD | grep -q 'INDEX.md\.' && git show HEAD:INDEX.md | grep -qx v.py && test -z \"\$(git status --porcelain --untracked-files=no)\"" "$out"
 rm -f INDEX.md.??????
 msg="derive: after a failed run, git merge --abort leaves the tracked tree clean"
-mdjob N2 w.py; touch "$FLAG"; $J merge N2 >/dev/null 2>&1; rm "$FLAG"
+mdjob N2 w.py; touch "$FLAG"; gated N2; $J merge N2 >/dev/null 2>&1; rm "$FLAG"
 expect_pass sh -c "git merge --abort && grep -q '\"N2\"' .jig/jobs.json && test -z \"\$(git status --porcelain --untracked-files=no)\""
 rm -f INDEX.md.??????
 
 mdjob N3 x.py
 (cd .git/jig/worktrees/N3 && printf 'job3\n' > shared.txt && git commit -qam "N3: shared" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note N3 again")
 printf 'trunk3\n' > shared.txt && git commit -qam "trunk: shared again"
-$J merge N3 >/dev/null 2>&1; printf 'both3\n' > shared.txt && git add shared.txt && .jig/scripts/derive.sh
+gated N3; $J merge N3 >/dev/null 2>&1; printf 'both3\n' > shared.txt && git add shared.txt && .jig/scripts/derive.sh
 msg="derive: a hand run of a write-on-a-difference derive before --number still lands: INDEX.md current in the commit, the tree clean"
 out=$($J merge --number 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'derived: INDEX.md' && git commit -q --no-edit && test -z \"\$(git status --porcelain)\" && git show HEAD:INDEX.md | grep -qx x.py" "$out"
@@ -6042,23 +6111,23 @@ expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'derived: INDEX.md' &
 printf 'echo y > undeclared.md\n' >> .jig/scripts/derive.sh && printf 'n\n' > undeclared.md && git add -A && git commit -qm "derive writes an undeclared tracked file"
 mdjob N4 y.py
 msg="derive: a tracked file derive.sh writes outside derived_files is named and not committed"
-out=$($J merge N4 2>&1); rc=$?
+gated N4; out=$($J merge N4 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'changed and not committed: undeclared.md' && ! git diff --name-only HEAD^1 HEAD | grep -qx undeclared.md && git diff --name-only HEAD^1 HEAD | grep -qx INDEX.md" "$out"
 git checkout -q -- undeclared.md
 
 mdjob N5 z.py; derived INDEX.md "gen/**" "docs/reference" && git commit -qam "derived: gen and a typo"
 printf 'draft\n' > gen/scratch-draft.md
 msg="derive: an untracked file matching derived_files refuses the merge before it starts, naming it"
-err=$($J merge N5 2>&1); rc=$?
+gated N5; err=$($J merge N5 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'untracked gen/scratch-draft.md matches derived_files: remove or commit it' && ! git rev-parse -q --verify MERGE_HEAD && grep -q '\"N5\"' .jig/jobs.json" "$err"
 rm gen/scratch-draft.md
 msg="derive: a derived_files glob that matches nothing after derive ran is named"
-out=$($J merge N5 2>&1); rc=$?
+gated N5; out=$($J merge N5 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'derived_files glob docs/reference matches no file' && ! echo \"\$0\" | grep -q 'glob gen/'" "$out"
 
 git checkout -q -- undeclared.md; mdjob N6 zz.py; mkdir -p sub
 msg="derive: jig merge run from a subdirectory isn't refused for tracked derived files, and commits INDEX.md"
-out=$(cd sub && python3 ../.jig/jig.py merge N6 2>&1); rc=$?
+gated N6; out=$(cd sub && python3 ../.jig/jig.py merge N6 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && ! echo \"\$0\" | grep -q 'matches derived_files' && git show HEAD:INDEX.md | grep -qx zz.py" "$out"
 git checkout -q -- undeclared.md 2>/dev/null
 }
@@ -6471,43 +6540,37 @@ Touches: docs/a.md
 When a is idle, it sleeps.' && mkdir -p .jig/specs && printf '# s\n\n## Workflow\nreview: tier 2, effort 1\nrecheck: tier 2, effort 1\n' > .jig/specs/s.md \
   && git add -A && git commit -qm "board, D-001, spec"
 
-msg="cheaper rounds: jig workflow prints recheck at review's settings by default"
-expect_pass sh -c "$J workflow | grep -qx 'recheck: tier 2, effort 1' && test \"\$($J workflow | cut -d: -f1 | tr '\n' ' ')\" = 'spec bug execute review recheck check '"
-setwf '{"review": {"effort": 3}}'
-msg="cheaper rounds: a review override moves recheck with it"
-expect_pass sh -c "$J workflow | grep -qx 'recheck: tier 2, effort 3'"
-setwf '{"review": {"effort": 3}, "recheck": {"tier": 3, "effort": 4}}'
-msg="cheaper rounds: a recheck override wins"
-expect_pass sh -c "$J workflow | grep -qx 'recheck: tier 3, effort 4' && $J workflow | grep -qx 'review: tier 2, effort 3'"
+msg="cheaper rounds: jig roles prints no review-change line: it runs at the review role's settings"
+expect_pass test "$($J roles | cut -d: -f1 | tr '\n' ' ')" = "spec bug work review check "
 git checkout -q -- .jig/config.json
 
 $J open j1 --spec .jig/specs/s.md --shares shared.txt --reserve section >/dev/null && $J open j2 --reserve section >/dev/null \
   && git add -A && git commit -qm "open j1 j2"
 W1=.git/jig/worktrees/j1 W2=.git/jig/worktrees/j2
 (cd $W1 && printf 'j1\n' > j1.txt && git add -A && git commit -qm j1)
-msg="cheaper rounds: reviewed --recheck is refused with no full review of the job on HEAD's chain"
-out=$(cd $W1 && $J reviewed --recheck --tier 2 --effort 1 2>&1); rc=$?
+msg="cheaper rounds: reviewed --change is refused with no full review of the job on HEAD's chain"
+out=$(cd $W1 && $J reviewed --change --tier 2 --effort 1 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'no full review of this job'" "$out"
 (cd $W1 && $J reviewed --tier 2 --effort 1 >/dev/null)
 printf 'other\n' > other.txt && git add -A && git commit -qm "trunk: other"
 (cd $W1 && $J sync >/dev/null 2>&1)
 msg="cheaper rounds: a clean sync of a reviewed commit hands off with no new jig reviewed"
-expect_pass sh -c "cd $W1 && $J handoff >/dev/null && grep -qx 'Review: tier 2, effort 1' .jig/handoffs/j1-*.md && ! grep -q '^Recheck:' .jig/handoffs/j1-*.md"
+expect_pass sh -c "cd $W1 && $J handoff >/dev/null && grep -qx 'Review: tier 2, effort 1' .jig/handoffs/j1-*.md && ! grep -q '^Review-change:' .jig/handoffs/j1-*.md"
 (cd $W1 && rm .jig/handoffs/*.md && printf 'job\n' > shared.txt && git commit -qam "j1 shared" && $J reviewed --tier 2 --effort 1 >/dev/null)
 printf 'trunk\n' > shared.txt && git commit -qam "trunk: shared"
 (cd $W1 && $J sync >/dev/null 2>&1; printf 'both\n' > shared.txt && git add -A && git commit -q --no-edit)
-msg="cheaper rounds: a hand-resolved sync is refused at handoff, naming jig reviewed --recheck"
+msg="cheaper rounds: a hand-resolved sync is refused at handoff, naming jig reviewed --change"
 out=$(cd $W1 && $J handoff 2>&1); rc=$?
-expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'shared.txt changed since the review' && echo \"\$0\" | grep -q 'reviewed --recheck'" "$out"
-(cd $W1 && $J reviewed --recheck --tier 2 --effort 3 --ran "model-x at level-z" >/dev/null)
-msg="cheaper rounds: after a recheck the note carries Recheck beside the full review's line"
-expect_pass sh -c "cd $W1 && $J handoff >/dev/null && grep -qx 'Review: tier 2, effort 1' .jig/handoffs/j1-*.md && grep -qx 'Recheck: tier 2, effort 3' .jig/handoffs/j1-*.md && grep -qx 'Recheck ran: model-x at level-z' .jig/handoffs/j1-*.md"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'shared.txt changed since the review' && echo \"\$0\" | grep -q 'reviewed --change'" "$out"
+(cd $W1 && $J reviewed --change --tier 2 --effort 3 --ran "model-x at level-z" >/dev/null)
+msg="cheaper rounds: after a review-change the note carries Review-change beside the full review's line"
+expect_pass sh -c "cd $W1 && $J handoff >/dev/null && grep -qx 'Review: tier 2, effort 1' .jig/handoffs/j1-*.md && grep -qx 'Review-change: tier 2, effort 3' .jig/handoffs/j1-*.md && grep -qx 'Review-change ran: model-x at level-z' .jig/handoffs/j1-*.md"
 (cd $W1 && foldin && git add -A && git commit -qm "note j1")
-msg="cheaper rounds: the gate warns of a recheck below the spec's recheck line, not of the full review"
+msg="cheaper rounds: the gate warns of a review-change below an old spec's recheck line, not of the full review"
 out=$($J gate j1 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-j1 2>/dev/null
-expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'warning: recheck ran at tier 2, effort 3; the spec asks for tier 2, effort 1' && ! echo \"\$0\" | grep -q 'review ran at'" "$out"
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'warning: review-change ran at tier 2, effort 3; the spec asks for tier 2, effort 1' && ! echo \"\$0\" | grep -q 'review ran at'" "$out"
 msg="cheaper rounds: jig merge names the open job holding a later number of a counter it used"
-out=$($J merge j1 2>&1); rc=$?
+gated j1; out=$($J merge j1 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'job j2 holds section 2, after j1.s 1: it syncs before its next handoff'" "$out"
 
 # DEFERRED.md is judged by its net change since the gated commit.
@@ -6516,14 +6579,14 @@ expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'job j2 holds section
   && sed -i.bak 's/| f0 |/| f0 edited |/' .jig/ledgers/DEFERRED.md && git commit -qam "edit row" \
   && sed -i.bak 's/| f0 edited |/| f0 |/' .jig/ledgers/DEFERRED.md && rm .jig/ledgers/DEFERRED.md.bak && git commit -qam "restore row")
 msg="cheaper rounds: a DEFERRED.md row edited and restored later, net append-only, merges with no new handoff"
-expect_pass $J merge j2
+gated j2; expect_pass $J merge j2
 $J open j3 >/dev/null && git add -A && git commit -qm "open j3"
 (cd .git/jig/worktrees/j3 && printf 'j3\n' > j3.txt && git add -A && git commit -qm j3 && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 \
   && foldin && git add -A && git commit -qm "note j3" \
   && printf '| 2026-11-02 | j3 | f1 | nit | rejected | r |\n' >> .jig/ledgers/DEFERRED.md && git commit -qam "add row" \
   && sed -i.bak '/| base |/d' .jig/ledgers/DEFERRED.md && rm .jig/ledgers/DEFERRED.md.bak && git commit -qam "drop base row")
 msg="cheaper rounds: a line the net change deletes still counts, naming DEFERRED.md"
-out=$($J merge j3 2>&1); rc=$?
+gated j3; out=$($J merge j3 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'changed since.*DEFERRED.md'" "$out"
 
 # Pairs: answered at commit, and a pair found at the gate answered in the note alone.
@@ -6543,7 +6606,7 @@ sed -i.bak 's/___/agrees/' .jig/handoffs/*.md && rm .jig/handoffs/*.bak && git a
 msg="cheaper rounds: the same note answered agrees commits"
 expect_pass git commit -qm "note p1"
 cd "$CR" && (cd .git/jig/worktrees/p2 && foldin && git add -A && git commit -qm "note p2")
-gate_ok p1 && $J merge p1 >/dev/null 2>&1
+gated p1; gate_ok p1 && $J merge p1 >/dev/null 2>&1
 p2tip=$(git rev-parse p2)
 msg="cheaper rounds: a pair found at the gate says to answer it in the note and commit, sync only for a merge that needs a hand"
 out=$($J gate p2 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-p2 2>/dev/null
@@ -6553,7 +6616,7 @@ pair=$(echo "$out" | grep ' vs ' | sed -e 's/^ *//' -e 's/^- \[ \]/- [x]/' -e 's
   && git add -A && git commit -qm "p2: answer the pair")
 msg="cheaper rounds: the answered note alone, no sync and no new review, passes the gate"
 expect_pass sh -c "gate_ok() { $J gate p2 >/dev/null 2>&1; r=\$?; git worktree remove --force .git/jig/worktrees/gate-p2 2>/dev/null; return \$r; }; gate_ok && test \"\$(git rev-list --count $p2tip..p2)\" = 1"
-expect_pass $J merge p2
+gated p2; expect_pass $J merge p2
 
 # A Proposed entry is a ruling still owed: the gate warns, never refuses.
 $J open q >/dev/null && git add -A && git commit -qm "open q"
@@ -6569,19 +6632,19 @@ expect_pass sh -c "cd .git/jig/worktrees/q && $J sync"
 msg="cheaper rounds: the gate warns of a Proposed entry the job adds, naming it, and passes"
 out=$($J gate q 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-q 2>/dev/null
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'warning: .jig/decisions.md § D-?q which b? is Proposed'" "$out"
-# Working alone, a recheck leans only on a full review of this task, made since the last note.
+# Working alone, a review-change leans only on a full review of this task, made since the last note.
 SO="$T/solo"; pcnew "$SO" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 printf 'a\n' > a.txt && git add -A && git commit -qm A && $J reviewed --tier 2 --effort 1 >/dev/null
-msg="cheaper rounds: a recheck on the full review's own commit keeps the full review's line"
+msg="cheaper rounds: the old --recheck, on the full review's own commit, records a review-change and keeps the full review's line"
 $J reviewed --recheck --tier 2 --effort 3 >/dev/null
-expect_pass sh -c "$J handoff >/dev/null && grep -qx 'Review: tier 2, effort 1' .jig/handoffs/main-*.md && grep -qx 'Recheck: tier 2, effort 3' .jig/handoffs/main-*.md"
+expect_pass sh -c "$J handoff >/dev/null && grep -qx 'Review: tier 2, effort 1' .jig/handoffs/main-*.md && grep -qx 'Review-change: tier 2, effort 3' .jig/handoffs/main-*.md"
 foldin && git add -A && git commit -qm "note A"
 msg="cheaper rounds: working alone, handoff from the note commit itself still finds the task's review"
 expect_pass sh -c "$J handoff >/dev/null && rm .jig/handoffs/main-*-2.md"
 printf 'c\n' > c.txt && git add -A && git commit -qm C && $J reviewed --tier 2 --effort 1 >/dev/null && $J handoff >/dev/null && foldin && git add -A && git commit -qm "note C"
 printf 'b\n' > b.txt && git add -A && git commit -qm B
-msg="cheaper rounds: working alone, a new task's recheck against the last task's full review is refused"
-expect_refuse $J reviewed --recheck --tier 2 --effort 1
+msg="cheaper rounds: working alone, a new task's review-change against the last task's full review is refused"
+expect_refuse $J reviewed --change --tier 2 --effort 1
 cd "$CR"
 msg="cheaper rounds: the kickoff jig open prints says to message the hubnode on a Proposed entry"
 expect_pass sh -c "$J open k2 2>&1 | grep -q 'When you write or change a Proposed entry'"
@@ -6652,13 +6715,13 @@ out=$($J open G --spec .jig/specs/g.md --shares 'docs/**' 2>&1)
 out2=$($J open H --spec .jig/specs/h.md --owns 'lib/**' 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep 'warning' | grep -q 'app/src/x.ts' && ! echo \"\$0\" | grep 'warning' | grep -q cmd_x && ! echo \"\$1\" | grep -q warning" "$out" "$out2"
 git add -A && git commit -qm "open G H"
-printf 'y\n' >> .git/jig/worktrees/G/app/src/x.ts    # jig check judges the change not yet committed
+printf 'y\n' >> .git/jig/worktrees/G/app/src/x.ts    # jig rules judges the change not yet committed
 msg="share: a path another open job owns is refused, the board unchanged"
 expect_refuse $J share G lib/a.py
-msg="share: adds the path to the job's shares, and jig check in the job then passes"
-before=$(cd .git/jig/worktrees/G && $J check >/dev/null 2>&1; echo $?)
+msg="share: adds the path to the job's shares, and jig rules in the job then passes"
+before=$(cd .git/jig/worktrees/G && $J rules >/dev/null 2>&1; echo $?)
 $J share G app/src/x.ts >/dev/null && git add -A && git commit -qm "share G" >/dev/null
-expect_pass sh -c "test $before != 0 && grep -q 'app/src/x.ts' .jig/jobs.json && cd .git/jig/worktrees/G && $J check"
+expect_pass sh -c "test $before != 0 && grep -q 'app/src/x.ts' .jig/jobs.json && cd .git/jig/worktrees/G && $J rules"
 
 # Metarepo: two pararepo proposals, consolidated into one job there, merged and released.
 PM="$T/pm"; pcnew "$PM" && git add -A && git commit -qm init
@@ -6714,8 +6777,8 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'no gate checkout for
 msg="gate: prints check.sh --full in the scratch checkout, the check step's tier and effort, jig checked and jig mark gated"
 out=$($J gate K 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -qF '(cd $s && ./.jig/scripts/check.sh --full)' && echo \"\$0\" | grep -q 'check step runs it: tier 3, effort 4' && echo \"\$0\" | grep -qF 'checked --tier 3 --effort 4 --seconds <s>' && echo \"\$0\" | grep -q 'jig mark K gated'" "$out"
-msg="gate: a repo override of the check step shows its numbers"
-setwf '{"check": {"tier": 2, "effort": 3}}'
+msg="gate: a repo override of the check role shows its numbers"
+setroles '{"check": {"tier": 2, "effort": 3, "reason": "r"}}'
 out=$($J gate K 2>&1); git checkout -q -- .jig/config.json
 expect_pass sh -c "echo \"\$0\" | grep -q 'tier 2, effort 3' && echo \"\$0\" | grep -qF 'checked --tier 2 --effort 3'" "$out"
 msg="mark: gated with no jig checked record for the gate checkout's commit is refused, naming jig checked"
@@ -6857,7 +6920,7 @@ msg="role line: the hook is registered for startup, resume and compact"
 expect_pass sh -c "python3 -c \"import json,sys; h=json.load(open('$P/../hooks/hooks.json'))['hooks']['SessionStart'][0]; sys.exit(not (h['matcher']=='startup|resume|compact' and 'session-start.sh' in h['hooks'][0]['command']))\""
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds"
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file

@@ -55,25 +55,69 @@ BOARD_DEFAULTS = {
 # them. Each new optional key goes here, or update calls it unknown.
 BOARD_OPTIONAL = (
     "derived_files",       # globs derive.sh writes; jig merge commits what they match
-    "workflow",            # overrides WORKFLOW_DEFAULTS
+    "roles",               # overrides ROLES' tiers and efforts, each with a reason
+    "workflow",            # the pre-roles name for "roles": read, and rewritten by update
     "deep_subsystems",     # {"docs/<system>/<subsystem>/<folder>": rationale}: owner-approved deeper pages
     "boards",              # ["docs/<board>/<board>.md", "docs/<system>/<board>/<board>.md"]: the pages that are boards, never inferred from a path
     "findings",            # {"<kind>:<path>": "approved" | "deferred: <where>" | "exception: <reason>"}: the owner's answer to each finding
 )
-# Who runs each step, as numbers the tool maps to its own models and efforts. Tier 1 is the
-# tool's best model, a higher number a lesser one; effort 0 is its highest, each number up one
-# level lower. Effort 0 is left unused so a repo can raise any step. Overridden per repo by
-# config.json's "workflow", never per task: a model would be choosing its own budget.
-WORKFLOW_DEFAULTS = {
-    "spec":    {"tier": 2, "effort": 2},   # and decide, retro, a hardware page: the hubnode's
-    "bug":     {"tier": 2, "effort": 1},   # a /jig:bug investigation, before any diff exists
-    "execute": {"tier": 2, "effort": 3},   # and fix, in the session that executed
-    "review":  {"tier": 2, "effort": 1},   # always in a fresh context
-    # A later round's review of what changed since the last recorded one. Left unset, it is
-    # whatever review is, so a repo that moves review moves recheck with it.
-    "recheck": {"tier": 2, "effort": 1},
-    "check":   {"tier": 3, "effort": 4},   # gate check, release run, survey: fixed commands
+# Who does each step. Every session is a node: the hubnode (the owner's) or a subnode, which
+# takes one role on one job. Settings are numbers the tool maps to its own models and efforts:
+# tier 1 is the tool's best model, a higher number a lesser one; effort 0 is its highest, each
+# number up one level lower. Effort 0 is left unused so a repo can raise any role. Overridden
+# per repo by config.json's "roles", each with a reason, never per task: a model would be
+# choosing its own budget.
+ROLES = {
+    "spec":   {"tier": 2, "effort": 2, "steps": ["spec", "consolidate"]},
+    # Before any diff exists; it ends with the spec for what it found.
+    "bug":    {"tier": 2, "effort": 1, "steps": ["bug"]},
+    # One session keeps the build through every fix and sync.
+    "work":   {"tier": 2, "effort": 3, "steps": ["work", "handoff", "fix", "sync"]},
+    # Always a fresh session: a reviewer who saw the build judges what it meant, not what it did.
+    "review": {"tier": 2, "effort": 2, "steps": ["review-work", "review-change"], "fresh": True},
+    # Fixed commands: the complete suite, its trace, a survey, a release run.
+    "check":  {"tier": 3, "effort": 4, "steps": ["check", "trace", "survey", "release run"]},
 }
+# The hubnode's steps are no role's: it runs at the owner's settings, and jig only warns below
+# HUBNODE_FLOOR.
+HUBNODE_STEPS = ["assign", "gate", "merge", "push", "publish"]
+HUBNODE_FLOOR = {"tier": 2, "effort": 1}
+# A workflow is its steps with the link before each: "→" goes to a session that already
+# exists (the same one, the hubnode, the job's work session); "⇢" starts a new one. A
+# capitalized step is a nested workflow; "a + b" is two steps one session takes in turn.
+FLOWS = {
+    "Job": {"steps": "spec ⇢ work ⇢ review-work → handoff → gate ⇢ check → merge",
+            "trigger": "`jig open`", "controls": "merge only on the owner's word"},
+    "Fix": {"steps": "work ⇢ review-change → handoff",
+            "trigger": "a review with blocking findings",
+            "controls": "three rounds at most; a fourth is refused and Bug runs"},
+    "Sync": {"steps": "work ⇢ review-change → handoff",
+             "trigger": "a sync with a hand-resolved conflict", "controls": "a clean sync needs nothing"},
+    "Bug": {"steps": "bug → spec ⇢ Job",
+            "trigger": "a fourth fix round, a feedback group, or the owner's `/jig:bug`",
+            "controls": "never on a session's own reading that something is broken"},
+    "Feedback": {"steps": "consolidate ⇢ bug + spec → consolidate ⇢ Job",
+                 "trigger": "staged feedback, in the jig repo",
+                 "controls": "one bug + spec per group; overlaps answered before any job opens"},
+    "Batch": {"steps": "gate → merge ⇢ check → trace", "trigger": "two or more gated jobs",
+              "controls": "one check on trunk; a failure is traced to its merge, then Fix on that job"},
+    "Release": {"steps": "check → release run → push → publish", "trigger": "the owner's word",
+                "controls": "refused while a batch check is owed; push and publish only on the owner's word"},
+    "Survey": {"steps": "survey ⇢ spec ⇢ Jobs", "trigger": "`/jig:survey`, `/jig:adopt`, `/jig:update`",
+               "controls": ""},
+    "Redocument": {"steps": "spec ⇢ Jobs ⇢ Batch ⇢ Job", "trigger": "`/jig:redocument`",
+                   "controls": "the spec is the remap; the last job is the cleanup"},
+}
+# Whatever the config says. Everything else the hubnode may propose to change, with a reason,
+# and applies only on the owner's yes.
+FIXED_RULES = ["the owner's word before merge, push and publish",
+               "a fresh session for every review",
+               "a complete check before a release"]
+# A job's review rounds with blocking findings before the next is refused and Bug runs.
+FIX_ROUNDS = 3
+# The pre-roles config key, read until `jig update --apply` rewrites it, and its step names.
+OLD_STEPS = {"spec": "spec", "bug": "bug", "execute": "work", "review": "review",
+             "recheck": "review", "check": "check"}
 
 
 # ---------------------------------------------------------------- git helpers
@@ -225,69 +269,140 @@ class Board:
         return None, None
 
 
-# ------------------------------------------------------------------- workflow
+# ------------------------------------------------------------- roles and flows
 
-def workflow_steps(config: dict) -> tuple[dict, list[str]]:
-    """The steps in effect, and every way the override breaks the rules. Execute is judged
-    against the spec it builds from; review needs a model at least as good as the one whose
-    work it judges (its effort is the owner's call); a bug investigation writes a spec, so it
-    gets at least the spec's budget."""
-    steps = {k: dict(v) for k, v in WORKFLOW_DEFAULTS.items()}
-    over = config.get("workflow") or {}
-    if not isinstance(over, dict):
-        return steps, ["workflow: must map step names to {\"tier\": N, \"effort\": N}"]
-    bad = []
-    for step, vals in over.items():
-        if step not in steps:
-            bad.append(f"workflow.{step}: no such step; the steps are {', '.join(steps)}")
+def flow_steps(flow: str) -> list[tuple[str, str]]:
+    """FLOW's steps in order, each with the link that leads to it ("" for the first)."""
+    parts = re.split(r"\s+(→|⇢)\s+", FLOWS[flow]["steps"])
+    return [("", parts[0])] + list(zip(parts[1::2], parts[2::2]))
+
+
+def step_owner(step: str) -> str:
+    """The node or role that does STEP; "" for a nested workflow (Job, Jobs, Batch)."""
+    if step in HUBNODE_STEPS:
+        return "hubnode"
+    for role, r in ROLES.items():
+        if step in r["steps"]:
+            return role
+    return ""
+
+
+def role_overrides(config: dict) -> tuple[str, dict, list[str]]:
+    """The config's overrides as (key, {role: entry}, problems): `roles`, or the pre-roles
+    `workflow` mapped onto roles. An old key's entries carry no reason; update adds one."""
+    if "roles" in config or "workflow" not in config:
+        over = config.get("roles") or {}
+        if not isinstance(over, dict):
+            return "roles", {}, ['roles: must map role names to {"tier": N, "effort": N, "reason": "..."}']
+        return "roles", over, []
+    old = config.get("workflow") or {}
+    if not isinstance(old, dict):
+        return "workflow", {}, ["workflow: must map step names to {\"tier\": N, \"effort\": N}"]
+    over, bad = {}, []
+    # review before recheck: a repo that set both keeps review's, which recheck followed anyway.
+    for step in sorted(old, key=lambda k: k == "recheck"):
+        role = OLD_STEPS.get(step)
+        if role is None:
+            bad.append(f"workflow.{step}: no such step; the steps were {', '.join(OLD_STEPS)}")
+        elif role not in over:
+            over[role] = old[step]
+    return "workflow", over, bad
+
+
+def role_settings(config: dict) -> tuple[dict, list[str]]:
+    """Each role's tier and effort in effect, and every way the override breaks the rules. Work
+    is judged against the spec it builds from; review needs a model at least as good as the one
+    whose work it judges (its effort is the owner's call); a bug investigation writes a spec, so
+    it gets at least the spec's budget. A `roles` entry says why it departs from the default."""
+    roles = {k: {"tier": v["tier"], "effort": v["effort"]} for k, v in ROLES.items()}
+    key, over, bad = role_overrides(config)
+    for role, vals in over.items():
+        if role not in roles:
+            bad.append(f"{key}.{role}: no such role; the roles are {', '.join(roles)}")
             continue
         if not isinstance(vals, dict):
-            bad.append(f"workflow.{step}: must be {{\"tier\": N, \"effort\": N}}")
+            bad.append(f"{key}.{role}: must be {{\"tier\": N, \"effort\": N, \"reason\": \"...\"}}")
             continue
+        if key == "roles" and not (isinstance(vals.get("reason"), str) and vals["reason"].strip()):
+            bad.append(f"roles.{role}: no reason: say why this repo departs from the default")
         for k, v in vals.items():
             least = {"tier": 1, "effort": 0}.get(k)
-            if least is None:
-                bad.append(f"workflow.{step}.{k}: only tier and effort are set")
+            if k == "reason":
+                continue
+            if k in ("fresh", "session"):
+                bad.append(f"{key}.{role}.{k}: fixed whatever the config says: {FIXED_RULES[1]}")
+            elif least is None:
+                bad.append(f"{key}.{role}.{k}: only tier, effort and reason are set")
             elif type(v) is not int or v < least:
-                bad.append(f"workflow.{step}.{k}: {v!r} is not a whole number from {least} up")
+                bad.append(f"{key}.{role}.{k}: {v!r} is not a whole number from {least} up")
             else:
-                steps[step][k] = v
-    for k in ("tier", "effort"):
-        if k not in (over.get("recheck") or {}):
-            steps["recheck"][k] = steps["review"][k]
+                roles[role][k] = v
     # A raised spec raises bug with it: an investigation that writes a spec never gets less.
     for k in ("tier", "effort"):
         if k not in (over.get("bug") or {}):
-            steps["bug"][k] = min(steps["bug"][k], steps["spec"][k])
-    sp, bg, ex, rv = steps["spec"], steps["bug"], steps["execute"], steps["review"]
+            roles["bug"][k] = min(roles["bug"][k], roles["spec"][k])
+    sp, bg, wk, rv = roles["spec"], roles["bug"], roles["work"], roles["review"]
     lower = " (a higher number is a lower effort)"
     if bg["tier"] > sp["tier"]:
-        bad.append(f"workflow.bug: tier {bg['tier']} is below the spec's tier {sp['tier']}")
+        bad.append(f"{key}.bug: tier {bg['tier']} is below the spec's tier {sp['tier']}")
     if bg["effort"] > sp["effort"]:
-        bad.append(f"workflow.bug: effort {bg['effort']} is lower than the spec's "
+        bad.append(f"{key}.bug: effort {bg['effort']} is lower than the spec's "
                    f"effort {sp['effort']}{lower}")
-    if ex["tier"] < sp["tier"]:
-        bad.append(f"workflow.execute: tier {ex['tier']} is above the spec's tier {sp['tier']}")
-    if ex["effort"] <= sp["effort"]:
-        bad.append(f"workflow.execute: effort {ex['effort']} is not below the spec's "
+    if wk["tier"] < sp["tier"]:
+        bad.append(f"{key}.work: tier {wk['tier']} is above the spec's tier {sp['tier']}")
+    if wk["effort"] <= sp["effort"]:
+        bad.append(f"{key}.work: effort {wk['effort']} is not below the spec's "
                    f"effort {sp['effort']}{lower}")
-    if rv["tier"] > ex["tier"]:
-        bad.append(f"workflow.review: tier {rv['tier']} is below execute's tier {ex['tier']}")
-    return steps, bad
+    if rv["tier"] > wk["tier"]:
+        bad.append(f"{key}.review: tier {rv['tier']} is below work's tier {wk['tier']}")
+    return roles, bad
 
 
-def cmd_workflow(root: Path, args) -> int:
-    """Print the steps in effect; refuse an override that breaks a rule."""
+def settings_or_refuse(root: Path) -> dict:
     # The working tree's config, so the hubnode sees a refusal before committing the edit.
-    steps, bad = workflow_steps(Board.load(root, working_tree=True).data)
-    # Refused, nothing goes to stdout: a skill copying the steps into a spec must get none.
+    roles, bad = role_settings(Board.load(root, working_tree=True).data)
+    # Refused, nothing goes to stdout: a skill copying the roles into a spec must get none.
     for b in bad:
         print(b, file=sys.stderr)
     if bad:
-        return 1
-    for step, v in steps.items():
-        print(f"{step}: tier {v['tier']}, effort {v['effort']}")
+        sys.exit(1)
+    return roles
+
+
+def role_lines(roles: dict) -> str:
+    return "\n".join(f"{k}: tier {v['tier']}, effort {v['effort']}" for k, v in roles.items())
+
+
+def flow_lines() -> str:
+    def label(step: str) -> str:
+        return f"{step} ({step_owner(step)})" if step_owner(step) else step
+    out = []
+    for name, f in FLOWS.items():
+        steps = " ".join(f"{link} {' + '.join(map(label, part.split(' + ')))}".strip()
+                         for link, part in flow_steps(name))
+        out.append(f"{name}: {steps}")
+        out.append(f"  trigger: {f['trigger']}" + (f"; controls: {f['controls']}" if f["controls"] else ""))
+    return "\n".join(out)
+
+
+def cmd_roles(root: Path, args) -> int:
+    """Print each role's tier and effort in effect; refuse an override that breaks a rule."""
+    print(role_lines(settings_or_refuse(root)))
     return 0
+
+
+def cmd_flows(root: Path, args) -> int:
+    """Print each workflow's steps, the node or role that does each, and its links."""
+    print(flow_lines())
+    print("→ goes to a session that exists; ⇢ starts a new one")
+    return 0
+
+
+def cmd_workflow(root: Path, args) -> int:
+    """The pre-roles command, kept until every repo's skills say `jig roles` and `jig flows`."""
+    print(role_lines(settings_or_refuse(root)))
+    print()
+    return cmd_flows(root, args)
 
 
 # ---------------------------------------------------------------------- rules
@@ -418,7 +533,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     out += heading_rules(trunk, staged, paths, board.data.get("not_docs") or [])
     if CONFIG in paths and (raw := in_index(CONFIG, staged)):
         try:
-            out += workflow_steps(json.loads(raw))[1]
+            out += role_settings(json.loads(raw))[1]
         except ValueError as e:
             out.append(f"{CONFIG} is not JSON: {e}")
     # A remap that keeps a page where survey moves it overrides jig's rule: the owner's
@@ -1074,7 +1189,7 @@ def cmd_open(root: Path, args) -> int:
     print(f"\n--- kickoff ---\nJob: {args.name}\nBranch: {branch}\nWorktree: {worktree}\n"
           f"Spec: {args.spec or '(see board)'}\n"
           f"Owns: {', '.join(owns) or '-'}\nShares: {', '.join(args.shares or []) or '-'}\n"
-          f"{merges}Read {DIR}/RULES.md, then `python3 {DIR}/jig.py check`.\n"
+          f"{merges}Read {DIR}/RULES.md, then `python3 {DIR}/jig.py rules`.\n"
           f"When you write or change a Proposed entry in {LOG}, or meet a question only the "
           "owner can answer, message the hubnode then, with the rule sentence and the "
           "alternative you rejected, and keep building.")
@@ -1451,7 +1566,7 @@ def cmd_checked(root: Path, args) -> int:
     with log.open("a") as f:
         f.write(f"{head}\t{args.tier}\t{args.effort}\t{args.seconds}\t{date.today().isoformat()}\n")
     print(f"checked {head[:12]}: tier {args.tier}, effort {args.effort}, {args.seconds}s")
-    step = workflow_steps(Board.load(root).data)[0]["check"]
+    step = role_settings(Board.load(root).data)[0]["check"]
     if (args.tier, args.effort) != (step["tier"], step["effort"]):
         print(f"warning: recorded tier {args.tier}, effort {args.effort}; the check step is "
               f"tier {step['tier']}, effort {step['effort']}", file=sys.stderr)
@@ -1479,6 +1594,12 @@ def cmd_merge(root: Path, args) -> int:
         die(f"merge from {trunk} (the hubnode's checkout)")
     if name not in board.jobs:
         die(f"no job {name}")
+    # Gated is the record that the complete check passed, or that a batch owes it: a job merged
+    # without it leaves `jig release` nothing to see.
+    if board.jobs[name].get("state") != "gated":
+        die(f"job {name} is {board.jobs[name].get('state') or 'in no state'}, not gated: gate it "
+            f"first. `jig gate {name}`, the check it prints, then `jig mark {name} gated` "
+            f"(or `jig mark {name} gated --batch`, and one check on {trunk} after the batch)")
     if git("status", "--porcelain", "--untracked-files=no"):
         die("commit or stash first: the merge commit carries the job and its entry, nothing else")
     # The merge stages whatever derived_files matches, so an untracked file there (a draft, a
@@ -1503,7 +1624,7 @@ def cmd_merge(root: Path, args) -> int:
     if since:
         die(f"{branch} has changed since the commit {notes[-1]} names ({', '.join(since[:5])}): "
             "hand off again and gate that, or merge the gated commit by hand")
-    # A job merged without being marked gated still leaves nothing of its gate behind.
+    # A job marked gated --batch may still have a gate checkout: nothing of it stays behind.
     remove_gate_scratch(name, f"`jig merge {name}`")
     # The subject ends in `merge <job>` either way: the gate's deleted-branch fallback finds
     # the job by it. A caller who already wrote it out isn't given it twice.
@@ -1621,7 +1742,7 @@ def append_globs(board: "Board") -> list[str]:
     return [*board.data.get("append_files", []), LOG]
 
 
-def cmd_check(root: Path, args) -> int:
+def cmd_rules(root: Path, args) -> int:
     board = Board.load(root)
     refusals = check_rules(root, board, staged=args.staged)
     for r in refusals:
@@ -1865,40 +1986,152 @@ def job_chain(head: str, board: "Board") -> list[str]:
 
 
 def last_review(chain: list[str], kind: str | None = None) -> tuple[str, dict] | None:
-    """The newest record on CHAIN, of KIND when given ("full" or "recheck"); the newest record
+    """The newest record on CHAIN, of KIND when given ("full" or "change"); the newest record
     of a commit wins, so a commit reviewed twice reads as its later review."""
-    # Per kind too: a recheck recorded on the full review's own commit mustn't hide it.
+    # Per kind too: a review-change recorded on the full review's own commit mustn't hide it.
     recs: dict[tuple[str, str | None], dict] = {}
     for sha, data in review_log():
-        recs[(sha, None)] = recs[(sha, data.get("kind", "full"))] = data
+        recs[(sha, None)] = recs[(sha, review_kind(data))] = data
     for c in chain:
         if (c, kind) in recs:
             return c, recs[(c, kind)]
     return None
 
 
+def review_kind(data: dict) -> str:
+    # "recheck" is what records written before review-change was named say.
+    return "change" if data.get("kind") in ("change", "recheck") else "full"
+
+
+def blocking_rounds(chain: list[str]) -> int:
+    """How many reviews of CHAIN's commits recorded blocking findings: each is a fix round."""
+    on = set(chain)
+    latest: dict[str, dict] = {}
+    for sha, data in review_log():
+        if sha in on:
+            latest[sha] = data
+    return sum(1 for d in latest.values() if isinstance(d.get("blocking"), int) and d["blocking"] > 0)
+
+
+def bug_spec_for(job: str, revs: list[str]) -> str:
+    """The spec on any of REVS that names itself the bug spec for JOB, or ""."""
+    for rev in revs:
+        hits = grep_hits("-E", f"^Bug-for: {re.escape(job)}[[:space:]]*$", rev, "--", f"{DIR}/specs/")
+        if hits:
+            return hits[0][0].split(":", 1)[-1]
+    return ""
+
+
 def cmd_reviewed(root: Path, args) -> int:
-    """Record that HEAD has had its adversarial review, and what it ran at. Called by the
-    review skill. A recheck reviews only what changed since the last recorded review, so it
-    needs a full review of the job under it."""
+    """Record that HEAD has had its adversarial review, what it ran at, and how many blocking
+    findings it left. Called by the review role. A review-change reviews only what changed
+    since the last recorded review, so it needs a full review of the job under it."""
     if (args.tier is None) != (args.effort is None):
         die("give --tier and --effort together")
     if args.tier is not None and (args.tier < 1 or args.effort < 0):
         die("tier counts from 1, effort from 0")
+    if args.blocking is not None and args.blocking < 0:
+        die("--blocking counts findings, from 0")
+    change = args.change or args.recheck
     head = git("rev-parse", "HEAD")
-    if args.recheck and not last_review(job_chain(head, Board.load(root)), "full"):
-        die("no full review of this job on HEAD's first-parent chain: a recheck reviews what "
-            "changed since one. Run the full review, then `jig reviewed` without --recheck")
-    ran = {k: v for k, v in (("tier", args.tier), ("effort", args.effort), ("ran", args.ran))
-           if v is not None}
-    if args.recheck:
-        ran["kind"] = "recheck"
+    board = Board.load(root)
+    chain = job_chain(head, board)
+    if change and not last_review(chain, "full"):
+        die("no full review of this job on HEAD's first-parent chain: a review-change reviews "
+            "what changed since one. Run review-work, then `jig reviewed` without --change")
+    rounds = blocking_rounds(chain)
+    if change and rounds >= FIX_ROUNDS:
+        name = board.job_for_branch(git("branch", "--show-current"))[0] or \
+            git("branch", "--show-current") or "work"
+        if not bug_spec_for(name, ["HEAD", board.trunk]):
+            die(f"{rounds} reviews of this job recorded blocking findings: a fix round past "
+                f"{FIX_ROUNDS} is refused, and Bug runs. Commit the bug role's spec for it, with "
+                f"`Bug-for: {name}` on a line of its own, then review again")
+    ran = {k: v for k, v in (("tier", args.tier), ("effort", args.effort), ("ran", args.ran),
+                             ("blocking", args.blocking)) if v is not None}
+    if change:
+        ran["kind"] = "change"
     review_marker(root).write_text(head + "\n" + (json.dumps(ran) + "\n" if ran else ""))
-    # Every review ever, for a metarepo's gate (a merge's second parent must be one of them)
-    # and for a recheck's handoff, which reads the full review's settings back from here.
+    # Every review ever, for a metarepo's gate (a merge's second parent must be one of them),
+    # for a review-change's handoff, which reads the full review's settings back from here,
+    # and for the fix rounds, counted from the blocking findings recorded.
     with open(git_common() / "jig" / "reviewed.log", "a") as log:
         log.write(head + (" " + json.dumps(ran, separators=(",", ":")) if ran else "") + "\n")
-    print(f"recorded {'recheck' if args.recheck else 'review'} of {head[:12]}")
+    print(f"recorded {'review-change' if change else 'review'} of {head[:12]}"
+          + (f", {args.blocking} blocking" if args.blocking else ""))
+    if args.blocking:
+        left = FIX_ROUNDS - rounds - 1
+        print(f"Fix: the work session fixes them, then review-change. "
+              + (f"{left} more round{'s' if left != 1 else ''} before Bug runs" if left > 0
+                 else "This was the last round: the next blocking review needs a bug spec"))
+    return 0
+
+
+def next_step(root: Path, board: "Board", name: str) -> tuple[str, str, str, str]:
+    """(step, who, session, why) for job NAME, read from records jig already keeps: the board's
+    state, the handoff notes, the review log, the gate's checkout and the check log."""
+    trunk, branch, state = board.trunk, board.branch(name), board.jobs[name].get("state")
+    hub = "continue the hubnode"
+    if state == "gated":
+        why = "Job; on the owner's word"
+        if board.jobs[name].get("check") == "batch":
+            why = "Batch; on the owner's word, then one check on " + trunk + " for the batch"
+        return "merge", "hubnode", hub, why
+    if not git("rev-parse", "-q", "--verify", f"refs/heads/{branch}"):
+        return "work", "work", "new session", f"Job; no branch {branch} yet"
+    chain = git("rev-list", "--first-parent", branch, f"^{trunk}", "--").splitlines()
+    if not chain:
+        return "work", "work", "new session", "Job"
+    notes = handoff_notes(branch, name)
+    note = git("show", f"{branch}:{notes[-1]}") if notes else ""
+    m = re.search(r"^Commit: (\w+)", note, re.M)
+    if m and not changed_since(m.group(1), branch, board):
+        if re.search(r"^Partial: yes", note, re.M):
+            return "work", "work", "continue the work session", "Job; the spec's next part"
+        scratch = gate_scratch(name)
+        where = main_root() / scratch
+        if not where.exists():
+            return "gate", "hubnode", hub, f"Job; `jig gate {name}`"
+        head = git("rev-parse", "HEAD", cwd=str(where))
+        if not any(r["commit"] == head for r in checked_records()):
+            return "check", "check", "new session", f"Job; the complete check in {scratch}"
+        return "gate", "hubnode", hub, f"Job; checked: `jig mark {name} gated`"
+    found = last_review(chain)
+    if not found:
+        return "review-work", "review", "new session", "Job; once the work's checks pass"
+    reviewed, ran = found
+    rounds = blocking_rounds(chain)
+    blocked = isinstance(ran.get("blocking"), int) and ran["blocking"] > 0
+    if blocked and rounds >= FIX_ROUNDS and not bug_spec_for(name, [branch, trunk]):
+        return "bug", "bug", "new session", (f"Bug; {rounds} reviews had blocking findings, and "
+                                             f"a fix round past {FIX_ROUNDS} is refused")
+    if changed_since(reviewed, branch, board):
+        flow = f"Fix, round {rounds + 1}" if blocked else "Fix or Sync"
+        return ("review-change", "review", "new session",
+                f"{flow}; once the checks pass, of what changed since {reviewed[:12]}")
+    if blocked:
+        return "fix", "work", "continue the work session", f"Fix, round {rounds + 1}; " \
+            f"{ran['blocking']} blocking finding{'s' if ran['blocking'] != 1 else ''}"
+    return "handoff", "work", "continue the work session", "Job"
+
+
+def cmd_next(root: Path, args) -> int:
+    """The next step of a job (this branch's, or each open job's on trunk): the node or role
+    that does it, and whether it continues a session or starts one."""
+    board = Board.load(root)
+    if args.name:
+        if args.name not in board.jobs:
+            die(f"no job {args.name}")
+        names = [args.name]
+    else:
+        here = board.job_for_branch(git("branch", "--show-current"))[0]
+        names = [here] if here else list(board.jobs)
+    if not names:
+        print("no open jobs: the next job starts at `jig open`")
+        return 0
+    for name in names:
+        step, who, session, why = next_step(root, board, name)
+        print(f"{name}: {step} — {who}, {session}" + (f" ({why})" if why else ""))
     return 0
 
 
@@ -2074,20 +2307,25 @@ def cmd_handoff(root: Path, args) -> int:
     if not found or since:
         if found:
             die(f"{', '.join(since[:5])} changed since the review of {found[0][:12]}: a fix or a "
-                f"hand-resolved sync is rechecked. Review `git diff {found[0][:12]}..HEAD` (a sync: "
-                f"`git show --remerge-diff <merge>` and what follows it), then: "
-                f"python3 {DIR}/jig.py reviewed --recheck --tier N --effort N (the recheck step's)")
+                f"hand-resolved sync gets a review-change. Review `git diff {found[0][:12]}..HEAD` "
+                f"(a sync: `git show --remerge-diff <merge>` and what follows it), then: "
+                f"python3 {DIR}/jig.py reviewed --change --tier N --effort N (the review role's)")
         die("no adversarial review on record for this commit.\n"
             f"  Review {head[:12]}, then: python3 {DIR}/jig.py reviewed")
     reviewed, ran = found
+    if isinstance(ran.get("blocking"), int) and ran["blocking"] > 0:
+        die(f"the review of {reviewed[:12]} recorded {ran['blocking']} blocking finding"
+            f"{'s' if ran['blocking'] != 1 else ''}: Fix first. The work session fixes them, then "
+            f"a review-change records what is left: python3 {DIR}/jig.py reviewed --change "
+            "--blocking 0 --tier N --effort N")
     if not ran:
         # A record written before the log carried data: the marker holds what it ran at.
         marker = review_marker(root)
         lines = marker.read_text().splitlines() if marker.exists() else []
         if lines and lines[0].strip() == reviewed and len(lines) > 1 and lines[1].strip():
             ran = json.loads(lines[1])
-    recheck = ran if ran.get("kind") == "recheck" else None
-    if recheck:
+    change = ran if review_kind(ran) == "change" else None
+    if change:
         full = last_review(chain[chain.index(reviewed):], "full")
         ran = full[1] if full else {}
     (root / DIR / "handoffs").mkdir(parents=True, exist_ok=True)
@@ -2105,16 +2343,16 @@ def cmd_handoff(root: Path, args) -> int:
         if not at.is_relative_to(root.resolve()):
             die(f"--spec {spec} is outside this repo: give the spec's path in it")
         spec = at.relative_to(root.resolve()).as_posix()
-    # jig gate reads the Review line back against the spec's Workflow section.
+    # jig gate reads the Review lines back against the spec's Roles section.
     ran_lines = (f"Review: tier {ran['tier']}, effort {ran['effort']}\n" if "tier" in ran
                  else "Review: tier and effort not recorded\n")
     if ran.get("ran"):
         ran_lines += f"Ran: {ran['ran']}\n"
-    if recheck:
-        ran_lines += (f"Recheck: tier {recheck['tier']}, effort {recheck['effort']}\n" if "tier" in recheck
-                      else "Recheck: tier and effort not recorded\n")
-        if recheck.get("ran"):
-            ran_lines += f"Recheck ran: {recheck['ran']}\n"
+    if change:
+        ran_lines += (f"Review-change: tier {change['tier']}, effort {change['effort']}\n"
+                      if "tier" in change else "Review-change: tier and effort not recorded\n")
+        if change.get("ran"):
+            ran_lines += f"Review-change ran: {change['ran']}\n"
     path.write_text(NOTE.format(job=name, head=head, today=date.today().isoformat(),
                                 spec=spec or "(none)", ran=ran_lines,
                                 partial="Partial: yes\n" if args.partial else "",
@@ -2182,7 +2420,7 @@ def cmd_reading_list(root: Path, args) -> int:
 
 
 def review_shortfall(root: Path, branch: str, name: str, note: str) -> str:
-    """What the note's review fell short of in the spec's Workflow section, or "". A warning
+    """What the note's review fell short of in the spec's Roles section, or "". A warning
     for now: it becomes a refusal only if weak reviews keep reaching the gate."""
     # The board's spec before the note's, and trunk's copy before the branch's, so a branch
     # can't edit what it is judged by. Only a spec trunk lacks (solo work) is read from the
@@ -2195,20 +2433,22 @@ def review_shortfall(root: Path, branch: str, name: str, note: str) -> str:
         text = git("show", f"{trunk_board.trunk}:{path}") or git("show", f"{branch}:{path}")
         if text:
             break
-    sec = re.search(r"^## Workflow\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+    # A spec from before roles has `## Workflow`, with execute and recheck lines; a newer one
+    # has `## Roles`, where review-change runs at review's line.
+    sec = re.search(r"^## (?:Roles|Workflow)\n(.*?)(?=^## |\Z)", text, re.S | re.M)
     out = []
-    # A spec written before recheck existed has no line for it: recheck defaults to review's.
-    for step, label in (("review", "Review"), ("recheck", "Recheck")):
-        if label == "Recheck" and not re.search(r"^Recheck:", note, re.M):
+    for step, label, lines in (("review", "Review", ("review",)),
+                               ("review-change", "Review-change|Recheck", ("recheck", "review"))):
+        if label != "Review" and not re.search(rf"^(?:{label}):", note, re.M):
             break
         asked = None
-        for want_step in (step, "review"):
-            asked = asked or (re.search(rf"\b{want_step}: tier (\d+), effort (\d+)", sec.group(1), re.M)
+        for line in lines:
+            asked = asked or (re.search(rf"^{line}: tier (\d+), effort (\d+)", sec.group(1), re.M)
                               if sec else None)
         if not asked:
             continue
         want = f"the spec asks for tier {asked.group(1)}, effort {asked.group(2)}"
-        got = re.search(rf"^{label}: tier (\d+), effort (\d+)", note, re.M)
+        got = re.search(rf"^(?:{label}): tier (\d+), effort (\d+)", note, re.M)
         if not got:
             out.append(f"the {step}'s tier and effort are not recorded; {want}")
         elif int(got.group(1)) > int(asked.group(1)) or int(got.group(2)) > int(asked.group(2)):
@@ -2358,7 +2598,7 @@ def cmd_gate(root: Path, args) -> int:
     # A subshell: a shell left inside the checkout would sit in a deleted folder once it's removed.
     # The complete level: the gate is the check step's, the one place it runs per job.
     print(f"  (cd {scratch} && {'' if os.access(where / check, os.X_OK) else 'bash '}{check} --full)")
-    step = workflow_steps(board.data)[0]["check"]
+    step = role_settings(board.data)[0]["check"]
     print(f"\nThe check step runs it: tier {step['tier']}, effort {step['effort']}. When it passes, "
           f"record it there, with the seconds it took:")
     print(f"  (cd {scratch} && python3 {DIR}/jig.py checked --tier {step['tier']} "
@@ -4380,7 +4620,7 @@ def load_meta(trunk: str) -> dict | None:
 
 
 def reviewed_commits() -> set[str]:
-    """Every commit `jig reviewed` has recorded in this clone, on any branch, rechecks too."""
+    """Every commit `jig reviewed` has recorded in this clone, on any branch, review-changes too."""
     return {sha for sha, _ in review_log()}
 
 
@@ -7649,26 +7889,27 @@ def escapes(dest: str) -> bool:
             or os.path.normpath(dest).split(os.sep)[0] == "..")
 
 
-def fill_workflow(root: Path, text: str) -> tuple[str, str]:
-    """A spec staged from a chat can't run `jig workflow` against this repo's config, so its
-    `## Workflow` arrives empty: resolve writes the lines /jig:spec would, or refuses as it
-    does. A section that holds anything but comments is the author's, and stays."""
-    head = re.search(r"^##[ \t]+workflow\b.*$", text, re.I | re.M)
+def fill_roles(root: Path, text: str) -> tuple[str, str]:
+    """A spec staged from a chat can't run `jig roles` against this repo's config, so its
+    `## Roles` arrives empty: resolve writes the lines /jig:spec would, or refuses as it does.
+    A section that holds anything but comments is the author's, and stays. A spec staged from
+    an older template says `## Workflow`, filled alike."""
+    head = re.search(r"^##[ \t]+(?:roles|workflow)\b.*$", text, re.I | re.M)
     nxt = re.search(r"^## ", text[head.end():], re.M) if head else None
     body = text[head.end():head.end() + nxt.start()] if nxt else text[head.end():] if head else ""
     if head and re.sub(r"<!--.*?-->", "", body, flags=re.S).strip():
         return text, ""
-    steps, bad = workflow_steps(Board.load(root, working_tree=True).data)
+    roles, bad = role_settings(Board.load(root, working_tree=True).data)
     if bad:
-        die("\n  ".join(["the spec's ## Workflow is empty, and `jig workflow` refuses:", *bad,
+        die("\n  ".join(["the spec's ## Roles is empty, and `jig roles` refuses:", *bad,
                          f"fix {CONFIG}, then resolve again"]), 1)
-    lines = "\n".join(f"{k}: tier {v['tier']}, effort {v['effort']}" for k, v in steps.items())
+    lines = role_lines(roles)
     if not head:
-        return text.rstrip("\n") + f"\n\n## Workflow\n{lines}\n", "; ## Workflow added"
+        return text.rstrip("\n") + f"\n\n## Roles\n{lines}\n", "; ## Roles added"
     kept = body.strip("\n")
     rest = text[head.end() + nxt.start():] if nxt else ""
     return (text[:head.end()] + "\n" + (f"{kept}\n" if kept else "") + f"{lines}\n"
-            + (f"\n{rest}" if rest else "")), "; ## Workflow filled"
+            + (f"\n{rest}" if rest else "")), "; ## Roles filled"
 
 
 def cmd_staging_check(args) -> int:
@@ -7910,7 +8151,7 @@ def cmd_staging(root: Path, args) -> int:
     filled = ""
     if kind == "spec":
         first, _, rest = body.lstrip("\n").partition("\n")
-        text, filled = fill_workflow(root, f"{first}\n\n{mark}\n{rest}" if first.startswith("#")
+        text, filled = fill_roles(root, f"{first}\n\n{mark}\n{rest}" if first.startswith("#")
                                      else f"{mark}\n\n{body}")
         out.write_text(text)
     else:
@@ -9200,6 +9441,19 @@ def rewrite_board(data: dict, files: list[str], plan: dict) -> tuple[dict, list[
     if log is not None:
         gone.append(f"board: log ({len(log)} line{'s' if len(log) != 1 else ''}; git log of "
                     f"{JOBS} records opens and merges now)")
+    # The pre-roles key: each step's override becomes its role's, with the reason a `roles`
+    # entry needs saying where it came from. An override the new rules refuse stays refused.
+    if "workflow" in new and "roles" not in new and isinstance(new["workflow"], dict):
+        _, mapped, _ = role_overrides(new)
+        roles = {r: {**v, "reason": v.get("reason") or "carried over from `workflow` by jig update"}
+                 for r, v in mapped.items() if isinstance(v, dict) and r in ROLES}
+        renamed = ", ".join(f"{k} → {OLD_STEPS[k]}" for k in new["workflow"] if k in OLD_STEPS
+                            and OLD_STEPS[k] != k)
+        del new["workflow"]
+        if roles:
+            new["roles"] = roles
+        edits.append("workflow: renamed roles" + (f" ({renamed})" if renamed else "")
+                     + ("" if roles else ", empty, so dropped"))
     for name, spec in (new.get("reserve") or {}).items():
         if isinstance(spec, dict) and "next" in spec:
             del spec["next"]
@@ -11094,8 +11348,12 @@ def main(argv: list[str] | None = None) -> int:
     mg.add_argument("--number", action="store_true", help="in a merge in progress, its conflicts resolved: number the D-?<slug> ids it brings in")
     mg.add_argument("-m", "--message", help="appended to the merge commit: what shared files it touched")
     mg.add_argument("--subject", help="the ids the subject leads with, e.g. `D-001, D-002`; `: merge <job>` is added unless it's already there")
-    c = sub.add_parser("check", help="run the rules here")
+    c = sub.add_parser("rules", help="run the rules here")
     c.add_argument("--staged", action="store_true")
+    # The pre-rename name, so older kickoffs and notes keep working; argparse can't hide a
+    # subcommand from the list, so its help says what it is.
+    c_ = sub.add_parser("check", help="the old name of `rules`")
+    c_.add_argument("--staged", action="store_true")
     sub.add_parser("job", help="print this branch's manifest")
     dc = sub.add_parser("decision", help="print a decision entry and its supersedes chain")
     dc.add_argument("id")
@@ -11108,9 +11366,15 @@ def main(argv: list[str] | None = None) -> int:
     rv.add_argument("--tier", type=int, help="the model tier the review ran at")
     rv.add_argument("--effort", type=int, help="the effort it ran at")
     rv.add_argument("--ran", help="what it ran on, in the tool's own words")
-    rv.add_argument("--recheck", action="store_true",
-                    help="a review of what changed since the job's last recorded review")
-    sub.add_parser("workflow", help="the steps in effect: each one's model tier and effort")
+    rv.add_argument("--change", action="store_true",
+                    help="review-change: what changed since the job's last recorded review")
+    rv.add_argument("--recheck", action="store_true", help=argparse.SUPPRESS)
+    rv.add_argument("--blocking", type=int, help="how many blocking findings it left")
+    sub.add_parser("roles", help="each role's model tier and effort in effect")
+    sub.add_parser("flows", help="each workflow's steps, who does each, and its session links")
+    sub.add_parser("workflow", help="the old name: prints roles, then flows")
+    nx = sub.add_parser("next", help="a job's next step, who does it, and in which session")
+    nx.add_argument("name", nargs="?")
     h = sub.add_parser("handoff", help="write the handoff note for HEAD")
     h.add_argument("--spec", help="path to the spec this delivers")
     h.add_argument("--partial", action="store_true",
@@ -11170,10 +11434,10 @@ def main(argv: list[str] | None = None) -> int:
     load_genres(root)
     fn = {
         "init": cmd_init, "install-hooks": cmd_install_hooks, "status": cmd_status,
-        "open": cmd_open, "reserve": cmd_reserve, "consolidate": cmd_consolidate, "share": cmd_share, "mark": cmd_mark, "merge": cmd_merge, "check": cmd_check, "checked": cmd_checked, "decision": cmd_decision,
+        "open": cmd_open, "reserve": cmd_reserve, "consolidate": cmd_consolidate, "share": cmd_share, "mark": cmd_mark, "merge": cmd_merge, "rules": cmd_rules, "check": cmd_rules, "checked": cmd_checked, "decision": cmd_decision,
         "job": cmd_job, "sync": cmd_sync, "reviewed": cmd_reviewed,
         "handoff": cmd_handoff, "gate": cmd_gate, "hook": cmd_hook,
-        "workflow": cmd_workflow,
+        "workflow": cmd_workflow, "roles": cmd_roles, "flows": cmd_flows, "next": cmd_next,
         "survey": cmd_survey, "reading-list": cmd_reading_list, "update": cmd_update, "repos": cmd_repos, "staging": cmd_staging,
         "release": cmd_release, "propose": cmd_propose, "roadmap": cmd_roadmap,
     }[args.cmd]
