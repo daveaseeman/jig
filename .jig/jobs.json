@@ -1,7 +1,7 @@
 {
   "bug-strike-count": {
     "spec": ".jig/specs/bug-strike-count.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/hubnode/SKILL.md",
@@ -18,7 +18,8 @@
       "plugin/skills/spec/SKILL.md",
       "tests/smoke.sh"
     ],
-    "reserved": {}
+    "reserved": {},
+    "check": "batch"
   },
   "every-copy": {
     "spec": ".jig/specs/every-copy.md",
