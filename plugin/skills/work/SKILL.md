@@ -79,8 +79,10 @@ the fix touched, commit, and report: a review-change runs next, in a fresh sessi
 changed since the last recorded review. Every should-fix or optional finding you don't take
 gets a row in `.jig/ledgers/DEFERRED.md` with its rank and one reason, tagged `[seen]` or
 `[assumed]`; the first row creates the file from
-`${CLAUDE_PLUGIN_ROOT}/templates/ledgers/DEFERRED.md`. Three fix rounds that end blocking are
-the limit: jig refuses the next review until the bug role's spec for the job is committed.
+`${CLAUDE_PLUGIN_ROOT}/templates/ledgers/DEFERRED.md`. A review with no blocking findings ends
+the fixing (`.jig/RULES.md`, Contracts). A job's third blocking review, counting its first
+review-work, starts Bug: jig refuses the next review until the bug role's spec for the job is
+committed.
 
 ## Sync
 

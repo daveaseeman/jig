@@ -90,11 +90,11 @@ FLOWS = {
             "trigger": "`jig open`", "controls": "merge only on the owner's word"},
     "Fix": {"steps": "work ⇢ review-change → handoff",
             "trigger": "a review with blocking findings",
-            "controls": "three rounds at most; a fourth is refused and Bug runs"},
+            "controls": "three strikes: a job's third blocking review starts Bug"},
     "Sync": {"steps": "work ⇢ review-change → handoff",
              "trigger": "a sync with a hand-resolved conflict", "controls": "a clean sync needs nothing"},
     "Bug": {"steps": "bug → spec ⇢ Job",
-            "trigger": "a fourth fix round, a feedback group, or the owner's `/jig:bug`",
+            "trigger": "a job's third blocking review, a feedback group, or the owner's `/jig:bug`",
             "controls": "never on a session's own reading that something is broken"},
     "Feedback": {"steps": "consolidate ⇢ bug + spec → consolidate ⇢ Job",
                  "trigger": "staged feedback, in the jig repo",
@@ -113,8 +113,9 @@ FLOWS = {
 FIXED_RULES = ["the owner's word before merge, push and publish",
                "a fresh session for every review",
                "a complete check before a release"]
-# A job's review rounds with blocking findings before the next is refused and Bug runs.
-FIX_ROUNDS = 3
+# A job's blocking reviews (strikes), its first review-work counted, before Bug runs and the
+# next review is refused: the owner counts failures, not the fix rounds between them.
+STRIKES = 3
 # The pre-roles step names, which `jig workflow` still prints for skills that read them.
 # The pre-roles config key, `workflow`, is never read: an entry carries no reason, so nothing
 # tells a one-run instruction written into it from the owner's choice, and update removes it.
@@ -2066,8 +2067,9 @@ def review_kind(data: dict) -> str:
 
 def blocking_reviews(chain: list[str]) -> int:
     """How many reviews of this part's commits recorded blocking findings, full or change: a
-    review recorded either way still ends a round. A part ends at a commit adding a handoff
-    note (a `--partial` one too), so each part's rounds start again at 1."""
+    review recorded either way is a strike. A part ends at a commit adding a handoff note (a
+    `--partial` one too), so each part's strikes start again at 0. A clean review between
+    strikes resets nothing."""
     if chain:
         # --no-merges: a sync bringing trunk's notes in ended no part of this job.
         noted = set(git("log", "--first-parent", "--no-merges", "--diff-filter=A", "--format=%H",
@@ -2080,12 +2082,6 @@ def blocking_reviews(chain: list[str]) -> int:
         if sha in on:
             latest[sha] = data
     return sum(1 for d in latest.values() if isinstance(d.get("blocking"), int) and d["blocking"] > 0)
-
-
-def blocking_rounds(chain: list[str]) -> int:
-    """The fix rounds that ended in blocking findings. The first blocking review starts round 1
-    and ends none; each one after it ends a round."""
-    return max(0, blocking_reviews(chain) - 1)
 
 
 def bug_spec_for(job: str, revs: list[str]) -> str:
@@ -2114,13 +2110,13 @@ def cmd_reviewed(root: Path, args) -> int:
     if change and not last_review(chain, "full"):
         die("no full review of this job on HEAD's first-parent chain: a review-change reviews "
             "what changed since one. Run review-work, then `jig reviewed` without --change")
-    rounds = blocking_rounds(chain)
+    strikes = blocking_reviews(chain)
     name = board.job_for_branch(git("branch", "--show-current"))[0] or \
         git("branch", "--show-current") or "work"
-    # Any review, full or change: a fix round past the limit is refused whichever way it's recorded.
-    if rounds >= FIX_ROUNDS and not bug_spec_for(name, ["HEAD", board.trunk]):
-        die(f"{rounds} fix rounds of this job ended in blocking findings: a round past "
-            f"{FIX_ROUNDS} is refused, and Bug runs. Commit the bug role's spec for it, with "
+    # Any review, full or change: a review past the last strike is refused whichever way it's recorded.
+    if strikes >= STRIKES and not bug_spec_for(name, ["HEAD", board.trunk]):
+        die(f"{strikes} reviews of this job recorded blocking findings: strike {STRIKES} starts "
+            f"Bug, and the next review is refused. Commit the bug role's spec for it, with "
             f"`Bug-for: {name}` on a line of its own, then review again")
     ran = {k: v for k, v in (("tier", args.tier), ("effort", args.effort), ("ran", args.ran),
                              ("blocking", args.blocking)) if v is not None}
@@ -2129,18 +2125,24 @@ def cmd_reviewed(root: Path, args) -> int:
     review_marker(root).write_text(head + "\n" + (json.dumps(ran) + "\n" if ran else ""))
     # Every review ever, for a metarepo's gate (a merge's second parent must be one of them),
     # for a review-change's handoff, which reads the full review's settings back from here,
-    # and for the fix rounds, counted from the blocking findings recorded.
+    # and for the strikes, counted from the blocking findings recorded.
     with open(git_common() / "jig" / "reviewed.log", "a") as log:
         log.write(head + (" " + json.dumps(ran, separators=(",", ":")) if ran else "") + "\n")
     print(f"recorded {'review-change' if change else 'review'} of {head[:12]}"
           + (f", {args.blocking} blocking" if args.blocking else ""))
     if args.blocking:
-        # This record is the first blocking review (it starts round 1), or it ends round `done`.
-        done = blocking_reviews(chain) - 1
-        print(f"Fix round {done + 1} of {FIX_ROUNDS}: the work session fixes them, then review-change"
-              if done < FIX_ROUNDS else
-              f"That was fix round {FIX_ROUNDS}: the next review is refused until the bug role's "
-              f"spec, with `Bug-for: {name}`, is committed")
+        # The log now holds this record, so it is counted.
+        n = blocking_reviews(chain)
+        if n < STRIKES:
+            print(f"Strike {n} of {STRIKES}: the work session fixes them, then review-change")
+        elif not bug_spec_for(name, ["HEAD", board.trunk]):
+            print(f"Strike {STRIKES} of {STRIKES}: Bug runs next; the next review is refused until "
+                  f"the bug role's spec, with `Bug-for: {name}`, is committed")
+        else:
+            # At or past the limit with the bug spec already committed, which is what `jig
+            # next` reads too: the fixing goes on.
+            print(f"Strike {n}, under the bug role's spec: the work session fixes them, then "
+                  f"review-change")
     return 0
 
 
@@ -2177,17 +2179,17 @@ def next_step(root: Path, board: "Board", name: str) -> tuple[str, str, str, str
     if not found:
         return "review-work", "review", "new session", "Job; once the work's checks pass"
     reviewed, ran = found
-    rounds = blocking_rounds(chain)
+    strikes = blocking_reviews(chain)
     blocked = isinstance(ran.get("blocking"), int) and ran["blocking"] > 0
-    if rounds >= FIX_ROUNDS and not bug_spec_for(name, [branch, trunk]):
-        return "bug", "bug", "new session", (f"Bug; {rounds} fix rounds ended in blocking "
-                                             f"findings, and a round past {FIX_ROUNDS} is refused")
+    if strikes >= STRIKES and not bug_spec_for(name, [branch, trunk]):
+        return "bug", "bug", "new session", (f"Bug; a job's third blocking review: {strikes} "
+                                             f"strikes, and the next review is refused")
     if changed_since(reviewed, branch, board):
-        flow = f"Fix, round {rounds + 1}" if blocked else "Fix or Sync"
+        flow = f"Fix, strike {strikes}" if blocked else "Fix or Sync"
         return ("review-change", "review", "new session",
                 f"{flow}; once the checks pass, of what changed since {reviewed[:12]}")
     if blocked:
-        return "fix", "work", "continue the work session", f"Fix, round {rounds + 1}; " \
+        return "fix", "work", "continue the work session", f"Fix, strike {strikes}; " \
             f"{ran['blocking']} blocking finding{'s' if ran['blocking'] != 1 else ''}"
     return "handoff", "work", "continue the work session", "Job"
 

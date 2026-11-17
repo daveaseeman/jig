@@ -1,26 +1,4 @@
 {
-  "bug-strike-count": {
-    "spec": ".jig/specs/bug-strike-count.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/skills/hubnode/SKILL.md",
-      "plugin/skills/review/SKILL.md",
-      "plugin/skills/work/SKILL.md",
-      "plugin/skills/bug/SKILL.md",
-      "README.md",
-      "assets/roles-and-flows-light.svg",
-      "assets/roles-and-flows-dark.svg"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "plugin/skills/spec/SKILL.md",
-      "tests/smoke.sh"
-    ],
-    "reserved": {},
-    "check": "batch"
-  },
   "every-copy": {
     "spec": ".jig/specs/every-copy.md",
     "state": "claimed",
