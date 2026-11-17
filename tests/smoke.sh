@@ -2078,27 +2078,29 @@ nx "an opened job with no commits is work, in a new session" k "k: work — work
 cd .git/jig/worktrees/k && mkdir k && printf 'x\n' > k/x.txt && git add -A && git commit -qm x
 nx "in the job, work committed is review-work, in a new session" "" "k: review-work — review, new session (Job; once the work's checks pass)"
 $J reviewed --tier 2 --effort 2 --blocking 2 >/dev/null
-nx "a review-work with blocking findings is Fix round 1, in the work session" "" "k: fix — work, continue the work session (Fix, round 1; 2 blocking findings)"
+nx "a review-work with blocking findings is strike 1, fixed in the work session" "" "k: fix — work, continue the work session (Fix, strike 1; 2 blocking findings)"
 msg="handoff: refused while the newest review of HEAD has blocking findings, naming Fix"
 out=$($J handoff 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'recorded 2 blocking findings: Fix first' && test -z \"\$(ls .jig/handoffs 2>/dev/null)\"" "$out"
 printf 'y\n' >> k/x.txt && git commit -qam fix1
-nx "a fix committed is review-change, in a new session" "" "k: review-change — review, new session (Fix, round 1; once the checks pass, of what changed since $(git rev-parse --short=12 HEAD~1))"
-$J reviewed --change --tier 2 --effort 2 --blocking 1 >/dev/null && printf 'y\n' >> k/x.txt && git commit -qam fix2
-$J reviewed --change --tier 2 --effort 2 --blocking 1 >/dev/null && printf 'y\n' >> k/x.txt && git commit -qam fix3
-nx "two rounds ended blocking: round 3's review-change is next" "" "k: review-change — review, new session (Fix, round 3; once the checks pass, of what changed since $(git rev-parse --short=12 HEAD~1))"
-msg="reviewed: the third round's review-change, blocking again, says it was the last round"
+nx "a fix committed is review-change, in a new session" "" "k: review-change — review, new session (Fix, strike 1; once the checks pass, of what changed since $(git rev-parse --short=12 HEAD~1))"
+msg="reviewed: a second blocking review is strike 2, and leaves a fix round"
 out=$($J reviewed --change --tier 2 --effort 2 --blocking 1 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -q 'That was fix round 3: the next review is refused until the bug role.s spec, with .Bug-for: k., is committed'" "$out"
-nx "after three fix rounds ended blocking, the next step is bug, in a new session" "" "k: bug — bug, new session (Bug; 3 fix rounds ended in blocking findings, and a round past 3 is refused)"
-printf 'y\n' >> k/x.txt && git commit -qam fix4
-msg="reviewed: a fourth round's review-change is refused, naming Bug-for"
+expect_pass sh -c "echo \"\$0\" | grep -q 'Strike 2 of 3: the work session fixes them, then review-change'" "$out"
+printf 'y\n' >> k/x.txt && git commit -qam fix2
+nx "two blocking reviews: strike 2's review-change is next" "" "k: review-change — review, new session (Fix, strike 2; once the checks pass, of what changed since $(git rev-parse --short=12 HEAD~1))"
+msg="reviewed: the third blocking review is strike 3, and says Bug runs next"
+out=$($J reviewed --change --tier 2 --effort 2 --blocking 1 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'Strike 3 of 3: Bug runs next; the next review is refused until the bug role.s spec, with .Bug-for: k., is committed'" "$out"
+nx "after the third blocking review, the next step is bug, in a new session" "" "k: bug — bug, new session (Bug; a job's third blocking review: 3 strikes, and the next review is refused)"
+printf 'y\n' >> k/x.txt && git commit -qam fix3
+msg="reviewed: a fourth review, as a review-change, is refused, naming Bug-for"
 out=$($J reviewed --change --tier 2 --effort 2 --blocking 0 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'Bug-for: k'" "$out"
 msg="reviewed: a full review in its place is refused too"
 expect_refuse $J reviewed --tier 2 --effort 2 --blocking 0
 mkdir -p .jig/specs && printf '# k bug\n\nBug-for: k\n' > .jig/specs/k-bug.md && git add -A && git commit -qm "k: bug spec"
-msg="reviewed: with the job's bug spec committed, the fourth round is recorded"
+msg="reviewed: with the job's bug spec committed, the fourth review is recorded"
 expect_pass $J reviewed --change --tier 2 --effort 2 --blocking 0
 nx "a clean review is the handoff, in the work session" "" "k: handoff — work, continue the work session (Job)"
 $J handoff >/dev/null && foldin && git add -A && git commit -qm "note k"
@@ -2129,20 +2131,31 @@ expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'with the worktree wen
 msg="merge: a job whose worktree holds an untracked file merges, and its worktree and branch are left, named"
 gated k3; out=$($J merge k3 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -q 'left .*worktrees/k3 and its branch k3: it holds 1 uncommitted or untracked file' && test -f .git/jig/worktrees/k3/k3/draft.txt && git rev-parse -q --verify refs/heads/k3 >/dev/null" "$out"
-# Rounds: a fix round recorded as a full review still counts; a --partial handoff starts the next part at round 1.
+# Strikes: a blocking review recorded as a full review still counts; a --partial handoff starts the next part at 0.
 $J open k2 --owns 'k2/**' >/dev/null && git add -A && git commit -qm "open k2"
 cd .git/jig/worktrees/k2 && mkdir k2 && printf 'x\n' > k2/x.txt && git add -A && git commit -qm x
 $J reviewed --tier 2 --effort 2 --blocking 1 >/dev/null && printf 'y\n' >> k2/x.txt && git commit -qam fix1
-msg="reviewed: a fix round's review recorded without --change still ends the round"
+msg="reviewed: a blocking review recorded without --change is still a strike"
 out=$($J reviewed --tier 2 --effort 2 --blocking 1 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -q 'Fix round 2 of 3'" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -q 'Strike 2 of 3'" "$out"
 printf 'y\n' >> k2/x.txt && git commit -qam fix2 && $J reviewed --change --tier 2 --effort 2 --blocking 0 >/dev/null \
   && $J handoff --partial >/dev/null && foldin && git add -A && git commit -qm "note k2 part 1"
 printf 'z\n' > k2/z.txt && git add -A && git commit -qm part2
-msg="reviewed: after a --partial handoff, the next part's first blocking review starts round 1"
+msg="reviewed: after a --partial handoff, the next part's first blocking review is strike 1"
 out=$($J reviewed --tier 2 --effort 2 --blocking 1 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -q 'Fix round 1 of 3'" "$out"
-nx "the next part's blocking review is that part's Fix round 1" "" "k2: fix — work, continue the work session (Fix, round 1; 1 blocking finding)"
+expect_pass sh -c "echo \"\$0\" | grep -q 'Strike 1 of 3'" "$out"
+nx "the next part's blocking review is that part's strike 1" "" "k2: fix — work, continue the work session (Fix, strike 1; 1 blocking finding)"
+cd "$NX"
+# The reported case: blocking, clean, blocking, blocking. A clean review resets nothing.
+$J open k5 --owns 'k5/**' >/dev/null && git add -A && git commit -qm "open k5"
+cd .git/jig/worktrees/k5 && mkdir k5 && printf 'x\n' > k5/x.txt && git add -A && git commit -qm x
+$J reviewed --tier 2 --effort 2 --blocking 1 >/dev/null && printf 'y\n' >> k5/x.txt && git commit -qam fix1
+$J reviewed --change --tier 2 --effort 2 --blocking 0 >/dev/null && printf 'y\n' >> k5/x.txt && git commit -qam more1
+$J reviewed --change --tier 2 --effort 2 --blocking 1 >/dev/null && printf 'y\n' >> k5/x.txt && git commit -qam fix2
+msg="reviewed: blocking, clean, blocking, blocking: the fourth review is strike 3"
+out=$($J reviewed --change --tier 2 --effort 2 --blocking 1 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'Strike 3 of 3: Bug runs next'" "$out"
+nx "blocking, clean, blocking, blocking is bug" "" "k5: bug — bug, new session (Bug; a job's third blocking review: 3 strikes, and the next review is refused)"
 cd "$NX"
 }
 

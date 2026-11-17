@@ -121,9 +121,15 @@ the job's review. Mark no job ready while its own `Proposed` entry has no ruling
 owner said to gate it as proposed; `jig gate` warns of each one.
 
 A review with blocking findings goes back to the job's work session as a fix: `jig next`
-says so, and counts the rounds. After three fix rounds ended blocking, `jig reviewed` refuses
-the next until the bug role's spec, with `Bug-for: <job>`, is committed: start it from
-`/jig:bug`'s brief. Bug runs only when a workflow or the owner calls it.
+says so, and counts the strikes: each blocking review, the first review-work included. A
+job's third blocking review starts Bug: `jig reviewed` refuses the next until the bug role's
+spec, with `Bug-for: <job>`, is committed: start it from `/jig:bug`'s brief. Bug runs only
+when a workflow or the owner calls it.
+
+A review with no blocking findings ends the fixing: the job hands off, as `jig next` says.
+Should-fix and optional findings get one round per part; what is left after it gets DEFERRED
+rows. A finding that needs behavior the spec never names is a spec change before it is built
+(an `Interpreted:` line the hubnode accepts, or the owner's answer), or an Up next item.
 
 ## Opening a job (assign)
 

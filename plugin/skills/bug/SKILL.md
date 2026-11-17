@@ -1,11 +1,11 @@
 ---
 name: bug
-description: The bug role - investigate a cause before any diff exists (whys, givens tagged seen or assumed, one layer up, workaround or correction) and end with the spec for what it found. Runs only when a workflow calls it (a job past three blocking fix rounds, a feedback group) or the owner invokes /jig:bug with a symptom.
+description: The bug role - investigate a cause before any diff exists (whys, givens tagged seen or assumed, one layer up, workaround or correction) and end with the spec for what it found. Runs only when a workflow calls it (a job's third blocking review, a feedback group) or the owner invokes /jig:bug with a symptom.
 ---
 
 Your settings are the bug role's (`jig roles`). Your step is bug, and it ends with the spec
 for what you found; `jig next` decides what comes after. You run only when a workflow calls
-you (Bug, after a job's third blocking fix round; Feedback, once per group) or the owner types
+you (Bug, after a job's third blocking review; Feedback, once per group) or the owner types
 `/jig:bug`. A session that only thinks it has seen something broken says so to the hubnode
 and the owner; it never starts this on its own reading.
 
@@ -22,7 +22,7 @@ running <model> at <effort>
 If your own model differs from this line, reply with only your running line and stop.
 You are in the bug role: run /jig:bug, in <worktree: the job's, or a detached worktree of
 trunk for a feedback group>, on <the symptom, in the reporter's words> for <job, or the
-feedback group's files>. <For a job past its fix rounds: the findings each round left.>
+feedback group's files>. <For a job at its third strike: the findings each blocking review left.>
 ```
 
 Run this in order. Write it to `.jig/specs/bug-<name>.md`. Nothing gets edited until step 5 is done.
@@ -51,7 +51,7 @@ Prefer the correction. A workaround is fine when it is the right fix — say why
 
 ## 5. Write the spec
 The spec opens with `Source:` naming who reported it, when, and the symptom in their words.
-For a job past its fix rounds, it carries `Bug-for: <job>` on a line of its own: `jig
+For a job at its third strike, it carries `Bug-for: <job>` on a line of its own: `jig
 reviewed` refuses that job's next review until a committed spec says so.
 `Alternatives considered` is required: `<sibling or correction> — rejected because <reason> — this reason is [seen|assumed]`.
 Fill `## Roles` from `jig roles`, as `/jig:spec` says.

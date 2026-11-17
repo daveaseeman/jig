@@ -120,10 +120,11 @@ because the reviewer suggested them.
 ## Then
 
 Blocking findings go to the work session as a fix (Fix in `jig flows`); one round of
-should-fix is enough. Every should-fix or optional finding the work session doesn't take gets
-a row in `.jig/ledgers/DEFERRED.md` there. Three fix rounds that end blocking are the limit:
-`jig reviewed` refuses the next until the bug role's spec for the job, with `Bug-for: <job>`,
-is committed. Bug runs only then, or when the owner calls it.
+should-fix is enough, and a review with no blocking findings ends the fixing (`.jig/RULES.md`,
+Contracts, and the hubnode skill say what follows). Every should-fix or optional finding the
+work session doesn't take gets a row in `.jig/ledgers/DEFERRED.md` there. A job's third
+blocking review, counting its first review-work, starts Bug: `jig reviewed` refuses the next
+until the bug role's spec for the job, with `Bug-for: <job>`, is committed. Bug runs only then, or when the owner calls it.
 
 ## Record it
 

@@ -646,9 +646,9 @@ job's work session); `⇢` starts a new one.
 | Workflow | Steps | Trigger | Controls |
 |---|---|---|---|
 | Job | spec ⇢ work ⇢ review-work → handoff → gate ⇢ check → merge | `jig open` | merge only on the owner's word |
-| Fix | work ⇢ review-change → handoff | a review with blocking findings | three rounds at most; a fourth is refused and Bug runs |
+| Fix | work ⇢ review-change → handoff | a review with blocking findings | three strikes: a job's third blocking review starts Bug |
 | Sync | work ⇢ review-change → handoff | a sync with a hand-resolved conflict | a clean sync needs nothing |
-| Bug | bug → spec ⇢ Job | a fourth fix round, a feedback group, or the owner's `/jig:bug` | never on a session's own reading that something is broken |
+| Bug | bug → spec ⇢ Job | a job's third blocking review, a feedback group, or the owner's `/jig:bug` | never on a session's own reading that something is broken |
 | Feedback | consolidate ⇢ bug + spec → consolidate ⇢ Job | staged feedback, in the jig repo | one bug + spec per group; overlaps answered before any job opens |
 | Batch | gate → merge ⇢ check → trace | two or more gated jobs | one check on trunk; a failure is traced to its merge, then Fix on that job |
 | Release | check → release → push → publish | the owner's word | refused while a batch check is owed; push and publish only on the owner's word |
@@ -671,10 +671,15 @@ with the defaults.
 - `jig merge <job>` refuses a job not marked gated.
 - `jig reviewed --blocking N` records the blocking findings a review left; `jig handoff`
   refuses while the newest review of HEAD has any.
-- Fix rounds are counted per part of a job (a handoff note, `--partial` too, ends a part):
-  the first blocking review starts round 1, and each blocking review after it ends one. After
-  three, `jig reviewed` is refused, full or `--change`, until a spec for the job carrying
-  `Bug-for: <job>` on a line of its own is committed: the Bug workflow.
+- Strikes are counted per part of a job (a handoff note, `--partial` too, ends a part): each
+  review that records blocking findings, full or `--change`, the first review-work included,
+  is one, and a clean review between them resets nothing. The third strike starts Bug: the
+  next `jig reviewed` is refused, full or `--change`, until a spec for the job carrying
+  `Bug-for: <job>` on a line of its own is committed.
+- A review with no blocking findings ends the fixing: the job hands off, as `jig next` says.
+  Should-fix and optional findings get one round per part; what is left after it gets DEFERRED
+  rows. A finding that needs behavior the spec never names is a spec change before it is built
+  (an `Interpreted:` line the hubnode accepts, or the owner's answer), or an Up next item.
 
 **Settings in effect.** `jig roles` prints each role's tier and effort. A repo overrides them
 in `config.json`, each entry with its reason:
