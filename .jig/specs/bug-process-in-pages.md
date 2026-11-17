@@ -371,6 +371,8 @@ recommendation comes first.
 5. **Where cut lines go (the AGENTS.md cap).** Recommended: yes, the wording in step 4 goes into
    the template comment, survey's line, init and adopt §3. Update's per-line proposal is not
    built.
+- The owner, 2026-11-17: "All are approved now": questions 2 to 5 take their recommended options (2a: survey and update list `.jig/` path lines, the hook refuses nothing new; 3: board pages keep Toolchain, Flash / rollback and Skills; 4a: a holder is a named test or what is seen on screen, still required; 5: the cut-line wording, no per-line proposals).
+- Kept separate from bug-decision-records: different code (one merges decision records into the log, the other sets what pages hold and where process goes), sharing jig.py, RULES.md and smoke.sh. The owner, 2026-11-17: "All are approved now".
 
 ## Workflow
 spec: tier 2, effort 2

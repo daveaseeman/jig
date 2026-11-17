@@ -327,6 +327,8 @@ stays stranded.
 - `tests/smoke.sh`: `merge_log` and `homes`.
 - `marketing/FEATURES.md`, which is gitignored and in the main checkout: the Decision log row's
   migration sentence names a folder of decision records.
+- The owner, 2026-11-17: "All are approved now": `in force` and `approved` count as accepted, beside the standard ADR words; any other status word is refused, naming the record.
+- Kept separate from bug-process-in-pages: different code (one merges decision records into the log, the other sets what pages hold and where process goes), sharing jig.py, RULES.md and smoke.sh. The owner, 2026-11-17: "All are approved now".
 
 ## Workflow
 spec: tier 2, effort 2
