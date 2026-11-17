@@ -1,7 +1,7 @@
 {
   "every-copy": {
     "spec": ".jig/specs/every-copy.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
@@ -10,6 +10,7 @@
       "plugin/skills/spec/SKILL.md",
       "tests/smoke.sh"
     ],
-    "reserved": {}
+    "reserved": {},
+    "check": "batch"
   }
 }
