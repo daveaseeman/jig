@@ -99,6 +99,7 @@ The review and work skills point to it rather than restate it.
   rig's strikes 2 and 3.
 - Interpreted: a strike is a review that recorded at least one blocking finding, full or change,
   within the current part of the job.
+- Kept separate from every-copy: different code (every-copy adds `jig reading-list --claims`; bug-strike-count changes `jig reviewed`'s count), sharing jig.py, RULES.md, the spec skill and smoke.sh. The owner, 2026-11-16: "Keep separate".
 
 ## Workflow
 spec: tier 2, effort 2
