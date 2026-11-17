@@ -141,7 +141,7 @@ python3 .jig/jig.py reviewed --tier N --effort N --ran "<model> at <effort>" --b
 `--change` for a review-change. The tier and effort are the review role's configured ones,
 from `jig roles`; `--ran` is the model its first line said it ran on, with the effort from
 the host's readout or the configured one. `--blocking` counts the blocking findings it left:
-`jig handoff` refuses while the newest review recorded any, and the rounds are counted from
+`jig handoff` refuses while the newest review recorded any, and the strikes are counted from
 it. `jig gate` warns when the settings fall short of the spec's `## Roles`.
 
 `jig handoff` refuses without a record for that commit, or for one under it that only a

@@ -2135,11 +2135,12 @@ def cmd_reviewed(root: Path, args) -> int:
         n = blocking_reviews(chain)
         if n < STRIKES:
             print(f"Strike {n} of {STRIKES}: the work session fixes them, then review-change")
-        elif n == STRIKES or not bug_spec_for(name, ["HEAD", board.trunk]):
+        elif not bug_spec_for(name, ["HEAD", board.trunk]):
             print(f"Strike {STRIKES} of {STRIKES}: Bug runs next; the next review is refused until "
                   f"the bug role's spec, with `Bug-for: {name}`, is committed")
         else:
-            # Past the limit, under the bug spec the refusal asked for: the fixing goes on.
+            # At or past the limit with the bug spec already committed, which is what `jig
+            # next` reads too: the fixing goes on.
             print(f"Strike {n}, under the bug role's spec: the work session fixes them, then "
                   f"review-change")
     return 0

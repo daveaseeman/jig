@@ -2157,6 +2157,17 @@ out=$($J reviewed --change --tier 2 --effort 2 --blocking 1 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'Strike 3 of 3: Bug runs next'" "$out"
 nx "blocking, clean, blocking, blocking is bug" "" "k5: bug — bug, new session (Bug; a job's third blocking review: 3 strikes, and the next review is refused)"
 cd "$NX"
+# A Bug-for spec committed before strike 3: reviewed and next agree the fixing goes on.
+$J open k6 --owns 'k6/**' >/dev/null && git add -A && git commit -qm "open k6"
+cd .git/jig/worktrees/k6 && mkdir -p k6 .jig/specs && printf 'x\n' > k6/x.txt && printf '# k6 bug\n\nBug-for: k6\n' > .jig/specs/k6-bug.md \
+  && git add -A && git commit -qm "x, with k6's bug spec"
+$J reviewed --tier 2 --effort 2 --blocking 1 >/dev/null && printf 'y\n' >> k6/x.txt && git commit -qam fix1
+$J reviewed --change --tier 2 --effort 2 --blocking 1 >/dev/null && printf 'y\n' >> k6/x.txt && git commit -qam fix2
+msg="reviewed: strike 3 with the job's bug spec already committed says the fixing goes on"
+out=$($J reviewed --change --tier 2 --effort 2 --blocking 1 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'Strike 3, under the bug role.s spec: the work session fixes them, then review-change' && ! echo \"\$0\" | grep -q 'Bug runs next'" "$out"
+nx "strike 3 with the bug spec committed is fix, as reviewed says" "" "k6: fix — work, continue the work session (Fix, strike 3; 1 blocking finding)"
+cd "$NX"
 }
 
 # ---------------------------------------------------------------- init beside an old board

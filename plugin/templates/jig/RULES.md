@@ -676,10 +676,11 @@ with the defaults.
   is one, and a clean review between them resets nothing. The third strike starts Bug: the
   next `jig reviewed` is refused, full or `--change`, until a spec for the job carrying
   `Bug-for: <job>` on a line of its own is committed.
-- A review with no blocking findings ends the fixing: the job hands off, as `jig next` says.
-  Should-fix and optional findings get one round per part; what is left after it gets DEFERRED
-  rows. A finding that needs behavior the spec never names is a spec change before it is built
-  (an `Interpreted:` line the hubnode accepts, or the owner's answer), or an Up next item.
+
+A review with no blocking findings ends the fixing: the job hands off, as `jig next` says.
+Should-fix and optional findings get one round per part; what is left after it gets DEFERRED
+rows. A finding that needs behavior the spec never names is a spec change before it is built
+(an `Interpreted:` line the hubnode accepts, or the owner's answer), or an Up next item.
 
 **Settings in effect.** `jig roles` prints each role's tier and effort. A repo overrides them
 in `config.json`, each entry with its reason:
