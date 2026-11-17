@@ -2474,6 +2474,7 @@ def unfenced(lines: list[str]) -> list[bool]:
             fence = mark.group(1)
             out.append(False)
         elif fence:
+            # Only a run of the opening fence's own character, as long, closes it.
             if mark and mark.group(1)[0] == fence[0] and len(mark.group(1)) >= len(fence) \
                     and not line.strip()[len(mark.group(1)):].strip():
                 fence = ""
@@ -2489,7 +2490,11 @@ def claim_mark(line: str, pat: re.Pattern, home: str) -> str:
     is marked by its caller, which knows its line."""
     links = [k for k in re.finditer(r"\[([^\]]*)\]\(([^)\s]*)\)", line) if Path(home).name in k.group(2)]
     for m in pat.finditer(line):
-        if re.search(r"§[ \t`]*$", line[:m.start()]) or any(k.start(1) <= m.start() < k.end(1) for k in links):
+        ref = re.search(r"(\S*?)`?[ \t]*§[ \t`]*$", line[:m.start()])
+        # `other.md § mote` names a heading of another page: only the home's file, or no file, points home.
+        page = ref.group(1).strip("`(") if ref else ""
+        if ref and (not page.endswith(".md") or Path(page).name == Path(home).name) \
+                or any(k.start(1) <= m.start() < k.end(1) for k in links):
             return "pointer"
     return "copy"
 
@@ -2511,11 +2516,11 @@ def claims_of_id(root: Path, want: str, prefix: str) -> tuple[list[str], list[tu
     by = None
     for spelt in dict.fromkeys(spellings):
         if by := holds_now(spelt, text, prefix, "HEAD", str(root)):
-            ids[0] = spelt
+            ids = hold_chain(spelt, text, prefix, "HEAD", str(root))
             break
     if by:
-        notes.append(f"{ids[0]} is superseded; what holds now is {by}: lines naming either are listed.")
-        ids.append(by)
+        notes.append(f"{ids[0]} is superseded; what holds now is {by}: lines naming any of "
+                     f"{', '.join(ids)} are listed.")
         entry = next((e for e in entries if e["id"] == by), None)
     elif not entry:
         notes.append(f"no entry {want} in {LOG} or in its history: lines naming it are listed.")
@@ -2528,7 +2533,7 @@ def claims_of_id(root: Path, want: str, prefix: str) -> tuple[list[str], list[tu
     pat = re.compile("|".join(id_re(i) for i in ids))
     # The entry is the home, its status line naming what it supersedes included.
     lines_in = len(text.splitlines())
-    homes = {n for e in entries if e["id"] in ids
+    homes = {n for e in entries if entry and e["id"] == entry["id"]
              for n in range(e["start"] + 1, (e["end"] if e["end"] is not None else lines_in) + 1)}
     hits = []
     for f, lines in claim_texts(root):
@@ -2904,7 +2909,8 @@ CODE_EXT = SRC_EXT + (".sh", ".cmake", ".kconfig")
 
 
 def tracked(root: Path) -> list[str]:
-    return [p for p in git("ls-files").splitlines() if p]
+    # At the root, so a command run from a subfolder still sees every file, by its path from the root.
+    return [p for p in git("ls-files", cwd=str(root)).splitlines() if p]
 
 
 def naming(root: Path, path: str, files: list[str]) -> dict[str, list[int]]:
@@ -5547,19 +5553,30 @@ def holds_now(want: str, text: str, prefix: str, rev: str | None = None,
               cwd: str | None = None) -> str | None:
     """The entry in log TEXT that holds in place of WANT: each accepted supersedes link
     followed forward, and with REV, through git where TEXT no longer has a link's entry."""
+    chain = hold_chain(want, text, prefix, rev, cwd)
+    have = {e["id"] for e in log_entries(text, prefix)}
+    return chain[-1] if len(chain) > 1 and chain[-1] in have else None
+
+
+def hold_chain(want: str, text: str, prefix: str, rev: str | None = None,
+               cwd: str | None = None) -> list[str]:
+    """WANT and each id that superseded it in turn, oldest first, as holds_now walks them."""
     entries = log_entries(text, prefix)
     have = {e["id"] for e in entries}
     by = {s: e["id"] for e in entries for s in replaced(e, prefix)}
-    cur, seen = want, set()
-    while cur not in seen:
-        seen.add(cur)
+    chain = [want]
+    while True:
+        cur = chain[-1]
         if cur in by:
-            cur = by[cur]
+            nxt = by[cur]
         elif rev and cur not in have and (found := removed_entry(cur, prefix, rev, cwd)) and found[2]:
-            cur = found[2]["id"]
+            nxt = found[2]["id"]
         else:
             break
-    return cur if cur != want and cur in have else None
+        if nxt in chain:
+            break
+        chain.append(nxt)
+    return chain
 
 
 def cmd_decision(root: Path, args) -> int:
@@ -9100,17 +9117,8 @@ def heading_lines(text: str, glossary: bool = False) -> dict[str, list[tuple[int
     first cell too. Fenced code is skipped: a heading quoted in an example is no address."""
     out: dict[str, list[tuple[int, str]]] = {}
     lines = text.splitlines()
-    fence = ""
-    for n, line in enumerate(lines, 1):
-        mark = re.match(r"[ \t]*(`{3,}|~{3,})", line)
-        if mark and not fence:
-            fence = mark.group(1)
-        elif fence:
-            # Only a run of the opening fence's own character, as long, closes it.
-            if mark and mark.group(1)[0] == fence[0] and len(mark.group(1)) >= len(fence) \
-                    and not line.strip()[len(mark.group(1)):].strip():
-                fence = ""
-        elif (m := HEADING.match(line)) and (shown := plain(m.group(1))):
+    for n, (line, prose) in enumerate(zip(lines, unfenced(lines)), 1):
+        if prose and (m := HEADING.match(line)) and (shown := plain(m.group(1))):
             out.setdefault(shown, []).append((n, shown))
     if glossary:
         for i, term in table_terms(lines):

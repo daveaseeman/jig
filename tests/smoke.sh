@@ -7588,10 +7588,14 @@ The store is read-only after boot (D-003).
 | no writes | D-3 |
 
 A Mote is one record.
-See `docs/glossary.md § mote`, or the [glossary](../glossary.md#mote).
+See `docs/glossary.md § mote`.
+Read [mote](../glossary.md) there.
+The [entry](../glossary.md#mote) says more.
+See docs/store/other.md § mote.
+Decided in [D-3](../../.jig/decisions.md).
 
 ```
-mote quoted in code
+mote quoted in code, D-3 too
 ```
 D-30 and XD-3 are other ids; remote is another word.
 EOF
@@ -7603,22 +7607,32 @@ expect_pass sh -c "echo \"\$0\" | grep -q '^  home     .jig/decisions.md:7 ' \
   && echo \"\$0\" | grep -q '^  copy     docs/store/store.md:9 ' \
   && echo \"\$0\" | grep -q '^  pointer  docs/store/store.md:3 .*cites it as its source' \
   && echo \"\$0\" | grep -q '^  copy     .jig/decisions.md:13 .*peers by Touches on docs/store/store.md'" "$out"
-msg="claims id: a longer id, another prefix and code are not D-3"
+msg="claims id: a link to the log is a pointer, and an id in code is listed (a name is a name)"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  pointer  docs/store/store.md:16 ' && echo \"\$0\" | grep -q '^  copy     docs/store/store.md:19 '" "$out"
+msg="claims id: a longer id and another prefix are not D-3"
 expect_refuse sh -c "echo \"\$0\" | grep -q 'D-30'" "$out"
 msg="claims id: D-003 and D-3 list the same lines"
 expect_pass test "$out" = "$($J reading-list --claims D-003 | sed 's/D-003:/D-3:/')"
+msg="claims id: run from a subfolder, it lists the same lines"
+expect_pass test "$out" = "$(cd docs/store && python3 ../../.jig/jig.py reading-list --claims D-3)"
 
 out=$($J reading-list --claims mote)
-msg="claims term: the glossary heading is home, § and link pointers, a use is a copy, an entry whose Touches names it"
+msg="claims term: the glossary heading is home, a use is a copy, an entry whose Touches names it is listed"
 expect_pass sh -c "echo \"\$0\" | grep -q '^  home     docs/glossary.md:3 ' \
-  && echo \"\$0\" | grep -q '^  pointer  docs/store/store.md:12 ' \
   && echo \"\$0\" | grep -q '^  copy     docs/store/store.md:11 ' \
   && echo \"\$0\" | grep -q '^  copy     .jig/decisions.md:7 .*its Touches names it'" "$out"
+msg="claims term: a § pointer, a link naming it and a link to its anchor are each a pointer"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  pointer  docs/store/store.md:12 ' \
+  && echo \"\$0\" | grep -q '^  pointer  docs/store/store.md:13 ' \
+  && echo \"\$0\" | grep -q '^  pointer  docs/store/store.md:14 '" "$out"
+msg="claims term: § after another page names that page's heading: a copy, not a pointer"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  copy     docs/store/store.md:15 '" "$out"
 msg="claims term: fenced code, a longer word and jig's own rulebook are not listed"
-expect_refuse sh -c "echo \"\$0\" | grep -qE 'store.md:15 |store.md:17 |RULES.md'" "$out"
+expect_refuse sh -c "echo \"\$0\" | grep -qE 'store.md:19 |store.md:21 |RULES.md'" "$out"
 msg="claims term: a table row's first cell is a glossary entry"
 expect_pass sh -c "$J reading-list --claims Seam | grep -q '^  home     docs/glossary.md:9 '"
 
+# D-004, superseded by D-005, superseded in turn by D-006: each removed as it is superseded.
 python3 - <<'EOF'
 f = '.jig/decisions.md'; s = open(f).read()
 s = s.replace("### D-004 Caches flush hourly\nAccepted (owner, 2026-11-11).",
@@ -7626,12 +7640,20 @@ s = s.replace("### D-004 Caches flush hourly\nAccepted (owner, 2026-11-11).",
 open(f, 'w').write(s)
 EOF
 echo "Caches flush hourly (D-4)." >> docs/store/store.md && git add -A && nohook supersede
+python3 - <<'EOF'
+f = '.jig/decisions.md'; s = open(f).read()
+s = s.replace("### D-005 Caches flush daily\nAccepted (owner, 2026-11-12). Supersedes D-004.",
+              "### D-006 Caches flush weekly\nAccepted (owner, 2026-11-13). Supersedes D-005.")
+open(f, 'w').write(s)
+EOF
+echo "Daily, as D-005 says." >> docs/store/store.md && git add -A && nohook supersede-again
 out=$($J reading-list --claims D-4)
-msg="claims id: a superseded id hops to its successor, listing lines naming either"
-expect_pass sh -c "echo \"\$0\" | grep -q 'D-004 is superseded; what holds now is D-005' \
+msg="claims id: a superseded id walks its whole chain, listing lines naming any id in it"
+expect_pass sh -c "echo \"\$0\" | grep -q 'what holds now is D-006: lines naming any of D-004, D-005, D-006' \
   && echo \"\$0\" | grep -q '^  home     .jig/decisions.md:13 ' \
   && echo \"\$0\" | grep -q '^  home     .jig/decisions.md:14 ' \
-  && echo \"\$0\" | grep -q '^  copy     docs/store/store.md:18 '" "$out"
+  && echo \"\$0\" | grep -q '^  copy     docs/store/store.md:22 ' \
+  && echo \"\$0\" | grep -q '^  copy     docs/store/store.md:23 '" "$out"
 
 msg="claims: reading-list without --claims prints the pages to read, as before"
 expect_pass sh -c "$J reading-list docs/store/store.md | grep -q '^Read first:' && ! $J reading-list docs/store/store.md | grep -q 'Every copy'"
