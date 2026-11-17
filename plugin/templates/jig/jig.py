@@ -2486,14 +2486,44 @@ def unfenced(lines: list[str]) -> list[bool]:
     return out
 
 
+LINK_STOP = re.compile(r"[)\s]")
+
+
+def link_spans(line: str) -> list[tuple[int, int, str]]:
+    """(text start, text end, target) of each Markdown link in LINE: the spans
+    re.finditer(r"\[([^\]]*)\]\(([^)\s]*)\)") gives, found in one pass. That regex retries
+    every `[` and rescans to the next `]` or `)` from each, so a minified line of brackets takes
+    it minutes. A try from a `[` is settled by the first `]` after it, so every `[` before that
+    `]` settles the same way and only the first needs trying; and the first `)` or blank after
+    a `](` is shared by every later `](` before it."""
+    out = []
+    stop_from, stop = -1, None
+    p = line.find("[")
+    while p != -1:
+        q = line.find("]", p + 1)
+        if q == -1:
+            break
+        if line[q + 1:q + 2] == "(":
+            s = q + 2
+            if stop_from < 0 or s < stop_from or (stop is not None and s > stop):
+                m = LINK_STOP.search(line, s)
+                stop_from, stop = s, (m.start() if m else None)
+            if stop is not None and line[stop] == ")":
+                out.append((p + 1, q, line[s:stop]))
+                p = line.find("[", stop + 1)
+                continue
+        p = line.find("[", q + 1)
+    return out
+
+
 def claim_mark(line: str, pat: re.Pattern, home: str) -> str:
     """pointer when any name PAT finds in LINE is a `§` reference or a link's text whose target
     is HOME's file: a line that points sends its reader home. copy otherwise. The home itself
     is marked by its caller, which knows its line."""
     name = Path(home).name
-    links = [k for k in re.finditer(r"\[([^\]]*)\]\(([^)\s]*)\)", line) if name in k.group(2)]
+    links = [(a, b) for a, b, target in link_spans(line) if name in target]
     for m in pat.finditer(line):
-        if any(k.start(1) <= m.start() < k.end(1) for k in links):
+        if any(a <= m.start() < b for a, b in links):
             return "pointer"
         # Read back from the name, and only as far as the mark needs, never forward from the
         # line's start: on a minified bundle's long runs either is once per name, and never finishes.
