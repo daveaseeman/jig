@@ -1,7 +1,7 @@
 {
   "every-copy": {
     "spec": ".jig/specs/every-copy.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
