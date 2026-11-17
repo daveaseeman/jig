@@ -7,6 +7,7 @@ rules it is judged by. Stdlib only.
 from __future__ import annotations
 
 import argparse
+import bisect
 from collections import Counter
 import difflib
 import fnmatch
@@ -90,11 +91,11 @@ FLOWS = {
             "trigger": "`jig open`", "controls": "merge only on the owner's word"},
     "Fix": {"steps": "work ⇢ review-change → handoff",
             "trigger": "a review with blocking findings",
-            "controls": "three rounds at most; a fourth is refused and Bug runs"},
+            "controls": "three strikes: a job's third blocking review starts Bug"},
     "Sync": {"steps": "work ⇢ review-change → handoff",
              "trigger": "a sync with a hand-resolved conflict", "controls": "a clean sync needs nothing"},
     "Bug": {"steps": "bug → spec ⇢ Job",
-            "trigger": "a fourth fix round, a feedback group, or the owner's `/jig:bug`",
+            "trigger": "a job's third blocking review, a feedback group, or the owner's `/jig:bug`",
             "controls": "never on a session's own reading that something is broken"},
     "Feedback": {"steps": "consolidate ⇢ bug + spec → consolidate ⇢ Job",
                  "trigger": "staged feedback, in the jig repo",
@@ -113,8 +114,9 @@ FLOWS = {
 FIXED_RULES = ["the owner's word before merge, push and publish",
                "a fresh session for every review",
                "a complete check before a release"]
-# A job's review rounds with blocking findings before the next is refused and Bug runs.
-FIX_ROUNDS = 3
+# A job's blocking reviews (strikes), its first review-work counted, before Bug runs and the
+# next review is refused: the owner counts failures, not the fix rounds between them.
+STRIKES = 3
 # The pre-roles step names, which `jig workflow` still prints for skills that read them.
 # The pre-roles config key, `workflow`, is never read: an entry carries no reason, so nothing
 # tells a one-run instruction written into it from the owner's choice, and update removes it.
@@ -559,9 +561,13 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     # which may match the marker anywhere, judges every update of it.
     code = [p for p in paths if (p.endswith(CODE_EXT) or Path(p).name == "Kconfig")
             and p != f"{DIR}/jig.py"]
-    # Raw, so a lone CR can't split one added line into a "+" line and an unmarked one.
-    diff = git_raw("diff", "-U0", base(trunk), *(["--cached"] if staged else []), "--", *code) if code else ""
-    if re.search(r"^\+(?:.*(?:#|//|/\*)|\s*\*)\s*WORKAROUND:", diff, re.M) and WORKAROUNDS not in paths:
+    # Raw, so a lone CR can't split one added line into a "+" line and an unmarked one; counted
+    # by net_added, so a comment only moved within its file (functions reordered) isn't new.
+    diff = git_raw("-c", "core.quotePath=false", "diff", "-U0", "--no-ext-diff", "--no-color",
+                   "--src-prefix=a/", "--dst-prefix=b/", base(trunk), *(["--cached"] if staged else []),
+                   "--", *code) if code else ""
+    marked = re.compile(r"(?:.*(?:#|//|/\*)|\s*\*)\s*WORKAROUND:")
+    if any(marked.match(t) for _, _, t in net_added(diff, set(code))) and WORKAROUNDS not in paths:
         # The ledger is made by its first row, so the refusal says where that row goes.
         out.append(f"R7 the diff adds a WORKAROUND: comment but {WORKAROUNDS} is not staged: "
                    f"add its row there in this commit (the first row creates the file from "
@@ -649,7 +655,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
             # a metarepo job for its line. It only adds, outside ## Open where an open entry's
             # status changes in place: a rewrite would take what others recorded with it.
             if p == LOG:
-                since = git("merge-base", trunk, "HEAD") or base(trunk)
+                since = since_trunk(trunk)
                 now = in_index(LOG, staged)
                 if now and not outside_open_deleted(at_rev(since, LOG), now):
                     continue
@@ -1281,7 +1287,11 @@ def waiting_specs(root: Path, board: "Board") -> dict[str, str]:
             continue
         if tag and git("cat-file", "-t", f"{tag}:{rel}"):
             continue
-        out[rel] = f.read_text(errors="replace")
+        text = f.read_text(errors="replace")
+        # A bug spec is built in the job it names and reaches trunk only with that job's merge.
+        if re.search(r"^Bug-for:[ \t]*\S", text, re.M):
+            continue
+        out[rel] = text
     return out
 
 
@@ -2058,8 +2068,9 @@ def review_kind(data: dict) -> str:
 
 def blocking_reviews(chain: list[str]) -> int:
     """How many reviews of this part's commits recorded blocking findings, full or change: a
-    review recorded either way still ends a round. A part ends at a commit adding a handoff
-    note (a `--partial` one too), so each part's rounds start again at 1."""
+    review recorded either way is a strike. A part ends at a commit adding a handoff note (a
+    `--partial` one too), so each part's strikes start again at 0. A clean review between
+    strikes resets nothing."""
     if chain:
         # --no-merges: a sync bringing trunk's notes in ended no part of this job.
         noted = set(git("log", "--first-parent", "--no-merges", "--diff-filter=A", "--format=%H",
@@ -2072,12 +2083,6 @@ def blocking_reviews(chain: list[str]) -> int:
         if sha in on:
             latest[sha] = data
     return sum(1 for d in latest.values() if isinstance(d.get("blocking"), int) and d["blocking"] > 0)
-
-
-def blocking_rounds(chain: list[str]) -> int:
-    """The fix rounds that ended in blocking findings. The first blocking review starts round 1
-    and ends none; each one after it ends a round."""
-    return max(0, blocking_reviews(chain) - 1)
 
 
 def bug_spec_for(job: str, revs: list[str]) -> str:
@@ -2106,13 +2111,13 @@ def cmd_reviewed(root: Path, args) -> int:
     if change and not last_review(chain, "full"):
         die("no full review of this job on HEAD's first-parent chain: a review-change reviews "
             "what changed since one. Run review-work, then `jig reviewed` without --change")
-    rounds = blocking_rounds(chain)
+    strikes = blocking_reviews(chain)
     name = board.job_for_branch(git("branch", "--show-current"))[0] or \
         git("branch", "--show-current") or "work"
-    # Any review, full or change: a fix round past the limit is refused whichever way it's recorded.
-    if rounds >= FIX_ROUNDS and not bug_spec_for(name, ["HEAD", board.trunk]):
-        die(f"{rounds} fix rounds of this job ended in blocking findings: a round past "
-            f"{FIX_ROUNDS} is refused, and Bug runs. Commit the bug role's spec for it, with "
+    # Any review, full or change: a review past the last strike is refused whichever way it's recorded.
+    if strikes >= STRIKES and not bug_spec_for(name, ["HEAD", board.trunk]):
+        die(f"{strikes} reviews of this job recorded blocking findings: strike {STRIKES} starts "
+            f"Bug, and the next review is refused. Commit the bug role's spec for it, with "
             f"`Bug-for: {name}` on a line of its own, then review again")
     ran = {k: v for k, v in (("tier", args.tier), ("effort", args.effort), ("ran", args.ran),
                              ("blocking", args.blocking)) if v is not None}
@@ -2121,18 +2126,24 @@ def cmd_reviewed(root: Path, args) -> int:
     review_marker(root).write_text(head + "\n" + (json.dumps(ran) + "\n" if ran else ""))
     # Every review ever, for a metarepo's gate (a merge's second parent must be one of them),
     # for a review-change's handoff, which reads the full review's settings back from here,
-    # and for the fix rounds, counted from the blocking findings recorded.
+    # and for the strikes, counted from the blocking findings recorded.
     with open(git_common() / "jig" / "reviewed.log", "a") as log:
         log.write(head + (" " + json.dumps(ran, separators=(",", ":")) if ran else "") + "\n")
     print(f"recorded {'review-change' if change else 'review'} of {head[:12]}"
           + (f", {args.blocking} blocking" if args.blocking else ""))
     if args.blocking:
-        # This record is the first blocking review (it starts round 1), or it ends round `done`.
-        done = blocking_reviews(chain) - 1
-        print(f"Fix round {done + 1} of {FIX_ROUNDS}: the work session fixes them, then review-change"
-              if done < FIX_ROUNDS else
-              f"That was fix round {FIX_ROUNDS}: the next review is refused until the bug role's "
-              f"spec, with `Bug-for: {name}`, is committed")
+        # The log now holds this record, so it is counted.
+        n = blocking_reviews(chain)
+        if n < STRIKES:
+            print(f"Strike {n} of {STRIKES}: the work session fixes them, then review-change")
+        elif not bug_spec_for(name, ["HEAD", board.trunk]):
+            print(f"Strike {STRIKES} of {STRIKES}: Bug runs next; the next review is refused until "
+                  f"the bug role's spec, with `Bug-for: {name}`, is committed")
+        else:
+            # At or past the limit with the bug spec already committed, which is what `jig
+            # next` reads too: the fixing goes on.
+            print(f"Strike {n}, under the bug role's spec: the work session fixes them, then "
+                  f"review-change")
     return 0
 
 
@@ -2169,17 +2180,17 @@ def next_step(root: Path, board: "Board", name: str) -> tuple[str, str, str, str
     if not found:
         return "review-work", "review", "new session", "Job; once the work's checks pass"
     reviewed, ran = found
-    rounds = blocking_rounds(chain)
+    strikes = blocking_reviews(chain)
     blocked = isinstance(ran.get("blocking"), int) and ran["blocking"] > 0
-    if rounds >= FIX_ROUNDS and not bug_spec_for(name, [branch, trunk]):
-        return "bug", "bug", "new session", (f"Bug; {rounds} fix rounds ended in blocking "
-                                             f"findings, and a round past {FIX_ROUNDS} is refused")
+    if strikes >= STRIKES and not bug_spec_for(name, [branch, trunk]):
+        return "bug", "bug", "new session", (f"Bug; a job's third blocking review: {strikes} "
+                                             f"strikes, and the next review is refused")
     if changed_since(reviewed, branch, board):
-        flow = f"Fix, round {rounds + 1}" if blocked else "Fix or Sync"
+        flow = f"Fix, strike {strikes}" if blocked else "Fix or Sync"
         return ("review-change", "review", "new session",
                 f"{flow}; once the checks pass, of what changed since {reviewed[:12]}")
     if blocked:
-        return "fix", "work", "continue the work session", f"Fix, round {rounds + 1}; " \
+        return "fix", "work", "continue the work session", f"Fix, strike {strikes}; " \
             f"{ran['blocking']} blocking finding{'s' if ran['blocking'] != 1 else ''}"
     return "handoff", "work", "continue the work session", "Job"
 
@@ -2434,8 +2445,249 @@ def cmd_handoff(root: Path, args) -> int:
     return 0
 
 
+# RULES.md (Every copy): a spec changing a claim lists every place that states it. jig finds the
+# places that name it; a copy in other words is the spec writer's to find.
+CLAIM_MARKS = ("home", "pointer", "copy")
+
+
+def claim_texts(root: Path) -> list[tuple[str, list[str]]]:
+    """(path, lines) for each tracked text file in the working tree: a binary or a blob over a
+    megabyte holds no claim a reader restates. Under the jig folder only the log, specs and
+    ledgers: jig's own files define the names, and a handoff records what was true then."""
+    out = []
+    for f in tracked(root):
+        if f.startswith(f"{DIR}/") and not f.startswith((f"{DIR}/specs/", f"{DIR}/ledgers/", LOG)):
+            continue
+        p = root / f
+        if not p.is_file() or p.stat().st_size > 1 << 20:
+            continue
+        data = p.read_bytes()
+        if b"\0" in data:
+            continue
+        out.append((f, data.decode(errors="replace").splitlines()))
+    return out
+
+
+def unfenced(lines: list[str]) -> list[bool]:
+    """For each line, whether it is outside fenced code: an example quoting a term states nothing."""
+    out, fence = [], ""
+    for line in lines:
+        mark = re.match(r"[ \t]*(`{3,}|~{3,})", line)
+        if mark and not fence:
+            fence = mark.group(1)
+            out.append(False)
+        elif fence:
+            # Only a run of the opening fence's own character, as long, closes it.
+            if mark and mark.group(1)[0] == fence[0] and len(mark.group(1)) >= len(fence) \
+                    and not line.strip()[len(mark.group(1)):].strip():
+                fence = ""
+            out.append(False)
+        else:
+            out.append(True)
+    return out
+
+
+LINK_STOP = re.compile(r"[)\s]")
+
+
+def link_spans(line: str, blank_ends: bool = True) -> list[tuple[int, int, int, int, str]]:
+    """(start, end, text start, text end, target) of each Markdown link in LINE, in order: the
+    matches re.finditer(r"\[([^\]]*)\]\(([^)\s]*)\)") gives, or without BLANK_ENDS, the target
+    `[^)]*`, found in one pass. That regex retries every `[` and rescans to the next `]` or `)`
+    from each, so a minified line of brackets takes it minutes. A try from a `[` is settled by
+    the first `]` after it, so every `[` before that `]` settles the same way and only the first
+    needs trying; and the first stop after a `](` is shared by every later `](` before it."""
+    out = []
+    stop_from, stop = -1, None
+    p = line.find("[")
+    while p != -1:
+        q = line.find("]", p + 1)
+        if q == -1:
+            break
+        if line[q + 1:q + 2] == "(":
+            s = q + 2
+            if stop_from < 0 or s < stop_from or (stop is not None and s > stop):
+                if blank_ends:
+                    m = LINK_STOP.search(line, s)
+                    found = m.start() if m else -1
+                else:
+                    found = line.find(")", s)
+                stop_from, stop = s, (found if found != -1 else None)
+            if stop is not None and line[stop] == ")":
+                out.append((p, stop + 1, p + 1, q, line[s:stop]))
+                p = line.find("[", stop + 1)
+                continue
+        p = line.find("[", q + 1)
+    return out
+
+
+def claim_mark(line: str, pat: re.Pattern, home: str) -> str:
+    """pointer when any name PAT finds in LINE is a `§` reference or a link's text whose target
+    is HOME's file: a line that points sends its reader home. copy otherwise. The home itself
+    is marked by its caller, which knows its line."""
+    name = Path(home).name
+    # In order and apart, so the one link a name could sit in is the last starting at or before it.
+    links = [(a, b) for _, _, a, b, target in link_spans(line) if name in target]
+    starts = [a for a, _ in links]
+    for m in pat.finditer(line):
+        at = bisect.bisect_right(starts, m.start()) - 1
+        if at >= 0 and m.start() < links[at][1]:
+            return "pointer"
+        # Read back from the name, and only as far as the mark needs, never forward from the
+        # line's start: on a minified bundle's long runs either is once per name, and never finishes.
+        i = m.start()
+        while i and line[i - 1] in " \t`":
+            i -= 1
+        if not i or line[i - 1] != "§":
+            continue
+        j = i - 1
+        while j and line[j - 1] in " \t":
+            j -= 1
+        if j and line[j - 1] == "`":
+            j -= 1
+        # The page is the word before the `§`, less "`(" at either end. `other.md § mote` names a
+        # heading of another page: only the home's file, or no file, points home. So only its
+        # last characters count: does it end in .md, and is its last path part the home's name?
+        e = j
+        while e and line[e - 1] in "`(":
+            e -= 1
+        if not e or line[e - 1].isspace() or line[max(0, e - 3):e] != ".md":
+            return "pointer"
+        st = e - len(name)
+        if st >= 0 and line[st:e] == name:
+            b = st
+            while b and line[b - 1] in "`(":
+                b -= 1
+            if not b or line[b - 1].isspace() or line[st - 1] == "/":
+                return "pointer"
+    return "copy"
+
+
+def claims_of_id(root: Path, want: str, prefix: str) -> tuple[list[str], list[tuple]]:
+    """Notes and (file, line, mark, text, why) hits for decision id WANT."""
+    path = root / LOG
+    text = path.read_text(errors="replace") if path.exists() else ""
+    entries = log_entries(text, prefix)
+    notes = []
+    entry = next((e for e in entries if decision_id(e["id"]) == decision_id(want)), None)
+    ids = [entry["id"] if entry else want]
+    # A superseded id hops to its successor, as `jig decision` walks it: a line naming the old id
+    # is a copy of a claim the successor now holds. A removed id is found by the log's spelling,
+    # D-004 for D-4, since a supersedes line and git's history name it that way.
+    num = re.fullmatch(rf"{re.escape(prefix)}0*(\d+)", want)
+    widths = {len(e["id"]) - len(prefix) for e in entries if e["id"][len(prefix):].isdigit()}
+    spellings = [ids[0]] + ([f"{prefix}{num.group(1).zfill(w)}" for w in sorted(widths)] if num and not entry else [])
+    by = None
+    for spelt in dict.fromkeys(spellings):
+        if by := holds_now(spelt, text, prefix, "HEAD", str(root)):
+            ids = hold_chain(spelt, text, prefix, "HEAD", str(root))
+            break
+    if by:
+        notes.append(f"{ids[0]} is superseded; what holds now is {by}: lines naming any of "
+                     f"{', '.join(ids)} are listed.")
+        entry = next((e for e in entries if e["id"] == by), None)
+    elif not entry:
+        notes.append(f"no entry {want} in {LOG} or in its history: lines naming it are listed.")
+
+    def id_re(i: str) -> str:
+        # D-2 and D-002 are one decision, as R6 counts it; whole ids only, D-7 is not D-70.
+        num = re.fullmatch(rf"{re.escape(prefix)}0*(\d+)", i)
+        body = rf"{re.escape(prefix)}0*{num.group(1)}" if num else re.escape(i)
+        return rf"(?<![\w-]){body}(?![\w?-])"
+    pat = re.compile("|".join(id_re(i) for i in ids))
+    # The entry is the home, its status line naming what it supersedes included.
+    lines_in = len(text.splitlines())
+    homes = {n for e in entries if entry and e["id"] == entry["id"]
+             for n in range(e["start"] + 1, (e["end"] if e["end"] is not None else lines_in) + 1)}
+    hits = []
+    for f, lines in claim_texts(root):
+        for n, line in enumerate(lines, 1):
+            if not pat.search(line):
+                continue
+            mark = "home" if f == LOG and n in homes else claim_mark(line, pat, LOG)
+            why = "cites it as its source" if re.search(r"(?i)\bsources?\b", line) else ""
+            hits.append((f, n, mark, line, why))
+    if entry:
+        names = touch_names(root, Board.load(root).trunk)
+        mine = touching_entries(text, prefix, SELF, LOG, names)
+        me = next((e for e in mine if e["id"] == entry["id"]), None)
+        for o, ptr in peers_of(me, mine, prefix) if me else []:
+            hits.append((LOG, o["line"], "copy", f"### {o['id']} {o['title']}", f"peers by Touches on {ptr}"))
+    return notes, hits
+
+
+def claims_of_term(root: Path, term: str, prefix: str) -> tuple[list[str], list[tuple]]:
+    """Notes and (file, line, mark, text, why) hits for glossary term TERM."""
+    notes, hits = [], []
+    key = term.casefold()
+    gloss = root / GLOSSARY
+    home = None
+    if gloss.exists():
+        for shown, at in heading_lines(gloss.read_text(errors="replace"), glossary=True).items():
+            if shown.casefold() == key:
+                home = (GLOSSARY, at[0][0])
+                term = shown
+    if not home:
+        notes.append(f"no entry {term} in {GLOSSARY}: lines using it are listed.")
+    word = re.compile(rf"(?<!\w){re.escape(term)}(?!\w)", re.I)
+    slug = re.sub(r"[^\w -]", "", term.lower()).replace(" ", "-")
+    for f, lines in claim_texts(root):
+        # A page or an entry states a term; a spec, a handoff or code only uses it.
+        page = f == LOG or (f.endswith(".md") and not f.startswith(f"{DIR}/"))
+        for n, (line, prose) in enumerate(zip(lines, unfenced(lines)), 1):
+            if (f, n) == home:
+                hits.append((f, n, "home", line, ""))
+                continue
+            if not prose:
+                continue
+            m = word.search(line)
+            anchor = re.search(rf"glossary\.md#{re.escape(slug)}(?![\w-])", line)
+            if m and claim_mark(line, word, GLOSSARY) == "pointer" or anchor:
+                hits.append((f, n, "pointer", line, ""))
+            elif m and page:
+                hits.append((f, n, "copy", line, ""))
+    path = root / LOG
+    text = path.read_text(errors="replace") if path.exists() else ""
+    for e in live_entries(text, prefix):
+        if any(pointer_term(p)[1].casefold() == key for p in entry_touches(e["block"]) or []):
+            hits.append((LOG, e["line"], "copy", f"### {e['id']} {e['title']}", "its Touches names it"))
+    return notes, hits
+
+
+def print_claims(root: Path, claims: list[str]) -> int:
+    """`reading-list --claims`: for each decision id or glossary term, every tracked place
+    naming it, marked home, pointer or copy."""
+    prefix = log_prefix(Board.load(root).trunk)
+    for i, claim in enumerate(claims):
+        is_id = re.fullmatch(log_id_re(prefix), claim)
+        notes, hits = (claims_of_id if is_id else claims_of_term)(root, claim, prefix)
+        print(("\n" if i else "") + f"Every copy of {claim}:")
+        for note in notes:
+            print(f"  ({note})")
+        seen: dict[tuple[str, int], int] = {}
+        rows = []
+        for f, n, mark, line, why in hits:
+            # One line once: a peer entry naming the id, say, is listed with both reasons.
+            if (f, n) in seen:
+                row = rows[seen[(f, n)]]
+                if why and why not in row[4]:
+                    row[4] = f"{row[4]}; {why}" if row[4] else why
+                continue
+            seen[(f, n)] = len(rows)
+            rows.append([f, n, mark, line, why])
+        rows.sort(key=lambda r: (CLAIM_MARKS.index(r[2]), r[0], r[1]))
+        for f, n, mark, line, why in rows:
+            print(f"  {mark:<8} {f}:{n}  {clip(line.strip())}" + (f"   ({why})" if why else ""))
+        if not rows:
+            print("  (no tracked line names it)")
+    print("\nThese are the places that name each claim. One stated in other words is yours to find.")
+    return 0
+
+
 def cmd_reading_list(root: Path, args) -> int:
     """Given the files a task will touch, print the docmap pages to read first."""
+    if args.claims:
+        return print_claims(root, args.paths)
     board = Board.load(root)
     want, unowned = [], []
     for pattern in args.paths:
@@ -2721,7 +2973,8 @@ CODE_EXT = SRC_EXT + (".sh", ".cmake", ".kconfig")
 
 
 def tracked(root: Path) -> list[str]:
-    return [p for p in git("ls-files").splitlines() if p]
+    # At the root, so a command run from a subfolder still sees every file, by its path from the root.
+    return [p for p in git("ls-files", cwd=str(root)).splitlines() if p]
 
 
 def naming(root: Path, path: str, files: list[str]) -> dict[str, list[int]]:
@@ -3997,7 +4250,11 @@ def old_glossary(text: str) -> list[str] | None:
 def term_text(text: str) -> str:
     """A term as a heading or a first cell writes it: a link's text, without code marks or
     emphasis, so `| [mote](#mote) |` and `## **mote**` both name mote."""
-    return plain(re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text))
+    out, at = [], 0
+    for start, end, a, b, _ in link_spans(text, blank_ends=False):
+        out += [text[at:start], text[a:b]]
+        at = end
+    return plain("".join(out) + text[at:])
 
 
 def bold_terms(lines: list[str]) -> list[tuple[int, str]]:
@@ -5364,19 +5621,30 @@ def holds_now(want: str, text: str, prefix: str, rev: str | None = None,
               cwd: str | None = None) -> str | None:
     """The entry in log TEXT that holds in place of WANT: each accepted supersedes link
     followed forward, and with REV, through git where TEXT no longer has a link's entry."""
+    chain = hold_chain(want, text, prefix, rev, cwd)
+    have = {e["id"] for e in log_entries(text, prefix)}
+    return chain[-1] if len(chain) > 1 and chain[-1] in have else None
+
+
+def hold_chain(want: str, text: str, prefix: str, rev: str | None = None,
+               cwd: str | None = None) -> list[str]:
+    """WANT and each id that superseded it in turn, oldest first, as holds_now walks them."""
     entries = log_entries(text, prefix)
     have = {e["id"] for e in entries}
     by = {s: e["id"] for e in entries for s in replaced(e, prefix)}
-    cur, seen = want, set()
-    while cur not in seen:
-        seen.add(cur)
+    chain = [want]
+    while True:
+        cur = chain[-1]
         if cur in by:
-            cur = by[cur]
+            nxt = by[cur]
         elif rev and cur not in have and (found := removed_entry(cur, prefix, rev, cwd)) and found[2]:
-            cur = found[2]["id"]
+            nxt = found[2]["id"]
         else:
             break
-    return cur if cur != want and cur in have else None
+        if nxt in chain:
+            break
+        chain.append(nxt)
+    return chain
 
 
 def cmd_decision(root: Path, args) -> int:
@@ -8806,23 +9074,48 @@ def scope_quoted(sids: list[str]) -> list[re.Pattern]:
 
 def added_lines(trunk: str, staged: bool, files: list[str]) -> list[tuple[str, int, str]]:
     """(path, line number, text) for each line the change adds to FILES. Renames are followed,
-    so a moved page's old lines aren't new; the prefixes are fixed, whatever the user's diff
-    settings."""
+    so a moved page's old lines aren't new, and a line counts as added only while the file's
+    diff adds its text more times than it removes it, so a line moved within a file isn't new
+    either: a line diff shows every move as a delete plus an add. The prefixes are fixed,
+    whatever the user's diff settings."""
     # Both sides of every rename are in the pathspec, or git can't see the rename.
     gone = [f for f in changed_paths(trunk, staged, removed=True) if f.endswith(".md") and f not in files]
-    diff = git("-c", "core.quotePath=false", "diff", "-M", "-U0", "--no-ext-diff", "--no-color",
-               "--src-prefix=a/", "--dst-prefix=b/", base(trunk), *(["--cached"] if staged else []),
-               "--", *files, *gone)
-    out, at, n, want = [], "", 0, set(files)
-    for line in diff.splitlines():
-        if line.startswith("+++ "):
-            at = line[6:] if line.startswith("+++ b/") and line[6:] in want else ""
+    diff = git_raw("-c", "core.quotePath=false", "diff", "-M", "-U0", "--no-ext-diff", "--no-color",
+                   "--src-prefix=a/", "--dst-prefix=b/", base(trunk), *(["--cached"] if staged else []),
+                   "--", *files, *gone)
+    return net_added(diff, set(files))
+
+
+def net_added(diff: str, want: set[str]) -> list[tuple[str, int, str]]:
+    """(path, line number, text) for each line a `-U0` diff with a/ and b/ prefixes adds to a
+    file in WANT, kept only while that file's diff adds the text more times than it removes it:
+    a line diff shows every move as a delete plus an add, so a moved line isn't new. DIFF is
+    read raw and split on newlines only, so a form feed or lone CR in a line can't split off a
+    line that reads as a header."""
+    out, at, n = [], "", 0
+    net: dict[str, Counter] = {}
+    hunk = False  # the ---/+++ headers sit outside hunks, so they are never counted as text
+    for line in diff.split("\n"):
+        if line.startswith("diff "):
+            hunk = False
+        elif not hunk and line.startswith("+++ "):
+            # git ends the header with a tab when the name holds a space
+            name = line[6:].removesuffix("\t") if " " in line[6:] else line[6:]
+            at = name if line.startswith("+++ b/") and name in want else ""
         elif m := re.match(r"@@ -\S+ \+(\d+)", line):
-            n = int(m.group(1))
-        elif line.startswith("+") and at:
+            n, hunk = int(m.group(1)), True
+        elif hunk and at and line.startswith("+"):
             out.append((at, n, line[1:]))
+            net.setdefault(at, Counter())[line[1:]] += 1
             n += 1
-    return out
+        elif hunk and at and line.startswith("-"):
+            net.setdefault(at, Counter())[line[1:]] -= 1
+    kept = []
+    for f, n, text in out:
+        if net[f][text] > 0:
+            net[f][text] -= 1
+            kept.append((f, n, text))
+    return kept
 
 
 def dead_touches(text: str, have: set[str]) -> set[tuple[str, str]]:
@@ -8892,17 +9185,8 @@ def heading_lines(text: str, glossary: bool = False) -> dict[str, list[tuple[int
     first cell too. Fenced code is skipped: a heading quoted in an example is no address."""
     out: dict[str, list[tuple[int, str]]] = {}
     lines = text.splitlines()
-    fence = ""
-    for n, line in enumerate(lines, 1):
-        mark = re.match(r"[ \t]*(`{3,}|~{3,})", line)
-        if mark and not fence:
-            fence = mark.group(1)
-        elif fence:
-            # Only a run of the opening fence's own character, as long, closes it.
-            if mark and mark.group(1)[0] == fence[0] and len(mark.group(1)) >= len(fence) \
-                    and not line.strip()[len(mark.group(1)):].strip():
-                fence = ""
-        elif (m := HEADING.match(line)) and (shown := plain(m.group(1))):
+    for n, (line, prose) in enumerate(zip(lines, unfenced(lines)), 1):
+        if prose and (m := HEADING.match(line)) and (shown := plain(m.group(1))):
             out.setdefault(shown, []).append((n, shown))
     if glossary:
         for i, term in table_terms(lines):
@@ -11664,6 +11948,306 @@ def update_blocked(why: list[str]) -> int:
     return 2
 
 
+# ----------------------------------------------------------------------- rig
+
+# The order every list in `jig rig` keeps, so the same state prints the same bytes.
+RIG_KINDS = ("spec", "staged", "next-step")
+
+
+def rig_store() -> Path:
+    """The skill's open/ready calls, kept in the git dir: local to this clone, never committed."""
+    return git_common() / "jig" / "rig.json"
+
+
+def rig_load_store() -> dict:
+    try:
+        data = json.loads(rig_store().read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def rig_key(content: str, board: "Board") -> str:
+    """A judgment holds while its item and the board are as they were: either changing re-judges."""
+    jobs = json.dumps(board.jobs, sort_keys=True)
+    return hashlib.sha256(f"{content}\0{jobs}".encode()).hexdigest()[:16]
+
+
+def built_after(text: str) -> list[str]:
+    """The names a spec says it builds after, by its `Build after` lines, as stems."""
+    out = []
+    for m in re.finditer(r"^[ \t]*(?:[-*][ \t]*)?Build after (.+)$", text, re.M):
+        out += [Path(n).stem for n in re.findall(r"`([^`\n]+)`", m.group(1))]
+    return out
+
+
+def job_touches(root: Path, board: "Board") -> dict[str, list[str]]:
+    """Each open job's spec's Touches, by job name: what that job is already changing."""
+    out = {}
+    for name, job in sorted(board.open_jobs().items()):
+        spec = root / spec_key(root, job["spec"]) if job.get("spec", "").endswith(".md") else None
+        out[name] = touches_spans(spec.read_text(errors="replace")) if spec and spec.is_file() else []
+    return out
+
+
+def rig_items(root: Path, board: "Board") -> list[dict]:
+    """Every waiting spec, every staged file and the roadmap's next step, unjudged, in kind
+    then path order. A staged file's open or ready is the skill's call, read back from the store."""
+    items = []
+    specs = waiting_specs(root, board)
+    for path, text in specs.items():
+        items.append({"kind": "spec", "id": Path(path).stem, "path": path, "content": text,
+                      "touches": touches_spans(text), "after": built_after(text),
+                      "kept": sorted(kept_separate(text)), "scopes": spec_scopes(text)})
+    for f in staged_files(main_root()):
+        head, body, _ = read_staged(f)
+        items.append({"kind": "staged", "id": f.name, "path": f"{STAGING}/{f.name}",
+                      "content": f.read_text(errors="replace"), "header": head,
+                      "touches": touches_spans(body), "after": [Path(n).stem for n in after_names(head)],
+                      "kept": sorted(kept_separate(body)), "scopes": spec_scopes(body)})
+    covering = [(f"{i['kind']} {i['path']}", i["touches"]) for i in items]
+    covering += [(f"job {n}", ts) for n, ts in job_touches(root, board).items()]
+    return items + rig_next_step(board, [s for i in items for s in i["scopes"]], covering)
+
+
+def covered_by(page: str, covering: list[tuple[str, list[str]]]) -> list[str]:
+    """Who names PAGE itself in their Touches: a glob or a folder is a spec's reach, not a
+    sign that it builds a parked item on one page of it."""
+    return [who for who, ts in covering
+            if any(t.partition(" § ")[0] == page and not re.search(r"[*?\[]", t) for t in ts)]
+
+
+def rig_next_step(board: "Board", taken: list[str], covering: list[tuple[str, list[str]]]) -> list[dict]:
+    """One step ahead on trunk's roadmap: the first Up next item whose pages no open job, waiting
+    spec or staged file names in its Touches, else the current phase's first open scope that no
+    waiting spec or staged file takes by its `Scope:` line. An Up next item has no scope id to
+    take, so its pages say work on it is under way: each one passed over comes first, waiting
+    on what names its pages, so it never drops out of the picture unexplained."""
+    snap = Snapshot(board.trunk)
+    text = snap.show(ROADMAP)
+    if not text:
+        return []
+    out = []
+    for i in parse_up_next(text):
+        item = {"kind": "next-step", "id": i["id"], "path": f"{ROADMAP}#{i['id']}",
+                "content": f"{UP_NEXT}\0{i['id']}\0{i['what']}\0{i['touches']}",
+                "what": i["what"], "from": UP_NEXT, "touches": i["touches"], "after": [],
+                "kept": [], "scopes": []}
+        by = [covered_by(p, covering) for p in i["touches"]]
+        if i["touches"] and all(by):
+            item["covered"] = sorted({w for ws in by for w in ws})
+            out.append(item)
+            continue
+        return out + [item]
+    for p in roadmap_state(snap) or []:
+        if p["state"] != "current":
+            continue
+        for s in p["scopes"]:
+            if s["state"] == "open" and s["id"] not in taken:
+                return out + [{"kind": "next-step", "id": s["id"], "path": f"{ROADMAP}#{s['id']}",
+                               "content": f"{p['name']}\0{s['id']}\0{s['what']}", "what": s["what"],
+                               "from": f"phase {p['name']}", "touches": [], "after": [], "kept": [],
+                               "scopes": []}]
+    return out
+
+
+def reach_of(start: str, deps: dict[str, list[str]]) -> set[str]:
+    seen, todo = set(), list(deps.get(start, []))
+    while todo:
+        x = todo.pop()
+        if x not in seen:
+            seen.add(x)
+            todo += deps.get(x, [])
+    return seen
+
+
+def rig_state(root: Path, board: "Board") -> dict:
+    """The picture as data: each item with its judgment, what it waits on and its proposed group,
+    then the open jobs with `jig next`'s step for each. In a group, items whose Touches overlap
+    are one job to answer (merge, or keep apart); an item that depends on another opens after it."""
+    items = rig_items(root, board)
+    store = rig_load_store()
+    for i in items:
+        i["key"] = rig_key(i.pop("content"), board)
+        held = store.get(i["path"])
+        i["judged"] = held["judgment"] if isinstance(held, dict) and held.get("key") == i["key"] else None
+        call = (i["judged"] or {}).get("call")
+        i["state"] = ("ready" if i["kind"] == "spec" else "taken" if "covered" in i
+                      else "open" if i["kind"] == "next-step"
+                      else call if call in ("ready", "open") else "unjudged")
+    by_name = {}
+    for i in items:
+        if i["kind"] != "next-step":
+            by_name.setdefault(i["id"], i)
+            by_name.setdefault(Path(i["id"]).stem, i)
+    # A spec that opened as a job under another name is still the one an item builds after.
+    job_of = {n: n for n in board.jobs}
+    for n, j in sorted(board.jobs.items()):
+        if j.get("spec"):
+            job_of.setdefault(Path(j["spec"]).stem, n)
+    for i in items:
+        i["deps"] = sorted({by_name[n]["path"] for n in i["after"] if n in by_name and by_name[n] is not i})
+        i["waits_on"] = sorted({f"job {job_of[n]}" for n in i["after"] if n in job_of and n not in by_name}
+                               | set(i.pop("covered", [])))
+    # A dependency cycle never opens on its own: it waits on the owner to break it.
+    deps = {i["path"]: i["deps"] for i in items}
+    cycles: set[tuple[str, ...]] = set()
+    for i in items:
+        seen = reach_of(i["path"], deps)
+        if i["path"] in seen:
+            ring = sorted(x for x in seen if x != i["path"] and i["path"] in reach_of(x, deps))
+            i["waits_on"].append(f"a dependency cycle with {', '.join(ring)}")
+            cycles.add(tuple(sorted(ring + [i["path"]])))
+    # What waits, directly or through an item that isn't ready or itself waits.
+    changed = True
+    while changed:
+        changed = False
+        for i in items:
+            if i["state"] != "ready":
+                continue
+            for d in i["deps"]:
+                dep = next(x for x in items if x["path"] == d)
+                if (dep["state"] != "ready" or dep["waits_on"]) and f"{dep['kind']} {d}" not in i["waits_on"]:
+                    i["waits_on"].append(f"{dep['kind']} {d}")
+                    changed = True
+    for i in items:
+        i["waits_on"].sort()
+    start = [i for i in items if i["state"] == "ready" and not i["waits_on"]]
+    parent = {i["path"]: i["path"] for i in start}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            x = parent[x]
+        return x
+    overlaps = []
+    meet = lambda a, b: (Path(b["id"]).stem not in a["kept"] and Path(a["id"]).stem not in b["kept"]
+                         and any(touches_meet(x, y) for x in a["touches"] for y in b["touches"]))
+    for n, a in enumerate(start):
+        for b in start[n + 1:]:
+            if meet(a, b):
+                overlaps.append(sorted([a["path"], b["path"]]))
+                parent[find(b["path"])] = find(a["path"])
+            elif b["path"] in a["deps"] or a["path"] in b["deps"]:
+                parent[find(b["path"])] = find(a["path"])
+    # `jig open` refuses a spec overlapping any waiting spec, one that waits included.
+    starting = {i["path"] for i in start}
+    for a in start:
+        for b in items:
+            if b["kind"] == "spec" and b["path"] not in starting and meet(a, b):
+                overlaps.append(sorted([a["path"], b["path"]]))
+    rank = {k: n for n, k in enumerate(RIG_KINDS)}
+    sort_key = lambda i: (rank[i["kind"]], i["path"])
+    groups: dict[str, list[dict]] = {}
+    for i in sorted(start, key=sort_key):
+        groups.setdefault(find(i["path"]), []).append(i)
+    ordered = []
+    for members in groups.values():
+        left, out = list(members), []
+        while left:
+            free = [i for i in left if not any(d in {x["path"] for x in left} for d in i["deps"])] or left
+            pick = min(free, key=sort_key)
+            out.append(pick)
+            left.remove(pick)
+        ordered.append(out)
+    paired = {p for pair in overlaps for p in pair}
+    for g, members in enumerate(ordered, 1):
+        inside = {i["path"] for i in members}
+        for i in members:
+            i["group"] = g
+            # `after` first: until what it builds after opens, there is nothing to answer about it.
+            i["opens"] = ("after" if any(d in inside for d in i["deps"]) else
+                          "answer" if i["path"] in paired else "now")
+    for i in items:
+        i.setdefault("group", None)
+        i.setdefault("opens", None)
+        del i["kept"]
+    jobs = []
+    for name in sorted(board.open_jobs()):
+        step, who, session, why = next_step(root, board, name)
+        jobs.append({"name": name, "step": step, "who": who, "session": session, "why": why})
+    # Every block that asks the owner something counts once: a ring is one question, not one per member.
+    asks = [i for i in items if i["state"] in ("open", "unjudged")]
+    pairs = sorted({tuple(p) for p in overlaps})
+    return {"items": sorted(items, key=sort_key), "overlaps": [list(p) for p in pairs],
+            "cycles": [list(c) for c in sorted(cycles)],
+            "groups": [{"paths": [i["path"] for i in g],
+                        "overlaps": sorted(p for p in overlaps if set(p) & {i["path"] for i in g})}
+                       for g in ordered],
+            "waiting_on_you": len(asks) + len(pairs) + len(cycles), "can_start": sum(i["opens"] == "now" for i in start), "jobs": jobs}
+
+
+def rig_text(state: dict) -> str:
+    items = state["items"]
+    n, m = state["waiting_on_you"], state["can_start"]
+    out = [f"{n} thing{'s' if n != 1 else ''} waiting on your answers; {m} can start now."]
+    out.append("\nCan start now:")
+    for g, group in enumerate(state["groups"], 1):
+        paths = group["paths"]
+        out.append(f"  group {g}:")
+        for p in paths:
+            i = next(x for x in items if x["path"] == p)
+            after = [d for d in i["deps"] if d in paths]
+            out.append(f"    {i['kind']:<7} {p}" + (f"  (after {', '.join(after)})" if after else ""))
+        for a, b in group["overlaps"]:
+            out.append(f"    {a} and {b} overlap: one job, or kept apart")
+    if not state["groups"]:
+        out.append("  nothing")
+    out.append("\nWaiting on:")
+    waits = [i for i in items if i["waits_on"]]
+    out += [f"  {i['kind']:<7} {i['path']}  waits on {', '.join(i['waits_on'])}" for i in waits] or ["  nothing"]
+    out.append("\nWaiting on you:")
+    asks = [i for i in items if i["state"] in ("open", "unjudged")]
+    for i in asks:
+        if i["kind"] == "next-step":
+            out.append(f"  next    {i['id']} ({i['from']}): {i['what']}")
+        else:
+            out.append(f"  {i['kind']:<7} {i['path']}  {'not judged yet' if i['state'] == 'unjudged' else 'open'}")
+    out += [f"  overlap {a} and {b}: one job, or kept apart" for a, b in state["overlaps"]]
+    out += [f"  cycle   {', '.join(c)}: which goes first" for c in state["cycles"]]
+    if not asks and not state["overlaps"] and not state["cycles"]:
+        out.append("  nothing")
+    out.append("\nRunning:")
+    out += [f"  {j['name']}: {j['step']} — {j['who']}, {j['session']}" + (f" ({j['why']})" if j["why"] else "")
+            for j in state["jobs"]] or ["  no open jobs"]
+    return "\n".join(out)
+
+
+def cmd_rig(root: Path, args) -> int:
+    """The repo's picture: what can start, what waits on what, what waits on the owner, and the
+    running jobs. It reads and never writes the roadmap or staging; its one file is the store."""
+    board = Board.load(root)
+    if args.fresh:
+        rig_store().unlink(missing_ok=True)
+    if args.store_get or args.store_put:
+        path = args.store_get or args.store_put
+        item = next((i for i in rig_state(root, board)["items"] if i["path"] == path), None)
+        if not item:
+            die(f"{path} is no item of `jig rig`: name it by the path `jig rig --json` prints")
+        if args.store_get:
+            if item["judged"] is None:
+                return 1
+            print(json.dumps(item["judged"], indent=2, sort_keys=True))
+            return 0
+        try:
+            judgment = json.loads(sys.stdin.read())
+        except ValueError as e:
+            die(f"--store-put reads a JSON object on stdin: {e}", 2)
+        # A staged file's call is what places it: one stored without it would replay as unjudged.
+        call = judgment.get("call", "ready" if item["kind"] != "staged" else None) if isinstance(judgment, dict) else None
+        if call not in ("ready", "open"):
+            die(f'--store-put reads a JSON object whose "call" is "ready" or "open"'
+                f'{" (a staged file needs one)" if item["kind"] == "staged" else ""}', 2)
+        store = rig_load_store()
+        store[path] = {"key": item["key"], "judgment": judgment}
+        rig_store().parent.mkdir(parents=True, exist_ok=True)
+        rig_store().write_text(json.dumps(store, indent=2, sort_keys=True) + "\n")
+        print(f"stored the judgment of {path}")
+        return 0
+    state = rig_state(root, board)
+    print(json.dumps(state, indent=2, sort_keys=True) if args.json else rig_text(state))
+    return 0
+
+
 # ----------------------------------------------------------------------- main
 
 def main(argv: list[str] | None = None) -> int:
@@ -11758,7 +12342,9 @@ def main(argv: list[str] | None = None) -> int:
     rm = sub.add_parser("roadmap", help="the roadmap's phases and scopes, and their states on trunk")
     rm.add_argument("--write", action="store_true", help=f"regenerate {ROADMAP_VIEW} in the trunk checkout")
     rl = sub.add_parser("reading-list", help="what to read before touching these files")
-    rl.add_argument("paths", nargs="+")
+    rl.add_argument("paths", nargs="+", metavar="path")
+    rl.add_argument("--claims", action="store_true",
+                    help="the arguments are decision ids or glossary terms: list every tracked place naming each")
     g = sub.add_parser("gate", help="verify a job (or this branch) is mergeable")
     g.add_argument("name", nargs="?")
     sv = sub.add_parser("survey", help="inventory the repo against the jig shape")
@@ -11792,6 +12378,11 @@ def main(argv: list[str] | None = None) -> int:
     up.add_argument("--merge-log", action="store_true", help=f"on the owner's yes: merge CHANGELOG.md and the decision register into {LOG}")
     up.add_argument("--sweep", action="store_true", help=f"on the owner's yes: move pages' ## Undefined entries to {UP_NEXT} in {ROADMAP}")
     up.add_argument("--glossary", action="store_true", help=f"on the owner's yes: move the README's glossary, or GLOSSARY.md, to {GLOSSARY}, rewriting what points to it")
+    rg = sub.add_parser("rig", help="the repo's picture: what can start, what waits on what and on the owner")
+    rg.add_argument("--json", action="store_true")
+    rg.add_argument("--fresh", action="store_true", help="forget every stored judgment first")
+    rg.add_argument("--store-get", metavar="PATH", help="print an item's stored judgment, if it still holds")
+    rg.add_argument("--store-put", metavar="PATH", help="store an item's judgment, a JSON object on stdin")
     hk = sub.add_parser("hook")
     hk.add_argument("name")
     hk.add_argument("rest", nargs="*")
@@ -11816,6 +12407,7 @@ def main(argv: list[str] | None = None) -> int:
         "workflow": cmd_workflow, "roles": cmd_roles, "flows": cmd_flows, "next": cmd_next,
         "survey": cmd_survey, "reading-list": cmd_reading_list, "update": cmd_update, "repos": cmd_repos, "staging": cmd_staging,
         "release": cmd_release, "propose": cmd_propose, "roadmap": cmd_roadmap,
+        "rig": cmd_rig,
     }[args.cmd]
     return fn(root, args)
 

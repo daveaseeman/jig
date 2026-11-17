@@ -61,7 +61,8 @@ shares, refusing one another open job owns.
 
 **Overlapping specs are answered before they open.** A spec is *waiting* when no open job names
 it, no handoff note's `Spec:` line names it, and the newest release tag doesn't hold it (any spec,
-with no tag yet). Two waiting specs overlap when their `## Touches` meet: one path, a glob
+with no tag yet), unless it carries a `Bug-for: <job>` line: a bug spec is built in the job it
+names and reaches trunk only when that job merges, so it never waits. Two waiting specs overlap when their `## Touches` meet: one path, a glob
 covering the other's path, or the same `<page> § <term>` (a whole page meets any term on it).
 `jig consolidate` lists each group of overlapping waiting specs with the paths they share, as
 one proposed job. A group is answered one of two ways: one spec carries every input's `Source:`
@@ -218,7 +219,7 @@ the roadmap cites pages and decisions freely, and a page or a decision entry nev
 not. The hook refuses an added line in a page under `docs/`, in `.jig/decisions.md` or in a
 metarepo's entry file that names `.jig/specs/`, `.jig/handoffs/` or `.jig/roadmap.md`, or a
 scope id the roadmap has in code quotes (`` `alpha/screen` ``), and names the line; a moved
-page's old lines aren't new. What can be product text too, it can't judge: `ROADMAP.md`, a
+page's old lines, or a line moved within a file, aren't new. What can be product text too, it can't judge: `ROADMAP.md`, a
 bare scope id ("the v1/api endpoint"), a phase name, prose like "phase 3" or "spec step 6", a
 `## Status` heading. Nothing searches for those, at commit or after: words like these are often
 the product's own (a status call, a three-phase motor, a launch configuration), so whoever
@@ -645,9 +646,9 @@ job's work session); `⇢` starts a new one.
 | Workflow | Steps | Trigger | Controls |
 |---|---|---|---|
 | Job | spec ⇢ work ⇢ review-work → handoff → gate ⇢ check → merge | `jig open` | merge only on the owner's word |
-| Fix | work ⇢ review-change → handoff | a review with blocking findings | three rounds at most; a fourth is refused and Bug runs |
+| Fix | work ⇢ review-change → handoff | a review with blocking findings | three strikes: a job's third blocking review starts Bug |
 | Sync | work ⇢ review-change → handoff | a sync with a hand-resolved conflict | a clean sync needs nothing |
-| Bug | bug → spec ⇢ Job | a fourth fix round, a feedback group, or the owner's `/jig:bug` | never on a session's own reading that something is broken |
+| Bug | bug → spec ⇢ Job | a job's third blocking review, a feedback group, or the owner's `/jig:bug` | never on a session's own reading that something is broken |
 | Feedback | consolidate ⇢ bug + spec → consolidate ⇢ Job | staged feedback, in the jig repo | one bug + spec per group; overlaps answered before any job opens |
 | Batch | gate → merge ⇢ check → trace | two or more gated jobs | one check on trunk; a failure is traced to its merge, then Fix on that job |
 | Release | check → release → push → publish | the owner's word | refused while a batch check is owed; push and publish only on the owner's word |
@@ -670,10 +671,16 @@ with the defaults.
 - `jig merge <job>` refuses a job not marked gated.
 - `jig reviewed --blocking N` records the blocking findings a review left; `jig handoff`
   refuses while the newest review of HEAD has any.
-- Fix rounds are counted per part of a job (a handoff note, `--partial` too, ends a part):
-  the first blocking review starts round 1, and each blocking review after it ends one. After
-  three, `jig reviewed` is refused, full or `--change`, until a spec for the job carrying
-  `Bug-for: <job>` on a line of its own is committed: the Bug workflow.
+- Strikes are counted per part of a job (a handoff note, `--partial` too, ends a part): each
+  review that records blocking findings, full or `--change`, the first review-work included,
+  is one, and a clean review between them resets nothing. The third strike starts Bug: the
+  next `jig reviewed` is refused, full or `--change`, until a spec for the job carrying
+  `Bug-for: <job>` on a line of its own is committed.
+
+A review with no blocking findings ends the fixing: the job hands off, as `jig next` says.
+Should-fix and optional findings get one round per part; what is left after it gets DEFERRED
+rows. A finding that needs behavior the spec never names is a spec change before it is built
+(an `Interpreted:` line the hubnode accepts, or the owner's answer), or an Up next item.
 
 **Settings in effect.** `jig roles` prints each role's tier and effort. A repo overrides them
 in `config.json`, each entry with its reason:
@@ -710,6 +717,26 @@ review.
 A `Proposed` entry the job adds or changes is a ruling the owner still owes. The job tells the
 hubnode when it writes one, the hubnode sends it up while the job builds, and `jig gate` warns,
 naming each, but never refuses: the owner may say to gate a job as proposed.
+
+`jig rig` is the repo's picture, the hubnode's entry point: what can start now, what waits on
+what, what waits on the owner, and the open jobs with `jig next`'s step for each. It lists four
+kinds of item: a **ready spec** (a waiting spec, as The board defines it), a **staged file**,
+which a model reading it calls **ready** (it can become a spec as it is) or **open** (it needs
+the owner's answers first), and the roadmap's **next step** (Roadmap). Ready items whose Touches
+overlap, with no `Kept separate` line, are one job to answer (merged, or kept apart); an item
+that depends on another (a staged file's `after:` header, a spec's `Build after <name>` line)
+is in the same group and opens after it, with nothing to answer; one that depends on an open
+job, named or by its spec's name, or on an item not ready, waits on it, and a dependency
+cycle waits on the owner. An item that could start but overlaps any waiting spec, one that
+waits included, is to answer first, since `jig open` refuses it. The order is
+fixed (kind, dependency, path), so the same state prints the same bytes. Its count of what
+waits on the owner's answers counts every question: each open or unjudged staged file, the
+open next step, each overlapping pair and each dependency cycle, a ring once; `--json` prints it as
+data. A model's open/ready call, its questions and its recommendation are kept per item in
+`.git/jig/rig.json` (never committed) with a key of the item's content and the board, and
+replayed while both are unchanged: `jig rig --store-put <path>` stores one (a JSON object on
+stdin), `--store-get <path>` prints one that still holds, and `--fresh` forgets them all. It
+never writes the roadmap or staging. It is called by name only: `jig next` is unchanged.
 
 ### Two levels of check
 
@@ -793,6 +820,13 @@ The product is the repo, so there is one roadmap and no product level in it.
 - **The hook refuses** a spec whose `Scope:` names a scope trunk's roadmap doesn't have (on
   trunk, the commit's own roadmap), and on trunk a roadmap change that drops or renames a scope
   a spec still takes, naming the spec: re-point it in the same commit.
+- **The next step** is one step ahead, as if staging and the waiting specs were cleared: the
+  first Up next item whose pages no open job's, waiting spec's or staged file's Touches names
+  (by the page itself: a glob or a folder doesn't count, and an Up next item has no scope id
+  to take), else the current phase's first open scope that no waiting spec or staged file
+  takes by its `Scope:` line. An Up next item passed over is listed as waiting on what names
+  its pages. `jig rig` (Workflow) proposes it to the owner and
+  never writes the roadmap.
 
 ## Decision log
 
@@ -997,6 +1031,8 @@ other. The warning doesn't fail anything, since both may be meant.
 `check` also warns on each entry of a `decisions` file whose status says Accepted, naming its id
 and who: `resolve` logs it as decided, so the owner confirms they accepted it, else it says
 Proposed. It doesn't fail the check, since an entry accepted in the chat is right as written.
+`jig rig` (Workflow) lists every staged file with its header, and leaves whether it is ready to
+become a spec or open on the owner's answers to the model that reads it.
 
 A feature request is `kind: feature-request`: the owner's own words for what the product
 should do ("I want it to do xyz"), with no required shape. A story names who wants what and
@@ -1191,6 +1227,10 @@ Two rules for the metarepo's own pages:
   by meaning, not only by its words, and its done-when covers each one: the claim's home is
   updated (a decision and the pages citing it as their source; when the home is a pararepo, it
   already says it, and the metarepo points), and every other place becomes a pointer to it.
+  The list starts from `jig reading-list --claims <id or term>…`: every tracked line naming
+  the decision id (a superseded id hops to its successor) or the glossary term, its peer
+  entries by `Touches:`, each marked `home`, `pointer` (a `§` reference or a link to the home)
+  or `copy`. It finds names only; a copy in other words is the spec writer's to find.
 
 ## Release
 
@@ -1237,6 +1277,8 @@ jig repos [add repo|meta|para | rename <new>]  where your repos live (user confi
 jig open ... --reserve K    allocate scarce counter K to this job
 jig reserve <job> <K>       hubnode: give an open job the next number of counter K too
 jig consolidate             hubnode: groups of waiting specs whose Touches overlap, to answer before opening
+jig rig [--json] [--fresh]  the repo's picture: what can start, what waits on what and on the owner, the open jobs
+jig rig --store-put|--store-get <path>   store, or print, a model's judgment of one item
 jig share <job> <path>…     hubnode: add paths to an open job's shares
 jig reading-list <paths>    what to read before touching these files, and the pages above
 jig install-hooks           rewrite the hooks
