@@ -2492,11 +2492,26 @@ def claim_mark(line: str, pat: re.Pattern, home: str) -> str:
     is marked by its caller, which knows its line."""
     links = [k for k in re.finditer(r"\[([^\]]*)\]\(([^)\s]*)\)", line) if Path(home).name in k.group(2)]
     for m in pat.finditer(line):
-        ref = re.search(r"(\S*?)`?[ \t]*§[ \t`]*$", line[:m.start()])
+        if any(k.start(1) <= m.start() < k.end(1) for k in links):
+            return "pointer"
+        # Read back from the name, never forward from the line's start: a regex anchored at the
+        # name scans a minified bundle's long runs once per match, and never finishes.
+        i = m.start()
+        while i and line[i - 1] in " \t`":
+            i -= 1
+        if not i or line[i - 1] != "§":
+            continue
+        j = i - 1
+        while j and line[j - 1] in " \t":
+            j -= 1
+        if j and line[j - 1] == "`":
+            j -= 1
+        k = j
+        while k and not line[k - 1].isspace():
+            k -= 1
         # `other.md § mote` names a heading of another page: only the home's file, or no file, points home.
-        page = ref.group(1).strip("`(") if ref else ""
-        if ref and (not page.endswith(".md") or Path(page).name == Path(home).name) \
-                or any(k.start(1) <= m.start() < k.end(1) for k in links):
+        page = line[k:j].strip("`(")
+        if not page.endswith(".md") or Path(page).name == Path(home).name:
             return "pointer"
     return "copy"
 
