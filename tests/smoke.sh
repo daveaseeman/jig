@@ -2185,8 +2185,26 @@ nx "a bug spec from an earlier part lifts nothing: part 2's third strike is bug"
 msg="reviewed: part 2's fourth review is refused, naming Bug-for"
 out=$($J reviewed --change --tier 2 --effort 2 --blocking 0 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'Bug-for: k7'" "$out"
+printf '# k7 bug, part 2\n\nBug-for: k7\n' > .jig/specs/k7-bug.md && git commit -qam "k7: part 2's bug spec, over part 1's"
+msg="reviewed: part 1's bug spec rewritten at the same path in part 2 lifts part 2's limit"
+expect_pass $J reviewed --change --tier 2 --effort 2 --blocking 0
 cd "$NX"
-# A gated job whose branch moved past its note: jig merge would refuse it, so jig next names the handoff.
+# A draft that gets its Bug-for: line in a later commit of the part counts; the line removed later doesn't.
+$J open k9 --owns 'k9/**' >/dev/null && git add -A && git commit -qm "open k9"
+cd .git/jig/worktrees/k9 && mkdir k9 && printf 'x\n' > k9/x.txt && git add -A && git commit -qm x
+strike() { $J reviewed $1 --tier 2 --effort 2 --blocking 1 >/dev/null && printf 'y\n' >> k9/x.txt && git commit -qam fix; }
+strike "" && strike --change && strike --change
+mkdir -p .jig/specs && printf '# k9 bug, a draft\n' > .jig/specs/k9-bug.md && git add -A && git commit -qm "k9: bug draft"
+msg="next: a bug draft with no Bug-for: line is still bug"
+expect_pass sh -c "$J next | grep -q '^k9: bug — '"
+printf '\nBug-for: k9\n' >> .jig/specs/k9-bug.md && git commit -qam "k9: the draft names its job"
+msg="next: the draft given its Bug-for: line in a later commit lifts the limit: review-change"
+expect_pass sh -c "$J next | grep -q '^k9: review-change — '"
+printf '# k9 bug, a draft\n' > .jig/specs/k9-bug.md && git commit -qam "k9: line removed"
+msg="next and reviewed: the line removed later in the part counts for nothing"
+expect_pass sh -c "$J next | grep -q '^k9: bug — ' && ! $J reviewed --change --tier 2 --effort 2 --blocking 0 >/dev/null 2>&1"
+cd "$NX"
+# A gated job whose branch moved past its note: jig merge would refuse it, so jig next takes the ordinary steps.
 $J open k8 --owns 'k8/**' >/dev/null && git add -A && git commit -qm "open k8"
 (cd .git/jig/worktrees/k8 && mkdir k8 && printf 'x\n' > k8/x.txt && git add -A && git commit -qm x && $J reviewed >/dev/null \
   && $J handoff >/dev/null && foldin && git add -A && git commit -qm "note k8")
@@ -2194,7 +2212,7 @@ gated k8
 nx "a gated job with nothing since its note is still the merge" k8 "k8: merge — hubnode, continue the hubnode (Job; on the owner's word)"
 noted=$(git rev-parse --short=12 k8~1)
 (cd .git/jig/worktrees/k8 && printf 'y\n' >> k8/x.txt && git commit -qam more)
-nx "a gated job changed since its note is the handoff, not the merge" k8 "k8: handoff — work, continue the work session (Job; gated at $noted, changed since)"
+nx "a gated job changed since its note is the review-change, not the merge" k8 "k8: review-change — review, new session (Fix or Sync; once the checks pass, of what changed since $noted)"
 }
 
 # ---------------------------------------------------------------- init beside an old board

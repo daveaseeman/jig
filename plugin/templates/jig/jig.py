@@ -1274,13 +1274,9 @@ def bug_for(text: str) -> str:
     """The job a spec names itself the bug spec for, or "": `Bug-for: <job>` on a line of its
     own, outside fenced code. The one reader of the line, so a spec quoting it in an example,
     or a template's `<job>` placeholder, is no bug spec anywhere."""
-    fence = ""
-    for line in text.splitlines():
-        m = re.match(r"[ \t]*(`{3,}|~{3,})", line)
-        if m and (not fence or m.group(1).startswith(fence)):
-            fence = "" if fence else m.group(1)
-            continue
-        if not fence and (b := re.fullmatch(r"Bug-for:[ \t]*([^<>\s]+)[ \t]*", line)):
+    lines = text.splitlines()
+    for line, out in zip(lines, unfenced(lines)):
+        if out and (b := re.fullmatch(r"Bug-for:[ \t]*([^<>\s]+)[ \t]*", line)):
             return b.group(1)
     return ""
 
@@ -2107,23 +2103,25 @@ def blocking_reviews(chain: list[str]) -> int:
 
 
 def bug_spec_for(job: str, chain: list[str]) -> str:
-    """The bug spec for JOB added in the current part of CHAIN (newest first), or "". It lifts
-    the strike limit for the part it was written in only: one committed in an earlier part
-    would otherwise leave every later part's strikes unlimited."""
+    """The bug spec for JOB written in the current part of CHAIN (newest first), or "": a spec
+    a commit of the part added or changed that names JOB as the part's tip has it. It lifts
+    the strike limit for that part only: one committed in an earlier part would otherwise leave
+    every later part's strikes unlimited. Changed counts, so the bug role can rewrite last
+    part's file at the same path, and a draft can get its line in a later commit; read at the
+    tip, so a line removed later in the part counts for nothing."""
     part = this_part(chain)
     if not part:
         return ""
-    on = set(part)
-    commit = ""
-    for line in git("log", "--first-parent", "--no-merges", "--diff-filter=A", "--name-only",
-                    "--format=%x00%H", part[0], "--", f"{DIR}/specs/").splitlines():
+    on, commit, touched = set(part), "", []
+    for line in git("log", "--first-parent", "--no-merges", "--no-renames", "--diff-filter=AM",
+                    "--name-only", "--format=%x00%H", part[0], "--", f"{DIR}/specs/").splitlines():
         if line.startswith("\0"):
             commit = line[1:]
             if commit not in on:
                 break
-        elif line and bug_for(git_raw("show", f"{commit}:{line}")) == job:
-            return line
-    return ""
+        elif line and line not in touched:
+            touched.append(line)
+    return next((f for f in touched if bug_for(git_raw("show", f"{part[0]}:{f}")) == job), "")
 
 
 def cmd_reviewed(root: Path, args) -> int:
@@ -2184,13 +2182,11 @@ def next_step(root: Path, board: "Board", name: str) -> tuple[str, str, str, str
     state, the handoff notes, the review log, the gate's checkout and the check log."""
     trunk, branch, state = board.trunk, board.branch(name), board.jobs[name].get("state")
     hub = "continue the hubnode"
-    if state == "gated":
-        # `jig merge`'s own test: a branch moved past the commit its newest note names is refused.
-        notes = handoff_notes(branch, name)
-        m = re.search(r"^Commit: (\w+)", git("show", f"{branch}:{notes[-1]}"), re.M) if notes else None
-        if m and changed_since(m.group(1), branch, board):
-            return ("handoff", "work", "continue the work session",
-                    f"Job; gated at {m.group(1)[:12]}, changed since")
+    notes = handoff_notes(branch, name) if state == "gated" else []
+    m = re.search(r"^Commit: (\w+)", git("show", f"{branch}:{notes[-1]}"), re.M) if notes else None
+    # `jig merge`'s own test: a branch moved past the commit its newest note names is refused,
+    # so a gated job that moved goes through the ordinary steps (review-change, then handoff).
+    if state == "gated" and not (m and changed_since(m.group(1), branch, board)):
         why = "Job; on the owner's word"
         if board.jobs[name].get("check") == "batch":
             why = "Batch; on the owner's word, then one check on " + trunk + " for the batch"
