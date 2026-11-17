@@ -66,7 +66,7 @@ spec is the plan or the remap: write it as that entry point's section on it says
 file, with the same Done when, Roles and Touches.
 
 **A bug's spec.** The bug role ends with its own spec, written as `/jig:bug` says; a spec for
-a job that has had three blocking fix rounds carries `Bug-for: <job>` on a line of its own.
+a job whose third blocking review started Bug carries `Bug-for: <job>` on a line of its own.
 
 ## Consolidate
 
