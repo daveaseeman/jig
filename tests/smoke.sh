@@ -7686,6 +7686,8 @@ python3 -c "print(('a' * 680 + '/x.md§cache;') * 1160)" > dist/glued.js
 # And links: a glued `[a](` with no `)` after it, and a run of `[` with no `]`, each tried from every bracket.
 python3 -c "print(('[a](' + 'b' * 680) * 1450 + ' cache')" > dist/links.js
 python3 -c "print('[' * 1000000 + ' cache')" > dist/brackets.js
+# And many links home with many names after them: each name checked against every link.
+python3 -c "print('[a](docs/glossary.md)' * 10000 + ' cache' * 30000)" > dist/homelinks.js
 git add -A && nohook bundle
 msg="claims: long lines with many names or brackets, a page glued to each § or not, finish in seconds (reading from the run's start never did)"
 expect_pass python3 -c "import subprocess; subprocess.run(['python3', '.jig/jig.py', 'reading-list', '--claims', 'cache'], capture_output=True, timeout=10, check=True)"

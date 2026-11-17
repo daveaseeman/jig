@@ -7,6 +7,7 @@ rules it is judged by. Stdlib only.
 from __future__ import annotations
 
 import argparse
+import bisect
 from collections import Counter
 import difflib
 import fnmatch
@@ -2489,13 +2490,13 @@ def unfenced(lines: list[str]) -> list[bool]:
 LINK_STOP = re.compile(r"[)\s]")
 
 
-def link_spans(line: str) -> list[tuple[int, int, str]]:
-    """(text start, text end, target) of each Markdown link in LINE: the spans
-    re.finditer(r"\[([^\]]*)\]\(([^)\s]*)\)") gives, found in one pass. That regex retries
-    every `[` and rescans to the next `]` or `)` from each, so a minified line of brackets takes
-    it minutes. A try from a `[` is settled by the first `]` after it, so every `[` before that
-    `]` settles the same way and only the first needs trying; and the first `)` or blank after
-    a `](` is shared by every later `](` before it."""
+def link_spans(line: str, blank_ends: bool = True) -> list[tuple[int, int, int, int, str]]:
+    """(start, end, text start, text end, target) of each Markdown link in LINE, in order: the
+    matches re.finditer(r"\[([^\]]*)\]\(([^)\s]*)\)") gives, or without BLANK_ENDS, the target
+    `[^)]*`, found in one pass. That regex retries every `[` and rescans to the next `]` or `)`
+    from each, so a minified line of brackets takes it minutes. A try from a `[` is settled by
+    the first `]` after it, so every `[` before that `]` settles the same way and only the first
+    needs trying; and the first stop after a `](` is shared by every later `](` before it."""
     out = []
     stop_from, stop = -1, None
     p = line.find("[")
@@ -2506,10 +2507,14 @@ def link_spans(line: str) -> list[tuple[int, int, str]]:
         if line[q + 1:q + 2] == "(":
             s = q + 2
             if stop_from < 0 or s < stop_from or (stop is not None and s > stop):
-                m = LINK_STOP.search(line, s)
-                stop_from, stop = s, (m.start() if m else None)
+                if blank_ends:
+                    m = LINK_STOP.search(line, s)
+                    found = m.start() if m else -1
+                else:
+                    found = line.find(")", s)
+                stop_from, stop = s, (found if found != -1 else None)
             if stop is not None and line[stop] == ")":
-                out.append((p + 1, q, line[s:stop]))
+                out.append((p, stop + 1, p + 1, q, line[s:stop]))
                 p = line.find("[", stop + 1)
                 continue
         p = line.find("[", q + 1)
@@ -2521,9 +2526,12 @@ def claim_mark(line: str, pat: re.Pattern, home: str) -> str:
     is HOME's file: a line that points sends its reader home. copy otherwise. The home itself
     is marked by its caller, which knows its line."""
     name = Path(home).name
-    links = [(a, b) for a, b, target in link_spans(line) if name in target]
+    # In order and apart, so the one link a name could sit in is the last starting at or before it.
+    links = [(a, b) for _, _, a, b, target in link_spans(line) if name in target]
+    starts = [a for a, _ in links]
     for m in pat.finditer(line):
-        if any(a <= m.start() < b for a, b in links):
+        at = bisect.bisect_right(starts, m.start()) - 1
+        if at >= 0 and m.start() < links[at][1]:
             return "pointer"
         # Read back from the name, and only as far as the mark needs, never forward from the
         # line's start: on a minified bundle's long runs either is once per name, and never finishes.
@@ -4242,7 +4250,11 @@ def old_glossary(text: str) -> list[str] | None:
 def term_text(text: str) -> str:
     """A term as a heading or a first cell writes it: a link's text, without code marks or
     emphasis, so `| [mote](#mote) |` and `## **mote**` both name mote."""
-    return plain(re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text))
+    out, at = [], 0
+    for start, end, a, b, _ in link_spans(text, blank_ends=False):
+        out += [text[at:start], text[a:b]]
+        at = end
+    return plain("".join(out) + text[at:])
 
 
 def bold_terms(lines: list[str]) -> list[tuple[int, str]]:
