@@ -7679,10 +7679,12 @@ expect_pass sh -c "echo \"\$0\" | grep -q 'what holds now is D-006: lines naming
   && echo \"\$0\" | grep -q '^  copy     docs/store/store.md:22 ' \
   && echo \"\$0\" | grep -q '^  copy     docs/store/store.md:23 '" "$out"
 
-# A minified bundle: one ~400 KB line of long runs, a name every 700 characters.
+# A minified bundle: one ~400 KB line of long runs, a name every 700 characters; and one ~800 KB
+# line whose run has no break, a page glued to each `§`, so reading back to the run's start is per name too.
 mkdir -p dist && python3 -c "print(('a' * 680 + ';cache;§x').join([''] * 583))" > dist/bundle.js
+python3 -c "print(('a' * 680 + '/x.md§cache;') * 1160)" > dist/glued.js
 git add -A && nohook bundle
-msg="claims: one long line with many names finishes in seconds (a regex from the line's start never did)"
+msg="claims: long lines with many names, a page glued to each § or not, finish in seconds (reading from the run's start never did)"
 expect_pass python3 -c "import subprocess; subprocess.run(['python3', '.jig/jig.py', 'reading-list', '--claims', 'cache'], capture_output=True, timeout=10, check=True)"
 
 msg="claims: reading-list without --claims prints the pages to read, as before"

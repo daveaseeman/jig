@@ -2490,12 +2490,13 @@ def claim_mark(line: str, pat: re.Pattern, home: str) -> str:
     """pointer when any name PAT finds in LINE is a `§` reference or a link's text whose target
     is HOME's file: a line that points sends its reader home. copy otherwise. The home itself
     is marked by its caller, which knows its line."""
-    links = [k for k in re.finditer(r"\[([^\]]*)\]\(([^)\s]*)\)", line) if Path(home).name in k.group(2)]
+    name = Path(home).name
+    links = [k for k in re.finditer(r"\[([^\]]*)\]\(([^)\s]*)\)", line) if name in k.group(2)]
     for m in pat.finditer(line):
         if any(k.start(1) <= m.start() < k.end(1) for k in links):
             return "pointer"
-        # Read back from the name, never forward from the line's start: a regex anchored at the
-        # name scans a minified bundle's long runs once per match, and never finishes.
+        # Read back from the name, and only as far as the mark needs, never forward from the
+        # line's start: on a minified bundle's long runs either is once per name, and never finishes.
         i = m.start()
         while i and line[i - 1] in " \t`":
             i -= 1
@@ -2506,13 +2507,21 @@ def claim_mark(line: str, pat: re.Pattern, home: str) -> str:
             j -= 1
         if j and line[j - 1] == "`":
             j -= 1
-        k = j
-        while k and not line[k - 1].isspace():
-            k -= 1
-        # `other.md § mote` names a heading of another page: only the home's file, or no file, points home.
-        page = line[k:j].strip("`(")
-        if not page.endswith(".md") or Path(page).name == Path(home).name:
+        # The page is the word before the `§`, less "`(" at either end. `other.md § mote` names a
+        # heading of another page: only the home's file, or no file, points home. So only its
+        # last characters count: does it end in .md, and is its last path part the home's name?
+        e = j
+        while e and line[e - 1] in "`(":
+            e -= 1
+        if not e or line[e - 1].isspace() or line[max(0, e - 3):e] != ".md":
             return "pointer"
+        st = e - len(name)
+        if st >= 0 and line[st:e] == name:
+            b = st
+            while b and line[b - 1] in "`(":
+                b -= 1
+            if not b or line[b - 1].isspace() or line[st - 1] == "/":
+                return "pointer"
     return "copy"
 
 
