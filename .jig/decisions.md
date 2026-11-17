@@ -6,3 +6,5 @@ A breaking change is one that a reader taking the release must act on, and it is
 ## Open
 
 ## Unreleased
+
+## v0.14.0 - 2026-11-16
