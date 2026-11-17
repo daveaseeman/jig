@@ -1227,6 +1227,10 @@ Two rules for the metarepo's own pages:
   by meaning, not only by its words, and its done-when covers each one: the claim's home is
   updated (a decision and the pages citing it as their source; when the home is a pararepo, it
   already says it, and the metarepo points), and every other place becomes a pointer to it.
+  The list starts from `jig reading-list --claims <id or term>…`: every tracked line naming
+  the decision id (a superseded id hops to its successor) or the glossary term, its peer
+  entries by `Touches:`, each marked `home`, `pointer` (a `§` reference or a link to the home)
+  or `copy`. It finds names only; a copy in other words is the spec writer's to find.
 
 ## Release
 

@@ -35,6 +35,10 @@ Before anything is built:
    A scope the roadmap doesn't have is refused at commit: a new one is the owner's, proposed
    as a roadmap change (`/jig:stage`), never invented here.
 4. List the files you expect to touch. If the list is long or you're unsure, inspect first and revise. In a pararepo, say whether any is a contract path (`.jig/para.json`): then the change needs a row in `.jig/ledgers/BUFFER.md` (or `meta: buffered <row id>` here), a metarepo proposal (`jig propose`), `meta: <name> pointers <branch>` (`jig propose --pointers`) when it only moves what metarepo pointers point at, or `meta: none — <reason>`. Working ahead of the metarepo while behavior settles is the buffer's job. In a metarepo, a spec that changes a claim lists every place that states it, found by meaning and not only by its words, and its done-when covers each one (RULES.md: Every copy). Each changed claim is stated only at its home, with a pointer everywhere else (RULES.md: What the metarepo holds): a contract lives in the metarepo, where a decision row and the pages citing it as their source are one home; a claim one pararepo owns lives in that pararepo.
+   In a repo with a decision log or a glossary, run `jig reading-list --claims <id or term>…`
+   for each decision id and glossary term the spec changes. List each `copy` it prints in
+   Touches, and give each a done-when item: updated with the home, or made a pointer to it.
+   The command finds names only; a copy in other words is still yours to find by meaning.
 5. Read the pages `jig reading-list <those files>` prints. A page describes
    the code; where it disagrees, the code on trunk is reality and the page is stale. For each
    roadmap item it lists under a page (an `## Up next` item or a scope), say in the spec which

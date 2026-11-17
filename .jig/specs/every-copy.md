@@ -52,6 +52,16 @@ prints that list, and `/jig:spec` runs it for each claim the spec changes.
 - Calls the owner made on 2026-11-13: its own spec, separate from the job-flow fixes.
 - Interpreted: whole-word matching on the term as the glossary spells it, case-insensitive,
   outside code blocks.
+- Interpreted: under `.jig/`, only the log, `specs/` and `ledgers/` are scanned; jig's own files
+  (RULES.md, jig.py) and handoffs are skipped, as the citation scanner skips them. Rejected:
+  every tracked file, since the rulebook alone floods a term's list. Accepted by the hubnode, 2026-11-16.
+- Interpreted: a line with any `§` reference or link to the home is a pointer, though it may
+  restate too. Rejected: marking by the line's first mention only. Accepted by the hubnode, 2026-11-16.
+- Interpreted: a peer entry by `Touches:`, and an entry whose `Touches:` names the term, are
+  copies with their reason shown. Rejected: a fourth mark, since the spec allows three. Accepted by the hubnode, 2026-11-16.
+- Interpreted: a superseded id lists lines naming it and lines naming its successor, whose whole
+  entry is the home; `D-4` resolves to the log's `D-004`. Rejected: listing the successor's lines
+  only, which drops the stale copies. Accepted by the hubnode, 2026-11-16.
 - Kept separate from bug-strike-count: different code (every-copy adds `jig reading-list --claims`; bug-strike-count changes `jig reviewed`'s count), sharing jig.py, RULES.md, the spec skill and smoke.sh. The owner, 2026-11-16: "Keep separate".
 
 ## Workflow
