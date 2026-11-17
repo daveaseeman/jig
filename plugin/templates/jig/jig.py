@@ -2442,8 +2442,183 @@ def cmd_handoff(root: Path, args) -> int:
     return 0
 
 
+# RULES.md (Every copy): a spec changing a claim lists every place that states it. jig finds the
+# places that name it; a copy in other words is the spec writer's to find.
+CLAIM_MARKS = ("home", "pointer", "copy")
+
+
+def claim_texts(root: Path) -> list[tuple[str, list[str]]]:
+    """(path, lines) for each tracked text file in the working tree: a binary or a blob over a
+    megabyte holds no claim a reader restates. Under the jig folder only the log, specs and
+    ledgers: jig's own files define the names, and a handoff records what was true then."""
+    out = []
+    for f in tracked(root):
+        if f.startswith(f"{DIR}/") and not f.startswith((f"{DIR}/specs/", f"{DIR}/ledgers/", LOG)):
+            continue
+        p = root / f
+        if not p.is_file() or p.stat().st_size > 1 << 20:
+            continue
+        data = p.read_bytes()
+        if b"\0" in data:
+            continue
+        out.append((f, data.decode(errors="replace").splitlines()))
+    return out
+
+
+def unfenced(lines: list[str]) -> list[bool]:
+    """For each line, whether it is outside fenced code: an example quoting a term states nothing."""
+    out, fence = [], ""
+    for line in lines:
+        mark = re.match(r"[ \t]*(`{3,}|~{3,})", line)
+        if mark and not fence:
+            fence = mark.group(1)
+            out.append(False)
+        elif fence:
+            if mark and mark.group(1)[0] == fence[0] and len(mark.group(1)) >= len(fence) \
+                    and not line.strip()[len(mark.group(1)):].strip():
+                fence = ""
+            out.append(False)
+        else:
+            out.append(True)
+    return out
+
+
+def claim_mark(line: str, pat: re.Pattern, home: str) -> str:
+    """pointer when any name PAT finds in LINE is a `§` reference or a link's text whose target
+    is HOME's file: a line that points sends its reader home. copy otherwise. The home itself
+    is marked by its caller, which knows its line."""
+    links = [k for k in re.finditer(r"\[([^\]]*)\]\(([^)\s]*)\)", line) if Path(home).name in k.group(2)]
+    for m in pat.finditer(line):
+        if re.search(r"§[ \t`]*$", line[:m.start()]) or any(k.start(1) <= m.start() < k.end(1) for k in links):
+            return "pointer"
+    return "copy"
+
+
+def claims_of_id(root: Path, want: str, prefix: str) -> tuple[list[str], list[tuple]]:
+    """Notes and (file, line, mark, text, why) hits for decision id WANT."""
+    path = root / LOG
+    text = path.read_text(errors="replace") if path.exists() else ""
+    entries = log_entries(text, prefix)
+    notes = []
+    entry = next((e for e in entries if decision_id(e["id"]) == decision_id(want)), None)
+    ids = [entry["id"] if entry else want]
+    # A superseded id hops to its successor, as `jig decision` walks it: a line naming the old id
+    # is a copy of a claim the successor now holds. A removed id is found by the log's spelling,
+    # D-004 for D-4, since a supersedes line and git's history name it that way.
+    num = re.fullmatch(rf"{re.escape(prefix)}0*(\d+)", want)
+    widths = {len(e["id"]) - len(prefix) for e in entries if e["id"][len(prefix):].isdigit()}
+    spellings = [ids[0]] + ([f"{prefix}{num.group(1).zfill(w)}" for w in sorted(widths)] if num and not entry else [])
+    by = None
+    for spelt in dict.fromkeys(spellings):
+        if by := holds_now(spelt, text, prefix, "HEAD", str(root)):
+            ids[0] = spelt
+            break
+    if by:
+        notes.append(f"{ids[0]} is superseded; what holds now is {by}: lines naming either are listed.")
+        ids.append(by)
+        entry = next((e for e in entries if e["id"] == by), None)
+    elif not entry:
+        notes.append(f"no entry {want} in {LOG} or in its history: lines naming it are listed.")
+
+    def id_re(i: str) -> str:
+        # D-2 and D-002 are one decision, as R6 counts it; whole ids only, D-7 is not D-70.
+        num = re.fullmatch(rf"{re.escape(prefix)}0*(\d+)", i)
+        body = rf"{re.escape(prefix)}0*{num.group(1)}" if num else re.escape(i)
+        return rf"(?<![\w-]){body}(?![\w?-])"
+    pat = re.compile("|".join(id_re(i) for i in ids))
+    # The entry is the home, its status line naming what it supersedes included.
+    lines_in = len(text.splitlines())
+    homes = {n for e in entries if e["id"] in ids
+             for n in range(e["start"] + 1, (e["end"] if e["end"] is not None else lines_in) + 1)}
+    hits = []
+    for f, lines in claim_texts(root):
+        for n, line in enumerate(lines, 1):
+            if not pat.search(line):
+                continue
+            mark = "home" if f == LOG and n in homes else claim_mark(line, pat, LOG)
+            why = "cites it as its source" if re.search(r"(?i)\bsources?\b", line) else ""
+            hits.append((f, n, mark, line, why))
+    if entry:
+        names = touch_names(root, Board.load(root).trunk)
+        mine = touching_entries(text, prefix, SELF, LOG, names)
+        me = next((e for e in mine if e["id"] == entry["id"]), None)
+        for o, ptr in peers_of(me, mine, prefix) if me else []:
+            hits.append((LOG, o["line"], "copy", f"### {o['id']} {o['title']}", f"peers by Touches on {ptr}"))
+    return notes, hits
+
+
+def claims_of_term(root: Path, term: str, prefix: str) -> tuple[list[str], list[tuple]]:
+    """Notes and (file, line, mark, text, why) hits for glossary term TERM."""
+    notes, hits = [], []
+    key = term.casefold()
+    gloss = root / GLOSSARY
+    home = None
+    if gloss.exists():
+        for shown, at in heading_lines(gloss.read_text(errors="replace"), glossary=True).items():
+            if shown.casefold() == key:
+                home = (GLOSSARY, at[0][0])
+                term = shown
+    if not home:
+        notes.append(f"no entry {term} in {GLOSSARY}: lines using it are listed.")
+    word = re.compile(rf"(?<!\w){re.escape(term)}(?!\w)", re.I)
+    slug = re.sub(r"[^\w -]", "", term.lower()).replace(" ", "-")
+    for f, lines in claim_texts(root):
+        # A page or an entry states a term; a spec, a handoff or code only uses it.
+        page = f == LOG or (f.endswith(".md") and not f.startswith(f"{DIR}/"))
+        for n, (line, prose) in enumerate(zip(lines, unfenced(lines)), 1):
+            if (f, n) == home:
+                hits.append((f, n, "home", line, ""))
+                continue
+            if not prose:
+                continue
+            m = word.search(line)
+            anchor = re.search(rf"glossary\.md#{re.escape(slug)}(?![\w-])", line)
+            if m and claim_mark(line, word, GLOSSARY) == "pointer" or anchor:
+                hits.append((f, n, "pointer", line, ""))
+            elif m and page:
+                hits.append((f, n, "copy", line, ""))
+    path = root / LOG
+    text = path.read_text(errors="replace") if path.exists() else ""
+    for e in live_entries(text, prefix):
+        if any(pointer_term(p)[1].casefold() == key for p in entry_touches(e["block"]) or []):
+            hits.append((LOG, e["line"], "copy", f"### {e['id']} {e['title']}", "its Touches names it"))
+    return notes, hits
+
+
+def print_claims(root: Path, claims: list[str]) -> int:
+    """`reading-list --claims`: for each decision id or glossary term, every tracked place
+    naming it, marked home, pointer or copy."""
+    prefix = log_prefix(Board.load(root).trunk)
+    for i, claim in enumerate(claims):
+        is_id = re.fullmatch(log_id_re(prefix), claim)
+        notes, hits = (claims_of_id if is_id else claims_of_term)(root, claim, prefix)
+        print(("\n" if i else "") + f"Every copy of {claim}:")
+        for note in notes:
+            print(f"  ({note})")
+        seen: dict[tuple[str, int], int] = {}
+        rows = []
+        for f, n, mark, line, why in hits:
+            # One line once: a peer entry naming the id, say, is listed with both reasons.
+            if (f, n) in seen:
+                row = rows[seen[(f, n)]]
+                if why and why not in row[4]:
+                    row[4] = f"{row[4]}; {why}" if row[4] else why
+                continue
+            seen[(f, n)] = len(rows)
+            rows.append([f, n, mark, line, why])
+        rows.sort(key=lambda r: (CLAIM_MARKS.index(r[2]), r[0], r[1]))
+        for f, n, mark, line, why in rows:
+            print(f"  {mark:<8} {f}:{n}  {clip(line.strip())}" + (f"   ({why})" if why else ""))
+        if not rows:
+            print("  (no tracked line names it)")
+    print("\nThese are the places that name each claim. One stated in other words is yours to find.")
+    return 0
+
+
 def cmd_reading_list(root: Path, args) -> int:
     """Given the files a task will touch, print the docmap pages to read first."""
+    if args.claims:
+        return print_claims(root, args.paths)
     board = Board.load(root)
     want, unowned = [], []
     for pattern in args.paths:
@@ -12091,7 +12266,9 @@ def main(argv: list[str] | None = None) -> int:
     rm = sub.add_parser("roadmap", help="the roadmap's phases and scopes, and their states on trunk")
     rm.add_argument("--write", action="store_true", help=f"regenerate {ROADMAP_VIEW} in the trunk checkout")
     rl = sub.add_parser("reading-list", help="what to read before touching these files")
-    rl.add_argument("paths", nargs="+")
+    rl.add_argument("paths", nargs="+", metavar="path")
+    rl.add_argument("--claims", action="store_true",
+                    help="the arguments are decision ids or glossary terms: list every tracked place naming each")
     g = sub.add_parser("gate", help="verify a job (or this branch) is mergeable")
     g.add_argument("name", nargs="?")
     sv = sub.add_parser("survey", help="inventory the repo against the jig shape")

@@ -7551,7 +7551,93 @@ $J rig >/dev/null; $J rig --json >/dev/null
 expect_pass test "$(cat .jig/roadmap.md .jig/staging/s2.md | shasum) $(shasum < .jig/staging/s1.md)" = "$before $s1hash"
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders rig"
+sec_claims() {
+# A spec that changes a claim starts from every tracked place naming it (RULES.md: Every copy).
+CL="$T/claims"; pcnew "$CL" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+nohook() { git -c core.hooksPath=/dev/null commit -qm "$1"; }
+mkdir -p docs/store
+cat > .jig/decisions.md <<'EOF'
+# Decisions and changes
+
+## Open
+
+## Unreleased
+
+### D-003 The store is read-only
+Accepted (owner, 2026-11-10).
+Touches: docs/store/store.md, docs/glossary.md § mote
+
+Nothing writes the store after boot.
+
+### D-004 Caches flush hourly
+Accepted (owner, 2026-11-11).
+Touches: docs/store/store.md
+
+Every cache flushes once an hour.
+EOF
+printf '# Glossary\n\n## mote\n\nThe smallest unit a store holds.\n\n| term | means |\n|---|---|\n| seam | where two systems meet |\n' > docs/glossary.md
+cat > docs/store/store.md <<'EOF'
+# Store
+
+Source: `.jig/decisions.md § D-3`.
+
+The store is read-only after boot (D-003).
+
+| Rule | From |
+|---|---|
+| no writes | D-3 |
+
+A Mote is one record.
+See `docs/glossary.md § mote`, or the [glossary](../glossary.md#mote).
+
+```
+mote quoted in code
+```
+D-30 and XD-3 are other ids; remote is another word.
+EOF
+git add -A && nohook fixture
+out=$($J reading-list --claims D-3)
+msg="claims id: the entry, a page's sentence, a table row, a source line and a peer entry are each listed"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  home     .jig/decisions.md:7 ' \
+  && echo \"\$0\" | grep -q '^  copy     docs/store/store.md:5 ' \
+  && echo \"\$0\" | grep -q '^  copy     docs/store/store.md:9 ' \
+  && echo \"\$0\" | grep -q '^  pointer  docs/store/store.md:3 .*cites it as its source' \
+  && echo \"\$0\" | grep -q '^  copy     .jig/decisions.md:13 .*peers by Touches on docs/store/store.md'" "$out"
+msg="claims id: a longer id, another prefix and code are not D-3"
+expect_refuse sh -c "echo \"\$0\" | grep -q 'D-30'" "$out"
+msg="claims id: D-003 and D-3 list the same lines"
+expect_pass test "$out" = "$($J reading-list --claims D-003 | sed 's/D-003:/D-3:/')"
+
+out=$($J reading-list --claims mote)
+msg="claims term: the glossary heading is home, § and link pointers, a use is a copy, an entry whose Touches names it"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  home     docs/glossary.md:3 ' \
+  && echo \"\$0\" | grep -q '^  pointer  docs/store/store.md:12 ' \
+  && echo \"\$0\" | grep -q '^  copy     docs/store/store.md:11 ' \
+  && echo \"\$0\" | grep -q '^  copy     .jig/decisions.md:7 .*its Touches names it'" "$out"
+msg="claims term: fenced code, a longer word and jig's own rulebook are not listed"
+expect_refuse sh -c "echo \"\$0\" | grep -qE 'store.md:15 |store.md:17 |RULES.md'" "$out"
+msg="claims term: a table row's first cell is a glossary entry"
+expect_pass sh -c "$J reading-list --claims Seam | grep -q '^  home     docs/glossary.md:9 '"
+
+python3 - <<'EOF'
+f = '.jig/decisions.md'; s = open(f).read()
+s = s.replace("### D-004 Caches flush hourly\nAccepted (owner, 2026-11-11).",
+              "### D-005 Caches flush daily\nAccepted (owner, 2026-11-12). Supersedes D-004.")
+open(f, 'w').write(s)
+EOF
+echo "Caches flush hourly (D-4)." >> docs/store/store.md && git add -A && nohook supersede
+out=$($J reading-list --claims D-4)
+msg="claims id: a superseded id hops to its successor, listing lines naming either"
+expect_pass sh -c "echo \"\$0\" | grep -q 'D-004 is superseded; what holds now is D-005' \
+  && echo \"\$0\" | grep -q '^  home     .jig/decisions.md:13 ' \
+  && echo \"\$0\" | grep -q '^  home     .jig/decisions.md:14 ' \
+  && echo \"\$0\" | grep -q '^  copy     docs/store/store.md:18 '" "$out"
+
+msg="claims: reading-list without --claims prints the pages to read, as before"
+expect_pass sh -c "$J reading-list docs/store/store.md | grep -q '^Read first:' && ! $J reading-list docs/store/store.md | grep -q 'Every copy'"
+}
+
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders rig claims"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file
