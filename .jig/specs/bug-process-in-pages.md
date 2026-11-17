@@ -144,6 +144,36 @@ jig's own rules or templates, so the spec writes it down once:
   line to it. It holds no rule every task needs (`AGENTS.md`), no step a script runs
   (`.jig/scripts/`), and never the product (`docs/`). Created on first use from
   `plugin/templates/jig/process.md`, as the ledgers are.
+- **Where new process goes: one test** (the owner, 2026-11-17: "Build in the test so that
+  hubnodes know where new process information goes"; "It would be agents following it").
+  RULES.md, Documentation (Homes), states it once, as a table, and nothing else restates it:
+
+  | The process is… | Home |
+  |---|---|
+  | a rule every task needs | `AGENTS.md` |
+  | a rule for one situation (releasing, a migration, touching the build) | a section of `.jig/process.md`, its trigger named in AGENTS.md's pointer line |
+  | knowledge behind how the repo is worked: code style, why the build is shaped so, packaging, a release's judgment calls, debugging recipes, CI quirks | a section of `.jig/process.md` |
+  | a procedure an agent runs when a task calls for it: steps, often a script, invoked by name | a skill; its knowledge stays in `.jig/process.md`, and the skill points to the section |
+  | something a machine can do or check | a script or a check (`.jig/scripts/`, `check.sh`, a hook), which a skill may call |
+  | a role's tier or effort | `roles` in `.jig/config.json`, with its reason |
+  | jig's own rules | nowhere: `.jig/RULES.md` holds them |
+  | the product | `docs/` |
+
+  Homes' one-home sentence changes "know-how in the agent's skills" to "a procedure an agent
+  runs in a skill, and the rest of how the repo is worked in `.jig/process.md`". The AGENTS.md
+  template's pointer line names triggers ("Before a release, read `.jig/process.md` § Release"),
+  so a situational rule is read when it applies.
+  The skills that place process point at the test, never restate it:
+  - **hubnode**: where the owner or a subnode brings new process (a rule, a procedure, a
+    convention), the hubnode places it by RULES.md's test before it is written, and a spec for
+    process work names its home;
+  - **spec**: a spec whose work is process says, under Touches, which row of the test it falls
+    in and so which file it writes;
+  - **retro**: a repeated fix or discovery that is a procedure becomes a skill; one that is
+    knowledge or a situational rule becomes a section of `.jig/process.md` (its "know-how →
+    skill" line changes to the test);
+  - **update** and **adopt**: a repo's `CONTRIBUTING.md`, `CONVENTIONS.md` or rules file is
+    sorted line by line by the test, in place of "AGENTS.md or a skill".
 - **Holders** (issue 3). "Review" leaves the holders in RULES.md, `docs-page.md` and
   `hardware.md`. A holder is still required, and an entry nothing holds goes in the body.
   Survey and update list an entry whose holder is review as off the page contract (Decision 4).
@@ -161,7 +191,8 @@ jig's own rules or templates, so the spec writes it down once:
 A page describes the product, never how the repository is worked. jig's rules say so, and the
 steps that write pages ask it. Survey and update list the precise traces already on pages: a
 `.jig/` path, or an invariant held by review. A product that runs tests, ships releases, reads
-`AGENTS.md` or is jig can still describe what it does.
+`AGENTS.md` or is jig can still describe what it does. And every piece of new process has one
+home, chosen by one test RULES.md states and the hubnode, spec and retro steps apply.
 
 ## Done when
 - [ ] RULES.md, Documentation, has the Product and process paragraph with its homes and both
@@ -182,6 +213,14 @@ steps that write pages ask it. Survey and update list the precise traces already
   it as at home and never lists its lines under the process heading; the AGENTS.md template has
   one pointer line to it. Smoke: a repo with a `.jig/process.md` of three sections gets no
   survey finding for it, and redocument's process fate and update's AGENTS.md overflow name it.
+- [ ] RULES.md's Homes holds the test's table once: `grep -n "a procedure an agent runs" plugin/templates/jig/RULES.md`
+  finds the one-home sentence and the table. `grep -rn "know-how in the agent's skills" plugin`
+  finds nothing.
+- [ ] The hubnode, spec, retro, update and adopt skills each point at RULES.md's test (a
+  `grep -n "process.md"` hit in each) and none restates its table: no skill holds a line naming
+  both `AGENTS.md` and `.jig/process.md` and `roles` as homes.
+- [ ] The AGENTS.md template's pointer line to `.jig/process.md` names at least one trigger
+  ("Before a release, read § …").
 - [ ] Smoke (`hardware`). A board page copied from `plugin/templates/hardware.md` has no line
   under the process heading.
 - [ ] Smoke. These page lines commit, and survey lists none of them under the process heading:
@@ -241,7 +280,7 @@ steps that write pages ask it. Survey and update list the precise traces already
   - survey's "Too long" line;
   - `foldin_lines`' UNOWNED wording;
   - `home_fix`'s rules-file text
-- `plugin/skills/redocument/SKILL.md`, `review/SKILL.md`, `spec/SKILL.md`, `survey/SKILL.md`, `update/SKILL.md`, `init/SKILL.md`, `adopt/SKILL.md`
+- `plugin/skills/redocument/SKILL.md`, `review/SKILL.md`, `spec/SKILL.md`, `survey/SKILL.md`, `update/SKILL.md`, `init/SKILL.md`, `adopt/SKILL.md`, `hubnode/SKILL.md`, `retro/SKILL.md`
 - `tests/smoke.sh`: sections `boundary` or `page_contract`, `hardware`, `agents_lines` or `homes`; the "held by review" fixtures
 - `.jig/decisions.md`: a line under `## Unreleased` (a release's reader can act on it: survey and update list new findings)
 - `marketing/FEATURES.md` (untracked, in the main checkout): the rows Project / product boundary, Invariants (page section) and Board page, written before the change
@@ -294,15 +333,20 @@ recommendation comes first.
    `.jig/process.md` as the home for code style and for everything about working the repo no
    other home takes, in place of "a skill for know-how"; question 5's destinations change the
    same way.
+   The owner, 2026-11-17, on new process work: "Build in the test so that hubnodes know where new
+   process information goes", and "It would be agents following it", so a skill is a right home
+   for a procedure agents run, and `.jig/process.md` for the rest (Correction: Where new process
+   goes).
 1. **Product and process (RULES.md, Documentation).** Add a paragraph after Product and project.
    Recommended: yes, worded as below. The implementer may edit the wording; the content needs
    the owner's yes.
    > A page describes the product, never how the repository is worked: the order a builder
    > reads in, the commands that build, test and check it, its code style, its review and
    > handoff, jig and its files under `.jig/`, and the steps of its build, CI and release. Each
-   > has its own home: `AGENTS.md` for rules and commands, a skill for know-how, `jig
-   > reading-list` for what to read, `.jig/scripts/release.sh` and `publish.sh` for the release,
-   > and CI's own files for CI. What the product does with the same things is the product's: a
+   > has its own home, by the test under Homes: `AGENTS.md` for rules every task needs and the
+   > commands, `jig reading-list` for what to read, `.jig/scripts/` for steps a script runs, a
+   > skill for a procedure an agent runs, CI's own files for CI, and `.jig/process.md` for the
+   > rest, code style included. What the product does with the same things is the product's: a
    > page describes an app that runs a user's tests, a CI service, an app that reads a user's
    > instruction files, or a tool whose product is jig. A board page's Toolchain and Flash /
    > rollback belong to the board. Whoever writes the line judges it, and the spec and review
