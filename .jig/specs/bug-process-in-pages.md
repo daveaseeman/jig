@@ -132,15 +132,25 @@ jig's own rules or templates, so the spec writes it down once:
     - redocument gains a process fate and a Flagged line, and its Docmap list leaves tooling out;
     - spec and review question 9 ask "or about how the repository is worked?";
     - adopt's docmap row leaves tooling out;
-    - update and `home_fix` send a rule for working the repo to AGENTS.md or a skill, and only a
+    - update and `home_fix` send a rule for working the repo to AGENTS.md, and the rest of the process to `.jig/process.md`, and only a
       fact the product must keep to a page's Invariants.
   - **Fold-in.** The UNOWNED line's excuse names the repo's own tooling as needing no page.
+- **A home for the rest of the process** (the owner, 2026-11-17). `.jig/process.md` holds how
+  the repository is worked wherever no other home takes it: code style (AGENTS.md is capped, so
+  style has no room there), why the build is shaped as it is, how packaging works, the judgment
+  parts of a release, debugging recipes, CI quirks, and any new housekeeping topic. One `##`
+  section per topic; a new topic gets its own section. It is plain Markdown any person or agent
+  reads, read on demand, never always-loaded, with no line cap. `AGENTS.md` carries one pointer
+  line to it. It holds no rule every task needs (`AGENTS.md`), no step a script runs
+  (`.jig/scripts/`), and never the product (`docs/`). Created on first use from
+  `plugin/templates/jig/process.md`, as the ledgers are.
 - **Holders** (issue 3). "Review" leaves the holders in RULES.md, `docs-page.md` and
   `hardware.md`. A holder is still required, and an entry nothing holds goes in the body.
   Survey and update list an entry whose holder is review as off the page contract (Decision 4).
 - **Where cut lines go** (issue 4). The AGENTS.md template comment, survey's "Too long" line,
   init and adopt §3 say where a cut line goes:
-  - a rule or know-how to a skill;
+  - a rule every task needs stays in AGENTS.md; anything else about working the repo, code
+    style included, to a section of `.jig/process.md`;
   - a release step to `.jig/scripts/release.sh`;
   - a fact about the product to its system's page;
   - history to git.
@@ -156,8 +166,8 @@ steps that write pages ask it. Survey and update list the precise traces already
 ## Done when
 - [ ] RULES.md, Documentation, has the Product and process paragraph with its homes and both
   carve-outs: product behaviour, and a board page's Toolchain and Flash / rollback. Homes' one-home
-  sentence names how the repo is worked as AGENTS.md's, a skill's or `release.sh`'s, never
-  `docs/`. `grep -n "Product and process" plugin/templates/jig/RULES.md` finds the paragraph.
+  sentence names how the repo is worked as AGENTS.md's, `.jig/scripts/`'s, or
+  `.jig/process.md`'s for the rest, never `docs/`. `grep -n "Product and process" plugin/templates/jig/RULES.md` finds the paragraph.
 - [ ] Smoke (`boundary` or `page_contract`), showing the fix fires. A page line "jig's `docmap` in
   `.jig/config.json` says which page owns a file." commits, and then:
   - `jig survey` lists it under a heading that names the repo's process and its homes;
@@ -167,6 +177,11 @@ steps that write pages ask it. Survey and update list the precise traces already
   - a line citing `.jig/decisions.md § Open`;
   - `.jig/RULES.md` inside an HTML comment or fenced code;
   - a `.jig/specs/` line, which stays under the project heading only.
+- [ ] `.jig/process.md`: `plugin/templates/jig/process.md` exists (a title, one lead line, and a
+  `## Code style` section placeholder); RULES.md's Homes lists `.jig/process.md`; survey treats
+  it as at home and never lists its lines under the process heading; the AGENTS.md template has
+  one pointer line to it. Smoke: a repo with a `.jig/process.md` of three sections gets no
+  survey finding for it, and redocument's process fate and update's AGENTS.md overflow name it.
 - [ ] Smoke (`hardware`). A board page copied from `plugin/templates/hardware.md` has no line
   under the process heading.
 - [ ] Smoke. These page lines commit, and survey lists none of them under the process heading:
@@ -183,14 +198,14 @@ steps that write pages ask it. Survey and update list the precise traces already
   excuse names the repository's own tooling (build, CI, release, dev scripts) as needing no
   page.
 - [ ] Smoke (`agents_lines` or `homes`). On a 61-rule-line AGENTS.md, survey's "Too long" line
-  names where a cut line goes (a skill, `.jig/scripts/release.sh`, a product fact's page, git)
+  names where a cut line goes (`.jig/process.md`, `.jig/scripts/release.sh`, a product fact's page, git)
   and says how the repo is worked never goes to a page. The AGENTS.md template comment, init's
   cap line and adopt §3 say the same: `grep` each one.
 - [ ] The skill text is in place:
   - redocument's Work role has the process fate and a "Process:" Flagged line, and its Docmap list leaves tooling out;
   - review question 9 and spec step 5 ask about how the repository is worked;
   - adopt's docmap row leaves the repo's tooling out;
-  - the update skill's rules-file fold and `home_fix` send a working rule to AGENTS.md or a skill.
+  - the update skill's rules-file fold and `home_fix` send a working rule to AGENTS.md, and the rest to `.jig/process.md`.
 - [ ] The reported symptom is gone. Make a scratch repo seeded with the report's kinds of
   lines: a reading order naming `.jig/config.json`, a layout tree with `.jig/`, two "held by
   review" invariants. Survey and update list every one of them. v0.14.0 lists none, as this
@@ -218,7 +233,8 @@ steps that write pages ask it. Survey and update list the precise traces already
 - `plugin/templates/jig/RULES.md`: Documentation (the Product and process paragraph; the Invariants item's holders; the sentences on what survey lists), Homes (the one-home sentence)
 - `plugin/templates/jig/docs-page.md`: the section placeholder, the Invariants placeholder
 - `plugin/templates/hardware.md`: the Invariants holder placeholders
-- `plugin/templates/AGENTS.md`: the cap comment
+- `plugin/templates/AGENTS.md`: the cap comment, and one pointer line to `.jig/process.md`
+- new `plugin/templates/jig/process.md`: the template, created on first use
 - `plugin/templates/jig/jig.py`:
   - a process-path listing beside `project_prose`, in survey's report and print and in update's Repo files to review;
   - `page_problems` (holder is review);
@@ -270,6 +286,14 @@ steps that write pages ask it. Survey and update list the precise traces already
 ## Decisions
 Each of these is a question for the owner, because it changes a rule or the page contract. The
 recommendation comes first.
+0. **The owner, 2026-11-17, on question 1:** "that is a major gap", "how to work in the repo
+   belongs in .jig", "Agents is limited to 40 lines, I think code style may need a home without a
+   line cap", and "a single process.md is the right home for this. Each item can have it's own
+   section and new house keeping items that come up can get their own sections, too. That way we
+   have one place to look for overflow. Everything else has a home." So the paragraph below names
+   `.jig/process.md` as the home for code style and for everything about working the repo no
+   other home takes, in place of "a skill for know-how"; question 5's destinations change the
+   same way.
 1. **Product and process (RULES.md, Documentation).** Add a paragraph after Product and project.
    Recommended: yes, worded as below. The implementer may edit the wording; the content needs
    the owner's yes.
