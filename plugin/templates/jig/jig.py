@@ -1270,6 +1270,21 @@ def release_tag(trunk: str) -> str:
     return latest_tag(tags)
 
 
+def bug_for(text: str) -> str:
+    """The job a spec names itself the bug spec for, or "": `Bug-for: <job>` on a line of its
+    own, outside fenced code. The one reader of the line, so a spec quoting it in an example,
+    or a template's `<job>` placeholder, is no bug spec anywhere."""
+    fence = ""
+    for line in text.splitlines():
+        m = re.match(r"[ \t]*(`{3,}|~{3,})", line)
+        if m and (not fence or m.group(1).startswith(fence)):
+            fence = "" if fence else m.group(1)
+            continue
+        if not fence and (b := re.fullmatch(r"Bug-for:[ \t]*([^<>\s]+)[ \t]*", line)):
+            return b.group(1)
+    return ""
+
+
 def waiting_specs(root: Path, board: "Board") -> dict[str, str]:
     """Specs no job has taken yet, path → text: no open job names it, no handoff note's
     `Spec:` line names it, and the newest release doesn't hold it. The tag bounds it, so a
@@ -1289,7 +1304,7 @@ def waiting_specs(root: Path, board: "Board") -> dict[str, str]:
             continue
         text = f.read_text(errors="replace")
         # A bug spec is built in the job it names and reaches trunk only with that job's merge.
-        if re.search(r"^Bug-for:[ \t]*\S", text, re.M):
+        if bug_for(text):
             continue
         out[rel] = text
     return out
@@ -2066,18 +2081,24 @@ def review_kind(data: dict) -> str:
     return "change" if data.get("kind") in ("change", "recheck") else "full"
 
 
+def this_part(chain: list[str]) -> list[str]:
+    """CHAIN (newest first) cut at its newest commit adding a handoff note, a `--partial` one
+    too: the commits of the job's current part."""
+    if not chain:
+        return chain
+    # --no-merges: a sync bringing trunk's notes in ended no part of this job.
+    noted = set(git("log", "--first-parent", "--no-merges", "--diff-filter=A", "--format=%H",
+                    chain[0], "--", f"{DIR}/handoffs/").splitlines())
+    cut = next((i for i, c in enumerate(chain) if c in noted), None)
+    return chain[:cut] if cut is not None else chain
+
+
 def blocking_reviews(chain: list[str]) -> int:
     """How many reviews of this part's commits recorded blocking findings, full or change: a
     review recorded either way is a strike. A part ends at a commit adding a handoff note (a
     `--partial` one too), so each part's strikes start again at 0. A clean review between
     strikes resets nothing."""
-    if chain:
-        # --no-merges: a sync bringing trunk's notes in ended no part of this job.
-        noted = set(git("log", "--first-parent", "--no-merges", "--diff-filter=A", "--format=%H",
-                        chain[0], "--", f"{DIR}/handoffs/").splitlines())
-        cut = next((i for i, c in enumerate(chain) if c in noted), None)
-        chain = chain[:cut] if cut is not None else chain
-    on = set(chain)
+    on = set(this_part(chain))
     latest: dict[str, dict] = {}
     for sha, data in review_log():
         if sha in on:
@@ -2085,12 +2106,23 @@ def blocking_reviews(chain: list[str]) -> int:
     return sum(1 for d in latest.values() if isinstance(d.get("blocking"), int) and d["blocking"] > 0)
 
 
-def bug_spec_for(job: str, revs: list[str]) -> str:
-    """The spec on any of REVS that names itself the bug spec for JOB, or ""."""
-    for rev in revs:
-        hits = grep_hits("-E", f"^Bug-for: {re.escape(job)}[[:space:]]*$", rev, "--", f"{DIR}/specs/")
-        if hits:
-            return hits[0][0].split(":", 1)[-1]
+def bug_spec_for(job: str, chain: list[str]) -> str:
+    """The bug spec for JOB added in the current part of CHAIN (newest first), or "". It lifts
+    the strike limit for the part it was written in only: one committed in an earlier part
+    would otherwise leave every later part's strikes unlimited."""
+    part = this_part(chain)
+    if not part:
+        return ""
+    on = set(part)
+    commit = ""
+    for line in git("log", "--first-parent", "--no-merges", "--diff-filter=A", "--name-only",
+                    "--format=%x00%H", part[0], "--", f"{DIR}/specs/").splitlines():
+        if line.startswith("\0"):
+            commit = line[1:]
+            if commit not in on:
+                break
+        elif line and bug_for(git_raw("show", f"{commit}:{line}")) == job:
+            return line
     return ""
 
 
@@ -2115,9 +2147,9 @@ def cmd_reviewed(root: Path, args) -> int:
     name = board.job_for_branch(git("branch", "--show-current"))[0] or \
         git("branch", "--show-current") or "work"
     # Any review, full or change: a review past the last strike is refused whichever way it's recorded.
-    if strikes >= STRIKES and not bug_spec_for(name, ["HEAD", board.trunk]):
+    if strikes >= STRIKES and not bug_spec_for(name, chain):
         die(f"{strikes} reviews of this job recorded blocking findings: strike {STRIKES} starts "
-            f"Bug, and the next review is refused. Commit the bug role's spec for it, with "
+            f"Bug, and the next review is refused. Commit the bug role's spec for this part, with "
             f"`Bug-for: {name}` on a line of its own, then review again")
     ran = {k: v for k, v in (("tier", args.tier), ("effort", args.effort), ("ran", args.ran),
                              ("blocking", args.blocking)) if v is not None}
@@ -2136,7 +2168,7 @@ def cmd_reviewed(root: Path, args) -> int:
         n = blocking_reviews(chain)
         if n < STRIKES:
             print(f"Strike {n} of {STRIKES}: the work session fixes them, then review-change")
-        elif not bug_spec_for(name, ["HEAD", board.trunk]):
+        elif not bug_spec_for(name, chain):
             print(f"Strike {STRIKES} of {STRIKES}: Bug runs next; the next review is refused until "
                   f"the bug role's spec, with `Bug-for: {name}`, is committed")
         else:
@@ -2153,6 +2185,12 @@ def next_step(root: Path, board: "Board", name: str) -> tuple[str, str, str, str
     trunk, branch, state = board.trunk, board.branch(name), board.jobs[name].get("state")
     hub = "continue the hubnode"
     if state == "gated":
+        # `jig merge`'s own test: a branch moved past the commit its newest note names is refused.
+        notes = handoff_notes(branch, name)
+        m = re.search(r"^Commit: (\w+)", git("show", f"{branch}:{notes[-1]}"), re.M) if notes else None
+        if m and changed_since(m.group(1), branch, board):
+            return ("handoff", "work", "continue the work session",
+                    f"Job; gated at {m.group(1)[:12]}, changed since")
         why = "Job; on the owner's word"
         if board.jobs[name].get("check") == "batch":
             why = "Batch; on the owner's word, then one check on " + trunk + " for the batch"
@@ -2182,7 +2220,7 @@ def next_step(root: Path, board: "Board", name: str) -> tuple[str, str, str, str
     reviewed, ran = found
     strikes = blocking_reviews(chain)
     blocked = isinstance(ran.get("blocking"), int) and ran["blocking"] > 0
-    if strikes >= STRIKES and not bug_spec_for(name, [branch, trunk]):
+    if strikes >= STRIKES and not bug_spec_for(name, chain):
         return "bug", "bug", "new session", (f"Bug; a job's third blocking review: {strikes} "
                                              f"strikes, and the next review is refused")
     if changed_since(reviewed, branch, board):

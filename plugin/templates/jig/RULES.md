@@ -61,8 +61,8 @@ shares, refusing one another open job owns.
 
 **Overlapping specs are answered before they open.** A spec is *waiting* when no open job names
 it, no handoff note's `Spec:` line names it, and the newest release tag doesn't hold it (any spec,
-with no tag yet), unless it carries a `Bug-for: <job>` line: a bug spec is built in the job it
-names and reaches trunk only when that job merges, so it never waits. Two waiting specs overlap when their `## Touches` meet: one path, a glob
+with no tag yet), unless it carries `Bug-for: <job>` on a line of its own, outside fenced code: a bug spec
+is built in the job it names and reaches trunk only when that job merges, so it never waits. Two waiting specs overlap when their `## Touches` meet: one path, a glob
 covering the other's path, or the same `<page> § <term>` (a whole page meets any term on it).
 `jig consolidate` lists each group of overlapping waiting specs with the paths they share, as
 one proposed job. A group is answered one of two ways: one spec carries every input's `Source:`
@@ -675,7 +675,9 @@ with the defaults.
   review that records blocking findings, full or `--change`, the first review-work included,
   is one, and a clean review between them resets nothing. The third strike starts Bug: the
   next `jig reviewed` is refused, full or `--change`, until a spec for the job carrying
-  `Bug-for: <job>` on a line of its own is committed.
+  `Bug-for: <job>` on a line of its own, outside fenced code, is committed in that part. A bug
+  spec lifts the limit for the part it was written in only: a later part that reaches three
+  strikes needs its own.
 
 A review with no blocking findings ends the fixing: the job hands off, as `jig next` says.
 Should-fix and optional findings get one round per part; what is left after it gets DEFERRED
