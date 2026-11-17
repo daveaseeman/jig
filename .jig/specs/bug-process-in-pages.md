@@ -1,6 +1,6 @@
 # Bug: pages fill up with how the repository is worked, and jig never says so
 
-Source: Daisy hubnode session / 2026-11-16 / the owner (staged as feedback-Daisy-2026-11-16-process-in-pages.md): "docs/ is meant to describe daisy's own code not how to use a tool that defines itself how it is used … Jig has a place for release process, we dont need that in docs because it doesnt describe the app", and "WHY IS JIG MENTIONED IN DAISYS DOCS".
+Source: Daisy hubnode session / 2026-11-16 / the owner (Dave Seeman) (staged as feedback-Daisy-2026-11-16-process-in-pages.md): "docs/ is meant to describe daisy's own code not how to use a tool that defines itself how it is used … Jig has a place for release process, we dont need that in docs because it doesnt describe the app", and "WHY IS JIG MENTIONED IN DAISYS DOCS".
 
 The report's jig_version, f0005adc5fe4, is the blob hash of `jig.py` in v0.14.0. It matches this
 worktree's `plugin/templates/jig/jig.py` and Daisy's `.jig/jig.py`, and `RULES.md` and
