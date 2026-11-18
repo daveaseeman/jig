@@ -136,7 +136,7 @@ the plan and never assume it calls anything a job. What matters is whether it ha
 | branch protection, required reviews, a merge queue | the gate |
 | husky, pre-commit, lefthook, or hooks in `.git/hooks` | the hooks (to be replaced) |
 | `CLAUDE.md`, `.cursorrules`, copilot instructions | `AGENTS.md` |
-| ADRs | `.jig/specs/` decisions and `.jig/ledgers/WORKAROUNDS.md` |
+| ADRs, a folder of decision records | `.jig/decisions.md`, through `jig update --merge-log` |
 | branches not merged into trunk | jobs to adopt |
 | a homebrew board with owners and states | the board |
 | a step that links or installs into each new worktree | `.jig/scripts/setup.sh` |
