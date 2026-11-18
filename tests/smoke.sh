@@ -4588,10 +4588,10 @@ msg="page contract: survey flags an old-format page as old contract — convert"
 expect_pass pc "assert len(c['docs/old/old.md']) == 1 and c['docs/old/old.md'][0].startswith('old contract — convert'), c"
 msg="page contract: survey flags invariants missing a holder or a why, and passes the one with both"
 expect_pass pc "p = c['docs/inv/inv.md']; assert len(p) == 2 and any('Keys are short.' in x for x in p) and any('Keys are ASCII' in x for x in p), p"
-msg="page contract: an invariant held by review alone is listed as no holder; a test beside review, review.py, or a test passes; no holder is still listed"
-mkdir -p docs/held && printf '# Held\n\nHeld keeps sums.\n\n## Invariants\n\n- Sums never overflow — totals wrap; held by review.\n- X — Y; held by test_x.\n- Z — W.\n- P — Q; held by test_p and review.\n- R — S; held by review.py.\n' > docs/held/held.md
+msg="page contract: an invariant held by review alone (review of the calls in a test file, peer review only) is listed as no holder; a test beside review, review.py, or a test passes; no holder is still listed"
+mkdir -p docs/held && printf '# Held\n\nHeld keeps sums.\n\n## Invariants\n\n- Sums never overflow — totals wrap; held by review.\n- X — Y; held by test_x.\n- Z — W.\n- P — Q; held by test_p and review.\n- R — S; held by review.py.\n- L — M; held by review of the log calls in `chain_tests.py`.\n- N — O; held by peer review only.\n' > docs/held/held.md
 git add -A && git -c core.hooksPath=/dev/null commit -qm held
-expect_pass pc "p = c['docs/held/held.md']; assert len(p) == 2 and any('held by review, which is no holder' in x and 'Sums never' in x for x in p) and any('Z — W' in x and 'a holder' in x for x in p) and not any('X — Y' in x for x in p), p"
+expect_pass pc "p = c['docs/held/held.md']; assert len(p) == 4 and all(any('held by review, which is no holder' in x and w in x for x in p) for w in ('Sums never', 'L — M', 'N — O')) and any('Z — W' in x and 'a holder' in x for x in p) and not any('X — Y' in x for x in p), p"
 msg="page contract: update lists the invariant held by review"
 expect_pass sh -c "$J update 2>&1 | grep -q '^  docs/held/held.md: off the page contract.*held by review, which is no holder'"
 git rm -rq docs/held && git commit -qm "no held"

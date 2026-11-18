@@ -3037,7 +3037,7 @@ def page_problems(text: str) -> list[str]:
             for item in section_items(lines):
                 if " — " not in item or "held by" not in item.lower():
                     out.append(f'invariant without a why (" — ") or a holder ("held by"): {clip(item)}')
-                elif REVIEW_HOLDER.search(item):
+                elif held_by_review(item):
                     out.append("invariant held by review, which is no holder: no step reads a page's "
                                "Invariants. Name a test, or what is seen on screen (on a board, on "
                                f"the board); an entry nothing holds goes in the body: {clip(item)}")
@@ -3045,7 +3045,20 @@ def page_problems(text: str) -> list[str]:
 
 
 # Review reads a diff, its spec and AGENTS.md, never a page's Invariants, so it holds none of them.
-REVIEW_HOLDER = re.compile(r"held by\s+(?:the\s+|code\s+|a\s+)*review\s*\.?\s*$", re.I)
+# It still counts beside a holder that does: a test joined to it by "and" or a comma.
+REVIEW_WORD = re.compile(r"\breview\b(?!\.\w)", re.I)
+TEST_NAME = re.compile(r"\btest_\w+|\w+_tests?\b|\w+\.(?:py|c|rs|ts|js|go)\b|\btests?/", re.I)
+
+
+def held_by_review(item: str) -> bool:
+    """Whether review is an invariant's only holder: every holder joined by "and" or a comma
+    names review, wherever a test file is mentioned inside one ("review of the calls in
+    chain_tests.py")."""
+    m = re.search(r"held by\s+(.*)$", item, re.I)
+    if not m or not REVIEW_WORD.search(m.group(1)):
+        return False
+    parts = [p for p in re.split(r",|\s+and\s+|\s*\+\s*", m.group(1)) if p.strip()]
+    return not any(TEST_NAME.search(p) and not REVIEW_WORD.search(p) for p in parts)
 
 
 # A page names how the repository is worked when it names jig's own files: a `.jig/` path. The
