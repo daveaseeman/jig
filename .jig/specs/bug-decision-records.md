@@ -329,6 +329,8 @@ stays stranded.
   migration sentence names a folder of decision records.
 - The owner, 2026-11-17: "All are approved now": `in force` and `approved` count as accepted, beside the standard ADR words; any other status word is refused, naming the record.
 - Kept separate from bug-process-in-pages: different code (one merges decision records into the log, the other sets what pages hold and where process goes), sharing jig.py, RULES.md and smoke.sh. The owner, 2026-11-17: "All are approved now".
+- Kept separate from bug-gate-pair-answers: one merges records into the log, the other changes how the fold-in asks about peers; no shared function. The owner, 2026-11-17: "K1: no merges among the four; the six jobs as proposed".
+- Kept separate from bug-meta-agents-block: log merging vs a generated metarepo block in AGENTS.md; no shared function. The owner, 2026-11-17: "K1: no merges among the four; the six jobs as proposed".
 
 ## Workflow
 spec: tier 2, effort 2

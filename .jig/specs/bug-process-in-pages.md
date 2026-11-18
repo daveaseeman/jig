@@ -156,7 +156,7 @@ jig's own rules or templates, so the spec writes it down once:
   | a procedure an agent runs when a task calls for it: steps, often a script, invoked by name | a skill; its knowledge stays in `.jig/process.md`, and the skill points to the section |
   | something a machine can do or check | a script or a check (`.jig/scripts/`, `check.sh`, a hook), which a skill may call |
   | a role's tier or effort | `roles` in `.jig/config.json`, with its reason |
-  | jig's own rules | nowhere: `.jig/RULES.md` holds them |
+  | jig's own rules | `.jig/RULES.md` holds them; the lines every task needs arrive as jig's own lines in `AGENTS.md` (the template's, or a generated block) |
   | the product | `docs/` |
 
   Homes' one-home sentence changes "know-how in the agent's skills" to "a procedure an agent
@@ -373,6 +373,8 @@ recommendation comes first.
    built.
 - The owner, 2026-11-17: "All are approved now": questions 2 to 5 take their recommended options (2a: survey and update list `.jig/` path lines, the hook refuses nothing new; 3: board pages keep Toolchain, Flash / rollback and Skills; 4a: a holder is a named test or what is seen on screen, still required; 5: the cut-line wording, no per-line proposals).
 - Kept separate from bug-decision-records: different code (one merges decision records into the log, the other sets what pages hold and where process goes), sharing jig.py, RULES.md and smoke.sh. The owner, 2026-11-17: "All are approved now".
+- The owner, 2026-11-17, W1: "reword: RULES.md holds them; lines every task needs arrive as jig's own lines in AGENTS.md (template or generated block)" (the Homes table's row for jig's own rules).
+- Build after `bug-meta-agents-block` (K1's order: its block exists before this spec's Homes table describes it).
 
 ## Workflow
 spec: tier 2, effort 2

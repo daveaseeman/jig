@@ -262,6 +262,7 @@ Questions for the owner, the recommendation first.
    - **What it wouldn't fix.** A line that restates jig's rules, as here: keeping it keeps the
      drift.
 - The owner, 2026-11-17, M2: "use the four lines in the spec" (Decisions 1, naming `entry_files` rather than listing files). M3: a recorded "keep" for listed lines with no finding id is "its own bug, after these".
+- Kept separate from bug-process-in-pages: a generated metarepo block vs page and process homes; process-in-pages builds after it. The owner, 2026-11-17: "K1: no merges among the four; the six jobs as proposed".
 
 ## Workflow
 spec: tier 2, effort 2

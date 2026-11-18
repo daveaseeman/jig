@@ -331,6 +331,8 @@ entries on a central page do.
 - `marketing/FEATURES.md` (gitignored, in the main checkout): the Decision log row's "a handoff
   line per peer entry" (owner's yes only).
 - The owner, 2026-11-17, G1: "one line per page, answered once": one fold-in line per entry, page and peer log, listing every peer there, answered `agrees`, `narrows: <id>, <how>` or `conflicts: <id>, <resolution>`. Design items 6–9 go ahead.
+- Kept separate from bug-meta-agents-block: the gate and pair code vs init --meta and update; nothing shared. The owner, 2026-11-17: "K1: no merges among the four; the six jobs as proposed".
+- Kept separate from bug-process-in-pages: the gate and pair code vs page rules; only the note's Fold-in comment, merged as text by whichever lands second. The owner, 2026-11-17: "K1: no merges among the four; the six jobs as proposed".
 
 ## Workflow
 spec: tier 2, effort 2
