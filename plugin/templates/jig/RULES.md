@@ -1145,7 +1145,13 @@ points to the metarepo's id without restating it.
 
 Each side's gates are on only when its file is on trunk: `.jig/meta.json` or `.jig/para.json`.
 `jig init --meta` and `jig init --para <metarepo>` write them; every other command reads them and
-does what that kind of repo needs.
+does what that kind of repo needs. Each also writes AGENTS.md's generated block, between
+`<!-- jig:meta — ` and `<!-- jig:meta end -->`, so the rules every task meets are always loaded
+in jig's words: `jig init --para` the pararepo's header, `jig init --meta` the metarepo's block
+(M1, M4, M6, M3, and that only `jig release` tags). A block's lines are jig's, never read as
+the repo's procedure. `jig update` lists a metarepo's block when it is missing or older than
+this jig's; once `meta.json` is on trunk it is rewritten in a job, by `jig init --meta` in the
+job's worktree (M4).
 
 **A metarepo's docs tree.** A metarepo's pages are under `docs/`, each in a genre folder:
 `docs/<genre>/<name>.md`, or `docs/<genre>/<name>/<name>.md` once it holds more than itself,

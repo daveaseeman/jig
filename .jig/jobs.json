@@ -37,7 +37,7 @@
   },
   "bug-gate-pair-answers": {
     "spec": ".jig/specs/bug-gate-pair-answers.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
@@ -46,24 +46,12 @@
       "tests/smoke.sh",
       "plugin/skills/review/SKILL.md"
     ],
-    "reserved": {}
-  },
-  "bug-meta-agents-block": {
-    "spec": ".jig/specs/bug-meta-agents-block.md",
-    "state": "claimed",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh",
-      "plugin/skills/init/SKILL.md"
-    ],
-    "reserved": {}
+    "reserved": {},
+    "check": "batch"
   },
   "bug-decision-records": {
     "spec": ".jig/specs/bug-decision-records.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
@@ -73,7 +61,8 @@
       "plugin/skills/adopt/SKILL.md",
       "plugin/skills/update/SKILL.md"
     ],
-    "reserved": {}
+    "reserved": {},
+    "check": "batch"
   },
   "bug-process-in-pages": {
     "spec": ".jig/specs/bug-process-in-pages.md",
