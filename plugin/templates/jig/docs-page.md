@@ -12,7 +12,9 @@ gets a page of its own once it has something to say that whoever works on it
 needs and this page doesn't; this section then shrinks to a paragraph and a link. Until then it
 stays a section here. A subsystem's page holds sections, not subsystems, unless the owner approved a deeper
 level. Point only at docs: a term as docs/glossary.md § <term>, never the README or another root
-document. The glossary itself is no system's page, and takes none of this skeleton.>
+document. Describe the product only, never how the repository is worked (its commands, style,
+review, build, CI, release, or jig's files under .jig/), which have homes of their own. The
+glossary itself is no system's page, and takes none of this skeleton.>
 
 ## Talks to
 
@@ -25,6 +27,7 @@ page or contract where one exists. Calls inside the system stay in the body.>
 ## Invariants
 
 <Optional; delete the section if nothing qualifies. Only load-bearing facts, each with why it
-must hold and what holds it: a named test, review, or on screen.>
+must hold and what holds it: a named test, or what is seen on screen. An entry nothing holds
+goes in the body.>
 
 - <Fact> — <why it must hold>; held by <test_name>.

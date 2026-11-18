@@ -18,11 +18,12 @@ Add `--json` to pipe it somewhere.
 Report the output, then say what it means in a few lines:
 
 - **Oversized always-loaded file.** Over 40 rule lines and the whole file starts getting
-  ignored, so every rule in it is weakened by the ones around it. Highest-value fix.
+  ignored, so every rule in it is weakened by the ones around it. Highest-value fix. A cut line
+  goes where survey's line says (`.jig/RULES.md`, Homes): never to a page.
 - **No home in the taxonomy.** Each document gets one job and one home — AGENTS.md rules,
   `docs/` what the code is now, `.jig/specs/` a task in flight, `.jig/ledgers/WORKAROUNDS.md` patches in the code,
   `.jig/ledgers/DEFERRED.md` review findings not in it,
-  `.claude/skills/` know-how, `README.md` outsiders, git for history. Zero inbound links plus
+  a skill a procedure agents run, `.jig/process.md` the rest of how the repo is worked, `README.md` outsiders, git for history. Zero inbound links plus
   a stale last-commit is a document written once and never read again; git keeps it either way.
   If a directory ships markdown as code, list it under `not_docs` in `.jig/config.json` as a glob
   such as `dir/**`. Survey names any `not_docs` glob that matches no file.

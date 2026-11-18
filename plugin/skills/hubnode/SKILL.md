@@ -141,6 +141,11 @@ if given here; the rest is the rigger's context. Check the state it answers befo
 for a card's reply, and record it where a ruling lands (a decision entry, a spec, the board).
 Your answer goes back only through the owner.
 
+New process (a rule, a procedure, a convention), from the owner or a subnode, is placed by the
+test in `.jig/RULES.md` (Homes) before it is written, and a spec for process work names its home.
+When `.jig/process.md` is absent, create it from `${CLAUDE_PLUGIN_ROOT}/templates/process.md`,
+and add `AGENTS.md`'s pointer line naming its trigger ("Before a release, read `.jig/process.md` § Release"); a new section gets its trigger on that line too.
+
 ## Opening a job (assign)
 
 Before opening more than one job, say in one line that each job's commands and checks run on
