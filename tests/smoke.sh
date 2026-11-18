@@ -291,13 +291,13 @@ then ok "$msg"; else bad "$msg"; fi
 
 I="$T/init"
 mkdir -p "$I" && cd "$I" && git init -q -b main && git config user.email t@t && git config user.name t
-cp -r "$P/jig" .jig && rm .jig/process.md && cp "$P/AGENTS.md" "$P/CLAUDE.md" .
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" .
 git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 
 msg="init: root holds only AGENTS.md, CLAUDE.md and .jig/"
 expect_pass test "$(ls -A | grep -v '^\.git$' | LC_ALL=C sort | tr '\n' ' ')" = ".jig AGENTS.md CLAUDE.md "
 
-msg="init: .jig/ holds jig.py, RULES.md, docs-page.md, config.json, jobs.json, decisions.md, the five scripts and staging/.gitignore, nothing else (process.md waits for first use)"
+msg="init: .jig/ holds jig.py, RULES.md, docs-page.md, config.json, jobs.json, decisions.md, the five scripts and staging/.gitignore, nothing else"
 expect_pass test "$(find .jig -type f | LC_ALL=C sort | tr '\n' ' ')" = ".jig/RULES.md .jig/config.json .jig/decisions.md .jig/docs-page.md .jig/jig.py .jig/jobs.json .jig/scripts/check.sh .jig/scripts/derive.sh .jig/scripts/format.sh .jig/scripts/publish.sh .jig/scripts/release.sh .jig/scripts/setup.sh .jig/staging/.gitignore "
 
 msg="init: the spec template and both ledgers stay in the plugin until first use"
@@ -4588,8 +4588,8 @@ msg="page contract: survey flags an old-format page as old contract — convert"
 expect_pass pc "assert len(c['docs/old/old.md']) == 1 and c['docs/old/old.md'][0].startswith('old contract — convert'), c"
 msg="page contract: survey flags invariants missing a holder or a why, and passes the one with both"
 expect_pass pc "p = c['docs/inv/inv.md']; assert len(p) == 2 and any('Keys are short.' in x for x in p) and any('Keys are ASCII' in x for x in p), p"
-msg="page contract: an invariant held by review is listed as no holder; held by a test passes; no holder is still listed"
-mkdir -p docs/held && printf '# Held\n\nHeld keeps sums.\n\n## Invariants\n\n- Sums never overflow — totals wrap; held by review.\n- X — Y; held by test_x.\n- Z — W.\n' > docs/held/held.md
+msg="page contract: an invariant held by review alone is listed as no holder; a test beside review, review.py, or a test passes; no holder is still listed"
+mkdir -p docs/held && printf '# Held\n\nHeld keeps sums.\n\n## Invariants\n\n- Sums never overflow — totals wrap; held by review.\n- X — Y; held by test_x.\n- Z — W.\n- P — Q; held by test_p and review.\n- R — S; held by review.py.\n' > docs/held/held.md
 git add -A && git -c core.hooksPath=/dev/null commit -qm held
 expect_pass pc "p = c['docs/held/held.md']; assert len(p) == 2 and any('held by review, which is no holder' in x and 'Sums never' in x for x in p) and any('Z — W' in x and 'a holder' in x for x in p) and not any('X — Y' in x for x in p), p"
 msg="page contract: update lists the invariant held by review"
@@ -4961,9 +4961,12 @@ cat >> docs/a.md <<'PAGE'
 
 jig's `docmap` in `.jig/config.json` says which page owns a file.
 
+Links: [rules](../.jig/RULES.md), [board](../../.jig/config.json), `./.jig/scripts/check.sh`, and `~/.jig/repos.json` is the user's.
+
 The question waits in `.jig/decisions.md § Open`.
 
 <!-- jig's template, on .jig/RULES.md -->
+A quoted `<!--` hides nothing: .jig/scripts/derive.sh
 <!--
 spans .jig/RULES.md too
 -->
@@ -4983,16 +4986,19 @@ msg="process: page lines naming .jig/ paths, the decision log, and product lines
 git add -A && expect_pass git commit -qm process
 printf '# B\n\nB is.\n\nCited .jig/specs/x.md once.\n' > docs/b.md && git add -A && git -c core.hooksPath=/dev/null commit -qm planted
 printf '# Process\n\nHow this repo is worked.\n\n## Code style\n\nNames say why; see .jig/RULES.md.\n\n## Release\n\nTag, then .jig/scripts/publish.sh.\n\n## CI\n\nFlaky on Mondays.\n' > .jig/process.md && git add -A && git commit -qm process.md
-msg="process: survey lists the .jig/config.json line and the layout tree, and nothing else: no decision log, comment, fence, product line, spec path or process.md"
+msg="process: survey lists the .jig/config.json line, relative links to .jig/ at any depth, and the layout tree, and nothing else (not ~/.jig/): no decision log, comment, fence, product line, spec path or process.md"
 expect_pass python3 -c "
 import json, subprocess
 r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
 got = [(e['path'], e['names']) for e in r['process_in_pages']]
-assert got == [('docs/a.md', '.jig/config.json'), ('docs/a.md', '.jig/')], got
+assert got == [('docs/a.md', '.jig/config.json'), ('docs/a.md', '../.jig/RULES.md'), ('docs/a.md', '../../.jig/config.json'),
+               ('docs/a.md', './.jig/scripts/check.sh'), ('docs/a.md', '.jig/scripts/derive.sh'), ('docs/a.md', '.jig/')], got
 assert not [e for e in r['homeless'] if 'process' in e['path']], r['homeless']
 assert any('.jig/specs/' in p for e in r['project_in_product'] if e['path'] == 'docs/b.md' for p in e['problems']), r['project_in_product']"
 msg="process: survey prints them under a heading naming the repo's process and its homes"
-s=$($J survey 2>&1); expect_pass sh -c "echo \"\$0\" | grep -A2 '^How the repository is worked, in the product' | grep -q 'process.md' && echo \"\$0\" | grep -q '^  docs/a.md:5: \".jig/config.json\"' && ! echo \"\$0\" | grep -A4 '^How the repository is worked' | grep -q 'docs/b.md'" "$s"
+s=$($J survey 2>&1); expect_pass sh -c "echo \"\$0\" | grep -A2 '^How the repository is worked, in the product' | grep -q 'process.md' && echo \"\$0\" | grep -q '^  docs/a.md:5: \".jig/config.json\"' && ! echo \"\$0\" | grep -A12 '^How the repository is worked' | grep -q 'docs/b.md'" "$s"
+msg="process: survey's Doc homes line names .jig/process.md"
+expect_pass sh -c "echo \"\$0\" | grep '^Doc homes: ' | grep -qF '.jig/process.md = how the repo is worked'" "$s"
 msg="process: the update dry run lists the line under Repo files to review"
 out=$($J update 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a.md: line 5: \".jig/config.json\" names how the repository is worked'" "$out"
 msg="process: survey's Too long line names where a cut line goes, and never a page"
@@ -7698,6 +7704,10 @@ msg="claims id: D-003 and D-3 list the same lines"
 expect_pass test "$out" = "$($J reading-list --claims D-003 | sed 's/D-003:/D-3:/')"
 msg="claims id: run from a subfolder, it lists the same lines"
 expect_pass test "$out" = "$(cd docs/store && python3 ../../.jig/jig.py reading-list --claims D-3)"
+msg="claims id: a copy in .jig/process.md is listed, as in the ledgers"
+printf '# Process\n\nReleases keep the store read-only, per D-3.\n' > .jig/process.md && git add -A && nohook process
+expect_pass sh -c "$J reading-list --claims D-3 | grep -q '^  copy     .jig/process.md:3 '"
+git rm -q .jig/process.md && nohook "no process"
 
 out=$($J reading-list --claims mote)
 msg="claims term: the glossary heading is home, a use is a copy, an entry whose Touches names it is listed"

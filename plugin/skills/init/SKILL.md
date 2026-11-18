@@ -31,7 +31,7 @@ at root, because tools look for them there. The repo's own `docs/` and `.claude/
 Copy, **never overwriting** a file that already exists:
 
 ```
-templates/jig/      → .jig/       (checker, rulebook, scripts, staging/.gitignore; not process.md)
+templates/jig/      → .jig/       (checker, rulebook, scripts, staging/.gitignore)
 templates/AGENTS.md → AGENTS.md
 templates/CLAUDE.md → CLAUDE.md
 ```

@@ -9,7 +9,7 @@ Ask: did anything in this task get solved that will need solving again?
 - Framework/peripheral knowledge (how to make X work on Y) → `.claude/skills/<platform>-<peripheral>/SKILL.md` from `${CLAUDE_PLUGIN_ROOT}/templates/skills/_template/SKILL.md`. Mark `verified: false` until it has produced working code on the board, and list it under Skills in each board page it applies to.
 - A board page lists a skill under Skills that jig ships and `.claude/skills/` lacks → install it from `${CLAUDE_PLUGIN_ROOT}/templates/skills/<name>/`, never overwriting.
 - Process friction (the check was wrong, the spec template missed something) → edit the process file directly.
-- Repo know-how that isn't a board's or a framework's (a procedure, a convention, a debugging recipe, a situational rule) → its home by the test in `.jig/RULES.md` (Homes): a procedure agents run becomes a skill; knowledge or a situational rule becomes a section of `.jig/process.md` (from `${CLAUDE_PLUGIN_ROOT}/templates/jig/process.md` when absent). Never a page.
+- Repo know-how that isn't a board's or a framework's (a procedure, a convention, a debugging recipe, a situational rule) → its home by the test in `.jig/RULES.md` (Homes): a procedure agents run becomes a skill; knowledge or a situational rule becomes a section of `.jig/process.md` (from `${CLAUDE_PLUGIN_ROOT}/templates/process.md` when absent, and add `AGENTS.md`'s pointer line naming its trigger ("Before a release, read `.jig/process.md` § Release")). Never a page.
 
 Then read `.jig/ledgers/WORKAROUNDS.md` (no file means no rows yet):
 - Two rows in the same subsystem → propose a refactor task; the correction they both avoided is its intent.

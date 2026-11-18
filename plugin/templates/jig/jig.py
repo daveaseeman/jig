@@ -30,6 +30,8 @@ CONFIG = f"{DIR}/config.json"
 JOBS = f"{DIR}/jobs.json"
 LEGACY_BOARD = f"{DIR}/lanes.json"   # the one-file board, before version 8
 WORKAROUNDS = f"{DIR}/ledgers/WORKAROUNDS.md"
+# How the repo is worked where no other home takes it (RULES.md, Homes): the repo's text, not jig's.
+PROCESS = f"{DIR}/process.md"
 DEFERRED = f"{DIR}/ledgers/DEFERRED.md"
 # A merged job has no state: its entry is gone, deleted in its merge commit.
 STATES = ["claimed", "building", "ready", "gated", "parked"]
@@ -2457,7 +2459,7 @@ def claim_texts(root: Path) -> list[tuple[str, list[str]]]:
     ledgers: jig's own files define the names, and a handoff records what was true then."""
     out = []
     for f in tracked(root):
-        if f.startswith(f"{DIR}/") and not f.startswith((f"{DIR}/specs/", f"{DIR}/ledgers/", LOG)):
+        if f.startswith(f"{DIR}/") and not f.startswith((f"{DIR}/specs/", f"{DIR}/ledgers/", LOG, PROCESS)):
             continue
         p = root / f
         if not p.is_file() or p.stat().st_size > 1 << 20:
@@ -2963,6 +2965,7 @@ DOC_HOMES = {
     f"docs/…/{DATASHEETS}/": "the vendor documents a page leans on, in that page's folder; one two pages use, in the nearest folder both share",
     f"docs/{DATASHEETS}/": "a vendor document two systems use: reference files only, never a page",
     f"{DIR}/specs/": "a task in flight",
+    f"{DIR}/process.md": "how the repo is worked where no other home takes it, one section per topic, read on demand",
     f"{DIR}/ledgers/": "WORKAROUNDS.md patches that are in the code; DEFERRED.md review findings that are not",
     f"{DIR}/staging/": "chat-born files waiting to be resolved (untracked)",
 }
@@ -3042,13 +3045,13 @@ def page_problems(text: str) -> list[str]:
 
 
 # Review reads a diff, its spec and AGENTS.md, never a page's Invariants, so it holds none of them.
-REVIEW_HOLDER = re.compile(r"held by[^;.]*\breview\b", re.I)
+REVIEW_HOLDER = re.compile(r"held by\s+(?:the\s+|code\s+|a\s+)*review\s*\.?\s*$", re.I)
 
 
 # A page names how the repository is worked when it names jig's own files: a `.jig/` path. The
 # decision log is the one a page may cite, and the plan's paths are listed as the project.
 # Words ("jig", "CI", "pytest") may be the product's own, so nothing searches for them.
-PROCESS_PATH = re.compile(r"(?<![\w/-])\.jig/(?!decisions\.md|specs/|handoffs/|roadmap\.md)[\w./-]*")
+PROCESS_PATH = re.compile(r"(?<![\w/.~-])(?:\.\.?/)*\.jig/(?!decisions\.md|specs/|handoffs/|roadmap\.md)[\w./-]*")
 PROCESS_HOMES = (f"AGENTS.md for a rule every task needs, {DIR}/scripts/ for a step a script runs, "
                  f"a skill for a procedure an agent runs, {DIR}/process.md for the rest ({DIR}/RULES.md, "
                  "Homes)")
@@ -3074,7 +3077,10 @@ def process_prose(text: str) -> list[tuple[int, str]]:
                 else:
                     comment, line = False, line[end + 3:]
             else:
-                start = line.find("<!--")
+                # A comment opens only outside inline code: `<!--` quoted in prose hides nothing.
+                code = [m.span() for m in re.finditer(r"`[^`]*`", line)]
+                start = next((m.start() for m in re.finditer("<!--", line)
+                              if not any(a <= m.start() < b for a, b in code)), -1)
                 if start < 0:
                     kept, line = kept + line, ""
                 else:
@@ -7527,7 +7533,7 @@ def closed_row(path: str, line: str) -> bool:
 def used_in(text: str, whole: bool = False) -> list[str]:
     """This repo's files that use TEXT. Of jig's own files only specs and ledgers count: the
     rulebook's examples and the cache aren't the repo's use, but a spec or an Open BUFFER row is."""
-    keep = (f"{DIR}/specs/", f"{DIR}/ledgers/", LOG)
+    keep = (f"{DIR}/specs/", f"{DIR}/ledgers/", LOG, PROCESS)
     return list(dict.fromkeys(f for f, _, line in grep_hits("-I", "-F", *(["-w"] if whole else []), "--", text)
                               if (not f.startswith(f"{DIR}/") or f.startswith(keep)) and not closed_row(f, line)))
 
@@ -7597,7 +7603,7 @@ def meta_citations(root: Path, para: dict, ids: str, loc: Path | None = None) ->
     gloss = glossary_terms((cache / GLOSSARY).read_text(errors="replace")) if (cache / GLOSSARY).is_file() else []
     out = []
     for f, text in head_texts([p for p in small if not p.startswith(f"{DIR}/")
-                               or p.startswith((f"{DIR}/specs/", f"{DIR}/ledgers/", LOG))]):
+                               or p.startswith((f"{DIR}/specs/", f"{DIR}/ledgers/", LOG, PROCESS))]):
         folded = text.casefold()
         if not any(t in folded for t in named) and not (one and one.search(text)):
             continue
@@ -11892,7 +11898,7 @@ def glossary_plan(root: Path) -> dict:
     gtext = "# Glossary\n\n" + "\n".join(body) + "\n"
     plan["write"][GLOSSARY] = gtext
     plan["terms"] = glossary_terms(gtext)
-    keep = (f"{DIR}/specs/", f"{DIR}/ledgers/", LOG)
+    keep = (f"{DIR}/specs/", f"{DIR}/ledgers/", LOG, PROCESS)
     for f in [*files, GLOSSARY]:
         if f.startswith(f"{DIR}/handoffs/") and (root / f).is_file():
             # A handoff records its day: a pointer in it is history, named and left.

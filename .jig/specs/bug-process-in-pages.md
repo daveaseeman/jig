@@ -375,6 +375,7 @@ recommendation comes first.
 - Kept separate from bug-decision-records: different code (one merges decision records into the log, the other sets what pages hold and where process goes), sharing jig.py, RULES.md and smoke.sh. The owner, 2026-11-17: "All are approved now".
 - The owner, 2026-11-17, W1: "reword: RULES.md holds them; lines every task needs arrive as jig's own lines in AGENTS.md (template or generated block)" (the Homes table's row for jig's own rules).
 - Interpreted (hubnode, 2026-11-17): Done when's Daisy check lists core.md:23, :215, :218 and releases.md:128; :162 sits in a fenced tree, which 2a excludes.
+- Interpreted (hubnode, 2026-11-17): the template sits at plugin/templates/process.md, beside templates/ledgers/, so copying templates/jig/ can't bring it.
 - Build after `bug-meta-agents-block` (K1's order: its block exists before this spec's Homes table describes it).
 
 ## Workflow

@@ -8,6 +8,6 @@ A breaking change is one that a reader taking the release must act on, and it is
 ## Unreleased
 
 ### Changed
-- Pages describe the product only: how the repository is worked has its homes, by one test in `.jig/RULES.md` (Homes), and the rest of it goes to `.jig/process.md`, created on first use. `jig survey` and `jig update` now list a page line naming a `.jig/` path other than the decision log, and an invariant held by review: move each line to its home, and give each such invariant a named test or what is seen on screen, or move it to the body.
+- Pages describe the product only: how the repository is worked has its homes, by one test in `.jig/RULES.md` (Homes), and the rest of it goes to `.jig/process.md`, created on first use with a pointer line in the always-loaded rules file naming when to read which section (a repo already on jig adds that line itself; only jig's template has it). `jig survey` and `jig update` now list a page line naming a `.jig/` path other than the decision log, and an invariant held by review: move each line to its home, and give each such invariant a named test or what is seen on screen, or move it to the body.
 
 ## v0.14.0 - 2026-11-16

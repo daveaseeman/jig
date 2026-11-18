@@ -83,8 +83,8 @@ on an answer in chat.
 
 Some of them are survey's home findings. A **rules** file off root: sort it line
 by line by the test in `.jig/RULES.md` (Homes): a rule every task needs into `AGENTS.md`, the
-rest of how the repo is worked into `.jig/process.md` (from `${CLAUDE_PLUGIN_ROOT}/templates/jig/process.md`
-when absent), and only a fact the product must keep into its page's Invariants; repoint the lines named, delete it — but a package's own rules
+rest of how the repo is worked into `.jig/process.md` (from `${CLAUDE_PLUGIN_ROOT}/templates/process.md`
+when absent, and add `AGENTS.md`'s pointer line naming its trigger ("Before a release, read `.jig/process.md` § Release")), and only a fact the product must keep into its page's Invariants; repoint the lines named, delete it — but a package's own rules
 file in a monorepo may stay on the owner's word, so ask before proposing the delete. A **copy** of `.jig/RULES.md`:
 delete it and point what names it at `.jig/RULES.md`. A page at home but **off the page contract** (no lead paragraph, an invariant with
 no why or holder, the old Now / Rules / Checks shape) is fixed where it sits: show its problems and the

@@ -133,8 +133,8 @@ rows. A finding that needs behavior the spec never names is a spec change before
 
 New process (a rule, a procedure, a convention), from the owner or a subnode, is placed by the
 test in `.jig/RULES.md` (Homes) before it is written, and a spec for process work names its home.
-A section of `.jig/process.md` is created from `${CLAUDE_PLUGIN_ROOT}/templates/jig/process.md`
-when the file is absent.
+When `.jig/process.md` is absent, create it from `${CLAUDE_PLUGIN_ROOT}/templates/process.md`,
+and add `AGENTS.md`'s pointer line naming its trigger ("Before a release, read `.jig/process.md` § Release"); a new section gets its trigger on that line too.
 
 ## Opening a job (assign)
 

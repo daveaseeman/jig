@@ -172,6 +172,8 @@ When the repo already coordinates parallel work (4b), these stages come first, i
 
 Copy `${CLAUDE_PLUGIN_ROOT}/templates/jig/` to `.jig/` as `/jig:init` does, and
 `chmod +x .jig/scripts/*.sh`. `AGENTS.md` and `CLAUDE.md` are the plan's diet, not this copy.
+Where the diet moves lines to `.jig/process.md`, create it from
+`${CLAUDE_PLUGIN_ROOT}/templates/process.md` (`templates/jig/` doesn't bring it), and add `AGENTS.md`'s pointer line naming its trigger ("Before a release, read `.jig/process.md` § Release").
 Keep `.jig/scripts/check.sh` and `format.sh` to fast checks — the Stop hook has a time limit.
 Fill `.jig/scripts/setup.sh` the way `/jig:init` does. It replaces whatever the predecessor
 did to set up each new worktree, which goes with the predecessor in 6.5.
