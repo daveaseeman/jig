@@ -6967,6 +6967,85 @@ def repos_alias(repos: dict, args) -> int:
     return 0
 
 
+RIGGER_PARTS = ("record", "drafts", "staged")
+
+
+def read_json(f: Path) -> dict:
+    try:
+        d = json.loads(f.read_text()) if f.is_file() else {}
+    except ValueError:
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def cmd_rigger(args) -> int:
+    """Make the calling session the rigger for one repo: its folder outside every repo, the
+    pointer to it on the repo's entry in the user's list, and the facts the list and folders
+    give. How a rigger works is its skill's; this prints only what config and files say."""
+    repos = load_repos()
+    found = repo_matches(args.repo)
+    if len(found) != 1:
+        die(f"refused: {unknown_repo(args.repo)}", 2)
+    name = found[0]
+    entry = repos[name]
+    warn_near_duplicates(repos, name)
+    if entry.get("kind") == "meta":
+        die(f"refused: {name} is a metarepo, which has no rigger: its pararepos' riggers stage to it", 2)
+    if args.folder:
+        folder = Path(args.folder).expanduser().resolve()
+    elif entry.get("rigger"):
+        folder = Path(entry["rigger"])
+    else:
+        # Beside the others, so the riggers' parent folder is named once, by the first --folder.
+        others = sorted(Path(e["rigger"]).parent for n, e in repos.items()
+                        if n != name and isinstance(e.get("rigger"), str) and e["rigger"])
+        if not others:
+            die(f"refused: no rigger folder is set for any repo yet: pass --folder <path>, outside "
+                "every repo", 2)
+        folder = others[0] / name
+    here = Path(entry["path"]).resolve()
+    if folder == here or here in folder.parents:
+        die(f"refused: {folder} is inside {name}'s checkout; a rigger's folder lives outside every repo", 2)
+    made = []
+    for part in RIGGER_PARTS:
+        if not (folder / part).is_dir():
+            (folder / part).mkdir(parents=True, exist_ok=True)
+            made.append(f"{part}/")
+    if not (folder / "handoff.md").exists():
+        (folder / "handoff.md").write_text(f"# Handoff: {name}'s rigger\n")
+        made.append("handoff.md")
+    entry["rigger"] = str(folder)
+    save_repos(repos)
+    print(f"rigger for {name}: {folder}")
+    print(f"  holds: {', '.join(sorted(p.name + ('/' if p.is_dir() else '') for p in folder.iterdir()))}")
+    print(f"  created: {', '.join(made) if made else 'nothing (all there already)'}")
+    # Which repos it may read: its own; with a metarepo, that metarepo and its other pararepos.
+    meta_name = read_json(here / PARA).get("meta") if entry.get("kind") == "para" else None
+    meta = repo_matches(meta_name) if meta_name else []
+    meta = meta[0] if len(meta) == 1 else None
+    paras = set(read_json(Path(repos[meta]["path"]) / META).get("pararepos", [])) if meta else set()
+    print("repos:")
+    for n, e in sorted(repos.items()):
+        if n == name:
+            mark = "yours"
+        elif n == meta:
+            mark = "reads: its metarepo"
+        elif meta and (n in paras or name_in(meta_name, {read_json(Path(e["path"]) / PARA).get("meta", "")})):
+            mark = f"reads: a pararepo of {meta}"
+        else:
+            mark = "on request"
+        print(f"  {n:<24} {mark}")
+    if meta_name and not meta:
+        print(f"  ({name}'s metarepo, {meta_name}, isn't a single entry in the list: {unknown_repo(meta_name)})")
+    staged = staged_files(here)
+    print(f"staged in {name}: " + ("nothing" if not staged else ""))
+    for f in staged:
+        print(f"  {f.name:<32} source: {read_staged(f)[0].get('source') or '(none)'}")
+    print(f"{name} has {STAGING}/: {'yes' if (here / STAGING).is_dir() else 'no (`jig update` there adds it)'}; "
+          f"{INBOX}/: {'yes' if (here / INBOX).is_dir() else 'no (`jig update` there adds it)'}")
+    return 0
+
+
 def meta_checkout(root: Path, para: dict) -> Path | None:
     """The metarepo's checkout, found by name in repos.json, or None when it isn't listed or
     can't be reached (offline, moved)."""
@@ -13282,6 +13361,9 @@ def main(argv: list[str] | None = None) -> int:
     ib = sub.add_parser("inbox", help="hubnode: print unread messages and mark them read, or check headers")
     ib.add_argument("action", nargs="?", choices=["check"])
     ib.add_argument("file", nargs="*")
+    rg2 = sub.add_parser("rigger", help="make this session the rigger for a repo: its folder, the pointer, the facts")
+    rg2.add_argument("repo")
+    rg2.add_argument("--folder", help="the rigger's folder, outside every repo (default: the pointer, else beside the others)")
     rp = sub.add_parser("repos", help="list, or add to, where your repos live (user config)")
     rp.add_argument("action", nargs="?", choices=["add", "rename", "alias", "which"])
     rp.add_argument("kind", nargs="?", help="add: repo, meta or para; rename: the new name; alias, which: the repo")
@@ -13305,6 +13387,8 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     if args.cmd == "repos":
         return cmd_repos(Path.cwd(), args)   # user config only: works outside any repo
+    if args.cmd == "rigger":
+        return cmd_rigger(args)              # user config and folders: runs outside any repo
     if args.cmd == "staging" and args.action == "check":
         return cmd_staging_check(args)       # headers only: runs outside any repo
     if args.cmd == "inbox" and args.action == "check":

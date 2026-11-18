@@ -224,6 +224,7 @@ jig roadmap --write      # print the roadmap's state and rewrite ROADMAP.md
 /jig:repos add repo      # register this folder so other chats can stage files to it
 /jig:relay <repo> <text> # in another chat: this is that repo's hubnode talking; a reply is owed
 /jig:send                # show the reply for you to edit and send, then drop it in the repo's .jig/inbox/
+/jig:rigger <repo>       # make this chat the repo's rigger: its record and drafts, in a folder outside the repo
 /jig:release             # build and tag a version, the way this repo ships
 /jig:hubnode             # your session: owns trunk, the board and merges, and assigns each step
 /jig:subnode             # a session that takes one role on one job
@@ -233,9 +234,10 @@ jig next                 # each job's next step, who takes it, continue or new s
 Every rule the hooks enforce is written in `.jig/RULES.md` after init.
 
 `/jig:init`, `/jig:adopt`, `/jig:update`, `/jig:redocument`, `/jig:release`, `/jig:repos`,
-`/jig:relay`, `/jig:send` and `/jig:feedback` don't show in the slash list, and an agent can't
-start them on its own: each changes the repo, tags a release, writes your repo list, speaks to a
-hubnode or files a report on jig, so only you do. Type them in full at the start of a message.
+`/jig:relay`, `/jig:send`, `/jig:rigger` and `/jig:feedback` don't show in the slash list, and an
+agent can't start them on its own: each changes the repo, tags a release, writes your repo list,
+speaks to a hubnode or files a report on jig, so only you do. Type them in full at the start of a
+message.
 
 ## 📦 Installation
 

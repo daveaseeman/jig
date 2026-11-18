@@ -1292,7 +1292,7 @@ msg="staging: and a job's commit of it passes M3 and R3, the entry being its lin
 cd "$M"
 
 msg="plugin: only the skills that change the repo, tag, write user config, speak for the owner or report on jig are user-only; read-only ones stay listed"
-expect_pass test "$(grep -l '^disable-model-invocation: true' $P/../skills/*/SKILL.md | xargs -n1 dirname | xargs -n1 basename | sort | tr '\n' ' ')" = "adopt feedback init redocument relay release repos send update "
+expect_pass test "$(grep -l '^disable-model-invocation: true' $P/../skills/*/SKILL.md | xargs -n1 dirname | xargs -n1 basename | sort | tr '\n' ' ')" = "adopt feedback init redocument relay release repos rigger send update "
 
 msg="plugin: no skill description holds angle brackets (the desktop app reads them as XML tags)"
 expect_refuse grep -lE '^description:.*[<>]' $P/../skills/*/SKILL.md $P/skills/*/SKILL.md
@@ -2028,7 +2028,8 @@ msg="repos alias: rename to another entry's alias is refused, case ignored"
 expect_refuse $J repos rename other AP
 msg="repos alias: add --name taking another entry's alias is refused"
 mkdir -p "$T/al-fourth" && (cd "$T/al-fourth" && git init -q -b main)
-expect_refuse $J repos add repo --name ap --path "$T/al-fourth"
+out=$($J repos add repo "$T/al-fourth" --name ap 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'ap already names app'" "$out"
 msg="repos alias: add <name> <path> re-pointing a name takes none of the old checkout's aliases"
 $J repos alias third th >/dev/null && $J repos add third "$T/al-fourth" >/dev/null
 expect_pass python3 -c "import json; e = json.load(open('$JIG_CONFIG'))['third']; assert e['path'].endswith('al-fourth') and 'aliases' not in e, e"
@@ -8140,7 +8141,59 @@ $UP --apply >/dev/null 2>&1
 expect_pass test -f .jig/inbox/.gitignore
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders rig claims inbox"
+# ---------------------------------------------------------------- rigger
+sec_rigger() {
+export JIG_CONFIG="$T/rigger-repos.json"
+PJ="python3 $P/jig/jig.py"           # the plugin's copy, outside any repo, as the skill runs it
+mkdir -p "$T/rg" && cd "$T/rg"
+for r in app other x; do mkdir -p "$T/rg-$r/.jig/staging" "$T/rg-$r/.jig/inbox"; done
+mkdir -p "$T/rg-m/.jig" "$T/rg-p1/.jig/staging" "$T/rg-p2/.jig"
+echo '{"name": "m", "pararepos": ["p1", "p2"]}' > "$T/rg-m/.jig/meta.json"
+echo '{"meta": "m"}' > "$T/rg-p1/.jig/para.json" && echo '{"meta": "m"}' > "$T/rg-p2/.jig/para.json"
+printf -- '---\nstaged: true\ntarget: p1\nkind: spec\nchange: new\ndestination: .jig/specs/s.md\nsource: another chat / 2026-11-17\nstatus: staged\n---\nx\n' > "$T/rg-p1/.jig/staging/s.md"
+for r in app other x; do $PJ repos add $r "$T/rg-$r" >/dev/null; done
+$PJ repos add meta "$T/rg-m" --name m >/dev/null
+$PJ repos add para "$T/rg-p1" --name p1 >/dev/null && $PJ repos add para "$T/rg-p2" --name p2 >/dev/null
+$PJ repos alias app ap >/dev/null
+msg="rigger: no --folder with no rigger folder set anywhere is refused, asking for --folder"
+out=$($PJ rigger app 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q -- '--folder'" "$out"
+msg="rigger: --folder creates record/, drafts/, staged/ and handoff.md, and writes the rigger key, the alias kept"
+$PJ rigger app --folder "$T/_riggers/app" >/dev/null
+expect_pass sh -c "test -d $T/_riggers/app/record && test -d $T/_riggers/app/drafts && test -d $T/_riggers/app/staged && test -f $T/_riggers/app/handoff.md && python3 -c \"import json; e = json.load(open('$JIG_CONFIG'))['app']; assert e['rigger'] == '$T/_riggers/app' or e['rigger'].endswith('/_riggers/app'), e; assert e['aliases'] == ['ap'], e\""
+msg="rigger: a second run with no --folder reuses the pointer and keeps what handoff.md holds"
+echo "open thread: x" >> "$T/_riggers/app/handoff.md"
+out=$($PJ rigger app)
+expect_pass sh -c "echo \"\$0\" | grep -q '_riggers/app' && grep -q 'open thread: x' $T/_riggers/app/handoff.md && echo \"\$0\" | grep -q 'created: nothing'" "$out"
+msg="rigger: APP takes app's entry"
+expect_pass sh -c "$PJ rigger APP | grep -q '^rigger for app:'"
+msg="rigger: a_pp is refused, naming app"
+out=$($PJ rigger a_pp 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'did you mean app'" "$out"
+msg="rigger: an unknown repo is refused"
+expect_refuse $PJ rigger nope
+msg="rigger: a metarepo is refused"
+out=$($PJ rigger m 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'metarepo'" "$out"
+msg="rigger: app's alias works"
+expect_pass sh -c "$PJ rigger ap | grep -q '^rigger for app:'"
+msg="rigger: other with no --folder makes its folder beside app's"
+$PJ rigger other >/dev/null
+expect_pass sh -c "test -d $T/_riggers/other/record && python3 -c \"import json; assert json.load(open('$JIG_CONFIG'))['other']['rigger'].endswith('/_riggers/other')\""
+out=$($PJ rigger p1)
+msg="rigger: for pararepo p1, it marks p1 yours, m its metarepo, p2 a pararepo of m, and x on request"
+expect_pass sh -c "echo \"\$0\" | grep -qE '^  p1 +yours\$' && echo \"\$0\" | grep -qE '^  m +reads: its metarepo\$' && echo \"\$0\" | grep -qE '^  p2 +reads: a pararepo of m\$' && echo \"\$0\" | grep -qE '^  x +on request\$'" "$out"
+msg="rigger: it lists the file staged in p1 with its source"
+expect_pass sh -c "echo \"\$0\" | grep -qE '^  s.md +source: another chat / 2026-11-17\$'" "$out"
+msg="rigger: it says whether the repo has .jig/staging/ and .jig/inbox/"
+expect_pass sh -c "echo \"\$0\" | grep -q 'p1 has .jig/staging/: yes; .jig/inbox/: no'" "$out"
+msg="rigger: jig repos shows each entry's rigger folder"
+expect_pass sh -c "$PJ repos | grep -q 'rigger: .*_riggers/p1'"
+msg="rigger: a folder inside the repo's checkout is refused"
+expect_refuse $PJ rigger x --folder "$T/rg-x/notes"
+}
+
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders rig claims inbox rigger"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file

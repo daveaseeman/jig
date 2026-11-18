@@ -34,6 +34,11 @@ shape; a decision entry says `Accepted (who, date).` only for what that person a
 chat, else `Proposed` or `Open`. Material that is none of these is no file for the nearest kind:
 ask the user where it lives.
 
+**Whose words.** Where the owner asked for something, the file quotes the owner exactly, with
+the date: `The owner, <YYYY-MM-DD>: "<exact words>"`. Everything else is plain information,
+with no headings about whose words they are. Resolving, the hubnode sorts what is settled from
+what is open, as below; only the quoted words are the owner's.
+
 Write it into the target's `.jig/staging/`, found with `jig repos`, which reads
 `~/.config/jig/`. Request access to each folder you need with the host's folder-access tool (in
 the Claude desktop app, `request_directory`): `~/.config/jig/` first if you can't read it, then

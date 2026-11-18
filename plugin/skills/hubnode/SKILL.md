@@ -135,6 +135,12 @@ Should-fix and optional findings get one round per part; what is left after it g
 rows. A finding that needs behavior the spec never names is a spec change before it is built
 (an `Interpreted:` line the hubnode accepts, or the owner's answer), or an Up next item.
 
+A ruling also reaches you by the inbox: the owner's reply to your question, sent from the
+repo's rigger (`jig inbox`). The quoted owner words, with their date, are the owner's ruling, as
+if given here; the rest is the rigger's context. Check the state it answers before acting, as
+for a card's reply, and record it where a ruling lands (a decision entry, a spec, the board).
+Your answer goes back only through the owner.
+
 ## Opening a job (assign)
 
 Before opening more than one job, say in one line that each job's commands and checks run on

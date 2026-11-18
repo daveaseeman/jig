@@ -1141,6 +1141,15 @@ such a name, and `add` refuses a checkout whose own name another entry answers t
 message's header from outside any repo, as `staging check` does: a missing key, a `to` no entry
 answers to, or, for a file already in a listed repo's inbox, a `to` naming another repo.
 
+## Riggers
+
+A **rigger** is a design session for one product repo, kept outside it: it holds the owner's
+running record of the product and drafts what the repo will get. Its folder lives outside every
+repo, so no repo session can open it, and the user's repos list points to it from the repo's
+entry (`jig rigger <repo>`, run by the rigger when it starts). A rigger reaches its repo only
+by staging and by the inbox; it never edits a repo. A metarepo has no rigger: its pararepos'
+riggers stage to it.
+
 ## Metarepo and pararepos
 
 A set of repos can share one **metarepo**: docs only — definitions, decisions, conventions, the
@@ -1359,6 +1368,7 @@ jig update [--apply] --glossary   on the owner's yes: the README's glossary, or 
 jig staging [resolve|drop <file>]   list staged files, or land / drop one
 jig repos [add repo|meta|para | rename <new> | alias <repo> <alias> [--remove] | which <name>]  where your repos live (user config)
 jig inbox [check <file>…]   hubnode, trunk checkout: print unread messages and mark them read; check: a message's header
+jig rigger <repo> [--folder <path>]   outside any repo: make this session the repo's rigger, its folder and pointer
 jig open ... --reserve K    allocate scarce counter K to this job
 jig reserve <job> <K>       hubnode: give an open job the next number of counter K too
 jig consolidate             hubnode: groups of waiting specs whose Touches overlap, to answer before opening
