@@ -330,6 +330,7 @@ entries on a central page do.
 - `tests/smoke.sh`: `touches` and `cheaper_rounds`.
 - `marketing/FEATURES.md` (gitignored, in the main checkout): the Decision log row's "a handoff
   line per peer entry" (owner's yes only).
+- The owner, 2026-11-17, G1: "one line per page, answered once": one fold-in line per entry, page and peer log, listing every peer there, answered `agrees`, `narrows: <id>, <how>` or `conflicts: <id>, <resolution>`. Design items 6–9 go ahead.
 
 ## Workflow
 spec: tier 2, effort 2

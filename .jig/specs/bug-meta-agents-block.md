@@ -261,6 +261,7 @@ Questions for the owner, the recommendation first.
      re-listing applies to root-document lines and to bug-process-in-pages' `.jig/` path lines.
    - **What it wouldn't fix.** A line that restates jig's rules, as here: keeping it keeps the
      drift.
+- The owner, 2026-11-17, M2: "use the four lines in the spec" (Decisions 1, naming `entry_files` rather than listing files). M3: a recorded "keep" for listed lines with no finding id is "its own bug, after these".
 
 ## Workflow
 spec: tier 2, effort 2
