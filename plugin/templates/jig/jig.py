@@ -3052,28 +3052,25 @@ def page_problems(text: str) -> list[str]:
             for item in section_items(lines):
                 if " — " not in item or "held by" not in item.lower():
                     out.append(f'invariant without a why (" — ") or a holder ("held by"): {clip(item)}')
-                elif held_by_review(item):
-                    out.append("invariant held by review, which is no holder: no step reads a page's "
-                               "Invariants. Name a test, or what is seen on screen (on a board, on "
-                               f"the board); an entry nothing holds goes in the body: {clip(item)}")
+                elif holder_names_review(item):
+                    out.append("invariant whose holder names review, which holds nothing on a page (no "
+                               "step reads a page's Invariants): for what review covers, name a test or "
+                               "what is seen on screen (on a board, on the board), or move it to the "
+                               f"body; where a test holds it all, drop review: {clip(item)}")
     return out
 
 
 # Review reads a diff, its spec and AGENTS.md, never a page's Invariants, so it holds none of them.
-# It still counts beside a holder that does: a test joined to it by "and" or a comma.
-REVIEW_WORD = re.compile(r"\breview\b(?!\.\w)", re.I)
-TEST_NAME = re.compile(r"\btest_\w+|\w+_tests?\b|\w+\.(?:py|c|rs|ts|js|go)\b|\btests?/", re.I)
+# Whether review is an entry's only holder is English no pattern reads ("test_x and review of
+# `Y` for the rest"), so an entry whose holder names review is listed and the writer judges it,
+# as the `.jig/` path listing beside it does. A word, never a path, file or compound name.
+REVIEW_NAMED = re.compile(r"(?<![\w/.-])review(?:s|ed|er|ers|ing)?\b(?![-/.]\w)", re.I)
 
 
-def held_by_review(item: str) -> bool:
-    """Whether review is an invariant's only holder: every holder joined by "and" or a comma
-    names review, wherever a test file is mentioned inside one ("review of the calls in
-    chain_tests.py")."""
-    m = re.search(r"held by\s+(.*)$", item, re.I)
-    if not m or not REVIEW_WORD.search(m.group(1)):
-        return False
-    parts = [p for p in re.split(r",|\s+and\s+|\s*\+\s*", m.group(1)) if p.strip()]
-    return not any(TEST_NAME.search(p) and not REVIEW_WORD.search(p) for p in parts)
+def holder_names_review(item: str) -> bool:
+    """Whether the holder clause, "held by" to the line's end with inline code removed, names review."""
+    m = re.search(r"\bheld by\b(.*)$", item, re.I)
+    return bool(m and REVIEW_NAMED.search(re.sub(r"`[^`]*`", "", m.group(1))))
 
 
 # A page names how the repository is worked when it names jig's own files: a `.jig/` path. The

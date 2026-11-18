@@ -270,7 +270,7 @@ current, is the skeleton):
    board, on the board):
    `- Rows are at least 44px — the touch-target minimum; held by test_touch_targets.` An
    entry without a why and a holder is description, and goes in the body or nowhere. Review is
-   no holder: no step reads a page's Invariants, so an entry nothing else holds goes in the body.
+   no holder: no step reads a page's Invariants, so what only review would hold goes in the body.
 
 A page has no `## Undefined` section, and no section that holds the project: build status
 (done, pending, not built yet), or when and in what order work will happen. What the section
@@ -454,8 +454,8 @@ handoff, a released section of the decision log or of a root `CHANGELOG.md`. A R
 `jig survey` also reads each page at home under `docs/`, board pages included, against the
 contract above, and names a page in the old Now, Rules and Checks shape (convert it: fold
 what it says into description, delete what no longer holds, keep as Invariants only what
-passes the test), an Invariants entry with no why (` — `) or no holder (`held by`), or held
-by review, and a
+passes the test), an Invariants entry with no why (` — `) or no holder (`held by`), or whose
+holder names review (listed: survey reads the word, never the other holders), and a
 page whose first line of text after its title is a heading rather than a lead paragraph. It
 lists, apart, a page line naming a `.jig/` path other than the decision log (Product and
 process), and the project in the product: an `## Undefined` heading on a page or a metarepo's

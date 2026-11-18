@@ -221,6 +221,7 @@ becomes the kind of listing the rest of this diff uses.
   holder. For "test_x and review", the fix is to drop two words. The reviewer of e5847be read a
   test beside review as a holder that should pass. (a) lists it, but its text says "where a test
   holds it all, drop review", not "no holder".
+- **H1 answered.** The owner, 2026-11-17, answering the rigger merge and H1 together: "do both". The hubnode reads it as H1's recommended option, (a): survey and update list every entry whose holder names review, with or without a test beside it, and judge no other holder.
 - Interpreted (for the hubnode): strike 3's two findings are answered by (a)'s wording and its
   predicate, not by a better classifier. Strike 2's finding ("review of the log calls in
   `chain_tests.py`" lost) is listed under (a) too.

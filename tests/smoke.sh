@@ -4677,12 +4677,39 @@ msg="page contract: survey flags an old-format page as old contract — convert"
 expect_pass pc "assert len(c['docs/old/old.md']) == 1 and c['docs/old/old.md'][0].startswith('old contract — convert'), c"
 msg="page contract: survey flags invariants missing a holder or a why, and passes the one with both"
 expect_pass pc "p = c['docs/inv/inv.md']; assert len(p) == 2 and any('Keys are short.' in x for x in p) and any('Keys are ASCII' in x for x in p), p"
-msg="page contract: an invariant held by review alone (review of the calls in a test file, peer review only) is listed as no holder; a test beside review, review.py, or a test passes; no holder is still listed"
-mkdir -p docs/held && printf '# Held\n\nHeld keeps sums.\n\n## Invariants\n\n- Sums never overflow — totals wrap; held by review.\n- X — Y; held by test_x.\n- Z — W.\n- P — Q; held by test_p and review.\n- R — S; held by review.py.\n- L — M; held by review of the log calls in `chain_tests.py`.\n- N — O; held by peer review only.\n' > docs/held/held.md
+msg="page contract: each invariant whose holder names review is listed as such, never as no holder; a test, a path or a compound naming review is not; no holder is still listed"
+mkdir -p docs/held && cat > docs/held/held.md <<'PAGE'
+# Held
+
+Held keeps sums.
+
+## Invariants
+
+- R1 — w; held by review.
+- R2 — w; held by review of the log calls in `chain_tests.py`.
+- R3 — w; held by peer review only.
+- R4 — w; held by test_p and review.
+- R5 — w; held by TestSumWraps and review.
+- R6 — w; held by review of the calls in `log.py` and `chain.py`.
+- R7 — w; held by the reviewer.
+- R8 — w; held by reviewing each diff.
+- N1 — w; held by test_x.
+- N2 — w; held by review.py.
+- N3 — w; held by `tests/review/test_flow.py`.
+- N4 — w; held by test_review_mode.
+- N5 — w; held by preview_test.py.
+- Z — W.
+PAGE
 git add -A && git -c core.hooksPath=/dev/null commit -qm held
-expect_pass pc "p = c['docs/held/held.md']; assert len(p) == 4 and all(any('held by review, which is no holder' in x and w in x for x in p) for w in ('Sums never', 'L — M', 'N — O')) and any('Z — W' in x and 'a holder' in x for x in p) and not any('X — Y' in x for x in p), p"
-msg="page contract: update lists the invariant held by review"
-expect_pass sh -c "$J update 2>&1 | grep -q '^  docs/held/held.md: off the page contract.*held by review, which is no holder'"
+expect_pass pc "p = c['docs/held/held.md']
+named = [x for x in p if 'whose holder names review' in x]
+assert len(p) == 9 and len(named) == 8, p
+assert all(any(f'R{i} —' in x for x in named) for i in range(1, 9)), named
+assert not any('N' + str(i) + ' —' in x for x in p for i in range(1, 6)), p
+assert not any('no holder' in x for x in p), p
+assert any('Z — W' in x and 'a holder' in x for x in p), p"
+msg="page contract: update lists the same eight entries under Repo files to review"
+expect_pass sh -c "$J update 2>&1 | grep '^  docs/held/held.md: off the page contract' | python3 -c 'import sys; t = sys.stdin.read(); assert t.count(\"whose holder names review\") == 8, t'"
 git rm -rq docs/held && git commit -qm "no held"
 msg="page contract: survey flags a page with no lead paragraph; a page still carrying ## Undefined is in the contract otherwise"
 expect_pass pc "assert any('no lead paragraph' in x for x in c['docs/nolead/nolead.md']), c
