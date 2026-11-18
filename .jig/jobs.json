@@ -43,5 +43,20 @@
     ],
     "reserved": {},
     "check": "batch"
+  },
+  "bug-effort-and-propose": {
+    "spec": ".jig/specs/bug-effort-and-propose.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/tiers.json"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "plugin/skills/hubnode/SKILL.md"
+    ],
+    "reserved": {}
   }
 }
