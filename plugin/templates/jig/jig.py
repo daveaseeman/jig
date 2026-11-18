@@ -2237,7 +2237,11 @@ Spec: {spec}
      pages (an Up next item, or a taken scope) has its own line: keep one answer, built,
      untouched or departed: <why>. An Up next item answered built leaves the roadmap when
      the job merges. The gate refuses an unanswered line. An UNOWNED file has no page
-     covering it: add it to docmap in the board, or say why it needs none. -->
+     covering it: add it to docmap in the board, or say why it needs none. A pair line
+     (`<id> vs <log> § <ids> (<page>): ___`) is answered after its colon, once for every id
+     on it: agrees, narrows: <how>, or conflicts: <resolution>; on a line of several ids,
+     narrows and conflicts name at least one of them. jig reads the rest of the line, so it
+     stays as jig wrote it. -->
 {foldin}
 
 ## Shared files changed
@@ -2839,6 +2843,8 @@ def cmd_gate(root: Path, args) -> int:
             print(f"the fold-in in {note} is unanswered:", file=sys.stderr)
             for l in open_lines[:10]:
                 print(f"  {l.strip()}", file=sys.stderr)
+            if len(open_lines) > 10:
+                print(f"  … and {len(open_lines) - 10} more", file=sys.stderr)
             return 1
         # A job's built items leave the roadmap in its merge commit; solo work on trunk has no
         # merge, so they leave in a commit of their own before the gate passes.
@@ -2899,18 +2905,25 @@ def cmd_gate(root: Path, args) -> int:
         return 1
     # Pairs are found at handoff against the trunk of then; a job merged since may rule on the
     # same page, and the merge here is where the two first meet.
-    unmet = gate_pairs(where, trunk, sec.group(1) if sec else "")
-    if unmet:
+    base = git("merge-base", trunk, commit)
+    left, new = gate_pairs(where, trunk, sec.group(1) if sec else "", base, commit)
+    if left or new:
         gone = remove_checkout(where)
         # The merge itself went through, so answering is all the job owes: no sync, no new
         # review, no new handoff. The note is bookkeeping a merge doesn't count as a change.
-        print(f"{trunk} moved since the handoff, and the note doesn't answer these pairs: add "
-              f"each to the fold-in of {note} on {branch}, ticked and answered agrees, narrows: <how> or "
-              f"conflicts: <resolution>, commit it, and gate again. `jig sync` only when the "
-              f"merge itself needs a hand" + ("." if gone else
+        print(f"the note doesn't answer these pairs: add each to the fold-in of {note} on {branch}, "
+              f"ticked and answered agrees, narrows: <how> or conflicts: <resolution> (on a line of "
+              f"several ids, naming one), commit the note alone, and gate again. `jig sync` only when "
+              f"the merge itself needs a hand" + ("." if gone else
               f". Remove the checkout: git worktree remove --force {scratch}"), file=sys.stderr)
-        for l in unmet:
-            print(f"  {l}", file=sys.stderr)
+        # Each list names the cause jig found: a pair it listed at the handoff asks about an
+        # entry the job already read; one new on trunk asks about one it has never seen.
+        for head, lines in (("left out of the note, though jig listed them at the handoff:", left),
+                            (f"new on {trunk} since the job's base:", new)):
+            if lines:
+                print(head, file=sys.stderr)
+                for l in lines:
+                    print(f"  {l}", file=sys.stderr)
         return 1
     print(f"{scratch} holds {commit[:12]} with {trunk} merged in. Run the project checks there; "
           "jig never runs them:\n")
@@ -5719,10 +5732,13 @@ def cmd_decision(root: Path, args) -> int:
 
 SELF = "."     # this repo, in a page key
 META_KEY = "meta"   # a pararepo's metarepo, in a page key
-# The pointer in parentheses is a path with no blank or parenthesis, then for a glossary term
-# ` § <term>` with no parenthesis, so an answer may hold both.
-PAIR_LINE = re.compile(r"^- \[[ xX]\] (\S+) vs (\S+) § (\S+) \(([^()\s]+(?: § [^()]+)?)\): (.*)$")
-PAIR_SHAPED = re.compile(r"^- \[.\] \S+ vs \S+ § ")
+# One line per entry, page and peer log, listing every peer there: a busy page asks once, not
+# once per entry that ever touched it. The pointer in parentheses is a path with no blank or
+# parenthesis, then for a glossary term ` § <term>` with no parenthesis, so an answer may hold both.
+PAIR_LINE = re.compile(r"^- \[[ xX]\] (\S+) vs (\S+) § ([^\s,]+(?:, [^\s,]+)*) \(([^()\s]+(?: § [^()]+)?)\): (.*)$")
+# Any ticked or open checklist line with ` vs ` tries to be one: a line reshaped anywhere is
+# refused by name, never read as missing. A line with no checkbox is the job's own note.
+PAIR_SHAPED = re.compile(r"^- \[.\] \S+ vs ")
 UNREAD = "not read for peers"
 
 
@@ -5930,10 +5946,15 @@ def peers_of(entry: dict, every: list[dict], prefix: str) -> list[tuple[dict, st
     return out
 
 
+def pair_line(entry: str, label: str, ids: list[str], ptr: str, answer: str = "___") -> str:
+    return f"- [ ] {entry} vs {label} § {', '.join(ids)} ({ptr}): {answer}"
+
+
 def pair_lines(root: Path, trunk: str, rng: str) -> list[str]:
-    """Fold-in: one line per peer of each entry the branch adds or changes, answered agrees,
-    narrows or conflicts. Two of the branch's own entries that are peers get one line. Trunk's
-    entries are read from trunk, so a branch can't drop a peer by editing it."""
+    """Fold-in: one line per page each entry the branch adds or changes meets peers on, per peer
+    log, answered agrees, narrows or conflicts. Two of the branch's own entries that are peers
+    are asked once. Trunk's entries are read from trunk, so a branch can't drop a peer by
+    editing it."""
     prefix = log_prefix(trunk)
     right = rng.partition("..")[2].lstrip(".") or "HEAD"
     edited = edited_decisions(root, prefix, rng)
@@ -5946,21 +5967,26 @@ def pair_lines(root: Path, trunk: str, rng: str) -> list[str]:
         return []
     every, unread = touching(root, trunk, git("show", f"{trunk}:{LOG}", cwd=str(root)))
     every += changed
-    out, seen = [], set()
+    groups: dict[tuple[str, str, str], list[str]] = {}
+    seen = set()
     for e in changed:
         for o, ptr in peers_of(e, every, prefix):
             pair = frozenset([(SELF, e["id"]), (o["writer"], o["id"])])
             if pair in seen:
                 continue
             seen.add(pair)
-            out.append(f"- [ ] {e['id']} vs {o['label']} § {o['id']} ({ptr}): ___")
+            groups.setdefault((e["id"], o["label"], ptr), []).append(o["id"])
+    # In number order, so a reader finds an id where they'd look for it.
+    out = [pair_line(e, label, sorted(ids, key=lambda i: [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", i)]), ptr)
+           for (e, label, ptr), ids in groups.items()]
     out += [f"- [ ] {UNREAD}: {u} — read it beside the changed entries, or why not: ___" for u in unread]
     return out
 
 
-def pair_key(line: str) -> tuple[str, str, str] | None:
+def pair_keys(line: str) -> list[tuple[str, str, str]]:
+    """The pairs a pair line covers, one per peer id on it."""
     m = PAIR_LINE.match(line.strip())
-    return (m.group(1), m.group(2), m.group(3)) if m else None
+    return [(m.group(1), m.group(2), i) for i in m.group(3).split(", ")] if m else []
 
 
 def pair_problem(line: str) -> str:
@@ -5970,24 +5996,44 @@ def pair_problem(line: str) -> str:
         return ""
     m = PAIR_LINE.match(l)
     if not m:
-        return "keep a pair line's shape: `<id> vs <log> § <id> (<page>): <answer>`"
+        return "keep a pair line's shape: `<id> vs <log> § <id>, … (<page>): <answer>`"
     a = m.group(5).strip()
     if re.match(r"agrees\b", a, re.I):
         return ""
     w = re.match(r"(narrows|conflicts)\b[ \t]*:?[ \t]*(.*)$", a, re.I)
     if w:
-        word = w.group(1).lower()
-        return "" if re.search(r"\w", w.group(2)) else \
-            f"{word} needs its {'how' if word == 'narrows' else 'resolution'}: `{word}: …`"
+        word, rest = w.group(1).lower(), w.group(2)
+        what = "how" if word == "narrows" else "resolution"
+        if not re.search(r"\w", rest):
+            return f"{word} needs its {what}: `{word}: …`"
+        ids = m.group(3).split(", ")
+        # One answer for several peers: a narrows or conflicts says which of them it is about.
+        if len(ids) > 1 and not any(re.search(rf"(?<![\w?-]){re.escape(i)}(?![\w-])", rest) for i in ids):
+            return f"{word} on a line of several ids names at least one of them: `{word}: <id>, <{what}>`"
+        return ""
     return "answer agrees, narrows: <how>, or conflicts: <resolution>"
 
 
-def gate_pairs(where: Path, trunk: str, fold: str) -> list[str]:
+def gate_pairs(where: Path, trunk: str, fold: str, base: str, commit: str) -> tuple[list[str], list[str]]:
     """The pairs the job's entries make with trunk as the gate merged it, that the note's
-    fold-in doesn't answer: a job that merged since the handoff ruled on the same page."""
-    have = {k for l in fold.splitlines() if (k := pair_key(l))}
-    return [l for l in pair_lines(where, trunk, f"{trunk}...HEAD")
-            if (k := pair_key(l)) and k not in have]
+    fold-in doesn't answer, each line holding only the ids left uncovered. Split by cause: those
+    jig also finds at the note's commit against its base on trunk were listed at the handoff and
+    left out of the note; the rest are new on trunk since the base."""
+    have = {k for l in fold.splitlines() for k in pair_keys(l)}
+    then = {k for l in pair_lines(where, base, f"{base}...{commit}") for k in pair_keys(l)}
+    left, new = [], []
+    for l in pair_lines(where, trunk, f"{trunk}...HEAD"):
+        m = PAIR_LINE.match(l)
+        if not m:
+            continue
+        e, label, ptr = m.group(1), m.group(2), m.group(4)
+        open_ids = [i for i in m.group(3).split(", ") if (e, label, i) not in have]
+        was = [i for i in open_ids if (e, label, i) in then]
+        if was:
+            left.append(pair_line(e, label, was, ptr))
+        if now := [i for i in open_ids if i not in was]:
+            new.append(pair_line(e, label, now, ptr))
+    return left, new
 
 
 def migrating_log(trunk: str, staged: bool) -> bool:

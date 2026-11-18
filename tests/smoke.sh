@@ -5699,7 +5699,7 @@ done
 gated one; gate_ok one && $J merge one >/dev/null 2>&1
 msg="touches gate: a pair with a job merged since the handoff is refused, naming it"
 out=$($J gate two 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-two 2>/dev/null
-expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"doesn't answer these pairs\" && echo \"\$0\" | grep -qF 'D-?two vs .jig/decisions.md § D-' && echo \"\$0\" | grep -q 'jig sync'" "$out"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"doesn't answer these pairs\" && echo \"\$0\" | grep -qx \"new on main since the job's base:\" && echo \"\$0\" | grep -qF 'D-?two vs .jig/decisions.md § D-' && echo \"\$0\" | grep -q 'jig sync' && ! echo \"\$0\" | grep -q 'moved since'" "$out"
 
 # A metarepo reads its registered pararepos' trunks: a page two of them rule on is probably its own.
 TH="$T/th"; pcnew "$TH" && git add -A && git commit -qm init && $J init --meta --name house --genres features >/dev/null
@@ -5774,6 +5774,65 @@ msg="touches M2: with a metarepo named docs, a bare docs/features/gestures.md is
 expect_refuse m2 '### D-?a a rules
 Accepted (owner, 2026-11-02).
 Touches: docs/features/gestures.md'
+
+# A busy page asks one line per entry, page and log, answered once; a reshaped line is refused by name.
+TT="$T/tt"; pcnew "$TT" && mkdir -p docs && printf '# A\n' > docs/a.md && git add -A && git commit -qm init && $J init >/dev/null
+for i in 01 02 03 04 05 06 07 08 09 10; do ulog "### D-0$i a rule $i
+Accepted (owner, 2026-11-01).
+Touches: docs/a.md
+
+When a runs, rule $i holds."; done
+git add -A && git -c core.hooksPath=/dev/null commit -qm "board, D-001..D-010"
+for j in x y; do $J open $j --branch b-$j >/dev/null && git add -A && git commit -qm "open $j"
+  (cd .git/jig/worktrees/b-$j && ulog "### D-?$j $j rules
+Accepted (owner, 2026-11-03).
+Touches: docs/a.md
+
+When $j runs, a waits." && git add -A && git commit -qm "D-?$j" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1); done
+cd .git/jig/worktrees/b-x; note=$(ls .jig/handoffs/*.md)
+msg="touches fold-in: ten entries on one page and an eleventh added make one pair line naming all ten"
+expect_pass sh -c "grep -qxF -- '- [ ] D-?x vs .jig/decisions.md § D-001, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, D-010 (docs/a.md): ___' '$note' && test \$(grep -c '^- \[ \] .* vs ' '$note') = 1"
+sed -i.bak -e 's/^- \[ \]/- [x]/' -e '/ vs .* § /!s/___/smoke/g' "$note" && rm "$note.bak" && cp "$note" "$T/tt-note"
+tnote() { cp "$T/tt-note" "$note" && sed -i.bak "$1" "$note" && rm "$note.bak" && git add -A; }
+msg="touches hook: a pair line left ___ is refused"
+tnote 's/x/x/'; expect_refuse git commit -qm "note x"
+msg="touches hook: narrows naming none of the line's ids is refused, naming the line"
+tnote '/ vs /s/___$/narrows: when a is idle/'; out=$(git commit -qm "note x" 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'D-?x vs .jig/decisions.md § D-001,' && echo \"\$0\" | grep -q 'narrows on a line of several ids names at least one of them'" "$out"
+msg="touches hook: a pair line with its log label dropped is refused, naming it with keep a pair line's shape"
+tnote '/ vs /s/^.*$/- [x] D-?x vs D-001 (docs\/a.md): agrees/'; out=$(git commit -qm "note x" 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'D-?x vs D-001 (docs/a.md): agrees' && echo \"\$0\" | grep -q \"keep a pair line's shape\"" "$out"
+# Hook off: a note the hook never checked; the gate's fold-in check names the line, and blames no trunk.
+git -c core.hooksPath=/dev/null commit -qm "TOOL: reshaped note" && cd "$TT"
+msg="touches gate: a pair line with its label dropped is named in the fold-in check, not blamed on trunk moving"
+out=$($J gate x 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-x 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'D-?x vs D-001 (docs/a.md): agrees' && echo \"\$0\" | grep -q \"keep a pair line's shape\" && ! echo \"\$0\" | grep -q 'moved since'" "$out"
+cd .git/jig/worktrees/b-x
+msg="touches hook: narrows naming one of the line's ids commits, beside a no-checkbox line of the job's own"
+tnote '/ vs /s/___$/narrows: D-004, when a is idle/'; printf -- '- D-?x vs D-075 (not paired): agrees\n' > "$T/own" \
+  && python3 -c "import sys; f=sys.argv[1]; s=open(f).read(); open(f,'w').write(s.replace('## Fold-in\n', '## Fold-in\n'+open(sys.argv[2]).read(), 1))" "$note" "$T/own" && git add -A
+expect_pass git commit -qm "note x"
+msg="touches hook: the line answered agrees commits"
+tnote '/ vs /s/___$/agrees/'; expect_pass git commit -qm "note x agrees"
+cd "$TT"
+msg="touches gate: the one line answered agrees passes"
+expect_pass gate_ok x
+cd .git/jig/worktrees/b-x
+python3 -c "import sys,re; f=sys.argv[1]; s=open(f).read(); s=re.sub(r'^- \[x\] D-\?x vs .*$', '\n'.join(f'- [x] D-?x vs .jig/decisions.md § D-0{i:02d} (docs/a.md): agrees' for i in range(1, 11)), s, flags=re.M); open(f,'w').write(s)" "$note" \
+  && git add -A && git commit -qm "TOOL: one-id lines" && cd "$TT"
+msg="touches gate: a note in the one-id-per-line shape, answered, still passes"
+expect_pass gate_ok x
+msg="touches gate: more than ten unanswered fold-in lines print ten and a count of the rest"
+(cd .git/jig/worktrees/b-x && sed -i.bak '/ vs /s/agrees$/___/' "$note" && rm "$note.bak" && python3 -c "import sys; f=sys.argv[1]; s=open(f).read(); open(f,'w').write(s.replace('## Fold-in\n', '## Fold-in\n- [ ] one more ___\n- [ ] two more ___\n', 1))" "$note" \
+  && git add -A && git -c core.hooksPath=/dev/null commit -qm "TOOL: blanks")
+out=$($J gate x 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-x 2>/dev/null
+expect_pass sh -c "test $rc != 0 && test \$(echo \"\$0\" | grep -c '^  - \[') = 10 && echo \"\$0\" | grep -qx '  … and [0-9]* more'" "$out"
+(cd .git/jig/worktrees/b-x && git reset -q --hard HEAD~1)
+(cd .git/jig/worktrees/b-y && pcfold && git add -A && git commit -qm "note y")
+gated x; $J merge x >/dev/null 2>&1
+msg="touches gate: after a job merged since the handoff, the gate names only its entry, as new on trunk"
+out=$($J gate y 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-y 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qx \"new on main since the job's base:\" && echo \"\$0\" | grep -qxF '  - [ ] D-?y vs .jig/decisions.md § D-011 (docs/a.md): ___' && ! echo \"\$0\" | grep -q 'left out' && ! echo \"\$0\" | grep -q 'moved since'" "$out"
 cd "$T"
 }
 
@@ -5886,8 +5945,8 @@ Touches: docs/glossary.md § products
 
 Always, product names are short.' && git add -A && git commit -qm "D-?ny, D-?nz: names" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
 note=$(ls .jig/handoffs/*.md)
-msg="touches terms fold-in: an entry on a term gets a pair line with each entry on it, and the none entry gets none"
-expect_pass sh -c "grep -qxF -- '- [ ] D-?ny vs .jig/decisions.md § D-001 (docs/glossary.md § products): ___' '$note' && grep -qF 'D-?ny vs .jig/decisions.md § D-002' '$note' && ! grep -qF 'D-?nz vs' '$note' && ! grep -qF '§ D-004' '$note'"
+msg="touches terms fold-in: an entry on a term gets one pair line naming each entry on it, and the none entry gets none"
+expect_pass sh -c "grep -qF -- '- [ ] D-?ny vs .jig/decisions.md § D-001, D-002' '$note' && grep -qF '(docs/glossary.md § products): ___' '$note' && ! grep -qF 'D-?nz vs' '$note' && ! grep -qF '§ D-004' '$note'"
 pcfold && git add -A && git commit -qm "TOOL: note tj"
 cd "$TA/.git/jig/worktrees/b-tk" && ulog '### D-?nk product length
 Accepted (owner, 2026-11-13).
@@ -6854,12 +6913,14 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'fold-in line \`- [x
 sed -i.bak 's/___/agrees/' .jig/handoffs/*.md && rm .jig/handoffs/*.bak && git add -A
 msg="cheaper rounds: the same note answered agrees commits"
 expect_pass git commit -qm "note p1"
-cd "$CR" && (cd .git/jig/worktrees/p2 && foldin && git add -A && git commit -qm "note p2")
+cd "$CR" && (cd .git/jig/worktrees/p2 && sed -i.bak '/ vs /d' .jig/handoffs/*.md && rm .jig/handoffs/*.bak && foldin && git add -A && git commit -qm "note p2, its pair line deleted")
 gated p1; gate_ok p1 && $J merge p1 >/dev/null 2>&1
 p2tip=$(git rev-parse p2)
 msg="cheaper rounds: a pair found at the gate says to answer it in the note and commit, sync only for a merge that needs a hand"
 out=$($J gate p2 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-p2 2>/dev/null
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'add each to the fold-in of .jig/handoffs/p2-.*, ticked and answered agrees' && echo \"\$0\" | grep -q 'jig sync. only when the merge itself needs a hand'" "$out"
+msg="cheaper rounds: a generated pair line deleted is named as left out of the note, and the merged job's as new on trunk"
+expect_pass sh -c "echo \"\$0\" | grep -A1 -x 'left out of the note, though jig listed them at the handoff:' | grep -qxF '  - [ ] D-?p2 vs .jig/decisions.md § D-001 (docs/a.md): ___' && echo \"\$0\" | grep -A1 -x \"new on main since the job's base:\" | grep -qxF '  - [ ] D-?p2 vs .jig/decisions.md § D-002 (docs/a.md): ___' && ! echo \"\$0\" | grep -q 'moved since'" "$out"
 pair=$(echo "$out" | grep ' vs ' | sed -e 's/^ *//' -e 's/^- \[ \]/- [x]/' -e 's/___$/agrees/')
 (cd .git/jig/worktrees/p2 && python3 -c "import sys,glob; f=glob.glob('.jig/handoffs/p2-*.md')[0]; s=open(f).read(); open(f,'w').write(s.replace('## Fold-in\n', '## Fold-in\n'+sys.argv[1]+'\n', 1))" "$pair" \
   && git add -A && git commit -qm "p2: answer the pair")
