@@ -237,6 +237,12 @@ Your spec carries the job's remap rows and the Sources. You write only your page
      this page, added to `.jig/roadmap.md` on trunk only once the owner confirms it; never on
      the page, which says what the product does today;
    - **an open product question** → an `## Open` entry candidate for `.jig/decisions.md`;
+   - **how the repository is worked** (a reading order, commands, code style, review and
+     handoff, jig and its `.jig/` files, build, CI and release steps), not what the product
+     does → off the page, to its home by the test in `.jig/RULES.md` (Homes): a rule every task
+     needs to `AGENTS.md`, a step a script runs to `.jig/scripts/`, the rest to a section of
+     `.jig/process.md` (created from `${CLAUDE_PLUGIN_ROOT}/templates/jig/process.md` when
+     absent), each moved on the owner's word and listed in the report;
    - **stale or unverifiable** → deleted, and listed in the report.
 
    **A cited heading** (a pararepo's spec names it) adds one thing: say where its claim landed.
@@ -257,13 +263,15 @@ Your spec carries the job's remap rows and the Sources. You write only your page
    ### Deleted
    - <old rule> — <why: stale, contradicted by <code>, or unverifiable>
    ### Docmap
-   - "<new path>": ["<glob>", …]
+   - "<new path>": ["<glob>", …] (the product's code only: the repo's own tooling, its build,
+     CI, release and dev scripts, maps to no page)
    ### Cited (a pararepo only)
    - <old path> § <heading> → <new path> § <heading>
    ### Flagged (the owner's call)
    - Up next candidate: `<id>`: <what is parked>; stops at <where>; parked <date> (touches <new path>) — <source>
    - Open question: <question> — <source>
    - Failed admission: <would-be invariant> — missing <why | holder>
+   - Process: <claim> → <AGENTS.md | .jig/scripts/<file> | .jig/process.md § <section>> — <source>
    - Contradiction: <page claim> vs <code path> — which wins
    - Divergence (a cited claim): <claim> vs <code path> — a BUFFER row on the owner's word
    ```

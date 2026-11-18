@@ -76,7 +76,10 @@ Its job is to find the reason this change is wrong. Its questions:
    Two outcomes for one situation, neither an exception the other permits, is a conflict:
    blocking until the change resolves it. Does each added entry open with its rule sentence?
 
-9. For each decision entry and each page change the diff adds, ask: is this about the product, or about when and in what order we build it? An entry or a page
+9. For each decision entry and each page change the diff adds, ask: is this about the product, about when and in what order we build it, or about how the
+   repository is worked? A page line about how the repo is worked (its commands, code style,
+   review, jig's `.jig/` files, build, CI or release steps, not what the product does with them)
+   is blocking: it goes to its home by the test in `.jig/RULES.md` (Homes), often `.jig/process.md`. An entry or a page
    line that is the project (a priority order, a delivery queue, a phase, build status, "not
    built yet", parked work) is blocking: it goes to `.jig/roadmap.md` (`## Up next` for work
    parked mid-build, naming its pages; `## No phase` for named work with no phase yet), and the

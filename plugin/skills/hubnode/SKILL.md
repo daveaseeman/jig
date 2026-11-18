@@ -131,6 +131,11 @@ Should-fix and optional findings get one round per part; what is left after it g
 rows. A finding that needs behavior the spec never names is a spec change before it is built
 (an `Interpreted:` line the hubnode accepts, or the owner's answer), or an Up next item.
 
+New process (a rule, a procedure, a convention), from the owner or a subnode, is placed by the
+test in `.jig/RULES.md` (Homes) before it is written, and a spec for process work names its home.
+A section of `.jig/process.md` is created from `${CLAUDE_PLUGIN_ROOT}/templates/jig/process.md`
+when the file is absent.
+
 ## Opening a job (assign)
 
 Before opening more than one job, say in one line that each job's commands and checks run on

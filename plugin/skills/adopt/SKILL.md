@@ -57,7 +57,7 @@ Judgment, in order:
 1. **Does anything read it?** Zero inbound links and months since the last commit is the
    signature of a document written once and never consulted. Deleting it loses nothing —
    git still has it.
-2. **Is it rules, state, or history?** Rules go to AGENTS.md or a skill. State (what the code
+2. **Is it rules, state, or history?** Rules go by the test in `.jig/RULES.md` (Homes): AGENTS.md, a skill, or `.jig/process.md`. State (what the code
    does now) goes to `docs/`. History — round contracts, changelogs of decisions already
    made, "what we did in sprint 12" — is history. Git keeps history.
 3. **Is it duplicated?** Three files describing the architecture means one file and two
@@ -69,9 +69,12 @@ Judgment, in order:
 If `AGENTS.md` is over 40 lines, that is the highest-value item in the plan — a long one gets
 ignored wholesale, so every rule in it is weakened by the ones around it.
 
-Propose, line by line, what stays: commands an agent can't guess, style rules that differ
-from the language default, workflow, repo-specific gotchas. Everything else moves to `docs/`
-(if it's state), a skill (if it's situational know-how), or git (if it's history). Per-round
+Propose, line by line, what stays: commands an agent can't guess, workflow, repo-specific
+gotchas, each a rule every task needs. Everything else moves by the test in `.jig/RULES.md`
+(Homes): the rest of how the repo is worked, code style included, to a section of
+`.jig/process.md`; a release step to `.jig/scripts/release.sh`; a fact about the product to its
+system's page; history to git. How the repo is worked never goes to a page. A repo's
+`CONTRIBUTING.md`, `CONVENTIONS.md` or rules file is sorted line by line by the same test. Per-round
 or per-sprint sections are almost always history.
 
 **Forwarding addresses are history too.** A line that only says "X is now at Y" records a
@@ -187,7 +190,7 @@ predecessor's hooks running. Now fill `config.json` by hand, from the predecesso
 | `common` | files every job may touch |
 | `append_files` | files whose conflicts resolve by appending |
 | `reserve.<counter>` | each scarce number it allocates, as a `pattern` + `files` that find every number ever taken: jig hands out the next above those, and refuses a counter without them |
-| `docmap` | its file → documentation map, if it has one |
+| `docmap` | its file → documentation map, if it has one, less the repo's own tooling (build, CI, release, dev scripts), which maps to no page |
 
 A counter's `files` must name every file its numbers live in — if the rules moved from
 `AGENTS.md` to `docs/**`, the pattern must cover both, or R6 enforces nothing.

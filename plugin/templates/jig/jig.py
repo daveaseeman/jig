@@ -2365,7 +2365,8 @@ def foldin_lines(root: Path, board: Board, branch: str) -> str:
     out += [f'- [ ] {kind} `{iid}` ({", ".join(hit)}): "{clip(what)}" — built / untouched / departed: ___'
             for (kind, iid, what), hit in asked.items()]
     out += [f"- [ ] UNOWNED {f} — add to docmap (a new page starts from {DIR}/docs-page.md), "
-            "or no page needed because ___"
+            "or no page needed because ___ (the repository's own tooling, its build, CI, release "
+            "and dev scripts, needs none)"
             for f in sorted(unowned)]
     return "\n".join(out + pairs)
 
@@ -3033,7 +3034,59 @@ def page_problems(text: str) -> list[str]:
             for item in section_items(lines):
                 if " — " not in item or "held by" not in item.lower():
                     out.append(f'invariant without a why (" — ") or a holder ("held by"): {clip(item)}')
+                elif REVIEW_HOLDER.search(item):
+                    out.append("invariant held by review, which is no holder: no step reads a page's "
+                               "Invariants. Name a test, or what is seen on screen (on a board, on "
+                               f"the board); an entry nothing holds goes in the body: {clip(item)}")
     return out
+
+
+# Review reads a diff, its spec and AGENTS.md, never a page's Invariants, so it holds none of them.
+REVIEW_HOLDER = re.compile(r"held by[^;.]*\breview\b", re.I)
+
+
+# A page names how the repository is worked when it names jig's own files: a `.jig/` path. The
+# decision log is the one a page may cite, and the plan's paths are listed as the project.
+# Words ("jig", "CI", "pytest") may be the product's own, so nothing searches for them.
+PROCESS_PATH = re.compile(r"(?<![\w/-])\.jig/(?!decisions\.md|specs/|handoffs/|roadmap\.md)[\w./-]*")
+PROCESS_HOMES = (f"AGENTS.md for a rule every task needs, {DIR}/scripts/ for a step a script runs, "
+                 f"a skill for a procedure an agent runs, {DIR}/process.md for the rest ({DIR}/RULES.md, "
+                 "Homes)")
+
+
+def process_prose(text: str) -> list[tuple[int, str]]:
+    """(line number, path) for each `.jig/` path a page names outside fenced code and HTML
+    comments: how the repository is worked, which a page never holds (RULES.md, Documentation:
+    Product and process). Listed, never refused: a product that reads jig's files names them."""
+    out, fence, comment = [], False, False
+    for n, line in enumerate(text.splitlines(), 1):
+        if not comment and line.lstrip().startswith(("```", "~~~")):
+            fence = not fence
+            continue
+        if fence:
+            continue
+        kept = ""
+        while line:
+            if comment:
+                end = line.find("-->")
+                if end < 0:
+                    line = ""
+                else:
+                    comment, line = False, line[end + 3:]
+            else:
+                start = line.find("<!--")
+                if start < 0:
+                    kept, line = kept + line, ""
+                else:
+                    kept, line, comment = kept + line[:start], line[start + 4:], True
+        out += [(n, m.group(0)) for m in PROCESS_PATH.finditer(kept)]
+    return out
+
+
+def process_lines(root: Path, files: list[str]) -> list[tuple[str, int, str]]:
+    """(page, line number, path) for each `.jig/` path in a page under docs/."""
+    return [(f, n, path) for f in product_pages(root, files) if f.startswith("docs/") and (root / f).is_file()
+            for n, path in process_prose((root / f).read_text(errors="replace"))]
 
 
 # The one project heading survey and update list: jig's own retired `## Undefined`, which no
@@ -4312,8 +4365,10 @@ def home_fix(h: dict) -> str:
         return (f"a page under the reserved name {DATASHEETS}/, which holds vendor documents: "
                 f"rename its folder, and repoint what names it ({at})")
     if h["kind"] == "rules":
-        return ("a second rulebook: fold what still binds into AGENTS.md or a page's Invariants, "
-                f"repoint what names it ({at}), then delete it. A package's own rules file may "
+        return ("a second rulebook: sort it line by line by the test in "
+                f"{DIR}/RULES.md (Homes): a rule every task needs into AGENTS.md, the rest of how "
+                f"the repo is worked into {DIR}/process.md, and only a fact the product must keep "
+                f"into its page's Invariants; repoint what names it ({at}), then delete it. A package's own rules file may "
                 "stay on the owner's word: ask, don't presume the delete")
     return (f"a copy of {DIR}/RULES.md, which update keeps current: delete it, and point what "
             f"names it ({at}) at {DIR}/RULES.md")
@@ -4592,6 +4647,7 @@ def cmd_survey(root: Path, args) -> int:
     report["project_in_product"] = [
         {"path": f, "problems": probs} for f in product
         if (probs := (project_sections(read(f)) if f != LOG else []) + project_prose(read(f), sids))]
+    report["process_in_pages"] = [{"path": f, "line": n, "names": p} for f, n, p in process_lines(root, product)]
     report["root_docs_named"] = [
         {"path": f, "lines": hits} for f in product if f == LOG or f.startswith("docs/")
         if (hits := root_doc_mentions(f, read(f), released_lines(read(f)) if f == LOG else set()))]
@@ -4624,7 +4680,11 @@ def cmd_survey(root: Path, args) -> int:
     if missing:
         print("                 missing: " + ", ".join(missing))
     if report["oversized"]:
-        print("\nToo long to be always-loaded (cut to 40 lines, move the rest):")
+        print(f"\nToo long to be always-loaded: cut to 40 lines. A rule every task needs stays; the "
+              f"rest of how the repo is\nworked, code style included, goes to a section of "
+              f"{DIR}/process.md, a release step to {DIR}/scripts/release.sh,\na fact about the "
+              "product to its system's page, history to git. How the repo is worked never goes "
+              "to a page:")
         for e in report["oversized"]:
             print(f"  {e['path']:<40} {e['lines']} lines")
     for kind, title in (("rules", "Agent instruction files off root"),
@@ -4790,6 +4850,12 @@ def cmd_survey(root: Path, args) -> int:
         for e in report["project_in_product"]:
             for p in e["problems"]:
                 print(f"  {e['path']}: {p}")
+    if report["process_in_pages"]:
+        print(f"\nHow the repository is worked, in the product's pages ({DIR}/RULES.md, Documentation: "
+              f"Product and process):\na page describes the product; this goes to {PROCESS_HOMES}, "
+              "unless the product itself reads it:")
+        for e in report["process_in_pages"]:
+            print(f'  {e["path"]}:{e["line"]}: "{e["names"]}"')
     if report["datasheets_unlinked"]:
         print(f"\nFiles in a page's folder, or in docs/{DATASHEETS}/, that no page links: link each"
               "\nfrom the page that leans on it (a datasheet from its Components table), or drop it:")
@@ -11471,8 +11537,9 @@ PLAN_FILES = {
        for n in ("TODO.md", "BACKLOG.md", "STATUS.md", "PLAN.md", "ROADMAP.md")},
     "FEATURES.md": "the product: each feature goes to its system's page under docs/, and each "
                    f"row's who and why to a decision entry in {LOG}; remove the file once it is empty",
-    **{n: "rules for agents: what still binds goes to AGENTS.md (40 lines at most) or a skill; "
-          "remove the file once it is empty"
+    **{n: f"rules for agents: sort each line by the test in {DIR}/RULES.md (Homes): a rule every "
+          f"task needs to AGENTS.md (40 lines at most), the rest of how the repo is worked to "
+          f"{DIR}/process.md or a skill; remove the file once it is empty"
        for n in ("RULES.md", "CONVENTIONS.md", "CONTRIBUTING.md")},
 }
 
@@ -11528,6 +11595,9 @@ def project_review(root: Path, files: list[str], reviewed: list[str]) -> list[tu
             continue
         text = (root / f).read_text(errors="replace")
         out += [(f, p) for p in project_prose(text, sids)]
+    out += [(f, f'line {n}: "{p}" names how the repository is worked: a page describes the product; '
+                f"this goes to {PROCESS_HOMES}, unless the product itself reads it")
+            for f, n, p in process_lines(root, files)]
     return out + plan_files(root, files, reviewed)
 
 

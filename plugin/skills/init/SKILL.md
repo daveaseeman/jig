@@ -31,13 +31,14 @@ at root, because tools look for them there. The repo's own `docs/` and `.claude/
 Copy, **never overwriting** a file that already exists:
 
 ```
-templates/jig/      → .jig/       (checker, rulebook, scripts, staging/.gitignore)
+templates/jig/      → .jig/       (checker, rulebook, scripts, staging/.gitignore; not process.md)
 templates/AGENTS.md → AGENTS.md
 templates/CLAUDE.md → CLAUDE.md
 ```
 
-Nothing else. The spec template and the two ledgers stay in the plugin until first used:
-`/jig:spec` copies the template, and the first ledger row creates its ledger.
+Nothing else. The spec template, the two ledgers and `process.md` stay in the plugin until
+first used: `/jig:spec` copies the template, the first ledger row creates its ledger, and the
+first process placed there creates `.jig/process.md`.
 
 Then run `python3 .jig/jig.py init` — it writes the board and installs the git hooks that
 enforce the rules. Those hooks are the real enforcement and work with or without any AI tool.
@@ -89,4 +90,7 @@ Then:
 7. Report: files created, TODOs remaining, the git hooks installed, and that jobs are available (`/jig:hubnode`, `/jig:subnode`) but need no setup until a second session starts.
 
 Keep `AGENTS.md` under 40 rule lines (blank lines, headings and table rows don't count), as
-`jig survey` counts them. If it's longer after filling, cut.
+`jig survey` counts them. If it's longer after filling, move lines out: a rule every task needs
+stays; the rest of how the repo is worked, code style included, to a section of
+`.jig/process.md`; a release step to `.jig/scripts/release.sh`; a fact about the product to its
+system's page; history to git. How the repo is worked never goes to a page.
