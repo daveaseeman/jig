@@ -10,5 +10,41 @@
       "tests/smoke.sh"
     ],
     "reserved": {}
+  },
+  "rig-and-versioning": {
+    "spec": ".jig/specs/rig-and-versioning.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/skills/rig/SKILL.md",
+      "plugin/skills/spec/SKILL.md",
+      "plugin/skills/fix/SKILL.md",
+      "plugin/skills/release/SKILL.md",
+      "plugin/skills/redocument/SKILL.md"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "plugin/skills/hubnode/SKILL.md",
+      "plugin/skills/stage/SKILL.md",
+      "AGENTS.md"
+    ],
+    "reserved": {}
+  },
+  "bug-effort-and-propose": {
+    "spec": ".jig/specs/bug-effort-and-propose.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "plugin/tiers.json"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "plugin/skills/hubnode/SKILL.md"
+    ],
+    "reserved": {}
   }
 }
