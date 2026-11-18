@@ -39,8 +39,9 @@ the date: `The owner, <YYYY-MM-DD>: "<exact words>"`. Everything else is plain i
 with no headings about whose words they are. Resolving, the hubnode sorts what is settled from
 what is open, as below; only the quoted words are the owner's.
 
-Write it into the target's `.jig/staging/`, found with `jig repos`, which reads
-`~/.config/jig/`. Request access to each folder you need with the host's folder-access tool (in
+The file goes into the target's `.jig/staging/`, found with `jig repos`, which reads
+`~/.config/jig/`. Draft it first and write it there only after the Second reader (A batch): one
+file is a batch of one. Request access to each folder you need with the host's folder-access tool (in
 the Claude desktop app, `request_directory`): `~/.config/jig/` first if you can't read it, then
 exactly `<repo>/.jig/staging/`. If the host has no such tool, ask the user to add the folder to
 the session. Never stop at "no access": the folder is the user's to grant. If the repo has no
@@ -82,7 +83,9 @@ that spec carries the mark.
 
   With no reader (the host can start no worker, or the worker errors, times out or returns no
   report), write each file with its `source:` ending `; unreviewed` and say in the reply that the
-  batch is staged unreviewed. So too if you can't give the owner's messages verbatim (after
+  batch is staged unreviewed. A session that compacts after handing over the drafts, before the
+  findings are fixed and shown, has no reader either: its drafts may be on disk, but what the
+  worker found is not in front of it. So too if you can't give the owner's messages verbatim (after
   compaction, say): hand the worker what you have, say so, and write every file with
   `; unreviewed`, since a reader working from a paraphrase can't catch a misquote copied into
   both. A summary is not this record, and neither is a rigger's `record/`. A file's `source:` is
