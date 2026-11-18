@@ -42,7 +42,7 @@
   },
   "check-queue": {
     "spec": ".jig/specs/check-queue.md",
-    "state": "gated",
+    "state": "claimed",
     "after": [],
     "owns": [
       "plugin/templates/github/jig-check.yml",
