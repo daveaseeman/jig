@@ -313,6 +313,7 @@ The owner, 2026-11-17:
   host's memory or cloud project files.
 - Interpreted: the quote rule goes into `/jig:stage` for every chat, not only riggers, since the
   resolving hubnode reads every staged file the same way.
+- Interpreted (hubnode, 2026-11-17): the inbox hook runs only in a repo that opted in (`.git/jig/enabled`), as check.sh does; rejected: no marker check, which would run a fetched repo's jig.py on any prompt.
 - Kept separate from bug-decision-records: both add lines to RULES.md Commands and a step in `STEPS`, side by side; no shared function. The owner, 2026-11-17: "K1: no merges among the four; the six jobs as proposed", which has this one job apart.
 - Kept separate from bug-gate-pair-answers: nothing shared beyond the files. The owner, 2026-11-17: "K1: no merges among the four; the six jobs as proposed", which has this one job apart.
 - Kept separate from bug-meta-agents-block: nothing shared beyond the files. The owner, 2026-11-17: "K1: no merges among the four; the six jobs as proposed", which has this one job apart.
