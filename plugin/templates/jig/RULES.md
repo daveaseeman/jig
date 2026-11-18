@@ -519,24 +519,29 @@ with the ids on its line; an entry that supersedes another asks for the old id t
 are a metarepo's entry pages, and `docmap`'s pages in any other repo. The id matches whole:
 `D-7` is not `D-70`. The log itself is not asked.
 
-An entry the branch adds or changes also gets one line per peer (Decision log), naming both and
-the page they meet on:
+An entry the branch adds or changes also gets one line per page it meets peers on, per peer log
+(Decision log), naming the entry, every peer there and the page:
 
 ```
-- [ ] D-?id-lock vs <meta>/.jig/decisions.md § D-033 (<meta>/docs/features/gestures.md): ___
+- [ ] D-?id-lock vs <meta>/.jig/decisions.md § D-033, D-041 (<meta>/docs/features/gestures.md): ___
 ```
 
-It is answered **agrees**, **narrows: <how>** (one is an exception the other allows), or
-**conflicts: <resolution>**. jig picks the pairs and never judges one; the gate refuses a line
-unanswered, reshaped, answered with another word, or answered conflicts or narrows with nothing
-after it. A peer log jig couldn't read gets a line too, answered by reading it or saying why not.
-The commit hook refuses a note whose pair line has none of the three answers, naming the line,
-so a blank is found when the note is committed, not at the gate.
-The gate finds the pairs again on its merge of trunk, and refuses one the note doesn't answer:
-a job merged since the handoff ruled on the same page. The job adds each pair it names to the
-note's fold-in, ticked and answered, and commits the note alone: no sync, no new review and no
-new handoff, since the note is bookkeeping the merge doesn't count as a change. It syncs only
-when the gate's merge itself needed a hand.
+It is answered once for every id on it: **agrees**, **narrows: <how>** (one is an exception the
+other allows), or **conflicts: <resolution>**. On a line of several ids, narrows and conflicts
+name at least one of them (`narrows: D-041, <how>`). jig picks the pairs and never judges one;
+the gate refuses a line unanswered, reshaped, answered with another word, or answered conflicts
+or narrows with nothing after it. A checklist line `- [ ] <id> vs …` is a pair line: one that
+drops or changes any part of jig's shape is refused, naming it. A line with no checkbox is the
+job's own. A peer log jig couldn't read gets a line too, answered by reading it or saying why
+not. The commit hook refuses a note whose pair line is reshaped or has none of the three
+answers, naming the line, so a blank is found when the note is committed, not at the gate.
+The gate finds the pairs again on its merge of trunk, and refuses one the note doesn't answer,
+naming its cause: a pair jig listed at the handoff and the note left out, or one new on trunk
+since the job's base, where a job merged since ruled on the same page. A pair with another
+repo's log names no cause: jig reads that log as it stands now, not as it stood at the base.
+The job adds each pair it names to the note's fold-in, ticked and answered, and commits the
+note alone: no sync, no new review and no new handoff, since the note is bookkeeping the merge
+doesn't count as a change. It syncs only when the gate's merge itself needed a hand.
 
 ## Sync
 
