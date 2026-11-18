@@ -322,6 +322,7 @@ The owner, 2026-11-17:
   resolving hubnode reads every staged file the same way.
 - Interpreted (hubnode, 2026-11-17): the inbox hook runs only in a repo that opted in (`.git/jig/enabled`), as check.sh does; rejected: no marker check, which would run a fetched repo's jig.py on any prompt.
 - Interpreted (hubnode, 2026-11-17): the hook announces unread messages; the hubnode reads them with `jig inbox`, which marks them read; rejected: the hook marks them read, since a subnode session shares the trunk folder.
+- Interpreted (hubnode, 2026-11-17): `jig rigger` refuses a --folder inside any listed repo's checkout, since a rigger's folder lives outside every repo (the owner: 'I lean towards outside the repo'); rejected: allowing it, which puts drafts in a repo.
 - Kept separate from bug-decision-records: both add lines to RULES.md Commands and a step in `STEPS`, side by side; no shared function. The owner, 2026-11-17: "K1: no merges among the four; the six jobs as proposed", which has this one job apart.
 - Kept separate from bug-gate-pair-answers: nothing shared beyond the files. The owner, 2026-11-17: "K1: no merges among the four; the six jobs as proposed", which has this one job apart.
 - Kept separate from bug-meta-agents-block: nothing shared beyond the files. The owner, 2026-11-17: "K1: no merges among the four; the six jobs as proposed", which has this one job apart.

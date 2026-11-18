@@ -7004,8 +7004,10 @@ def cmd_rigger(args) -> int:
                 "every repo", 2)
         folder = others[0] / name
     here = Path(entry["path"]).resolve()
-    if folder == here or here in folder.parents:
-        die(f"refused: {folder} is inside {name}'s checkout; a rigger's folder lives outside every repo", 2)
+    for n, e in sorted(repos.items()):
+        repo = Path(e["path"]).resolve()
+        if folder == repo or repo in folder.parents:
+            die(f"refused: {folder} is inside {n}'s checkout; a rigger's folder lives outside every repo", 2)
     made = []
     for part in RIGGER_PARTS:
         if not (folder / part).is_dir():

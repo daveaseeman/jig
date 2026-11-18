@@ -8191,6 +8191,8 @@ msg="rigger: jig repos shows each entry's rigger folder"
 expect_pass sh -c "$PJ repos | grep -q 'rigger: .*_riggers/p1'"
 msg="rigger: a folder inside the repo's checkout is refused"
 expect_refuse $PJ rigger x --folder "$T/rg-x/notes"
+msg="rigger: a folder inside another listed repo's checkout is refused, and no pointer is written"
+expect_pass sh -c "! $PJ rigger x --folder $T/rg-app/notes >/dev/null 2>&1 && test ! -e $T/rg-app/notes && python3 -c \"import json; assert 'rigger' not in json.load(open('$JIG_CONFIG'))['x']\""
 }
 
 UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders rig claims inbox rigger"
