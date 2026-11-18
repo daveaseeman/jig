@@ -709,7 +709,7 @@ job's work session); `⇢` starts a new one.
 | Fix | work ⇢ review-change → handoff | a review with blocking findings | three strikes: a job's third blocking review starts Bug |
 | Sync | work ⇢ review-change → handoff | a sync with a hand-resolved conflict | a clean sync needs nothing |
 | Bug | bug → spec ⇢ Job | a job's third blocking review, a feedback group, or the owner's `/jig:bug` | never on a session's own reading that something is broken |
-| Feedback | consolidate ⇢ bug + spec → consolidate ⇢ Job | staged feedback, in the jig repo | one bug + spec per group; overlaps answered before any job opens |
+| Feedback | consolidate ⇢ bug + spec → consolidate ⇢ Job | staged feedback, in the jig repo (`/jig:rig` starts it; `/jig:fix` by hand too) | one bug + spec per group; overlaps answered before any job opens |
 | Batch | gate → merge ⇢ check → trace | two or more gated jobs | one check on trunk; a failure is traced to its merge, then Fix on that job |
 | Release | check → release → push → publish | the owner's word | refused while a batch check is owed; push and publish only on the owner's word |
 | Survey | survey ⇢ spec ⇢ Jobs | `/jig:survey`, `/jig:adopt`, `/jig:update` | |
@@ -794,8 +794,18 @@ cycle waits on the owner. An item that could start but overlaps any waiting spec
 waits included, is to answer first, since `jig open` refuses it. The order is
 fixed (kind, dependency, path), so the same state prints the same bytes. Its count of what
 waits on the owner's answers counts every question: each open or unjudged staged file, the
-open next step, each overlapping pair and each dependency cycle, a ring once; `--json` prints it as
-data. A model's open/ready call, its questions and its recommendation are kept per item in
+open next step, each group with an overlap (once, however many pairs it holds: one job for its
+items, or keep some apart) and each dependency cycle, a ring once; `--json` prints it as
+data, each group with, per member, the Touches it shares with the rest and whether all of them
+are append files (`append_only`): a member that meets its group only in the log is the one most
+likely kept apart. A staged decisions file's Touches are its entries' `Touches:` lines, less a
+pointer into another repo, plus `.jig/decisions.md`, so it meets the spec written from it by
+the same rule. A staged file a waiting spec or an open job's spec carries, by its exact mark, is
+**taken**: it waits on that spec or job, in no group, and counts nowhere. In the jig repo a
+staged feedback report not taken is a **feedback** item, in no group and counted only as
+`feedback`: the hubnode starts `/jig:fix` on it and stores the call `fixing` (keyed on the
+report alone, so opening a job doesn't start a second fix), which `--store-put` takes for a
+feedback item only. A model's open/ready call, its questions and its recommendation are kept per item in
 `.git/jig/rig.json` (never committed) with a key of the item's content and the board, and
 replayed while both are unchanged: `jig rig --store-put <path>` stores one (a JSON object on
 stdin), `--store-get <path>` prints one that still holds, and `--fresh` forgets them all. It
@@ -1178,7 +1188,9 @@ other. The warning doesn't fail anything, since both may be meant.
 and who: `resolve` logs it as decided, so the owner confirms they accepted it, else it says
 Proposed. It doesn't fail the check, since an entry accepted in the chat is right as written.
 `jig rig` (Workflow) lists every staged file with its header, and leaves whether it is ready to
-become a spec or open on the owner's answers to the model that reads it.
+become a spec or open on the owner's answers to the model that reads it. A staged file whose
+mark a waiting spec or an open job's spec carries is taken: it waits on that spec or job and is
+never offered again. In the jig repo, a feedback report is `/jig:fix`'s, which rig starts.
 
 A feature request is `kind: feature-request`: the owner's own words for what the product
 should do ("I want it to do xyz"), with no required shape. A story names who wants what and

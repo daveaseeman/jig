@@ -13406,7 +13406,7 @@ def update_blocked(why: list[str]) -> int:
 # ----------------------------------------------------------------------- rig
 
 # The order every list in `jig rig` keeps, so the same state prints the same bytes.
-RIG_KINDS = ("spec", "staged", "next-step")
+RIG_KINDS = ("spec", "staged", "feedback", "next-step")
 
 
 def rig_store() -> Path:
@@ -13422,9 +13422,11 @@ def rig_load_store() -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def rig_key(content: str, board: "Board") -> str:
-    """A judgment holds while its item and the board are as they were: either changing re-judges."""
-    jobs = json.dumps(board.jobs, sort_keys=True)
+def rig_key(content: str, board: "Board | None") -> str:
+    """A judgment holds while its item and the board are as they were: either changing re-judges.
+    With no board, only the item counts: a feedback report's `fixing` must outlive a job opened,
+    or rig would start a second fix on it."""
+    jobs = json.dumps(board.jobs, sort_keys=True) if board else ""
     return hashlib.sha256(f"{content}\0{jobs}".encode()).hexdigest()[:16]
 
 
@@ -13454,15 +13456,41 @@ def rig_items(root: Path, board: "Board") -> list[dict]:
         items.append({"kind": "spec", "id": Path(path).stem, "path": path, "content": text,
                       "touches": touches_spans(text), "after": built_after(text),
                       "kept": sorted(kept_separate(text)), "scopes": spec_scopes(text)})
+    # A staged file a spec already carries, by its exact mark as `resolve` finds it, is that
+    # spec's work: it waits on the spec, or on the job building it, and is never offered again.
+    carriers = [(f"spec {path}", text) for path, text in specs.items()]
+    for name, job in sorted(board.open_jobs().items()):
+        spec = job.get("spec", "")
+        f = root / spec_key(root, spec) if spec.endswith(".md") else None
+        carriers.append((f"job {name}", f.read_text(errors="replace") if f and f.is_file() else spec))
+    # Feedback is `/jig:fix`'s in the jig repo, so rig starts that there; elsewhere it is staged.
+    jig_here = addressed_here("jig", root)
     for f in staged_files(main_root()):
         head, body, _ = read_staged(f)
-        items.append({"kind": "staged", "id": f.name, "path": f"{STAGING}/{f.name}",
-                      "content": f.read_text(errors="replace"), "header": head,
-                      "touches": touches_spans(body), "after": [Path(n).stem for n in after_names(head)],
-                      "kept": sorted(kept_separate(body)), "scopes": spec_scopes(body)})
+        mark = provenance(head, f)
+        by = sorted(w for w, text in carriers if mark in text)
+        kind = "feedback" if not by and jig_here and head.get("kind") == "feedback" else "staged"
+        item = {"kind": kind, "id": f.name, "path": f"{STAGING}/{f.name}",
+                "content": f.read_text(errors="replace"), "header": head,
+                "touches": decisions_touches(body) if head.get("kind") == "decisions" else touches_spans(body),
+                "after": [] if kind == "feedback" else [Path(n).stem for n in after_names(head)],
+                "kept": sorted(kept_separate(body)), "scopes": spec_scopes(body)}
+        if by:
+            item["covered"] = by
+        items.append(item)
     covering = [(f"{i['kind']} {i['path']}", i["touches"]) for i in items]
     covering += [(f"job {n}", ts) for n, ts in job_touches(root, board).items()]
     return items + rig_next_step(board, [s for i in items for s in i["scopes"]], covering)
+
+
+def decisions_touches(body: str) -> list[str]:
+    """A staged decisions file's Touches: its entries' `Touches:` pointers, and the log they land
+    in, so it meets the spec written from it and its batch by the same rule. A pointer into
+    another repo is no job's here, and `Touches: none` names nothing."""
+    out: list[str] = []
+    for e in log_entries(body, log_prefix_of(body)):
+        out += [t for t in entry_touches(e["block"]) or [] if ":" not in t.partition(" § ")[0]]
+    return list(dict.fromkeys(out + [LOG]))
 
 
 def covered_by(page: str, covering: list[tuple[str, list[str]]]) -> list[str]:
@@ -13523,12 +13551,13 @@ def rig_state(root: Path, board: "Board") -> dict:
     items = rig_items(root, board)
     store = rig_load_store()
     for i in items:
-        i["key"] = rig_key(i.pop("content"), board)
+        i["key"] = rig_key(i.pop("content"), None if i["kind"] == "feedback" else board)
         held = store.get(i["path"])
         i["judged"] = held["judgment"] if isinstance(held, dict) and held.get("key") == i["key"] else None
         call = (i["judged"] or {}).get("call")
         i["state"] = ("ready" if i["kind"] == "spec" else "taken" if "covered" in i
                       else "open" if i["kind"] == "next-step"
+                      else ("fixing" if call == "fixing" else "new") if i["kind"] == "feedback"
                       else call if call in ("ready", "open") else "unjudged")
     by_name = {}
     for i in items:
@@ -13620,15 +13649,31 @@ def rig_state(root: Path, board: "Board") -> dict:
     for name in sorted(board.open_jobs()):
         step, who, session, why = next_step(root, board, name)
         jobs.append({"name": name, "step": step, "who": who, "session": session, "why": why})
-    # Every block that asks the owner something counts once: a ring is one question, not one per member.
+    # Every block that asks the owner something counts once: a ring is one question, not one per
+    # member, and a group with overlaps is one question, "one job, or keep some apart", not one per pair.
     asks = [i for i in items if i["state"] in ("open", "unjudged")]
     pairs = sorted({tuple(p) for p in overlaps})
+    by_path = {i["path"]: i for i in items}
+    appends = append_globs(board)
+    out_groups = []
+    for g in ordered:
+        inside = {i["path"] for i in g}
+        gp = sorted(p for p in pairs if set(p) & inside)
+        members = []
+        for i in g:
+            others = {q for p in gp if i["path"] in p for q in p if q != i["path"]}
+            shared = sorted({t for t in i["touches"] for o in others
+                             for u in by_path[o]["touches"] if touches_meet(t, u)})
+            # A member meeting the rest only in an append file (the log, say) is the one most
+            # likely kept apart: both can add to it without touching each other's lines.
+            members.append({"path": i["path"], "shares": shared,
+                            "append_only": bool(shared) and all(matches(t, appends) for t in shared)})
+        out_groups.append({"paths": [i["path"] for i in g], "overlaps": [list(p) for p in gp], "members": members})
+    asked = [g for g in out_groups if g["overlaps"]]
     return {"items": sorted(items, key=sort_key), "overlaps": [list(p) for p in pairs],
-            "cycles": [list(c) for c in sorted(cycles)],
-            "groups": [{"paths": [i["path"] for i in g],
-                        "overlaps": sorted(p for p in overlaps if set(p) & {i["path"] for i in g})}
-                       for g in ordered],
-            "waiting_on_you": len(asks) + len(pairs) + len(cycles), "can_start": sum(i["opens"] == "now" for i in start), "jobs": jobs,
+            "cycles": [list(c) for c in sorted(cycles)], "groups": out_groups,
+            "waiting_on_you": len(asks) + len(asked) + len(cycles), "can_start": sum(i["opens"] == "now" for i in start),
+            "feedback": sum(i["kind"] == "feedback" for i in items), "jobs": jobs,
             # Closing needs no answer, so finished specs count in neither number.
             "finished": finished_specs(Snapshot(board.trunk), board)}
 
@@ -13659,13 +13704,21 @@ def rig_text(state: dict) -> str:
             out.append(f"  next    {i['id']} ({i['from']}): {i['what']}")
         else:
             out.append(f"  {i['kind']:<7} {i['path']}  {'not judged yet' if i['state'] == 'unjudged' else 'open'}")
-    out += [f"  overlap {a} and {b}: one job, or kept apart" for a, b in state["overlaps"]]
+    # A waiting spec outside the group that one of its items overlaps is one of the items asked about.
+    asked = [(g, len(set(group["paths"]) | {x for p in group["overlaps"] for x in p}))
+             for g, group in enumerate(state["groups"], 1) if group["overlaps"]]
+    out += [f"  group {g}: one job for {k} items, or keep some apart" for g, k in asked]
     out += [f"  cycle   {', '.join(c)}: which goes first" for c in state["cycles"]]
-    if not asks and not state["overlaps"] and not state["cycles"]:
+    if not asks and not asked and not state["cycles"]:
         out.append("  nothing")
     out.append("\nRunning:")
     out += [f"  {j['name']}: {j['step']} — {j['who']}, {j['session']}" + (f" ({j['why']})" if j["why"] else "")
             for j in state["jobs"]] or ["  no open jobs"]
+    for i in items:
+        if i["kind"] == "feedback":
+            j = i["judged"] or {}
+            out.append(f"  feedback {i['path']}: " + (f"/jig:fix, {j.get('about', '')}, {j.get('context', '')}"
+                                                    if i["state"] == "fixing" else "/jig:fix not started"))
     out.append("\nFinished:")
     out += [f"  {f['spec']}" + (f"  kept: {f['kept']}" if f["kept"] else f"  done by {f['note']}" if f["note"]
                                 else "  its job has merged") for f in state["finished"]] or ["  nothing to close"]
@@ -13723,8 +13776,12 @@ def cmd_rig(root: Path, args) -> int:
         except ValueError as e:
             die(f"--store-put reads a JSON object on stdin: {e}", 2)
         # A staged file's call is what places it: one stored without it would replay as unjudged.
-        call = judgment.get("call", "ready" if item["kind"] != "staged" else None) if isinstance(judgment, dict) else None
-        if call not in ("ready", "open"):
+        call = judgment.get("call", "ready" if item["kind"] not in ("staged", "feedback") else None) \
+            if isinstance(judgment, dict) else None
+        if item["kind"] == "feedback" and call != "fixing":
+            die('--store-put on a feedback report reads a JSON object whose "call" is "fixing": '
+                "/jig:fix is working on it", 2)
+        if item["kind"] != "feedback" and call not in ("ready", "open"):
             die(f'--store-put reads a JSON object whose "call" is "ready" or "open"'
                 f'{" (a staged file needs one)" if item["kind"] == "staged" else ""}', 2)
         store = rig_load_store()

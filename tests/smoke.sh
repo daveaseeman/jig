@@ -8044,12 +8044,13 @@ c5() { rstate "t=i['.jig/specs/theta.md']; assert t['opens'] == 'answer' and ['.
   && $J rig | head -1 | grep -q '; 0 can start now.$' && ! $J open T --spec .jig/specs/theta.md --owns 'j/**' >/dev/null 2>&1; }
 expect_pass c5
 
-msg="rig: an overlapping pair and a dependency cycle each count once as a question, each with its line under Waiting on you"
+msg="rig: a group with an overlap and a dependency cycle each count once as a question, each with its line under Waiting on you"
 n0=$($J rig --json | python3 -c "import json,sys; print(json.load(sys.stdin)['waiting_on_you'])")
 rspec p1 'q/x.txt' && rspec p2 'q/x.txt' && rspec k1 'k/1.txt' 'Build after `k2`.' && rspec k2 'k/2.txt' 'Build after `k1`.'
 c7() { out=$($J rig); n=$($J rig --json | python3 -c "import json,sys; print(json.load(sys.stdin)['waiting_on_you'])")
   test "$n" = $((n0 + 2)) && echo "$out" | head -1 | grep -q "^$n things waiting on your answers;" \
-    && test "$(echo "$out" | sed -n '/^Waiting on you:/,/^$/p' | grep -c '^  overlap .jig/specs/p1.md and .jig/specs/p2.md: ')" = 1 \
+    && test "$(echo "$out" | sed -n '/^Waiting on you:/,/^$/p' | grep -c '^  group [0-9]*: one job for 2 items, or keep some apart')" = 3 \
+    && ! echo "$out" | grep -q '^  overlap ' \
     && test "$(echo "$out" | sed -n '/^Waiting on you:/,/^$/p' | grep -c '^  cycle   .jig/specs/k1.md, .jig/specs/k2.md: ')" = 1; }
 expect_pass c7
 rm .jig/specs/p1.md .jig/specs/p2.md .jig/specs/k1.md .jig/specs/k2.md
@@ -8065,6 +8066,92 @@ git rm -qf .jig/specs/bugx.md .jig/specs/wp.md && git commit -qm "drop bug spec"
 msg="rig: a run writes neither the roadmap nor staging"
 $J rig >/dev/null; $J rig --json >/dev/null
 expect_pass test "$(cat .jig/roadmap.md .jig/staging/s2.md | shasum) $(shasum < .jig/staging/s1.md)" = "$before $s1hash"
+}
+
+# ---------------------------------------------------------------- rig: one question per batch, taken and feedback items
+sec_rig_batch() {
+RB="$T/rb"; pcnew "$RB" && mkdir -p docs/features && printf '# X\n' > docs/features/x.md && printf '# Y\n' > docs/features/y.md && printf '# O\n' > docs/other.md
+git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+rj() { $J rig --json | python3 -c "import json,sys; d=json.load(sys.stdin); i={x['path']: x for x in d['items']}; $1"; }
+ready() { for f in "$@"; do printf '{"call": "ready"}' | $J rig --store-put ".jig/staging/$f" >/dev/null; done; }
+sdec() {  # sdec <file> <touches>: a staged decisions file with one entry touching that line
+  stage "$1" this decisions new .jig/decisions.md "# $1\n\n### D-?${1%.md} An entry\nAccepted (owner, 2026-11-18).\nTouches: $2\n\nwhy\n"; }
+bspec() {  # bspec <name> <touches> [extra line]: a waiting spec
+  mkdir -p .jig/specs && printf '# %s\n\nSource: chat %s\n%s\n\n## Touches\n- `%s`\n' "$1" "$1" "${3:-}" "$2" > ".jig/specs/$1.md"; }
+
+sdec da.md docs/features/x.md && sdec db.md docs/features/x.md && ready da.md db.md
+msg="rig batch: a staged decisions file's touches are its entries' Touches and the log, and two meeting on a page are one group"
+expect_pass rj "a, b = i['.jig/staging/da.md'], i['.jig/staging/db.md']
+assert a['touches'] == ['docs/features/x.md', '.jig/decisions.md'] == b['touches'], a
+assert a['group'] == b['group'] and d['groups'][a['group'] - 1]['overlaps'] == [['.jig/staging/da.md', '.jig/staging/db.md']], d['groups']"
+sdec dn.md 'none — a rule with no page' && sdec dp.md 'other:docs/x.md, docs/features/y.md'
+stage sq.md this feature-request new .jig/specs/sq.md '# Q\n\nplease\n'
+stage ss.md this spec new .jig/specs/ss.md '# S\n\n## Touches\n- `docs/other.md`\n'
+msg="rig batch: Touches none adds only the log, another repo's pointer is left out, a request has none, a staged spec keeps its own"
+expect_pass rj "assert i['.jig/staging/dn.md']['touches'] == ['.jig/decisions.md'] and i['.jig/staging/dp.md']['touches'] == ['docs/features/y.md', '.jig/decisions.md'] \
+and i['.jig/staging/sq.md']['touches'] == [] and i['.jig/staging/ss.md']['touches'] == ['docs/other.md'], i"
+rm .jig/staging/dn.md .jig/staging/dp.md .jig/staging/sq.md .jig/staging/ss.md
+sdec dc.md docs/other.md && ready dc.md
+msg="rig batch: a member that meets its group only in the log is flagged, and one sharing a page is not"
+expect_pass rj "g = d['groups'][i['.jig/staging/dc.md']['group'] - 1]; m = {x['path']: x for x in g['members']}
+assert m['.jig/staging/dc.md']['append_only'] and m['.jig/staging/dc.md']['shares'] == ['.jig/decisions.md'] and not m['.jig/staging/da.md']['append_only'], m"
+
+bspec ea '.jig/staging/da.md' 'Source: chat da.md (staged as da.md)' && bspec eb '.jig/staging/db.md' 'Source: chat db.md (staged as db.md)'
+msg="rig batch: a staged file a waiting spec carries is taken, waits on that spec, and is in no group"
+expect_pass rj "a, b = i['.jig/staging/da.md'], i['.jig/staging/db.md']
+assert (a['state'], a['waits_on'], a['group']) == ('taken', ['spec .jig/specs/ea.md'], None) and b['waits_on'] == ['spec .jig/specs/eb.md'] and b['group'] is None, (a, b)"
+msg="rig batch: taken staged files count neither as starting nor as waiting on you"
+expect_pass sh -c "$J rig | sed -n '/^Waiting on:/,/^\$/p' | grep -q 'staged  .jig/staging/da.md  waits on spec .jig/specs/ea.md' && ! $J rig | sed -n '/^Waiting on you:/,/^\$/p' | grep -q da.md"
+rm .jig/specs/ea.md .jig/specs/eb.md .jig/staging/dc.md
+
+bspec p1 'q/x.txt' && bspec p2 'q/**' && bspec p3 'q/x.txt'
+msg="rig batch: three waiting specs that overlap pairwise are one question: one group line, no pair line, the pairs under the group"
+out=$($J rig); n=$($J rig --json | python3 -c "import json,sys; print(json.load(sys.stdin)['waiting_on_you'])")
+expect_pass sh -c "test $n = 2 && echo \"\$0\" | sed -n '/^Waiting on you:/,/^\$/p' | grep -q '^  group [0-9]*: one job for 3 items, or keep some apart' \
+  && ! echo \"\$0\" | grep -q '^  overlap ' && test \$(echo \"\$0\" | sed -n '/^Can start now:/,/^\$/p' | grep -c 'overlap: one job, or kept apart') = 4" "$out"
+rm .jig/specs/p1.md .jig/specs/p2.md .jig/specs/p3.md .jig/staging/da.md .jig/staging/db.md
+
+# The reported symptom: a same-day batch of three decisions files and a request after one of them.
+sdec b1.md docs/features/x.md && sdec b2.md 'docs/features/x.md, docs/features/y.md' && sdec b3.md docs/features/y.md
+stage b4.md this feature-request new .jig/specs/b4.md '# B4\n\nplease\n' && sed -i.bak 's/^status: staged$/after: b1.md\nstatus: staged/' .jig/staging/b4.md && rm .jig/staging/b4.md.bak
+ready b1.md b2.md b3.md b4.md
+msg="rig batch, round 1: the batch is one group, counted once"
+expect_pass rj "g = {x['group'] for x in d['items'] if x['path'].startswith('.jig/staging/b')}; assert len(g) == 1 and None not in g and d['waiting_on_you'] == 1 and len(d['groups']) == 1, (g, d['waiting_on_you'], d['groups'])"
+marks=$(for f in b1 b2 b3 b4; do printf 'Source: chat %s.md (staged as %s.md)\n' $f $f; done)
+bspec batch docs/features/x.md "$marks"
+msg="rig batch, round 2: once one spec carries all four marks, the four are taken by it and nothing is asked"
+expect_pass rj "b = [i['.jig/staging/b%d.md' % n] for n in (1, 2, 3, 4)]
+assert all(x['state'] == 'taken' and x['waits_on'] == ['spec .jig/specs/batch.md'] for x in b) and d['waiting_on_you'] == 0, (b, d['waiting_on_you'])"
+git add -A && git commit -qm batch && $J open B --spec .jig/specs/batch.md --owns 'docs/features/**' >/dev/null && git add -A && git commit -qm "open B"
+msg="rig batch: a staged file an open job's spec carries is taken, waiting on that job"
+expect_pass rj "assert i['.jig/staging/b1.md']['waits_on'] == ['job B'] and i['.jig/staging/b1.md']['state'] == 'taken', i['.jig/staging/b1.md']"
+msg="rig batch: two runs on one state print the same bytes"
+a=$($J rig --json); b=$($J rig --json); expect_pass test -n "$a" -a "$a" = "$b"
+rm .jig/staging/b*.md
+
+fbj .jig/staging fb.md elsewhere
+msg="rig feedback: in a repo that isn't jig, a staged feedback report is a staged file"
+expect_pass rj "assert i['.jig/staging/fb.md']['kind'] == 'staged' and d['feedback'] == 0, i['.jig/staging/fb.md']"
+$J repos add repo "$RB" --name jig >/dev/null
+msg="rig feedback: in the jig repo it is a feedback item, in no group, counted as feedback and nowhere else"
+expect_pass rj "f = i['.jig/staging/fb.md']; assert (f['kind'], f['state'], f['group']) == ('feedback', 'new', None) and d['feedback'] == 1 and d['waiting_on_you'] == 0 and d['can_start'] == 0, (f, d)"
+msg="rig feedback: --store-put refuses a ready call on a feedback report, and fixing on a staged file"
+stage st.md this spec new .jig/specs/st.md '# T\n'
+expect_pass sh -c "! printf '{\"call\": \"ready\"}' | $J rig --store-put .jig/staging/fb.md && ! printf '{\"call\": \"fixing\"}' | $J rig --store-put .jig/staging/st.md"
+rm .jig/staging/st.md
+printf '{"call": "fixing", "about": "group 1", "context": "fix-1"}' | $J rig --store-put .jig/staging/fb.md >/dev/null
+msg="rig feedback: a stored fixing is replayed, even after the board changes, and listed under Running"
+$J open K --owns 'k/**' >/dev/null && git add -A && git commit -qm "open K"
+expect_pass sh -c "$J rig --json | grep -q '\"state\": \"fixing\"' && $J rig | sed -n '/^Running:/,/^\$/p' | grep -q '  feedback .jig/staging/fb.md: /jig:fix, group 1, fix-1'"
+msg="rig feedback: a change to the report voids its judgment"
+printf 'more\n' >> .jig/staging/fb.md
+expect_pass rj "assert i['.jig/staging/fb.md']['state'] == 'new'"
+printf '{"call": "fixing", "about": "group 1", "context": "fix-1"}' | $J rig --store-put .jig/staging/fb.md >/dev/null
+bspec fbs docs/other.md "$(printf 'Source: chat fb.md (staged as fb.md)')"
+msg="rig feedback: once a waiting spec carries its mark it is taken, waits on that spec, leaves Running and isn't counted"
+expect_pass rj "f = i['.jig/staging/fb.md']; assert f['state'] == 'taken' and f['waits_on'] == ['spec .jig/specs/fbs.md'] and d['feedback'] == 0, f"
+msg="rig feedback: a taken report is listed under Waiting on, not under Running"
+expect_pass sh -c "$J rig | sed -n '/^Waiting on:/,/^\$/p' | grep -q 'fb.md  waits on spec .jig/specs/fbs.md' && ! $J rig | sed -n '/^Running:/,/^\$/p' | grep -q fb.md"
 }
 
 # ---------------------------------------------------------------- merged jobs leave nothing behind
@@ -8542,7 +8629,7 @@ msg="queue config: the overflow key with the owner's words commits"
 expect_pass setq '{"width": "all", "overflow": {"to": "github", "reason": "the owner: keep the standing yes"}}'
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders rig close claims inbox rigger queue"
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders rig rig_batch close claims inbox rigger queue"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file
