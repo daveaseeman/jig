@@ -7821,6 +7821,29 @@ imsg "$T/fe.md" frontend "2026-11-17 14:00" x
 cp "$T/fe.md" .jig/inbox/2026-11-17-f.md
 python3 -c "import json; f='$JIG_CONFIG'; r=json.load(open(f)); r['app']['aliases']=['ap', 'frontend']; json.dump(r, open(f,'w'))"
 expect_pass sh -c "! python3 $P/jig/jig.py inbox check $T/fe.md >/dev/null && $J inbox | grep -q 'misaddressed: 2026-11-17-f.md' && test -e .jig/inbox/misaddressed/2026-11-17-f.md"
+# Case is ignored throughout: a board name and a listed alias that differ only in case are one name.
+python3 -c "import json; f='$JIG_CONFIG'; r=json.load(open(f)); r['app']['aliases']=['ap']; json.dump(r, open(f,'w'))"
+echo '{"name": "Frontend"}' > "$T/in-web/.jig/config.json"
+out1=$($J repos which Frontend); r1=$?; out2=$($J repos which frontend); r2=$?
+msg="inbox: a board name and another entry's alias differing only in case find neither, typed either way"
+expect_pass sh -c "test $r1 = 1 && test $r2 = 1 && echo \"\$0\" | grep -q '(beta, web)' && echo \"\$1\" | grep -q '(beta, web)'" "$out1" "$out2"
+msg="inbox: that refusal says to change one checkout's name in its config, or remove one entry"
+expect_pass sh -c "echo \"\$0\" | grep -q \"change .name. in one checkout's config (.*in-web/.jig/config.json), or remove one entry\"" "$out1"
+msg="repos add: a checkout calling itself what another entry answers to, case ignored, is refused naming both"
+mkdir -p "$T/in-web2/.jig" && echo '{"name": "FRONTEND"}' > "$T/in-web2/.jig/config.json"
+out=$($J repos add web2 "$T/in-web2" 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'in-web2 calls itself FRONTEND, which already names ' && ! $J repos which web2 >/dev/null" "$out"
+msg="repos add: a second clone sharing the first's board name is refused"
+mkdir -p "$T/clone1/.jig" "$T/clone2/.jig" && echo '{"name": "shared"}' > "$T/clone1/.jig/config.json" && cp "$T/clone1/.jig/config.json" "$T/clone2/.jig/config.json"
+$J repos add c1 "$T/clone1" >/dev/null
+expect_refuse $J repos add c2 "$T/clone2"
+msg="staging resolve: target Frontend, which two entries answer to, is refused and stays staged; staging check fails it too"
+stage fe.md Frontend spec new .jig/specs/fe.md
+expect_pass sh -c "! $J staging resolve fe.md >/dev/null 2>&1 && test -e .jig/staging/fe.md && test ! -e .jig/specs/fe.md && ! python3 $P/jig/jig.py staging check .jig/staging/fe.md >/dev/null"
+rm .jig/staging/fe.md
+msg="staging resolve: target app, this repo's listed name, lands here"
+stage ap.md app spec new .jig/specs/ap.md
+expect_pass sh -c "$J staging resolve ap.md >/dev/null && test -e .jig/specs/ap.md && test ! -e .jig/staging/ap.md"
 CK="$T/inbox-out"; mkdir -p "$CK"
 msg="inbox check: a good message passes, from outside any repo"
 imsg "$CK/good.md" app "2026-11-17 10:00" x

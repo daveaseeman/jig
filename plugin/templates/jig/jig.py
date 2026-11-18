@@ -6615,8 +6615,14 @@ def near_miss(name: str) -> str | None:
 def unknown_repo(name: str) -> str:
     many = repo_matches(name) if name else []
     if len(many) > 1:
-        return (f"{name!r} names more than one repo in {repos_file()} ({', '.join(many)}): give "
-                "each a name of its own (`jig repos rename`) and use that")
+        repos = load_repos()
+        # A checkout's own name is committed in it: renaming the entry can't change that.
+        own = [n for n in many if name_in(name, repo_identity(Path(repos[n]["path"])))]
+        configs = ", ".join(f"{repos[n]['path']}/{CONFIG}" for n in own)
+        fix = (f"change `name` in one checkout's config ({configs}), or remove one entry from "
+               f"{repos_file()}" if own else
+               "rename one entry (`jig repos rename`) or drop its alias (`jig repos alias --remove`)")
+        return f"{name!r} names more than one repo ({', '.join(many)}): {fix}"
     near = near_miss(name)
     return (f"{name!r} isn't in {repos_file()}" + (f": did you mean {near}? A name that matches "
             "only without its punctuation is refused" if near else " (`jig repos` lists them)"))
@@ -6648,12 +6654,12 @@ def repo_path(name: str) -> Path | None:
 def repo_matches(name: str) -> list[str]:
     """The entries a typed name finds: by its listed name, an alias, or the name the checkout
     gives itself. One rule for every place a repo is typed (a staged target, an inbox
-    message's `to`, a rigger). A human types it, so `App` finds `app`; an exact match wins
-    over one by case alone. More than one is no answer: the lookup never picks by order."""
+    message's `to`, a rigger). A human types it, so case is ignored throughout: `App` finds
+    `app`, and a `Frontend` one entry calls itself and a `frontend` another lists are one name.
+    More than one entry is no answer: the lookup never picks by order or by case."""
     repos = load_repos()
-    answers = {n: {n} | repo_names(e) | repo_identity(Path(e["path"])) for n, e in repos.items()}
-    exact = [n for n, a in answers.items() if name in a]
-    return exact or [n for n, a in answers.items() if name_in(name, a)]
+    return [n for n, e in repos.items()
+            if name_in(name, {n} | repo_names(e) | repo_identity(Path(e["path"])))]
 
 
 def labels(repos: dict) -> list[tuple[str, str]]:
@@ -6702,6 +6708,7 @@ def cmd_repos(root: Path, args) -> int:
         if kind_form and name in repos and Path(repos[name]["path"]).resolve() != path:
             die(f"{name} already names {repos[name]['path']}: pick another --name, or rename that one", 2)
         refuse_taken(repos, name, name)
+        refuse_own_names(repos, path, name)
         # Its aliases and rigger folder stay with the checkout: a name re-pointed from another
         # checkout brings none of that one's.
         own = repos.get(name) if name in repos and Path(repos[name]["path"]).resolve() == path else {}
@@ -6729,6 +6736,7 @@ def cmd_repos(root: Path, args) -> int:
         if new in repos and new != old:
             die(f"{new} already names {repos[new]['path']}", 2)
         refuse_taken(repos, new, old)
+        refuse_own_names(repos, Path(repos[old]["path"]), old)
         repos[new] = repos.pop(old)
         save_repos(repos)
         print(f"{old} is now {new} → {repos[new]['path']}")
@@ -6768,6 +6776,16 @@ def refuse_taken(repos: dict, label: str, mine: str) -> None:
             die(f"{label} is the name {n}'s checkout gives itself, {e['path']}", 2)
 
 
+def refuse_own_names(repos: dict, path: Path, mine: str) -> None:
+    """The names a checkout gives itself are committed in it, so no listed name, alias or
+    other checkout's own name may equal one: a lookup would then find two repos."""
+    for own in sorted(repo_identity(path)):
+        for n, e in repos.items():
+            if n != mine and name_in(own, {n} | repo_names(e) | repo_identity(Path(e["path"]))):
+                die(f"{path} calls itself {own}, which already names {n}, {e['path']}: change "
+                    f"`name` in one checkout's {CONFIG}, or list only one of them", 2)
+
+
 def repos_which(name: str | None) -> int:
     """The one lookup a skill runs for a typed repo name: the path, or the refusal."""
     if not name:
@@ -6797,6 +6815,7 @@ def repos_alias(repos: dict, args) -> int:
         print(f"{name}: alias {alias} removed")
     else:
         refuse_taken(repos, alias, name)
+        refuse_own_names(repos, Path(repos[name]["path"]), name)
         if alias.casefold() in {lb.casefold() for lb in {name} | repo_names(repos[name])}:
             die(f"{alias} already names {name}", 2)
         have.append(alias)
@@ -8263,7 +8282,7 @@ def release_waits_for() -> list[Path]:
     """The main checkout's staging, since staged files are never committed, and any report in
     the fallback folder aimed at this repo: it is staged here in all but location."""
     return staged_files(main_root()) + [f for f in fallback_files()
-                                        if names_this_repo(read_staged(f)[0].get("target"), main_root())]
+                                        if addressed_here(read_staged(f)[0].get("target", ""), main_root())]
 
 
 def staged_refusal(what: str) -> list[str]:
@@ -8497,7 +8516,9 @@ def cmd_staging(root: Path, args) -> int:
     mark = provenance(head, path)
 
     target = head["target"]
-    if not names_this_repo(target, root):
+    # The one lookup `staging check` and `jig inbox` use, so resolve never lands a file the
+    # check read as another repo's.
+    if not addressed_here(target, root):
         return forward(root, path, head)
 
     def done(msg: str) -> int:
@@ -8701,6 +8722,8 @@ def forward(root: Path, path: Path, head: dict) -> int:
     staging, the one place jig writes in another repo, after checking both sides agree."""
     target = head["target"]
     there = repo_path(target)
+    if not there and len(repo_matches(target)) > 1:
+        die(f"refused: {unknown_repo(target)}", 2)
     if not there:
         die(f"{target} isn't this repo and isn't in {repos_file()}: "
             f"jig repos add {target} <path>", 2)
@@ -9609,8 +9632,9 @@ def free_name(folder: Path, f: Path) -> Path:
 
 
 def addressed_here(to: str, root: Path) -> bool:
-    """`to` finds this repo by the lookup `which` and `inbox check` use; a repo missing from
-    the list answers to its own names. A name more than one entry answers to finds none."""
+    """A typed repo name (a message's `to`, a staged file's `target`) finds this repo by the
+    lookup `which`, `inbox check` and `staging check` use; a repo missing from the list
+    answers to its own names and `this`. A name more than one entry answers to finds none."""
     found = repo_matches(to) if to else []
     if found:
         return len(found) == 1 and Path(load_repos()[found[0]]["path"]).resolve() == main_root().resolve()

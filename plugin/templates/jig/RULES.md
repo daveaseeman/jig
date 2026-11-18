@@ -1088,7 +1088,7 @@ name more than one entry answers to finds none, and is refused naming them. One 
 dropped (`a_p` for `ap`) is refused, naming the near one: two near-identical names have sent
 work to the wrong repo. `jig repos alias <repo> <alias>` adds an alias, and refuses one any
 other entry already answers to, its checkout's own name included, as `add` and `rename` refuse
-such a name; `jig repos which
+such a name, and `add` refuses a checkout whose own name another entry answers to; `jig repos which
 <name>` prints the repo a typed name finds, or the refusal. `jig inbox check <file>…` checks a
 message's header from outside any repo, as `staging check` does: a missing key, a `to` no entry
 answers to, or, for a file already in a listed repo's inbox, a `to` naming another repo.
