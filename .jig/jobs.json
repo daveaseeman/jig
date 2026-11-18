@@ -10,5 +10,97 @@
       "tests/smoke.sh"
     ],
     "reserved": {}
+  },
+  "rigger": {
+    "spec": ".jig/specs/rigger.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [
+      "README.md",
+      "plugin/hooks/hooks.json",
+      "plugin/scripts/inbox.sh",
+      "plugin/scripts/session-start.sh",
+      "plugin/skills/decision-cards/SKILL.md",
+      "plugin/skills/relay/SKILL.md",
+      "plugin/skills/repos/SKILL.md",
+      "plugin/skills/rigger/SKILL.md",
+      "plugin/skills/send/SKILL.md",
+      "plugin/skills/stage/SKILL.md"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "plugin/skills/hubnode/SKILL.md"
+    ],
+    "reserved": {}
+  },
+  "bug-gate-pair-answers": {
+    "spec": ".jig/specs/bug-gate-pair-answers.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "plugin/skills/review/SKILL.md"
+    ],
+    "reserved": {}
+  },
+  "bug-meta-agents-block": {
+    "spec": ".jig/specs/bug-meta-agents-block.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "plugin/skills/init/SKILL.md"
+    ],
+    "reserved": {}
+  },
+  "bug-decision-records": {
+    "spec": ".jig/specs/bug-decision-records.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "plugin/skills/adopt/SKILL.md",
+      "plugin/skills/update/SKILL.md"
+    ],
+    "reserved": {}
+  },
+  "bug-process-in-pages": {
+    "spec": ".jig/specs/bug-process-in-pages.md",
+    "state": "claimed",
+    "after": [
+      "bug-meta-agents-block"
+    ],
+    "owns": [
+      "plugin/templates/AGENTS.md",
+      "plugin/templates/hardware.md",
+      "plugin/templates/jig/docs-page.md",
+      "plugin/templates/jig/process.md",
+      "plugin/skills/redocument/SKILL.md",
+      "plugin/skills/spec/SKILL.md",
+      "plugin/skills/retro/SKILL.md",
+      "plugin/skills/survey/SKILL.md"
+    ],
+    "shares": [
+      "plugin/templates/jig/jig.py",
+      "plugin/templates/jig/RULES.md",
+      "tests/smoke.sh",
+      "plugin/skills/hubnode/SKILL.md",
+      "plugin/skills/review/SKILL.md",
+      "plugin/skills/init/SKILL.md",
+      "plugin/skills/adopt/SKILL.md",
+      "plugin/skills/update/SKILL.md"
+    ],
+    "reserved": {}
   }
 }
