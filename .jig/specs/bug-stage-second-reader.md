@@ -8,7 +8,9 @@ Kept separate from rig-and-versioning: the owner, 2026-11-18, chose the rig spec
 Before `/jig:stage` calls a batch staged, a fresh worker that did not write it reads every file
 against a record of the conversation and reports what is missing, overstated, added or
 contradictory; the staging session fixes what it reports and shows the owner, then runs
-`jig staging check`. A host that can start no worker stages the batch marked unreviewed.
+`jig staging check`. Every staged file is written marked unreviewed, and the mark comes off only
+once the reader's findings are fixed and shown, so a batch the reader never finished never looks
+reviewed.
 
 ## 1. Why
 - Why did Daisy's staged batch need correcting after it was written? Its author was the session that had the chat, and it wrote its own reading of the chat as agreed.
@@ -51,9 +53,11 @@ stricter.
   - The worker answers five questions for each file: what the chat raised that the files leave out (a question the owner held, a point left open); what the files call agreed, accepted or the owner's that the owner did not say, including a quote that is not verbatim; what the files add that the chat does not support and do not mark; what a cold reader in the target could not act on; and where the files contradict themselves or each other. It reports and edits nothing. It is told it cannot see the target repo, so it judges no code fact.
   - You fix what it reports, then show the owner its findings and what you changed before the word "staged". Nothing you filled in may stand unmarked: mark it in place or as an `Interpreted:` line, never under a heading about whose words it is (Whose words).
   - Where the host can start no worker, say in the reply that the batch is staged unreviewed, and end each file's `source:` with `; unreviewed`.
+- [ ] Part 2, SF1: every file is written into staging with `source:` ending `; unreviewed`. The stager removes the mark only once the reader's findings are fixed and shown to the owner. A worker that errors, times out or returns nothing leaves it in place, and so does a session that ends or compacts first; the skill says so.
+- [ ] Part 2, SF2: where the stager can't give the owner's messages verbatim (after compaction, say), it hands the worker what it has, says so in the reply, and keeps `; unreviewed` on every file. A summary, or a rigger's `record/`, is not this record.
 - [ ] Resolving: a file whose `source:` ends `unreviewed` is named as unreviewed when the owner is asked whether it is as settled as it says.
 - [ ] No model name in the skill text: it names tier 2, effort 2 and `tiers.json`.
-- [ ] Smoke, `sec_staging_batches`: one case asserts that the stage skill names the second reader, `tier 2, effort 2`, the verbatim record, and `unreviewed`. Run `python3 plugin/templates/jig/jig.py queue -- bash tests/smoke.sh staging_batches`, and show the output.
+- [ ] Smoke, `sec_staging_batches`: one case asserts that the stage skill names the second reader, `tier 2, effort 2`, the verbatim record, and `unreviewed`. Part 2 adds a case that asserts the mark is written by default and removed only after the findings are shown, that a failed worker or an ended session leaves it, and that a record that isn't verbatim keeps it and is not a summary or a rigger's `record/`. Run `python3 plugin/templates/jig/jig.py queue -- bash tests/smoke.sh staging_batches`, and show the output.
 - [ ] Observable that it fires: a dry run of `/jig:stage` in a chat, staging a two-file batch into a throwaway repo (with `JIG_CONFIG`/`XDG_CONFIG_HOME` set). The worker's findings, or the unreviewed notice, appear before the word "staged". Record it in the handoff note.
 - [ ] Observable that the symptom is gone: a replay on copies in the scratchpad, never on Daisy's staging folder. Rebuild a draft from Daisy's two final settings files with the report's faults put back:
   - the table written as "accepted as a whole";
@@ -88,6 +92,9 @@ stricter.
 - Interpreted: tier 2, effort 2. Tier 2 is Opus in `tiers.json`, which is what the owner asked for. Effort 2 is the review role's default, since the worker is a review of prose. The owner said only "an opus worker".
 - Interpreted: one pass. The worker reports once, the author fixes, and the owner sees both. The owner asked for no second round.
 - Interpreted: what the author filled in is marked in place or as `Interpreted:` lines, which is how the final Daisy spec did it and how Resolving's feature-request spec does it. This follows trunk's quote rule, which forbids headings about whose words a line is, not marks.
+- The owner, 2026-11-18, on SF1 and SF2: "Fix before merge".
+- Interpreted (SF1): the mark is written by default and taken off after review, rather than reviewing drafts before they reach staging. The mark is on disk, so it outlives a crashed worker or a compacted session with no step left to remember; a draft held outside staging would be lost the same way, and the reviewer would then need a second place to read from.
+- Interpreted (SF2): a partial record still gets a reader, but the batch keeps `; unreviewed`, not a second "partly reviewed" mark. One mark is all Resolving has to name, and a reader working from a paraphrase cannot catch a misquote copied into both.
 - Interpreted: the report's Done when asked for "a quote under the owner's name is verbatim". Trunk's quote rule already says that, so here it becomes one of the worker's questions rather than a new rule.
 
 ## Workflow

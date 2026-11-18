@@ -61,8 +61,8 @@ that spec carries the mark.
   describes it. `jig staging` lists the batch in that order, and `resolve` refuses a file while
   one it waits for is still staged. Leave `after:` out when the files are independent, and never
   make two files wait on each other.
-- **Second reader.** Once the files are written, start a fresh worker that has not seen your
-  reasoning, at tier 2, effort 2, as `${CLAUDE_PLUGIN_ROOT}/tiers.json` maps them. Hand it every
+- **Second reader.** Write every file into staging with its `source:` ending `; unreviewed`.
+  Then start a fresh worker that has not seen your reasoning, at tier 2, effort 2, as `${CLAUDE_PLUGIN_ROOT}/tiers.json` maps them. Hand it every
   file of the batch and a record of the conversation: the owner's messages verbatim and in
   order, with your own proposals between them, marked as yours. The record is not a summary of
   what was agreed. Tell the worker it cannot see the target repo, so it judges no code fact, and
@@ -77,9 +77,16 @@ that spec carries the mark.
 
   Fix what it reports, then show the owner its findings and what you changed, before the word
   "staged". Nothing you filled in stands unmarked: mark it in place or as an `Interpreted:` line,
-  never under a heading about whose words it is (Whose words). Where the host can start no
-  worker, say in the reply that the batch is staged unreviewed, and end each file's `source:`
-  with `; unreviewed`.
+  never under a heading about whose words it is (Whose words). Only then remove `; unreviewed`
+  from each file. Until then the mark stays: a worker that errors, times out or returns nothing
+  leaves it, and so does a session that ends or compacts first, so a batch nobody finished
+  reading never looks reviewed. Where the host can start no worker, say in the reply that the
+  batch is staged unreviewed.
+
+  If you can't give the owner's messages verbatim (after compaction, say), hand the worker what
+  you have, say so in the reply, and leave `; unreviewed` on every file: a reader working from a
+  paraphrase can't catch a misquote copied into both. A summary is not this record, and neither
+  is a rigger's `record/`.
 - **Check before you say it's staged.** Run the plugin's copy on every file of the batch at once:
   `python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" staging check <file>…`. It runs outside
   any repo and names each bad header: an unknown kind, a missing key, a destination outside the
