@@ -5,10 +5,12 @@ Source: Dave, chat with Claude, 2026-11-17 (staging Daisy's settings decisions a
 Kept separate from rig-and-versioning: the owner, 2026-11-18, chose the rig specs and then versioning as one job, keeping this apart; this is a skill-only change to stage that shares tests/smoke.sh and the stage skill (a different section: versioning adds the pin-bump kind's resolving), and ships on its own lighter review.
 
 ## Intent
-Before `/jig:stage` calls a batch staged, a fresh worker that did not write it reads every file
-against a record of the conversation and reports what is missing, overstated, added or
-contradictory; the staging session fixes what it reports and shows the owner, then runs
-`jig staging check`. A host that can start no worker stages the batch marked unreviewed.
+Before `/jig:stage` writes anything into the target's staging, a fresh worker that did not write
+the drafts reads every one against a record of the conversation and reports what is missing,
+overstated, added or contradictory; the staging session fixes what it reports and shows the
+owner, then writes the files and runs `jig staging check`. A batch with no reader, or with a
+record that isn't verbatim, is written marked unreviewed from the start. A file's `source:`
+never changes once it is written.
 
 ## 1. Why
 - Why did Daisy's staged batch need correcting after it was written? Its author was the session that had the chat, and it wrote its own reading of the chat as agreed.
@@ -45,15 +47,18 @@ that claims more agreement than there was undercuts that promise, so this asks f
 stricter.
 
 ## Done when
-- [ ] `plugin/skills/stage/SKILL.md`, A batch, gets a **Second reader** item between the files being written and "Check before you say it's staged". It says:
-  - Start a fresh worker that has not seen your reasoning, at tier 2, effort 2, as `${CLAUDE_PLUGIN_ROOT}/tiers.json` maps them. Hand it every file of the batch and a record of the conversation.
+- [ ] `plugin/skills/stage/SKILL.md`, A batch, gets a **Second reader** item before "Check before you say it's staged". The reader reads the drafts before anything is written into the target's `.jig/staging/` (part 3). It says:
+  - Start a fresh worker that has not seen your reasoning, at tier 2, effort 2, as `${CLAUDE_PLUGIN_ROOT}/tiers.json` maps them. Hand it every draft of the batch and a record of the conversation.
   - The record holds the owner's messages verbatim and in order, with your own proposals between them, marked as yours. It is not a summary of what was agreed.
   - The worker answers five questions for each file: what the chat raised that the files leave out (a question the owner held, a point left open); what the files call agreed, accepted or the owner's that the owner did not say, including a quote that is not verbatim; what the files add that the chat does not support and do not mark; what a cold reader in the target could not act on; and where the files contradict themselves or each other. It reports and edits nothing. It is told it cannot see the target repo, so it judges no code fact.
-  - You fix what it reports, then show the owner its findings and what you changed before the word "staged". Nothing you filled in may stand unmarked: mark it in place or as an `Interpreted:` line, never under a heading about whose words it is (Whose words).
-  - Where the host can start no worker, say in the reply that the batch is staged unreviewed, and end each file's `source:` with `; unreviewed`.
-- [ ] Resolving: a file whose `source:` ends `unreviewed` is named as unreviewed when the owner is asked whether it is as settled as it says.
+  - You fix what it reports, show the owner its findings and what you changed, and only then write the files into staging, before the word "staged". Nothing you filled in may stand unmarked: mark it in place or as an `Interpreted:` line, never under a heading about whose words it is (Whose words).
+  - Where there is no reader (the host can start no worker, or the worker errors, times out or returns no report), say in the reply that the batch is staged unreviewed, and write each file with `source:` ending `; unreviewed`.
+- [ ] Part 3 (replaces part 2's SF1 design): the reader reads drafts, not staged files. With no reader, the batch is written with `; unreviewed` from the start, and the mark is never removed: a file's `source:` is final once written, since a spec, page or commit made from it carries that exact line as its mark.
+- [ ] SF2: where the stager can't give the owner's messages verbatim (after compaction, say), it hands the worker what it has, says so in the reply, and writes every file with `; unreviewed`. A summary, or a rigger's `record/`, is not this record.
+- [ ] Part 3's review-change: "Staging a file" says where the file goes and that it is written only after the Second reader (A batch), and that one file is a batch of one. A session that compacts after handing over the drafts, before the findings are fixed and shown, counts as having no reader.
+- [ ] Resolving: a file whose `source:` ends `unreviewed` is named as unreviewed (no reader, or no verbatim record) when the owner is asked whether it is as settled as it says.
 - [ ] No model name in the skill text: it names tier 2, effort 2 and `tiers.json`.
-- [ ] Smoke, `sec_staging_batches`: one case asserts that the stage skill names the second reader, `tier 2, effort 2`, the verbatim record, and `unreviewed`. Run `python3 plugin/templates/jig/jig.py queue -- bash tests/smoke.sh staging_batches`, and show the output.
+- [ ] Smoke, `sec_staging_batches`: one case asserts that the stage skill names the second reader, `tier 2, effort 2`, the verbatim record, and `unreviewed`. Part 3's case asserts that "Staging a file" writes only after the Second reader and that one file is a batch of one, that a session compacting before the findings are shown has no reader, that the reader reads drafts before staging, that no reader or a record that isn't verbatim means `; unreviewed` from the start, that `source:` is final once written, and that a summary or a rigger's `record/` is not the record. Run `python3 plugin/templates/jig/jig.py queue -- bash tests/smoke.sh staging_batches`, and show the output.
 - [ ] Observable that it fires: a dry run of `/jig:stage` in a chat, staging a two-file batch into a throwaway repo (with `JIG_CONFIG`/`XDG_CONFIG_HOME` set). The worker's findings, or the unreviewed notice, appear before the word "staged". Record it in the handoff note.
 - [ ] Observable that the symptom is gone: a replay on copies in the scratchpad, never on Daisy's staging folder. Rebuild a draft from Daisy's two final settings files with the report's faults put back:
   - the table written as "accepted as a whole";
@@ -73,7 +78,7 @@ stricter.
 - A worker that reads the transcript itself: no host gives it one today. The author's record stays a risk, which the step reduces by asking for the owner's messages verbatim.
 
 ## Touches
-`plugin/skills/stage/SKILL.md` (A batch, Resolving), `tests/smoke.sh` (`sec_staging_batches`),
+`plugin/skills/stage/SKILL.md` (Staging a file, A batch, Resolving), `tests/smoke.sh` (`sec_staging_batches`),
 `marketing/FEATURES.md` (not committed).
 
 ## Alternatives considered
@@ -82,12 +87,18 @@ stricter.
 - Extend `jig staging check` to read bodies. Rejected: it is fixed code with no model and no conversation to compare against. This reason is [seen] (stage skill: it "names each bad header").
 - Move the review to resolve time, in the target repo. Rejected: the chat is gone by then, and Resolving's two questions don't ask what is missing. This reason is [seen] (Resolving's text).
 - Run the worker at the staging session's own model. Rejected: the owner asked for Opus, and a chat session may run on anything. Naming a tier keeps the rule that skills name tiers, not models. This reason is [seen] (the owner's words; `tiers.json`; the rigger skill's line).
+- Mark every file `; unreviewed` when it is written and remove the mark once the findings are fixed and shown (part 2's SF1 design). Rejected: removing the mark breaks the exact-mark link. A spec, page or commit made from the file while it was marked carries `Source: …; unreviewed (staged as …)`, and once the mark is gone `jig staging resolve` no longer finds that carrier (exit 1, "write a new spec … carrying …"). This is [seen]: part 2's review-change reproduced it, and this branch's smoke case does too. Rig's `taken` matching would break the same way; that is [assumed], since rig-and-versioning is not on this branch. Part 2 had rejected review-before-staging because a draft held outside staging would be lost to a crash or compaction. That was wrong. A session that ends before writing stages nothing. A session that compacts goes on with its drafts but without the findings in front of it, so it counts as having no reader and writes `; unreviewed`. Either way nothing unread is written as reviewed. That reasoning is [assumed].
+- A second mark, "partly reviewed", for a batch read against a record that isn't verbatim. Rejected: Resolving has one mark to name, and a reader working from a paraphrase cannot catch a misquote copied into both. This reason is [assumed].
 - A new header key (`reviewed: no`) for an unreviewed batch. Rejected: `staging check` would have to learn it, and this fix needs no code. This reason is [assumed]; nobody checked whether `staging check` refuses an unknown key.
 
 ## Decisions
 - Interpreted: tier 2, effort 2. Tier 2 is Opus in `tiers.json`, which is what the owner asked for. Effort 2 is the review role's default, since the worker is a review of prose. The owner said only "an opus worker".
 - Interpreted: one pass. The worker reports once, the author fixes, and the owner sees both. The owner asked for no second round.
 - Interpreted: what the author filled in is marked in place or as `Interpreted:` lines, which is how the final Daisy spec did it and how Resolving's feature-request spec does it. This follows trunk's quote rule, which forbids headings about whose words a line is, not marks.
+- The owner, 2026-11-18, on SF1 and SF2: "Fix before merge".
+- The owner, 2026-11-18: "Review before staging".
+- Interpreted (SF1): a worker that errors, times out or returns no report counts as no reader, so the batch is written with `; unreviewed`. A session that ends before writing stages nothing. A session that compacts after handing over the drafts, before the findings are fixed and shown, counts as having no reader and writes `; unreviewed`: its drafts may be on disk, but the findings are not in front of it (part 3's review-change).
+- Interpreted (SF2): a record that isn't verbatim still gets a reader, but the batch is written with `; unreviewed` (Alternatives considered, the second mark).
 - Interpreted: the report's Done when asked for "a quote under the owner's name is verbatim". Trunk's quote rule already says that, so here it becomes one of the worker's questions rather than a new rule.
 
 ## Workflow

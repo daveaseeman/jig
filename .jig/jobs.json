@@ -32,18 +32,6 @@
     ],
     "reserved": {}
   },
-  "bug-stage-second-reader": {
-    "spec": ".jig/specs/bug-stage-second-reader.md",
-    "state": "gated",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/skills/stage/SKILL.md",
-      "tests/smoke.sh"
-    ],
-    "reserved": {},
-    "check": "batch"
-  },
   "bug-effort-and-propose": {
     "spec": ".jig/specs/bug-effort-and-propose.md",
     "state": "claimed",
