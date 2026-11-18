@@ -8240,6 +8240,24 @@ expect_pass sh -c "echo \"\$0\" | grep -qx 'A: skipped, it cites nothing v0.1.4 
 msg="pin bump: a same-named file that isn't the metarepo's request is left alone, and named"
 expect_pass sh -c "echo \"\$0\" | grep -q \"C: not staged, .jig/staging/pin-bump-M.md there isn't M's pin bump\" && grep -q '^# mine' '$PBT/C/.jig/staging/pin-bump-M.md'" "$out"
 
+# An answered request of ours (the pin holds it) is overwritten when a release breaks something.
+cd "$M" && git mv docs/products/z.md docs/products/u.md && ulog '- **Breaking:** z is u.' && emerge mvz "E-003: z is u" docs .jig/decisions.md && out=$($J release 2>&1)
+msg="pin bump: an answered request (release equal to the pin) is overwritten when the next release breaks a citation"
+expect_pass sh -c "echo \"\$0\" | grep -qx 'A: staged .jig/staging/pin-bump-M.md (1 rewrite)' && grep -qx 'release: v0.1.5' '$PBT/A/.jig/staging/pin-bump-M.md' && grep -q 'now .M/docs/products/u.md.' '$PBT/A/.jig/staging/pin-bump-M.md'" "$out"
+[ "$fail" = 0 ] || echo "$out"
+cd "$PBT/A" && sed -i.bak 's/^release: v0.1.5$/release: v0.1.1/' .jig/staging/pin-bump-M.md && rm .jig/staging/pin-bump-M.md.bak
+mkdir -p .jig/specs && printf '# a3\n\nSource: chat\n\nPer `M/.jig/decisions.md § E-003`.\n' > .jig/specs/a3.md && git add -A && git commit -qm "a cites E-003" >/dev/null
+cd "$M" && python3 - <<'PY'
+import re
+f = '.jig/decisions.md'; s = open(f).read()
+s = re.sub(r"### E-003 [^\n]*\n(?:(?!#)[^\n]*\n)*", "", s)
+open(f, 'w').write(s.replace("## Unreleased\n", "## Unreleased\n\n### E-004 two, once more\nAccepted (owner, 2026-11-03). Supersedes E-003.\nTouches: none — smoke\n", 1))
+PY
+emerge sup3 "E-004: supersede E-003" .jig/decisions.md && out=$($J release 2>&1)
+msg="pin bump: one whose release is below the pin is overwritten the same way, never called foreign"
+expect_pass sh -c "echo \"\$0\" | grep -q '^A: staged .jig/staging/pin-bump-M.md (' && ! echo \"\$0\" | grep -q '^A: not staged' && grep -qx 'release: v0.1.6' '$PBT/A/.jig/staging/pin-bump-M.md' && grep -q 'E-003 (now E-004)' '$PBT/A/.jig/staging/pin-bump-M.md'" "$out"
+[ "$fail" = 0 ] || echo "$out"
+
 # Both logs on the default D- prefix: a qualified citation of a superseded id still selects.
 N="$PBT/N"; mkdir -p "$N" && cd "$N" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs/products && printf '# X\n\nThe x product.\n' > docs/products/x.md

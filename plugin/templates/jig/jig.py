@@ -8231,8 +8231,11 @@ def stage_pin_bumps(root: Path, meta: dict, prev: str, tag: str) -> list[str]:
     """A metarepo release asks each pararepo whose citations it broke to move its pin: a staged
     request in that pararepo, carrying the releases' Breaking lines and what to rewrite, from its
     pin to TAG. Broke means a citation that resolved at PREV and dangles at TAG, or a decision id
-    TAG removed or superseded, cited as a whole word; a request already staged from here is
-    rewritten whatever this release broke. A line per pararepo. Writes nothing but that file."""
+    TAG removed or superseded, cited as `<meta>/<path> § <id>` (or bare where the pararepo's own
+    prefix differs). A request still open from here (its release above the pin) is rewritten
+    whatever this release broke; an answered one (the pin holds it) only when this release
+    breaks something; a same-named file that isn't this metarepo's request is never touched. A
+    pararepo on an older jig layout is skipped. A line per pararepo. Writes nothing but that file."""
     name = meta.get("name") or root.name
     out: list[str] = []
     if not prev:
@@ -8310,13 +8313,15 @@ def stage_pin_bumps(root: Path, meta: dict, prev: str, tag: str) -> list[str]:
             continue
         dest = there / STAGING / f"pin-bump-{name}.md"
         h = read_staged(dest)[0] if dest.exists() else {}
-        # A request the pin already holds is answered: a later release asks afresh, or not.
-        asked = (h.get("kind") == PIN_BUMP_KIND and h.get("from") == name and bool(h.get("release"))
-                 and (not pin or version_key(h["release"]) > version_key(pin)))
-        if not asked and not any(broken(there, para, trunk, prev)):
+        # Ours is this metarepo's request; open is ours with a release above the pin. An answered
+        # one (the pin holds it) is rewritten only when this release breaks something, as a new
+        # request would be; a file of that name that isn't ours is never touched.
+        ours = h.get("kind") == PIN_BUMP_KIND and h.get("from") == name
+        open_ = ours and bool(h.get("release")) and (not pin or version_key(h["release"]) > version_key(pin))
+        if not open_ and not any(broken(there, para, trunk, prev)):
             out.append(f"{para_name}: skipped, it cites nothing {tag} broke")
             continue
-        if dest.exists() and not asked:
+        if dest.exists() and not ours:
             out.append(f"{para_name}: not staged, {STAGING}/{dest.name} there isn't {name}'s pin bump: "
                        "left as it is")
             continue
@@ -10899,7 +10904,8 @@ STEPS: list = [
                       "word for word, since trunk takes it only by merge" if (root / META).exists() else ""))
      if OLD_LOG_HEAD in log_head(root) else
      (f"{LOG}'s header still names Semantic Versioning, in words of its own: edit it by hand to "
-      "say what `.jig/RULES.md` § Versioning says; nothing is rewritten"),
+      "say what `.jig/RULES.md` § Versioning says" + (", in a job (M4)" if (root / META).exists() else "")
+      + "; nothing is rewritten"),
      lambda root, after: (root / LOG).is_file() and "Semantic Versioning" in log_head(root),
      swap_log_head),
     (f"add {LOG}, the decision log: no CHANGELOG.md or register here to merge into it",

@@ -192,7 +192,7 @@ all three:
    doesn't undo the tag. It prints one line saying why.
 2. **Who.** Each name in `meta.json`'s `pararepos`, found through `jig repos`, whose trunk
    `para.json` names this metarepo. One line per pararepo: staged (with counts), or skipped
-   because it isn't in `jig repos`, doesn't cite this metarepo, has a future `defer_until`
+   because it isn't in `jig repos`, is on an older jig layout, doesn't cite this metarepo, has a future `defer_until`
    (compared exactly as `sync_meta` does), already pins this release, or cites nothing the
    release broke.
 3. **Selector.** The owner, 2026-11-18: "Only what it broke". A pararepo is selected when this
@@ -559,6 +559,14 @@ From bug-versioning-pin-trigger:
 - Select on any changed id or reworded term, as the report does — rejected because those don't
   break a citation, and the pararepo's own sync reports them — [seen] (the owner, 2026-11-18:
   "Only what it broke").
+- Count a bare id whatever the prefixes — rejected because with one prefix on both sides a bare
+  `D-002` is the pararepo's own decision as often as the metarepo's — [seen] (the review of
+  48e80ed's prefix repros).
+- Rewrite an answered request on every release, or never — rejected because the first re-asks
+  for a pin already moved and the second calls jig's own file foreign, missing the next break —
+  [seen] (repro2 of 48e80ed, repro4 of bd70018).
+- Write a request into a pararepo on an older layout — rejected because its staging may not be
+  where the old layout's tools look, which is why `forward` refuses it — [assumed].
 - Deliver through the inbox — rejected because a message is read and done with, and nothing
   tracks that the pin moved — [seen] (RULES.md Inbox).
 - Commit the pin bump in the pararepo — rejected because the pin is the pararepo's buffer, and
@@ -638,6 +646,14 @@ From the merge with versioning:
 - The owner, 2026-11-18, on whether a pin-bump fires on what a release broke or on anything it
   changed: "Only what it broke". The selector is (a) a citation that resolved at the previous tag
   and dangles at the new one, and (b) a removed or superseded decision id it cites.
+- Interpreted (review of 48e80ed): with the same decision prefix on both sides, only a qualified
+  `<meta>/<path> § <id>` citation of a removed or superseded id counts; with different prefixes,
+  a bare id counts too.
+- Interpreted (reviews of 48e80ed and bd70018): a request of this metarepo's whose release the
+  pin already holds is answered, not asked: a later release rewrites it only when it breaks
+  something, and never calls it a foreign file.
+- Interpreted (review of 48e80ed): a pararepo on an older jig layout is skipped, naming
+  `jig update` there, as `forward` refuses one.
 - The hubnode, 2026-11-18: the registry sentence sits at the end of `## Versioning`'s main
   body, before `### Before 1.0.0`, not inside it: a repo at 1.0.0 or later skips that
   subsection, and the sentence applies to every repo; the spec's "ends with" means the block's

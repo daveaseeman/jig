@@ -1405,16 +1405,21 @@ it, the pararepo's `jig sync` reports nothing upstream and no metarepo release a
 pararepo `meta.json`'s `pararepos` lists, found through `jig repos`, whose trunk `para.json`
 cites it, when the release broke something that pararepo cites: a citation that resolved at the
 previous tag and dangles at the new one, or a decision id the release removed or superseded,
-cited as a whole word (not where the pararepo numbers its own decisions with the same prefix).
+cited as `<metarepo>/<path> § <id>`, or as a bare whole word where the pararepo's own decisions
+use another prefix (with the same prefix, only the qualified citation counts: a bare id is the
+pararepo's own).
 A rewording, an Open entry accepted or a glossary term reworded doesn't select it: its own
 `jig sync` reports those. The request is `.jig/staging/pin-bump-<metarepo>.md`, `kind:
 pin-bump`, `destination: .jig/para.json`, with `from`, `pin` and `release` in its header and,
 from the pin to the new tag, the `**Breaking:**` lines, the citations to rewrite with each new
 home jig can name, and the removed or superseded ids with the files that cite them. A later
-release rewrites it in place, covering the whole gap from the pin; a file of that name that
-isn't this metarepo's request is left alone and named. The release prints a line per pararepo:
-staged, with counts, or skipped and why (not in `jig repos`, not citing it, a future
-`defer_until`, already pinning the release, or citing nothing it broke). A request that can't be
+release rewrites it in place, covering the whole gap from the pin, while it is open (its release
+above the pin); once the pin holds it, it is answered, and a later release rewrites it only when
+that release breaks something. A file of that name that isn't this metarepo's request is left
+alone and named. A noted request (its job merged without moving the pin) is never dropped: the
+hubnode specs a job that moves the pin. The release prints a line per pararepo:
+staged, with counts, or skipped and why (not in `jig repos`, on an older jig layout, not citing
+it, a future `defer_until`, already pinning the release, or citing nothing it broke). A request that can't be
 written doesn't undo the tag. jig commits nothing in a pararepo: the pin is its buffer. `jig gate` refuses a job whose spec cites a proposal that isn't in
 the pinned release, and one whose `pointers` branch isn't on the metarepo it names (one merged
 into its trunk counts, released or not), or names another metarepo; a metarepo it can't reach
