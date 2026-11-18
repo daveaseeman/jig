@@ -61,6 +61,25 @@ that spec carries the mark.
   describes it. `jig staging` lists the batch in that order, and `resolve` refuses a file while
   one it waits for is still staged. Leave `after:` out when the files are independent, and never
   make two files wait on each other.
+- **Second reader.** Once the files are written, start a fresh worker that has not seen your
+  reasoning, at tier 2, effort 2, as `${CLAUDE_PLUGIN_ROOT}/tiers.json` maps them. Hand it every
+  file of the batch and a record of the conversation: the owner's messages verbatim and in
+  order, with your own proposals between them, marked as yours. The record is not a summary of
+  what was agreed. Tell the worker it cannot see the target repo, so it judges no code fact, and
+  that it reports and edits nothing. It answers five questions for each file:
+  1. What did the chat raise that the files leave out: a question the owner held, a point left
+     open?
+  2. What do the files call agreed, accepted or the owner's that the owner did not say,
+     including a quote that is not verbatim?
+  3. What do the files add that the chat does not support, unmarked?
+  4. What could a cold reader in the target not act on?
+  5. Where do the files contradict themselves or each other?
+
+  Fix what it reports, then show the owner its findings and what you changed, before the word
+  "staged". Nothing you filled in stands unmarked: mark it in place or as an `Interpreted:` line,
+  never under a heading about whose words it is (Whose words). Where the host can start no
+  worker, say in the reply that the batch is staged unreviewed, and end each file's `source:`
+  with `; unreviewed`.
 - **Check before you say it's staged.** Run the plugin's copy on every file of the batch at once:
   `python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" staging check <file>…`. It runs outside
   any repo and names each bad header: an unknown kind, a missing key, a destination outside the
@@ -83,7 +102,8 @@ resolve: that file was resolved, dropped or forwarded. A cycle is listed as one:
 user, and fix one header's `after:` with them. A new spec whose `## Roles` (or an older `## Workflow`) is
 empty or missing resolves with `jig roles`' lines in it, or is refused while
 `jig roles` refuses. Before a file's route, read it and ask the user two questions: does this
-repo own the subject, and is it as settled as it says? Not this repo's: change `target` with
+repo own the subject, and is it as settled as it says? A file whose `source:` ends
+`unreviewed` had no second reader: say so when you ask the second. Not this repo's: change `target` with
 the user, and `resolve` forwards it. Not settled: back to `Proposed` or `Open`, with the user,
 before `resolve`. The user says; don't judge alone. For each file, with the user:
 

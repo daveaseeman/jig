@@ -6287,6 +6287,8 @@ out=$(cd "$OUT" && python3 "$P/jig/jig.py" staging check ddoc.md 2>&1); rc=$?
 expect_pass sh -c "test $rc -eq 0 && echo \"\$0\" | grep -q '^ddoc.md: ok' && ! echo \"\$0\" | grep -q 'says Accepted'" "$out"
 msg="stage skill: the target rule names What the metarepo holds, Accepted only for what was accepted, and Resolving asks"
 expect_pass sh -c "f='$P/../skills/stage/SKILL.md'; grep -q 'repo that owns the subject' \"\$f\" && grep -q 'What the metarepo holds' \"\$f\" && grep -q 'only for what that person accepted' \"\$f\" && grep -q 'is it as settled as it says' \"\$f\""
+msg="stage skill: a batch gets a second reader at tier 2, effort 2, from a verbatim record, and a host with no worker stages it unreviewed, which Resolving names"
+expect_pass sh -c "f='$P/../skills/stage/SKILL.md'; sed -n '/^### A batch/,/^## Resolving/p' \"\$f\" | tr '\n' ' ' > '$T/sr' && grep -q 'Second reader' '$T/sr' && grep -q 'tier 2, effort 2' '$T/sr' && grep -q 'tiers.json' '$T/sr' && grep -q 'messages verbatim' '$T/sr' && grep -q '; unreviewed' '$T/sr' && sed -n '/^## Resolving/,\$p' \"\$f\" | grep -q 'unreviewed' && ! grep -qiE 'opus|sonnet|haiku' \"\$f\""
 msg="RULES.md § Staging: the target sentence and the Accepted warning"
 expect_pass sh -c "sed -n '/^## Staging/,/^## Metarepo/p' '$P/jig/RULES.md' | tr '\n' ' ' > '$T/st' && grep -q 'repo that owns the subject' '$T/st' && grep -q 'warns on each entry of a .decisions. file whose status says Accepted' '$T/st'"
 }
