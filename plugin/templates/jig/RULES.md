@@ -1073,9 +1073,10 @@ nothing else (a commit, a gate, a release) looks at the inbox. It is one-way, to
 the hubnode answers only through the owner.
 
 `jig inbox`, in the trunk checkout only, prints each unread message in full, oldest first, and
-moves it to `.jig/inbox/read/`, where it can be read again; a tool that can run it with each of
-the owner's prompts does. Elsewhere it refuses: a subnode marking a message read would hide a
-ruling from the hubnode. In a message, the owner's own words appear as
+moves it to `.jig/inbox/read/`, where it can be read again. A message whose `to` isn't this repo
+is left unread and named: it is no ruling here. A tool may announce unread messages with each
+of the owner's prompts, but only `jig inbox` marks one read, and it refuses outside the trunk
+checkout: a subnode marking a message read would hide a ruling from the hubnode. In a message, the owner's own words appear as
 `The owner, <date>: "<words>"`; those are the owner's ruling, as if given in the hubnode's own
 conversation, and the rest is context from the sender. Before acting on one, the hubnode checks
 the state it answers, as for any reply that may have gone stale. What it rules lands where any
@@ -1085,8 +1086,10 @@ A typed repo name, wherever jig takes one (a staged file's `target`, a message's
 name or alias in `jig repos` with case ignored. One that matches only once punctuation is
 dropped (`a_p` for `ap`) is refused, naming the near one: two near-identical names have sent
 work to the wrong repo. `jig repos alias <repo> <alias>` adds an alias, and refuses one any
-other entry already answers to. `jig inbox check <file>…` checks a message's header from
-outside any repo, as `staging check` does: a missing key, or a `to` no entry answers to.
+other entry already answers to, as `add` and `rename` refuse such a name; `jig repos which
+<name>` prints the repo a typed name finds, or the refusal. `jig inbox check <file>…` checks a
+message's header from outside any repo, as `staging check` does: a missing key, a `to` no entry
+answers to, or, for a file already in a listed repo's inbox, a `to` naming another repo.
 
 ## Metarepo and pararepos
 
@@ -1298,7 +1301,7 @@ jig update [--apply] --merge-log   on the owner's yes: CHANGELOG.md and the regi
 jig update [--apply] --sweep   on the owner's yes: pages' ## Undefined entries to ## Up next in .jig/roadmap.md
 jig update [--apply] --glossary   on the owner's yes: the README's glossary, or GLOSSARY.md, to docs/glossary.md, its pointers rewritten
 jig staging [resolve|drop <file>]   list staged files, or land / drop one
-jig repos [add repo|meta|para | rename <new> | alias <repo> <alias> [--remove]]  where your repos live (user config)
+jig repos [add repo|meta|para | rename <new> | alias <repo> <alias> [--remove] | which <name>]  where your repos live (user config)
 jig inbox [check <file>…]   hubnode, trunk checkout: print unread messages and mark them read; check: a message's header
 jig open ... --reserve K    allocate scarce counter K to this job
 jig reserve <job> <K>       hubnode: give an open job the next number of counter K too

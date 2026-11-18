@@ -1987,6 +1987,25 @@ expect_pass python3 -c "import json; assert json.load(open('$JIG_CONFIG'))['app'
 msg="repos alias: re-adding the same checkout keeps its alias"
 $J repos add app "$T/al-app" >/dev/null
 expect_pass python3 -c "import json; assert json.load(open('$JIG_CONFIG'))['app']['aliases'] == ['ap']"
+msg="repos alias: rename to another entry's alias is refused, case ignored"
+expect_refuse $J repos rename other AP
+msg="repos alias: add --name taking another entry's alias is refused"
+mkdir -p "$T/al-fourth" && (cd "$T/al-fourth" && git init -q -b main)
+expect_refuse $J repos add repo --name ap --path "$T/al-fourth"
+msg="repos alias: add <name> <path> re-pointing a name takes none of the old checkout's aliases"
+$J repos alias third th >/dev/null && $J repos add third "$T/al-fourth" >/dev/null
+expect_pass python3 -c "import json; e = json.load(open('$JIG_CONFIG'))['third']; assert e['path'].endswith('al-fourth') and 'aliases' not in e, e"
+msg="repos which: an alias in upper case prints the repo's path"
+expect_pass sh -c "test \"\$($J repos which AP)\" = '$T/al-app' || test \"\$($J repos which AP)\" = \"\$(cd $T/al-app && pwd -P)\""
+msg="repos which: a near name is refused, naming the alias"
+out=$($J repos which a_p); rc=$?
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q 'did you mean ap'" "$out"
+msg="repos which: an unknown name is refused"
+expect_refuse $J repos which nope
+msg="repos alias: a hand-written string alias reads as one alias"
+python3 -c "import json; f='$JIG_CONFIG'; r=json.load(open(f)); r['other']['aliases']='oth'; json.dump(r, open(f,'w'))"
+expect_pass sh -c "$J repos which oth >/dev/null && ! $J repos which o >/dev/null"
+python3 -c "import json; f='$JIG_CONFIG'; r=json.load(open(f)); del r['other']['aliases']; json.dump(r, open(f,'w'))"
 msg="repos alias: --remove drops it"
 $J repos alias app ap --remove >/dev/null
 expect_pass python3 -c "import json; assert 'aliases' not in json.load(open('$JIG_CONFIG'))['app']"
@@ -7214,17 +7233,22 @@ b=$(fsnap "$RO"); role "$RO" >/dev/null; role "$RO/.git/jig/worktrees/K" >/dev/n
 expect_pass test "$(fsnap "$RO")" = "$b"
 msg="role line: on trunk whose only work is one unread message, it names /jig:hubnode"
 RI="$T/rl-inbox"; pcnew "$RI" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
-printf -- '---\ninbox: true\nto: x\nfrom: s\nsent: 2026-11-17 10:00\n---\nhi\n' > .jig/inbox/2026-11-17-a.md
+printf -- '---\ninbox: true\nto: rl-inbox\nfrom: s\nsent: 2026-11-17 10:00\n---\nhi\n' > .jig/inbox/2026-11-17-a.md
 out=$(role "$RI")
 expect_pass sh -c "test \"\$(echo \"\$0\" | grep -c '1 unread message: this session is the hubnode')\" = 3" "$out"
 IB="$P/../scripts/inbox.sh"
 ihook() { printf '{"prompt": "x"}' | CLAUDE_PROJECT_DIR="$1" bash "$IB"; echo "rc=$?"; }
-msg="inbox hook: in the trunk checkout it prints the unread message and exits 0"
+msg="inbox hook: in the trunk checkout it announces the count and the command, exits 0, and moves nothing"
 out=$(ihook "$RI")
-expect_pass sh -c "echo \"\$0\" | grep -q '^hi\$' && echo \"\$0\" | tail -1 | grep -qx 'rc=0' && test -e .jig/inbox/read/2026-11-17-a.md" "$out"
-msg="inbox hook: a second run prints nothing"
+expect_pass sh -c "echo \"\$0\" | grep -q '^jig: 1 unread message in .jig/inbox/.*jig.py inbox' && ! echo \"\$0\" | grep -q '^hi\$' && echo \"\$0\" | tail -1 | grep -qx 'rc=0' && test -e .jig/inbox/2026-11-17-a.md" "$out"
+msg="inbox hook: once jig inbox has read it, the hook prints nothing"
+$J inbox >/dev/null
 expect_pass test "$(ihook "$RI")" = "rc=0"
 cp .jig/inbox/read/2026-11-17-a.md .jig/inbox/2026-11-17-b.md
+msg="inbox hook: in a repo without .git/jig/enabled it prints nothing"
+mv .git/jig/enabled .git/jig/enabled.off
+expect_pass test "$(ihook "$RI")" = "rc=0"
+mv .git/jig/enabled.off .git/jig/enabled
 $J open K2 >/dev/null && git add -A && git commit -qm "open K2"
 msg="inbox hook: in a job's worktree it prints nothing and moves nothing"
 expect_pass sh -c "test \"\$(CLAUDE_PROJECT_DIR=$RI/.git/jig/worktrees/K2 bash $IB </dev/null)\" = '' && test -e .jig/inbox/2026-11-17-b.md"
@@ -7768,6 +7792,18 @@ out=$($J inbox)
 expect_pass sh -c "echo \"\$0\" | grep -n answer | tr '\n' ' ' | grep -q 'first answer.*second answer' && test ! -e .jig/inbox/2026-11-17-a.md && test -e .jig/inbox/read/2026-11-17-a.md && test -e .jig/inbox/read/2026-11-17-b.md" "$out"
 msg="inbox: a second run says there are no unread messages"
 expect_pass sh -c "$J inbox | grep -q 'no unread messages'"
+mkdir -p "$T/in-beta" && (cd "$T/in-beta" && git init -q -b main) && $J repos add beta "$T/in-beta" >/dev/null
+imsg .jig/inbox/2026-11-17-c.md beta "2026-11-17 12:00" "for beta"
+imsg .jig/inbox/2026-11-17-d.md AP "2026-11-17 12:30" "for this repo by alias"
+msg="inbox: a message to another repo is left unread and named; one to this repo's alias is read"
+out=$($J inbox)
+expect_pass sh -c "echo \"\$0\" | grep -q 'left unread: .jig/inbox/2026-11-17-c.md is to beta' && ! echo \"\$0\" | grep -q 'for beta' && echo \"\$0\" | grep -q 'for this repo by alias' && test -e .jig/inbox/2026-11-17-c.md && test -e .jig/inbox/read/2026-11-17-d.md" "$out"
+msg="inbox check: a file in a listed repo's inbox addressed to another repo fails"
+out=$(python3 "$P/jig/jig.py" inbox check .jig/inbox/2026-11-17-c.md); rc=$?
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q 'but the file is in'" "$out"
+msg="inbox check: a file in a listed repo's inbox addressed to it by alias passes"
+imsg .jig/inbox/2026-11-17-e.md ap "2026-11-17 13:00" x
+expect_pass python3 "$P/jig/jig.py" inbox check .jig/inbox/2026-11-17-e.md
 CK="$T/inbox-out"; mkdir -p "$CK"
 msg="inbox check: a good message passes, from outside any repo"
 imsg "$CK/good.md" app "2026-11-17 10:00" x

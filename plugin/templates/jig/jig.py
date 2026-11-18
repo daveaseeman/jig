@@ -6588,8 +6588,10 @@ def load_repos() -> dict:
 
 
 def repo_names(e: dict) -> set[str]:
-    """What an entry answers to besides its listed name: the aliases the owner gave it."""
-    return {a for a in e.get("aliases", []) if isinstance(a, str) and a}
+    """What an entry answers to besides its listed name: the aliases the owner gave it. A
+    hand-written string is one alias, not its letters."""
+    al = e.get("aliases", [])
+    return {a for a in ([al] if isinstance(al, str) else al) if isinstance(a, str) and a}
 
 
 def name_key(n: str) -> str:
@@ -6694,8 +6696,11 @@ def cmd_repos(root: Path, args) -> int:
         # add <name> <path> re-points a name on purpose; add repo|meta|para must not take one
         if kind_form and name in repos and Path(repos[name]["path"]).resolve() != path:
             die(f"{name} already names {repos[name]['path']}: pick another --name, or rename that one", 2)
-        # its aliases and rigger folder stay with the checkout
-        repos[name] = {**kept, **(repos.get(name) or {}), "path": str(path), "kind": kind}
+        refuse_taken(repos, name, name)
+        # Its aliases and rigger folder stay with the checkout: a name re-pointed from another
+        # checkout brings none of that one's.
+        own = repos.get(name) if name in repos and Path(repos[name]["path"]).resolve() == path else {}
+        repos[name] = {**kept, **(own or {}), "path": str(path), "kind": kind}
         save_repos(repos)
         print(f"{name} ({kind}) → {path}")
         warn_near_duplicates(repos, name)
@@ -6718,6 +6723,7 @@ def cmd_repos(root: Path, args) -> int:
                 else f"no repo named {old}", 2)
         if new in repos and new != old:
             die(f"{new} already names {repos[new]['path']}", 2)
+        refuse_taken(repos, new, old)
         repos[new] = repos.pop(old)
         save_repos(repos)
         print(f"{old} is now {new} → {repos[new]['path']}")
@@ -6725,6 +6731,8 @@ def cmd_repos(root: Path, args) -> int:
         return 0
     if args.action == "alias":
         return repos_alias(repos, args)
+    if args.action == "which":
+        return repos_which(args.kind)
     for name, e in sorted(repos.items()):
         missing = "" if Path(e["path"]).is_dir() else "   (missing)"
         print(f"  {name:<24} {e['kind']:<5} {e['path']}{missing}{'   ← here' if name in mine else ''}")
@@ -6738,6 +6746,27 @@ def cmd_repos(root: Path, args) -> int:
     # The same lookup staging and forwarding use, so an alias for the jig repo counts too.
     if repo_path("jig") is None:
         print(f"tool reports wait in {feedback_dir()} while the jig repo isn't registered")
+    return 0
+
+
+def refuse_taken(repos: dict, label: str, mine: str) -> None:
+    """One name names one repo: a name or alias any entry but `mine` answers to, case ignored,
+    is refused, or a lookup of it would find two."""
+    for lb, n in labels(repos):
+        if n != mine and lb.casefold() == label.casefold():
+            die(f"{label} already names {n}" + (f" (its alias {lb})" if lb != n else "")
+                + f", {repos[n]['path']}", 2)
+
+
+def repos_which(name: str | None) -> int:
+    """The one lookup a skill runs for a typed repo name: the path, or the refusal."""
+    if not name:
+        die("usage: jig repos which <name>", 2)
+    p = repo_path(name)
+    if p is None:
+        print(f"refused: {unknown_repo(name)}")
+        return 1
+    print(p)
     return 0
 
 
@@ -6757,11 +6786,8 @@ def repos_alias(repos: dict, args) -> int:
         have.remove(alias)
         print(f"{name}: alias {alias} removed")
     else:
-        taken = [(lb, n) for lb, n in labels(repos) if lb.casefold() == alias.casefold()]
-        if taken and taken[0][1] != name:
-            lb, n = taken[0]
-            die(f"{alias} already names {n}" + (f" (its alias {lb})" if lb != n else ""), 2)
-        if taken:
+        refuse_taken(repos, alias, name)
+        if alias.casefold() in {lb.casefold() for lb in {name} | repo_names(repos[name])}:
             die(f"{alias} already names {name}", 2)
         have.append(alias)
         print(f"{name}: alias {alias}")
@@ -9548,8 +9574,14 @@ def cmd_inbox_check(args) -> int:
             continue
         head, problems = read_inbox(f)
         to = head.get("to", "")
-        if to and not repo_path(to):
+        there = repo_path(to) if to else None
+        if to and not there:
             problems.append(f"to {unknown_repo(to)}")
+        # Written into a listed repo's inbox, it must be addressed to that repo.
+        home = next((Path(e["path"]) for e in load_repos().values()
+                     if (Path(e["path"]) / INBOX).resolve() == f.resolve().parent), None)
+        if home and there and there.resolve() != home.resolve():
+            problems.append(f"to {to} is {there}, but the file is in {home}'s {INBOX}/")
         print(f"{f.name}: {'ok' if not problems else ''}".rstrip())
         for p in problems:
             print(f"    {p}")
@@ -9563,9 +9595,15 @@ def cmd_inbox(root: Path, args) -> int:
     before the hubnode saw it."""
     if not is_main_worktree(root):
         die(f"refused: {INBOX} is the hubnode's; run `jig inbox` in the trunk checkout, {main_root()}", 2)
-    msgs = inbox_messages(root)
+    msgs, wrong = [], []
+    for f in inbox_messages(root):
+        # A message names its repo: one meant for another is no ruling here, whatever it says.
+        (msgs if names_this_repo(read_inbox(f)[0].get("to"), root) else wrong).append(f)
+    for f in wrong:
+        print(f"left unread: {INBOX}/{f.name} is to {read_inbox(f)[0].get('to') or 'no repo'}, "
+              "not this one; it is no ruling here. Ask the owner where it belongs")
     if not msgs:
-        print(f"no unread messages in {INBOX}/")
+        print(f"no unread messages in {INBOX}/" + (" for this repo" if wrong else ""))
         return 0
     read = root / INBOX / "read"
     read.mkdir(exist_ok=True)
@@ -12543,8 +12581,8 @@ def main(argv: list[str] | None = None) -> int:
     ib.add_argument("action", nargs="?", choices=["check"])
     ib.add_argument("file", nargs="*")
     rp = sub.add_parser("repos", help="list, or add to, where your repos live (user config)")
-    rp.add_argument("action", nargs="?", choices=["add", "rename", "alias"])
-    rp.add_argument("kind", nargs="?", help="add: repo, meta or para; rename: the new name; alias: the repo")
+    rp.add_argument("action", nargs="?", choices=["add", "rename", "alias", "which"])
+    rp.add_argument("kind", nargs="?", help="add: repo, meta or para; rename: the new name; alias, which: the repo")
     rp.add_argument("path", nargs="?", help="add: the checkout (default: this one); alias: the alias")
     rp.add_argument("--remove", action="store_true", help="alias: drop it")
     rp.add_argument("--name", help="add: the name to call it by (default: its own)")

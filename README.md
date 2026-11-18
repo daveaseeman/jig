@@ -250,12 +250,12 @@ To try it for one session without installing, clone this repo and run
 You need git, Python 3.10 or newer, and Claude Code. The repo half needs only git and Python.
 
 **On trust.** Claude Code warns about every plugin with hooks, because hooks run shell commands
-as you. jig's (a format step after an edit, a check when the agent stops, and an inbox read
-with your prompt in the trunk checkout) run your repo's own `.jig/scripts/format.sh`,
-`.jig/scripts/check.sh` and `.jig/jig.py inbox`, and only in a repo that opted in with
-`jig install-hooks`, which writes a marker inside `.git/`. Git never clones `.git/`, so a repo you
-fetched can't turn itself on. The whole hook config is `plugin/hooks/hooks.json`, and it's short
-enough to read in a minute.
+as you. jig's (a format step after an edit, a check when the agent stops, and a count of unread
+inbox messages with your prompt in the trunk checkout) run your repo's own
+`.jig/scripts/format.sh` and `.jig/scripts/check.sh`, or read its `.jig/inbox/`, and only in a
+repo that opted in with `jig install-hooks`, which writes a marker inside `.git/`. Git never
+clones `.git/`, so a repo you fetched can't turn itself on. The whole hook config is
+`plugin/hooks/hooks.json`, and it's short enough to read in a minute.
 
 ## 💬 Feedback and development
 

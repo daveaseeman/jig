@@ -10,7 +10,7 @@ nothing is written before it.
 ## Which thread
 
 One open thread: that one. Several: ask which, naming each by repo and the question's first
-words. None: ask which repo the reply is for, found as `/jig:relay` finds one.
+words. None: ask which repo the reply is for, found as `/jig:relay` finds one (`jig repos which`).
 
 ## The approval window
 
@@ -26,15 +26,14 @@ said in this conversation, word for word. Then show a decision card (`/jig:decis
 - one button, **Fill reply**, that fills `send to <repo>:` followed by the field's text.
 
 The button only fills the owner's reply box. The owner sends that reply, or edits it and sends.
-Where no card can be drawn, show the reply in a fenced block and say: reply `send`, or send your
-edited text.
+Where no card can be drawn, show the reply in a fenced block and say: reply `send to <repo>:`
+followed by the text, as it stands or as you edit it.
 
 ## Writing the message
 
-Only once the owner has sent `send to <repo>: <text>` (or `send`, or edited text, where there
-was no card):
+Only once the owner has sent `send to <repo>: <text>`:
 
-1. Find the repo's path with `jig repos`, as `/jig:relay` does. Request access to exactly
+1. Find the repo's path with `jig repos which <repo>`, as `/jig:relay` does. Request access to exactly
    `<repo>/.jig/inbox/` with the host's folder-access tool (in the Claude desktop app,
    `request_directory`). If the host has no such tool, ask the owner to add the folder. If the
    repo has no `.jig/inbox/`, say so and suggest `/jig:update` in that repo; don't create it.
@@ -60,4 +59,5 @@ was no card):
 
    Fix what it names and check again. Say it is sent, with the path, only once it passes.
 
-The thread is then closed. The hubnode reads the message at the start of its next turn there.
+The thread is then closed. The owner's next prompt in that repo's hubnode session announces
+the message, and the hubnode reads it with `jig inbox`.
