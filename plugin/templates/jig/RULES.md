@@ -227,6 +227,21 @@ writes the line judges it, and the spec, fold-in and review ask. The hook also r
 metarepo's `entry_files`: the roadmap is `.jig/roadmap.md`, and the root `ROADMAP.md` is
 exempt only where `.jig/roadmap.md` exists.
 
+**Product and process.** A page describes the product, never how the repository is worked: the
+order a builder reads in, the commands that build, test and check it, its code style, its review
+and handoff, jig and its files under `.jig/`, and the steps of its build, CI and release. Each
+has its own home, by the test under Homes: `AGENTS.md` for rules every task needs and the
+commands, `jig reading-list` for what to read, `.jig/scripts/` for steps a script runs, a skill
+for a procedure an agent runs, CI's own files for CI, and `.jig/process.md` for the rest, code
+style included. What the product does with the same things is the product's: a page describes
+an app that runs a user's tests, a CI service, an app that reads a user's instruction files, or
+a tool whose product is jig. A board page's Toolchain and Flash / rollback belong to the board.
+Whoever writes the line judges it, and the spec and review ask. `jig survey` and `jig update`
+list a page line that names a path under `.jig/` other than `.jig/decisions.md`, outside fenced
+code and HTML comments; the hook refuses nothing for it, since a product that reads jig's files
+names them too. It searches no words ("jig", "CI", a test runner's name): each may be the
+product's.
+
 **Docs point only at docs.** The root documents (`README.md`, `AGENTS.md`, `CLAUDE.md`,
 `GEMINI.md`, `CHANGELOG.md`) are for outsiders and for agents: they may point into `docs/`, and
 a page or a decision entry never names one. The hook refuses an added line in a page under
@@ -251,9 +266,11 @@ current, is the skeleton):
    calls it and what passes between them, each linked to its seam page or contract where one
    exists. Calls inside the system stay in the body.
 4. **`## Invariants`**, optional: only the facts that are load-bearing. Each entry states,
-   inline, why it must hold and what holds it — a named test, review, or on screen:
+   inline, why it must hold and what holds it — a named test, or what is seen on screen (on a
+   board, on the board):
    `- Rows are at least 44px — the touch-target minimum; held by test_touch_targets.` An
-   entry without a why and a holder is description, and goes in the body or nowhere.
+   entry without a why and a holder is description, and goes in the body or nowhere. Review is
+   no holder: no step reads a page's Invariants, so what only review would hold goes in the body.
 
 A page has no `## Undefined` section, and no section that holds the project: build status
 (done, pending, not built yet), or when and in what order work will happen. What the section
@@ -387,8 +404,32 @@ Each kind of document has one home: rules in `AGENTS.md`, and the rules about do
 here; what the code is now and its invariants in `docs/`; a task in flight in
 `.jig/specs/`; decisions that outlive their spec, and what a release changed, in
 `.jig/decisions.md`; the phases, scopes and parked work ahead in `.jig/roadmap.md`; patches in the code in `.jig/ledgers/WORKAROUNDS.md`; review findings not taken
-in `.jig/ledgers/DEFERRED.md`; know-how in the agent's skills; what outsiders need in
-`README.md`; history in git.
+in `.jig/ledgers/DEFERRED.md`; a procedure an agent runs in a skill, and the rest of how the
+repo is worked in `.jig/process.md`, never in `docs/`; what outsiders need in `README.md`;
+history in git.
+
+`.jig/process.md` holds how the repository is worked wherever no other home takes it, one `##`
+section per topic, a new topic its own section. It is read on demand, never always-loaded, with
+no line cap, and `AGENTS.md` points to it, naming when to read which section. It is created on
+first use from jig's template, as the ledgers are. Where new process goes, one test decides, and
+whoever places it (the owner, a hubnode, a spec, a retro) applies this table rather than
+restating it:
+
+| The process is… | Home |
+|---|---|
+| a rule every task needs | `AGENTS.md` |
+| a rule for one situation (releasing, a migration, touching the build) | a section of `.jig/process.md`, its trigger named in `AGENTS.md`'s pointer line |
+| knowledge behind how the repo is worked: code style, why the build is shaped so, packaging, a release's judgment calls, debugging recipes, CI quirks | a section of `.jig/process.md` |
+| a procedure an agent runs when a task calls for it: steps, often a script, invoked by name | a skill; its knowledge stays in `.jig/process.md`, and the skill points to the section |
+| something a machine can do or check | a script or a check (`.jig/scripts/`, `check.sh`, a hook), which a skill may call |
+| a role's tier or effort | `roles` in `.jig/config.json`, with its reason |
+| jig's own rules | `.jig/RULES.md` holds them; the lines every task needs arrive as jig's own lines in `AGENTS.md` (the template's, or a generated block) |
+| the product | `docs/` |
+
+A line cut from `AGENTS.md` to keep it under its cap goes by the same test: a rule every task
+needs stays; the rest of how the repo is worked, code style included, to a section of
+`.jig/process.md`; a release step to `.jig/scripts/release.sh`; a fact about the product to its
+system's page; history to git. How the repo is worked never goes to a page.
 
 A repo's terms are its glossary, `docs/glossary.md`: a `# Glossary` title, an optional lead
 line, then the terms, each saying what it means and what it is not, in one of two forms: a
@@ -413,9 +454,11 @@ handoff, a released section of the decision log or of a root `CHANGELOG.md`. A R
 `jig survey` also reads each page at home under `docs/`, board pages included, against the
 contract above, and names a page in the old Now, Rules and Checks shape (convert it: fold
 what it says into description, delete what no longer holds, keep as Invariants only what
-passes the test), an Invariants entry with no why (` — `) or no holder (`held by`), and a
+passes the test), an Invariants entry with no why (` — `) or no holder (`held by`), or whose
+holder names review (listed: survey reads the word, never the other holders), and a
 page whose first line of text after its title is a heading rather than a lead paragraph. It
-lists, apart, the project in the product: an `## Undefined` heading on a page or a metarepo's
+lists, apart, a page line naming a `.jig/` path other than the decision log (Product and
+process), and the project in the product: an `## Undefined` heading on a page or a metarepo's
 entry file, and what the hook refuses on an added line (a `.jig/specs/`, `.jig/handoffs/` or
 `.jig/roadmap.md` path, a scope id in code quotes) in old text on a page or in the decision
 log, each with where it goes. It searches no words that may be the product's. `jig update --apply` brings this file; it
@@ -426,7 +469,8 @@ review it lists each page's `## Undefined` entry as the `## Up next` item it wou
 project paths and quoted scope ids above, and the repo's plan and register files with where
 each one's content goes: `TODO.md`, `BACKLOG.md`, `STATUS.md`, `PLAN.md` and a hand-written
 `ROADMAP.md` to `.jig/roadmap.md`; `FEATURES.md` to its systems' pages and decision entries;
-`RULES.md`, `CONVENTIONS.md` and `CONTRIBUTING.md` to `AGENTS.md` or a skill. It judges none of
+`RULES.md`, `CONVENTIONS.md` and `CONTRIBUTING.md` sorted line by line by the test under Homes.
+It lists, too, each page line naming a `.jig/` path (Product and process). It judges none of
 them. `jig update --apply --sweep` writes the Up next items to `.jig/roadmap.md`, creating it when
 absent, on trunk (R5), and removes each emptied Undefined section where the pages may change:
 on trunk, or in a metarepo a job's worktree (M4), where it removes only the sections whose

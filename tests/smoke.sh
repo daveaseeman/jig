@@ -2404,7 +2404,7 @@ expect_pass sh -c "$J survey | grep -qF 'docs/band/band.md -> docs/watch/datashe
 printf '# Band\n\nThe strap. [ds](../datasheets/qx-9.pdf)\n' > docs/band/band.md && git add -A && git commit -qm "band its own"
 
 msg="survey: a page-shaped file beside its system's page is a flat part page, at home; a note there is a linked file"
-printf '# Power\n\nThe rails.\n\n## Invariants\n- 3.3V — the parts are 3.3V; held by review.\n' > docs/watch/power.md
+printf '# Power\n\nThe rails.\n\n## Invariants\n- 3.3V — the parts are 3.3V; held by test_rails.\n' > docs/watch/power.md
 printf '# Bring-up\n' > docs/watch/bringup.md && printf '[bring-up](bringup.md)\n' >> docs/watch/watch.md
 git add -A && git commit -qm "candidate"
 expect_pass hrsurvey "assert r['homeless'] == [], r['homeless']
@@ -2425,6 +2425,8 @@ msg="page contract: the board template, filled in nowhere, is on the contract"
 # Planted: alone in its folder, which the hook refuses; only its contract is asked here.
 mkdir -p docs/tmpl && cp "$P/hardware.md" docs/tmpl/tmpl.md && git add -A && git -c core.hooksPath=/dev/null commit -qm tmpl
 expect_pass hrsurvey "assert 'docs/tmpl/tmpl.md' not in [e['path'] for e in r['page_contract']], r['page_contract']"
+msg="process: the board template, copied onto a page, names no .jig/ path survey lists"
+expect_pass hrsurvey "assert not [e for e in r['process_in_pages'] if e['path'] == 'docs/tmpl/tmpl.md'], r['process_in_pages']"
 git rm -rq docs/tmpl && git commit -qm "no tmpl"
 
 msg="datasheets: survey's Homes line names both datasheets homes"
@@ -3794,8 +3796,8 @@ out=$($J survey 2>&1)
 expect_pass sh -c "l=\$(echo \"\$0\" | sed -n '/^Pages below a subsystem/,/^\$/p' | grep '^  docs/a/c/d.md: ')
 echo \"\$l\" | grep -q 'fold it into docs/a/c.md' && ! echo \"\$l\" | grep -q deep_subsystems" "$out"
 msg="structure: a page with no docmap key is unmapped, not a section; update lists it the same, with no fold drafted"
-printf '# G\n\nThe g page.\n\n## Invariants\n- g is g — it is; held by review.\n' > docs/a/g.md && printf 'x\n' > src/a/g.py
-printf '# E\n\nThe e page.\n\n## Invariants\n- e is e — it is; held by review.\n' > docs/a/c/e.md && git add -A && git commit -qm "g, and e below c"
+printf '# G\n\nThe g page.\n\n## Invariants\n- g is g — it is; held by test_g.\n' > docs/a/g.md && printf 'x\n' > src/a/g.py
+printf '# E\n\nThe e page.\n\n## Invariants\n- e is e — it is; held by test_e.\n' > docs/a/c/e.md && git add -A && git commit -qm "g, and e below c"
 printf '# behind\n' >> .jig/jig.py && git commit -qam behind
 out=$($J survey 2>&1); up=$($UP 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -qF '  docs/a/g.md: unmapped: no docmap key: name its files in docmap, or fold it into docs/a/a.md' \
@@ -3812,7 +3814,7 @@ python3 -c "print('{\"a\": {\"c\": ' * 1000 + '1' + '}}' * 1000)" > deep.json
 printf '# ADRs\n\n## 1. Use SQLite\n\nAccepted.\n' > docs/adr/log.md
 board "b['reserve']['adr'] = {'pattern': r'^## (\d+)\. ', 'files': ['docs/adr/*.md']}"
 # docs/core.md makes `core` a page's name: a word beside it, or a § after another name, cites nothing.
-printf '# Core\n\nThe core system.\n\n## Invariants\n- core is core — it is; held by review.\n' > docs/core.md
+printf '# Core\n\nThe core system.\n\n## Invariants\n- core is core — it is; held by test_core.\n' > docs/core.md
 printf -- '## 1.1 Setup\n- Caching follows RFC 9111 §5.2.\n- Lint Rules and Checks run in CI.\n' >> AGENTS.md
 printf -- '- Our lint rules follow the Google style guide §3.2.\n- Keep the docs current with each change (§ 2 of CONTRIBUTING).\n' >> AGENTS.md
 printf -- '- Do not change core without a review; see CONTRIBUTING §2.\n- The core loop runs its Rules and Checks in CI.\n' >> AGENTS.md
@@ -4011,7 +4013,7 @@ expect_pass sh -c "test \"\$(grep -c -- '^- \[ \] docs/' .git/jig/worktrees/RL/.
 HF="$T/homes-flat"; pcnew "$HF" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 mkdir -p docs/a src/a src/b src/c && printf '# A\n\nThe a system. [notes](notes.md)\n' > docs/a/a.md
 printf '# B\n\nThe b part.\n' > docs/a/b.md && printf '# Notes\n\nsome notes\n' > docs/a/notes.md
-printf '# C\n\nThe c part.\n\n## Invariants\n- c is c — it is; held by review.\n' > docs/a/c.md
+printf '# C\n\nThe c part.\n\n## Invariants\n- c is c — it is; held by test_c.\n' > docs/a/c.md
 printf 'x\n' > src/a/lib.rs && printf 'x\n' > src/b/b.rs && printf 'x\n' > src/c/c.rs
 board "b['docmap'] = {'docs/a/a.md': ['src/a/**'], 'docs/a/b.md': ['src/b/**'], 'docs/a/c.md': ['src/c/**']}"
 git add -A && git commit -qm flat
@@ -4055,8 +4057,8 @@ expect_pass homes "assert [(e['path'], e['to'], e['into'], e['fold']) for e in r
 # A flat page still owns the folder it has started to fill.
 HF2="$T/homes-flat-owner"; pcnew "$HF2" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 mkdir -p docs/a docs/b/datasheets src/a src/b && printf 'docs/**/datasheets/\n' > .gitignore
-printf '# A\n\nThe a system.\n\n## Invariants\n- a — x; held by review.\n' > docs/a.md
-printf '# B\n\nThe b part.\n\n## Invariants\n- b — x; held by review.\n' > docs/a/b.md
+printf '# A\n\nThe a system.\n\n## Invariants\n- a — x; held by test_a.\n' > docs/a.md
+printf '# B\n\nThe b part.\n\n## Invariants\n- b — x; held by test_b.\n' > docs/a/b.md
 printf '# B board\n\nThe b board. [x](b/datasheets/x.pdf)\n' > docs/b.md && printf 'pdf\n' > docs/b/datasheets/x.pdf
 printf 'x\n' > src/a/a.rs && printf 'x\n' > src/b/b.rs
 board "b['docmap'] = {'docs/a.md': ['src/a/**'], 'docs/a/b.md': ['src/a/b/**'], 'docs/b.md': ['src/b/**']}" && git add -A && git -c core.hooksPath=/dev/null commit -qm owners  # planted: both flat pages hold files
@@ -4668,13 +4670,47 @@ printf '# Old\n\n## Now\nx\n\n## Rules\n### 1.1 y\n\n## Checks\n- 1.1 review\n' 
 printf '# Inv\n\nInv holds keys.\n\n## Invariants\n\n- Keys are sorted — lookups bisect; held by test_sorted.\n- Keys are short.\n- Keys are ASCII — the wire format.\n' > docs/inv/inv.md
 printf '# After\n\nAfter does things.\n\n## Undefined\n\n- Sync — parked 2026-11-01.\n\n## Notes\n\nmore\n' > docs/after/after.md
 printf '# Nolead\n\n## Part\n\nText.\n' > docs/nolead/nolead.md
-printf '# Misc\n\nMisc is a part.\n\n## Invariants\n\n- A — b; held by review.\n' > docs/misc/x.md
+printf '# Misc\n\nMisc is a part.\n\n## Invariants\n\n- A — b; held by test_a.\n' > docs/misc/x.md
 # Planted: each page alone in its folder, which the hook refuses; only the contract is asked here.
 git add -A && git -c core.hooksPath=/dev/null commit -qm pages
 msg="page contract: survey flags an old-format page as old contract — convert"
 expect_pass pc "assert len(c['docs/old/old.md']) == 1 and c['docs/old/old.md'][0].startswith('old contract — convert'), c"
 msg="page contract: survey flags invariants missing a holder or a why, and passes the one with both"
 expect_pass pc "p = c['docs/inv/inv.md']; assert len(p) == 2 and any('Keys are short.' in x for x in p) and any('Keys are ASCII' in x for x in p), p"
+msg="page contract: each invariant whose holder names review is listed as such, never as no holder; a test, a path or a compound naming review is not; no holder is still listed"
+mkdir -p docs/held && cat > docs/held/held.md <<'PAGE'
+# Held
+
+Held keeps sums.
+
+## Invariants
+
+- R1 — w; held by review.
+- R2 — w; held by review of the log calls in `chain_tests.py`.
+- R3 — w; held by peer review only.
+- R4 — w; held by test_p and review.
+- R5 — w; held by TestSumWraps and review.
+- R6 — w; held by review of the calls in `log.py` and `chain.py`.
+- R7 — w; held by the reviewer.
+- R8 — w; held by reviewing each diff.
+- N1 — w; held by test_x.
+- N2 — w; held by review.py.
+- N3 — w; held by `tests/review/test_flow.py`.
+- N4 — w; held by test_review_mode.
+- N5 — w; held by preview_test.py.
+- Z — W.
+PAGE
+git add -A && git -c core.hooksPath=/dev/null commit -qm held
+expect_pass pc "p = c['docs/held/held.md']
+named = [x for x in p if 'whose holder names review' in x]
+assert len(p) == 9 and len(named) == 8, p
+assert all(any(f'R{i} —' in x for x in named) for i in range(1, 9)), named
+assert not any('N' + str(i) + ' —' in x for x in p for i in range(1, 6)), p
+assert not any('no holder' in x for x in p), p
+assert any('Z — W' in x and 'a holder' in x for x in p), p"
+msg="page contract: update lists the same eight entries under Repo files to review"
+expect_pass sh -c "$J update 2>&1 | grep '^  docs/held/held.md: off the page contract' | python3 -c 'import sys; t = sys.stdin.read(); assert t.count(\"whose holder names review\") == 8, t'"
+git rm -rq docs/held && git commit -qm "no held"
 msg="page contract: survey flags a page with no lead paragraph; a page still carrying ## Undefined is in the contract otherwise"
 expect_pass pc "assert any('no lead paragraph' in x for x in c['docs/nolead/nolead.md']), c
 assert 'docs/after/after.md' not in c, c"
@@ -5033,6 +5069,62 @@ $J open M --spec .jig/specs/y.md --owns 'docs/**' >/dev/null && git add -A && gi
   && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note M" )
 gated M; $J merge M >/dev/null 2>&1
 expect_pass sh -c "grep -q 'touches docs/d.md' .jig/roadmap.md && git show --name-only --format= HEAD | grep -qx .jig/roadmap.md"
+
+# How the repository is worked is no page's (RULES.md, Documentation: Product and process).
+BP="$T/process"; pcnew "$BP" && mkdir -p docs src scripts && printf 'x = 1\n' > src/a.py
+printf '# A\n\nA keeps the list.\n' > docs/a.md && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+cat >> docs/a.md <<'PAGE'
+
+jig's `docmap` in `.jig/config.json` says which page owns a file.
+
+Links: [rules](../.jig/RULES.md), [board](../../.jig/config.json), `./.jig/scripts/check.sh`, and `~/.jig/repos.json` is the user's.
+
+The question waits in `.jig/decisions.md § Open`.
+
+<!-- jig's template, on .jig/RULES.md -->
+A quoted `<!--` hides nothing: .jig/scripts/derive.sh
+<!--
+spans .jig/RULES.md too
+-->
+
+```
+.jig/RULES.md
+```
+
+    .
+    ├── .jig/
+    └── src/
+
+The app runs the user's pytest suite and shows its results.
+The service builds each pushed branch and reports the result.
+PAGE
+msg="process: page lines naming .jig/ paths, the decision log, and product lines about tests and builds commit"
+git add -A && expect_pass git commit -qm process
+printf '# B\n\nB is.\n\nCited .jig/specs/x.md once.\n' > docs/b.md && git add -A && git -c core.hooksPath=/dev/null commit -qm planted
+printf '# Process\n\nHow this repo is worked.\n\n## Code style\n\nNames say why; see .jig/RULES.md.\n\n## Release\n\nTag, then .jig/scripts/publish.sh.\n\n## CI\n\nFlaky on Mondays.\n' > .jig/process.md && git add -A && git commit -qm process.md
+msg="process: survey lists the .jig/config.json line, relative links to .jig/ at any depth, and the layout tree, and nothing else (not ~/.jig/): no decision log, comment, fence, product line, spec path or process.md"
+expect_pass python3 -c "
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+got = [(e['path'], e['names']) for e in r['process_in_pages']]
+assert got == [('docs/a.md', '.jig/config.json'), ('docs/a.md', '../.jig/RULES.md'), ('docs/a.md', '../../.jig/config.json'),
+               ('docs/a.md', './.jig/scripts/check.sh'), ('docs/a.md', '.jig/scripts/derive.sh'), ('docs/a.md', '.jig/')], got
+assert not [e for e in r['homeless'] if 'process' in e['path']], r['homeless']
+assert any('.jig/specs/' in p for e in r['project_in_product'] if e['path'] == 'docs/b.md' for p in e['problems']), r['project_in_product']"
+msg="process: survey prints them under a heading naming the repo's process and its homes"
+s=$($J survey 2>&1); expect_pass sh -c "echo \"\$0\" | grep -A2 '^How the repository is worked, in the product' | grep -q 'process.md' && echo \"\$0\" | grep -q '^  docs/a.md:5: \".jig/config.json\"' && ! echo \"\$0\" | grep -A12 '^How the repository is worked' | grep -q 'docs/b.md'" "$s"
+msg="process: survey's Doc homes line names .jig/process.md"
+expect_pass sh -c "echo \"\$0\" | grep '^Doc homes: ' | grep -qF '.jig/process.md = how the repo is worked'" "$s"
+msg="process: the update dry run lists the line under Repo files to review"
+out=$($J update 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a.md: line 5: \".jig/config.json\" names how the repository is worked'" "$out"
+msg="process: survey's Too long line names where a cut line goes, and never a page"
+python3 -c "open('AGENTS.md','a').write(''.join(f'- rule {i}\n' for i in range(61)))" && git add -A && git -c core.hooksPath=/dev/null commit -qm long
+s=$($J survey 2>&1); expect_pass sh -c "echo \"\$0\" | grep -A4 '^Too long' | tr '\n' ' ' | grep -q '.jig/process.md.*.jig/scripts/release.sh.*system.s page.*git.*never goes *to a page'" "$s"
+msg="process: the fold-in's UNOWNED line names the repository's own tooling as needing no page"
+mkdir -p .jig/specs && printf '# p\n\nSource: smoke\n\n## Intent\nx\n' > .jig/specs/p.md && git add -A && git commit -qm spec
+$J open PR --spec .jig/specs/p.md --owns 'scripts/**' >/dev/null && git add -A && git commit -qm "open PR"
+( cd .git/jig/worktrees/PR && mkdir -p scripts && printf 'print(1)\n' > scripts/release.py && git add -A && git commit -qm rel && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 )
+expect_pass grep -q "UNOWNED scripts/release.py — .*no page needed because ___ (the repository's own tooling, its build, CI, release and dev scripts, needs none)" .git/jig/worktrees/PR/.jig/handoffs/PR-*.md
 
 # A line only moved within a file isn't added: accepting entries moves them, and old text moves with them.
 BV="$T/boundary-move"; pcnew "$BV" && mkdir -p docs && printf '# Shared\n\nThe shared page.\n\nSee `exits/capital-event` for the plan.\n\nAnother paragraph.\n' > docs/shared.md
@@ -8039,6 +8131,10 @@ msg="claims id: D-003 and D-3 list the same lines"
 expect_pass test "$out" = "$($J reading-list --claims D-003 | sed 's/D-003:/D-3:/')"
 msg="claims id: run from a subfolder, it lists the same lines"
 expect_pass test "$out" = "$(cd docs/store && python3 ../../.jig/jig.py reading-list --claims D-3)"
+msg="claims id: a copy in .jig/process.md is listed, as in the ledgers"
+printf '# Process\n\nReleases keep the store read-only, per D-3.\n' > .jig/process.md && git add -A && nohook process
+expect_pass sh -c "$J reading-list --claims D-3 | grep -q '^  copy     .jig/process.md:3 '"
+git rm -q .jig/process.md && nohook "no process"
 
 out=$($J reading-list --claims mote)
 msg="claims term: the glossary heading is home, a use is a copy, an entry whose Touches names it is listed"

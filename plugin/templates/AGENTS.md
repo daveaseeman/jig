@@ -1,7 +1,10 @@
 # AGENTS.md
 
 <!-- ~40 rule lines, once the sections this repo doesn't need are deleted. For every line ask:
-     would removing it cause a mistake? If not, cut it. A long file gets ignored wholesale. -->
+     would removing it cause a mistake? If not, move it. A rule every task needs stays; the rest
+     of how the repo is worked, code style included, goes to a section of .jig/process.md; a
+     release step to .jig/scripts/release.sh; a fact about the product to its system's page;
+     history to git. How the repo is worked never goes to a page. A long file gets ignored wholesale. -->
 
 ## Project
 TODO: one sentence. What this is and what "working" looks like.
@@ -22,6 +25,7 @@ Risk: R0 — personal prototype, single user, nothing shipped. Optimize for spee
 - Commit often; the git hook runs the rules. Never `--no-verify`.
 - A mergeable chunk is a handoff: checks pass → adversarial review (/jig:review) → `jig reviewed` → `jig handoff --spec .jig/specs/<task>.md`. Review happens once per handoff, not per commit. A chunk that doesn't finish its spec hands off with `--partial`.
 - Same fix twice → write a skill (see /jig:retro).
+- How this repo is worked beyond these lines is in `.jig/process.md`, one section per topic: before a release, read § Release; before changing code style, § Code style.
 - A choice that outlives its spec, or a change a release's reader can act on, gets an entry or a line under `## Unreleased` in `.jig/decisions.md`, as `.jig/RULES.md` (Decision log) says.
 - Rulebook `.jig/RULES.md`, enforced by `python3 .jig/jig.py`. Nodes: /jig:hubnode, /jig:subnode. Roles: /jig:spec, /jig:bug, /jig:work, /jig:review, /jig:check, each at its `jig roles` settings; `jig next` names the next step.
 

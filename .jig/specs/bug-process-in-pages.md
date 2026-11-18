@@ -227,7 +227,8 @@ home, chosen by one test RULES.md states and the hubnode, spec and retro steps a
   - "The app runs the user's pytest suite and shows its results."
   - "The service builds each pushed branch and reports the result."
 - [ ] Smoke (`page_contract`). For an Invariants entry "- X — Y; held by review.", survey's
-  `page_contract` names review as no holder, and update lists it. "- X — Y; held by test_x." is
+  `page_contract` lists it as an entry whose holder names review (never as "no holder"), as it
+  lists one with a test beside review (H1), and update lists it. "- X — Y; held by test_x." is
   not listed, and "- X — Y." is still listed as missing its holder. The fixtures at
   `tests/smoke.sh:2318, 3708, 3726, 3925, 3969, 4582` hold `test_*` holders instead.
 - [ ] `grep -n "review" plugin/templates/jig/docs-page.md` finds no holder offer. RULES.md's
@@ -249,7 +250,7 @@ home, chosen by one test RULES.md states and the hubnode, spec and retro steps a
   lines: a reading order naming `.jig/config.json`, a layout tree with `.jig/`, two "held by
   review" invariants. Survey and update list every one of them. v0.14.0 lists none, as this
   spec's givens show. By hand, on a read-only `git archive` copy of Daisy's HEAD, survey lists
-  `docs/core.md:23, :162, :215, :218` and `docs/app/releases.md:128`.
+  `docs/core.md:23, :215, :218` and `docs/app/releases.md:128`.
 - [ ] `bash tests/smoke.sh` passes, `claude plugin validate ./plugin` passes, and
   `grep -rnE 'Maige|maige|Daisy|daisy' plugin` finds nothing.
 
@@ -374,6 +375,9 @@ recommendation comes first.
 - The owner, 2026-11-17: "All are approved now": questions 2 to 5 take their recommended options (2a: survey and update list `.jig/` path lines, the hook refuses nothing new; 3: board pages keep Toolchain, Flash / rollback and Skills; 4a: a holder is a named test or what is seen on screen, still required; 5: the cut-line wording, no per-line proposals).
 - Kept separate from bug-decision-records: different code (one merges decision records into the log, the other sets what pages hold and where process goes), sharing jig.py, RULES.md and smoke.sh. The owner, 2026-11-17: "All are approved now".
 - The owner, 2026-11-17, W1: "reword: RULES.md holds them; lines every task needs arrive as jig's own lines in AGENTS.md (template or generated block)" (the Homes table's row for jig's own rules).
+- Interpreted (hubnode, 2026-11-17): Done when's Daisy check lists core.md:23, :215, :218 and releases.md:128; :162 sits in a fenced tree, which 2a excludes.
+- Interpreted (hubnode, 2026-11-17): the template sits at plugin/templates/process.md, beside templates/ledgers/, so copying templates/jig/ can't bring it.
+- H1 (`.jig/specs/bug-process-in-pages-holders.md`), the owner 2026-11-17: "do both", which the hubnode reads as H1's (a): survey and update list every Invariants entry whose holder names review, with or without a test beside it, and judge no other holder.
 - Build after `bug-meta-agents-block` (K1's order: its block exists before this spec's Homes table describes it).
 
 ## Workflow
