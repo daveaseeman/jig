@@ -11,31 +11,6 @@
     ],
     "reserved": {}
   },
-  "rigger": {
-    "spec": ".jig/specs/rigger.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "README.md",
-      "plugin/hooks/hooks.json",
-      "plugin/scripts/inbox.sh",
-      "plugin/scripts/session-start.sh",
-      "plugin/skills/decision-cards/SKILL.md",
-      "plugin/skills/relay/SKILL.md",
-      "plugin/skills/repos/SKILL.md",
-      "plugin/skills/rigger/SKILL.md",
-      "plugin/skills/send/SKILL.md",
-      "plugin/skills/stage/SKILL.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh",
-      "plugin/skills/hubnode/SKILL.md"
-    ],
-    "reserved": {},
-    "check": "batch"
-  },
   "bug-process-in-pages": {
     "spec": ".jig/specs/bug-process-in-pages.md",
     "state": "claimed",

@@ -156,3 +156,42 @@ document.getElementById("dc-fill").addEventListener("click", () => {
 render();
 </script>
 ```
+
+## An editable-text block
+
+For a reply the owner approves as written, such as `/jig:send`'s message to a hubnode: one block
+with a heading line (where it goes), the text it answers, quoted, and the draft in an editable
+field. One button fills a fixed prefix and the field's text. As with every card, it fills and
+never sends: the owner's sent reply, edited or not, is the approval. Replace the three values.
+
+```html
+<div id="et" style="display:flex; flex-direction:column; gap:10px; padding:0.5rem 0;">
+  <div id="et-to" style="font-size:14px; font-weight:500; color:var(--text-primary);"></div>
+  <blockquote id="et-q" style="margin:0; padding-left:12px; border-left:2px solid var(--border); font-size:13px; color:var(--text-secondary); white-space:pre-wrap;"></blockquote>
+  <textarea id="et-text" rows="10" style="width:100%; box-sizing:border-box; font:inherit; font-size:13px; color:var(--text-primary); background:transparent; border:0.5px solid var(--border); border-radius:8px; padding:8px;"></textarea>
+  <div style="display:flex; align-items:center; gap:12px;">
+    <button type="button" id="et-fill">Fill reply ↗</button>
+    <span style="font-size:12px; color:var(--text-muted);">Fills your reply box. Press Enter to send. Clear your reply box before filling again.</span>
+  </div>
+</div>
+<script>
+const heading = "To app's hubnode";
+const prefix = "send to app:";
+const question = "Should the export keep the old column order?";
+document.getElementById("et-to").textContent = heading;
+document.getElementById("et-q").textContent = question;
+const field = document.getElementById("et-text");
+field.value = "The owner, 2026-11-17: \"keep the old order\"\n\nNew columns go at the end.";
+const fill = document.getElementById("et-fill");
+let filled = false;
+function render() { fill.disabled = filled; fill.textContent = filled ? "Filled" : "Fill reply ↗"; }
+field.addEventListener("input", () => { filled = false; render(); });
+fill.addEventListener("click", () => {
+  if (!field.value.trim()) return;
+  sendPrompt(`${prefix} ${field.value}`);
+  filled = true;
+  render();
+});
+render();
+</script>
+```
