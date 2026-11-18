@@ -13,7 +13,7 @@
   },
   "rigger": {
     "spec": ".jig/specs/rigger.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "README.md",
@@ -33,7 +33,8 @@
       "tests/smoke.sh",
       "plugin/skills/hubnode/SKILL.md"
     ],
-    "reserved": {}
+    "reserved": {},
+    "check": "batch"
   },
   "bug-process-in-pages": {
     "spec": ".jig/specs/bug-process-in-pages.md",
