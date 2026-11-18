@@ -4,7 +4,7 @@ Commit: 4715ed57b8a84c8261da1ea5668b7a2cffd06740
 Date: 2026-11-18
 Spec: .jig/specs/bug-stage-second-reader.md
 Review: tier 2, effort 2
-Ran: claude-opus-5-5 at medium (the kickoff's line)
+Ran: claude-opus-5-5 at high
 
 ## Built
 `/jig:stage` gets a **Second reader** step in A batch, before the header check. A fresh worker at tier 2, effort 2 (by `tiers.json`, no model named) reads every file of the batch against a record of the conversation: the owner's messages verbatim and in order, with the author's proposals marked as theirs. It answers five questions for each file: what was left out, what is overstated, what was added unmarked, what a cold reader couldn't act on, and what contradicts. The stager fixes what it finds and shows the owner before saying "staged". A host that can't start a worker stages the batch with `; unreviewed` at the end of `source:`, and Resolving names such a file when it asks whether the file is as settled as it says. Commits: 4555e2e (skill and smoke), 4715ed5 (DEFERRED rows).
