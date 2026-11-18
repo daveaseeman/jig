@@ -1119,6 +1119,11 @@ def cmd_open(root: Path, args) -> int:
         die(f"open a job from {board.trunk} (the hubnode's checkout)")
     if args.name in board.jobs:
         die(f"job {args.name} already exists")
+    # A merged job's bug spec answers `jig reviewed` by the job's name: left on trunk, it would
+    # let a new job under that name past its third blocking review.
+    if old := bug_spec_for(args.name, [board.trunk]):
+        die(f"{old} on {board.trunk} is the bug spec of an earlier job {args.name}: `jig rig --close` "
+            "removes it, then open the job")
     if file_safe(args.name).startswith("gate-"):
         die(f"a job name can't start with gate-: worktrees/{file_safe(args.name)} is where "
             f"`jig gate {args.name[5:]}` checks out, and removes when that job is gated")
@@ -1897,6 +1902,10 @@ def cmd_merge(root: Path, args) -> int:
             die("resolve and `git add` the conflicted files first")
         for line in number_placeholders(root, trunk) or ["nothing to number"]:
             print(f"numbered {line}" if "→" in line else line)
+        # The conflicted merge's last step before its commit, so it closes what a clean one does.
+        drops = close_merged(root, board, trunk)
+        for sf, by in drops:
+            print(f"after `git commit`: `jig staging drop {sf.name}`, which {by} built")
         return 0 if setup_and_derive(root, board, "the job") else 1
     if not name:
         die("usage: jig merge <job> [-m msg] [--subject ids], or jig merge --number", 2)
@@ -2003,9 +2012,8 @@ def cmd_merge(root: Path, args) -> int:
     snap = Snapshot(where="index")
     # A merged job leaves nothing in flight: its spec and bug specs leave in the merge commit,
     # their scopes kept on the note. A conflicted merge closes nothing; `jig rig --close` does later.
-    named = {m.group(1) for n in notes
-             if (m := re.search(r"^Spec: (\S+)", git("show", f"{branch}:{n}"), re.M))}
-    closed = [] if p.returncode else close_specs(finished_specs(snap, board, name, named), snap)
+    closed, drops = ([], []) if p.returncode else close_specs(
+        finished_specs(snap, board, name, job_specs(branch, name, trunk)), snap)
     # States change when work lands, so the view is rewritten in the merge commit itself.
     phases = None if p.returncode else roadmap_state(snap)
     if phases is not None:
@@ -2048,12 +2056,39 @@ def cmd_merge(root: Path, args) -> int:
               file=sys.stderr)
         return 1
     print(f"merged {name}; its entry is gone from {JOBS} in the same commit. Sync the clean jobs.")
+    drop_built(drops)
     clean_up_job(name, branch)
     # Sessions are the host's, so jig only says it: the hubnode closes them with its tool.
     print(f"close the sessions that worked on {name}")
     for l in later:
         print(l)
     return 0
+
+
+def job_specs(rev: str, name: str, trunk: str) -> set[str]:
+    """The specs this run of job NAME handed off, by its notes on REV that TRUNK doesn't have: a
+    job opened again under an earlier one's name inherits that one's notes, and its specs."""
+    return {m.group(1) for n in handoff_notes(rev, name) if not git("cat-file", "-t", f"{trunk}:{n}")
+            if (m := re.search(r"^Spec: (\S+)", git("show", f"{rev}:{n}"), re.M))}
+
+
+def close_merged(root: Path, board: "Board", trunk: str) -> list[tuple[Path, str]]:
+    """In a merge being finished by hand, close what its job leaves, as a clean merge does:
+    the job is named by the merge's subject, and its notes are on MERGE_HEAD."""
+    first = Path(git("rev-parse", "--path-format=absolute", "--git-path", "MERGE_MSG")).read_text().split("\n", 1)[0]
+    m = re.search(r"(?:^|: )merge (\S+)$", first)
+    if not m:
+        return []
+    snap = Snapshot(where="index")
+    lines, drops = close_specs(finished_specs(snap, board, m.group(1), job_specs("MERGE_HEAD", m.group(1), trunk)), snap)
+    for line in lines:
+        print(line)
+    if lines and git("show", f":{ROADMAP}"):
+        phases = roadmap_state(snap)
+        if phases is not None:
+            (main_root() / ROADMAP_VIEW).write_text(roadmap_view(snap, phases))
+            git("add", "--", ROADMAP_VIEW, check=True)
+    return drops
 
 
 def clean_up_job(name: str, branch: str) -> None:
@@ -7634,8 +7669,14 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
         if branch and branch != trunk:
             specs |= {p for p in git("diff", "--name-only", f"{trunk}...HEAD", "--",
                                      f"{DIR}/specs/").splitlines() if p.endswith(".md")}
+        # A merge commit closes the job's spec (Handoff, gate, merge): its answer is read from
+        # the job's side, where the spec still is.
+        merging = git("rev-parse", "-q", "--verify", "MERGE_HEAD")
+        if merging:
+            specs |= {p for p in git("diff", "--name-only", f"{trunk}...{merging}", "--",
+                                     f"{DIR}/specs/").splitlines() if p.endswith(".md")}
         ids = {r[0] for r in rows if r[-1] == "Open"}
-        texts = [in_index(s, staged) for s in specs]
+        texts = [in_index(s, staged) or (at_rev(merging, s) if merging else "") for s in specs]
         # The job's own spec, from trunk's board and trunk's copy: whoever controls trunk put
         # the answer there, so a branch can't forge it. A spec that is one line is its own text.
         job = job_of_change(board, branch)
@@ -9592,6 +9633,10 @@ def takes_scopes(path: str) -> bool:
     return is_spec(path) or path.startswith(HANDOFFS) and path.endswith(".md")
 
 
+def scopes_in(path: str, text: str) -> list[str]:
+    return spec_scopes(note_head(text) if path.startswith(HANDOFFS) else text)
+
+
 def is_spec(path: str) -> bool:
     # _template.md is the shape a spec starts from, not a task: its placeholder takes nothing.
     return path.startswith(SPECS) and path.endswith(".md") and not Path(path).name.startswith("_")
@@ -9634,6 +9679,7 @@ def finished_specs(snap: Snapshot, board: "Board", job: str = "", named: set[str
     named = {os.path.normpath(x) for x in named or ()}
     root = main_root()
     pointed = {p for _, p, _, _ in pointers(root)} if (root / CACHE).is_dir() else set()
+    para = bool(snap.show(PARA))
     out = []
     for f in snap.ls(SPECS):
         if not is_spec(f):
@@ -9649,18 +9695,31 @@ def finished_specs(snap: Snapshot, board: "Board", job: str = "", named: set[str
                 continue
             if job and f not in named and Path(f).name not in named:
                 continue
+        # In a pararepo `jig sync` follows a proposal through the spec naming it, and closes the
+        # buffer rows it carried from there: that spec stays while the link is in it.
+        text = snap.show(f)
+        follows = para and (any(m.group("branch") or m.group("pbranch") for m in PROPOSAL.finditer(text))
+                            or bool(WITHDRAWN.search(text)))
         out.append({"spec": f, "note": note,
-                    "kept": "a cached metarepo pointer names it" if f in pointed else ""})
+                    "kept": "a cached metarepo pointer names it" if f in pointed else
+                    "it names a metarepo proposal or pointers branch `jig sync` follows" if follows else ""})
     return out
 
 
-def close_specs(finished: list[dict], snap: Snapshot) -> list[str]:
+def note_head(text: str) -> str:
+    """A handoff note's header, above its first section: where its `Spec:` and `Scope:` lines
+    are. A line in its prose that happens to start `Scope:` is no scope."""
+    return text.split("\n## ", 1)[0]
+
+
+def close_specs(finished: list[dict], snap: Snapshot) -> tuple[list[str], list[tuple[Path, str]]]:
     """Remove each finished spec, its scopes kept on its note's `Scope:` line, read now so a
-    scope re-pointed after the handoff is carried right; and drop each staged file whose mark
-    it carries, which its job built (resolving a decisions file would add its entries again).
-    Stages the changes in the trunk checkout; returns what it did, a line each."""
-    root, out = main_root(), []
-    staged = [(f, provenance(read_staged(f)[0], f)) for f in staged_files(root)]
+    scope re-pointed after the handoff is carried right. Stages the changes in the trunk
+    checkout; returns what it did, a line each, and each staged file a removed spec carries and
+    no spec left does, with that spec: its job built it, and resolving a decisions file would
+    add its entries again. Staged files are never committed, so the caller drops them only once
+    its commit has landed: a refused commit or an aborted merge would leave them gone."""
+    root, out, gone = main_root(), [], {}
     for x in finished:
         f, note = x["spec"], x["note"]
         if x["kept"]:
@@ -9670,18 +9729,29 @@ def close_specs(finished: list[dict], snap: Snapshot) -> list[str]:
         scope = re.search(r"^Scope:[ \t]*.*$", text, re.M)
         if note and scope:
             body = read_raw(root / note)
-            if not re.search(r"^Scope:", body, re.M):
+            if not re.search(r"^Scope:", note_head(body), re.M):
                 body = re.sub(r"^(Spec: .*\n)", lambda m: m.group(1) + scope.group(0) + "\n", body, 1, re.M)
                 write_raw(root / note, body)
                 git("add", "--", note, check=True, cwd=str(root))
         # -f: mid-merge the spec is staged from the job, as a new file.
         git("rm", "-q", "-f", "--", f, check=True, cwd=str(root))
         out.append(f"closed {f}")
-        for sf, mark in staged:
-            if sf.exists() and mark in text:
-                sf.unlink()
-                out.append(f"dropped {sf.name}: built by {f}")
-    return out
+        gone[f] = text
+    # A staged file split across two specs is built only when the last one carrying it closes.
+    left = [snap.show(f) for f in snap.ls(SPECS) if is_spec(f) and f not in gone]
+    drops = []
+    for sf in staged_files(root):
+        mark = provenance(read_staged(sf)[0], sf)
+        by = next((f for f, text in gone.items() if mark in text), None)
+        if by and not any(mark in t for t in left):
+            drops.append((sf, by))
+    return out, drops
+
+
+def drop_built(drops: list[tuple[Path, str]]) -> None:
+    for sf, by in drops:
+        sf.unlink(missing_ok=True)
+        print(f"dropped {sf.name}: built by {by}")
 
 
 def roadmap_state(snap: Snapshot) -> list[dict] | None:
@@ -9704,7 +9774,7 @@ def roadmap_state(snap: Snapshot) -> list[dict] | None:
     closed: dict[str, str] = {}
     for spec, note in sorted(notes.items()):
         if spec not in tree and Path(spec).name not in names:
-            for s in spec_scopes(snap.show(note)):
+            for s in spec_scopes(note_head(snap.show(note))):
                 takes.setdefault(s, []).append(spec)
                 closed[spec] = note
     current = None
@@ -10145,12 +10215,12 @@ def roadmap_rules(board: "Board", branch: str, staged: bool, paths: list[str],
     if on_trunk and ROADMAP in guarded:
         dropped = roadmap_scopes(old) - known
         for f in git("-c", "core.quotePath=false", "ls-files", "--", SPECS, HANDOFFS).splitlines():
-            if takes_scopes(f) and (gone := [s for s in spec_scopes(in_index(f, staged)) if s in dropped]):
+            if takes_scopes(f) and (gone := [s for s in scopes_in(f, in_index(f, staged)) if s in dropped]):
                 named.add(f)
                 out.append(f"{ROADMAP} drops {', '.join(gone)}, which {f} still takes: re-point "
                            f"the Scope: line in {f} in this commit")
     for f in paths:
-        if takes_scopes(f) and f not in named and (bad := [s for s in spec_scopes(in_index(f, staged))
+        if takes_scopes(f) and f not in named and (bad := [s for s in scopes_in(f, in_index(f, staged))
                                                            if s not in known]):
             out.append(f"{f} takes {', '.join(bad)}, which {ROADMAP} on {trunk} doesn't have: "
                        "a scope is <phase>/<scope> from it")
@@ -13735,7 +13805,7 @@ def rig_close(root: Path, board: "Board") -> int:
         die("commit or stash first: the close commit carries the closed specs, nothing else")
     os.chdir(root)
     snap = Snapshot(where="index")
-    lines = close_specs(finished_specs(Snapshot(trunk), board), snap)
+    lines, drops = close_specs(finished_specs(Snapshot(trunk), board), snap)
     closed = [Path(l.split(" ", 1)[1]).stem for l in lines if l.startswith("closed ")]
     for l in lines:
         print(l)
@@ -13749,6 +13819,7 @@ def rig_close(root: Path, board: "Board") -> int:
     if subprocess.run(["git", "commit", "-q", "-m", f"close finished specs: {', '.join(closed)}"]).returncode:
         print("the close isn't committed: fix what the hook refused, then `git commit`", file=sys.stderr)
         return 1
+    drop_built(drops)
     print(f"committed the close of {len(closed)} spec{'s' if len(closed) != 1 else ''}")
     return 0
 

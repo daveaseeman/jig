@@ -210,8 +210,9 @@ tell that job to sync before its next handoff. A merge that stops on conflicts: 
 `git commit`.
 
 A clean merge also removes the job's spec and its `Bug-for:` specs in the merge commit, each
-spec's `Scope:` kept on its note, and drops each staged file a removed spec carries; it prints
-each. A conflicted one closes nothing: the next `/jig:rig` does. Then it prints `close the
+spec's `Scope:` kept on its note, and once committed drops each staged file a removed spec
+carried and no spec left carries; it prints each. A conflicted one closes at `jig merge --number`, which names the `jig staging drop`
+to run after your `git commit`. Then it prints `close the
 sessions that worked on <job>`: archive every session you started for that job (work, review,
 check, bug), with the host's tool where it has one, unless one is still working; that one stays,
 and you say why. A session that served no job (a batch check, a consolidate, a feedback

@@ -460,7 +460,8 @@ From bug-versioning-pin-trigger:
   `roadmap_rules`; `LOG_SEED`, `log_is_seed`, `outside_open_deleted`, update `STEPS`,
   `next_version`, release arguments, `newer_release`, `cmd_release`, `meta_citations`, `KINDS`,
   `read_staged`, `cmd_staging_check`, staging resolve, `staged_refusal` callers
-- `plugin/templates/jig/RULES.md`: Documentation's `.jig/specs/` line, Merging, Workflow (the
+- `plugin/templates/jig/RULES.md`: Documentation's `.jig/specs/` line, Roadmap (a note's
+  `Scope:`), Merging, Workflow (the
   `jig rig` paragraph, the Feedback row), Decision log, Writing it, Metarepo and pararepos,
   Staging (the `pin-bump` kind, the carried-file drop, its `jig rig` sentence), new Versioning,
   Release, Commands (`jig release`'s flags, `jig rig --close`); Homes row: a rule, so RULES.md
@@ -471,8 +472,8 @@ From bug-versioning-pin-trigger:
 - `plugin/skills/fix/SKILL.md`
 - `plugin/skills/release/SKILL.md`, `plugin/skills/redocument/SKILL.md`,
   `plugin/skills/stage/SKILL.md` (resolving `pin-bump`)
-- `tests/smoke.sh`: `rig` (c7 rewritten; parts A, B, C, the batch fixture, `finished` and
-  `--close`, feedback, a staged pin-bump), `roadmap`, `merge_derived` or `workflow`, `release`,
+- `tests/smoke.sh`: `rig` (c7 rewritten), new sections `rig_batch` (parts A, B, C, the batch
+  fixture, feedback) and `close` (merge-time closing, `finished` and `--close`), a staged pin-bump, `roadmap`, `merge_derived` or `workflow`, `release`,
   `metarepo`, `pararepo`, `decisions`, `staging`, `update`
 - `AGENTS.md` (the release line: its flags, and the archiving sentence dropped)
 - `marketing/FEATURES.md` (gitignored, in the main checkout): the `/jig:rig` row, a row for
@@ -594,6 +595,12 @@ From the merge:
 - Interpreted: the closing step drops the staged files a closed spec carries, the seam
   bug-rig-batch-one-job left to this consolidate and bug-merged-job-cleanup's design didn't
   reach.
+- Interpreted (review of part 1): a staged file is dropped only when no spec left in the tree
+  carries its mark (a request split into two specs is built when the last one closes), and only
+  after the commit that closes its spec lands: staged files are never committed, so a refused
+  commit or an aborted merge would otherwise lose them. A conflicted merge closes at `jig merge
+  --number` and names the drops to make after `git commit`. `jig open` refuses a name whose
+  earlier job's `Bug-for:` spec is still on trunk, naming `jig rig --close`.
 - Interpreted: `/jig:fix` sessions are archived by the hubnode's no-job rule, not by rig's
   Finished step, which archives only sessions of jobs no longer on the board.
 - Interpreted: rig starting `/jig:fix` is named in the `/jig:rig` FEATURES row, which

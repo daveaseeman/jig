@@ -653,12 +653,17 @@ else stops with the files named, and a person resolves it.
    After its commit, the merge removes the job's worktree when `git status` there is clean, then
    its branch (`git branch -d`); a worktree holding an uncommitted or untracked file is named,
    and nothing is removed. A merge finished by hand after conflicts removes nothing.
-   A clean merge also leaves nothing of the job in flight: in the merge commit it removes the
-   job's spec, once the job's notes complete it and no other open job names it, and each
-   `Bug-for: <job>` spec, and writes each removed spec's `Scope:` line on its completing note
-   (after the note's `Spec:` line), which the roadmap then reads. It drops each staged file
-   whose mark a removed spec carries: its job built it. A conflicted merge closes nothing.
-   `jig rig --close` closes the rest (Workflow). The job's sessions end at its merge: the merge
+   A merge also leaves nothing of the job in flight: in the merge commit it removes the job's
+   spec, once the notes this job filed complete it and no other open job names it, and each
+   `Bug-for: <job>` spec, and writes each removed spec's `Scope:` line on its completing note,
+   in the note's header after its `Spec:` line, which the roadmap then reads. In a pararepo a
+   spec naming a metarepo proposal or pointers branch stays: `jig sync` follows the branch
+   through it. A conflicted merge closes at `jig merge --number`, its last step before the
+   commit. Once the commit lands, the merge drops each staged file a removed spec carried and
+   no spec left carries: its job built it (after a conflicted merge, `--number` names the
+   `jig staging drop` to run after `git commit`). `jig rig --close` closes the rest (Workflow).
+   `jig open` refuses a name whose earlier job's `Bug-for:` spec is still on trunk, which would
+   lift the new job's strike limit, naming `jig rig --close`. The job's sessions end at its merge: the merge
    prints `close the sessions that worked on <job>`, and the hubnode closes them.
    A hand `git merge` on trunk runs `setup.sh` but not `derive.sh`: run it and commit what it
    wrote, or the derived files stay stale until the next `jig merge`. In a metarepo, don't run
@@ -813,9 +818,10 @@ never writes the roadmap or staging. It is called by name only: `jig next` is un
 It also lists the **finished** specs, which count in neither number: each complete spec (a
 landed handoff note that isn't partial names it) that no open job names, and each `Bug-for:`
 spec whose job has left the board, with the note that completed it. A spec a cached metarepo
-pointer names is kept, saying so. `jig rig --close`, on trunk in the trunk checkout with a
+pointer names is kept, saying so, as is a pararepo's spec naming a metarepo proposal or
+pointers branch. `jig rig --close`, on trunk in the trunk checkout with a
 clean tree, removes them in one commit, `close finished specs: <names>`, each one's `Scope:`
-on its note as a merge writes it, drops the staged files they carry, and rewrites
+on its note as a merge writes it, drops the staged files they carry once it has committed, and rewrites
 `ROADMAP.md`; anywhere else it refuses and writes nothing.
 
 ### Two levels of check
