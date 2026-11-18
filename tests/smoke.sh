@@ -7466,6 +7466,12 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"run 42 is x/y's, no
 msg="checked --ci: a green run of another workflow on another branch is refused, naming the jig check workflow"
 out=$(GH_RUN=$(ghrun $h completed success lint main) PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"is 'lint' on 'main': the complete check is the 'jig check' workflow\" && test $(cilines) = $n0" "$out"
+msg="checked --ci: a green run of another workflow on jig-check/<HEAD's sha> is refused"
+out=$(GH_RUN=$(ghrun $h completed success lint) PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"is 'lint' on 'jig-check/${h:0:12}'\" && test $(cilines) = $n0" "$out"
+msg="checked --ci: a green jig check run on another branch is refused, naming jig-check/<HEAD's sha>"
+out=$(GH_RUN=$(ghrun $h completed success "jig check" jig-check/0123456789ab) PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"the complete check is the 'jig check' workflow on jig-check/${h:0:12}\" && test $(cilines) = $n0" "$out"
 msg="checked --ci: a run still in progress is refused"
 out=$(GH_RUN=$(ghrun $h in_progress "") PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'is in_progress, not completed' && test $(cilines) = $n0" "$out"
@@ -8267,14 +8273,14 @@ msg="queue: the command's exit code passes through"
 expect_pass sh -c "$J queue -- false; test \$? = 1 && $J queue -- sh -c 'exit 7'; test \$? = 7 && $J queue -- true"
 msg="queue: a command killed by a signal exits 128 + the signal, as a shell reports it"
 expect_pass sh -c "$J queue -- sh -c 'kill -TERM \$\$'; test \$? = 143"
-msg="queue: jig killed outright (SIGKILL) leaves the slot held by the command still running"
+msg="queue: a process the command leaves behind holds no slot and no full lock once the command returns"
+expect_pass sh -c "$J queue --full -- sh -c 'sleep 6 >/dev/null 2>&1 & echo bg' | grep -qx bg && $J queue | grep -qx 'running: 0' && $J queue | grep -qx 'complete check: none'"
+msg="queue: jig killed outright (SIGKILL) frees its slot, the trade for never handing the lock to the command"
 $J queue -- sh -c 'echo $$ > child.pid; exec sleep 30' & p1=$!
 holding 1
 kill -9 $p1; wait $p1 2>/dev/null
-expect_pass sh -c "$J queue | grep -qx 'running: 1'"
-msg="queue: once that command ends, the slot is free"
-kill $(cat child.pid)
-expect_pass sh -c "for i in \$(seq 50); do $J queue | grep -qx 'running: 0' && exit 0; sleep 0.2; done; exit 1"
+expect_pass sh -c "$J queue | grep -qx 'running: 0'"
+kill $(cat child.pid) 2>/dev/null
 msg="queue: no command after --full is a usage error"
 expect_pass sh -c "$J queue --full >/dev/null 2>&1; test \$? = 2"
 

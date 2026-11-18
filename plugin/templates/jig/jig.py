@@ -1581,13 +1581,15 @@ def ci_run_passed(url: str, head: str) -> str:
         run = None
     if not isinstance(run, dict):
         die(f"gh could not read run {m.group(2)}: {(p.stderr or p.stdout).strip() or f'exit {p.returncode}'}")
-    # Any green run on HEAD isn't the complete check: a lint workflow passes on the same commit.
-    if run.get("workflowName") != CHECK_WORKFLOW and not str(run.get("headBranch")).startswith(f"{CHECK_BRANCH}/"):
-        die(f"run {m.group(2)} is {run.get('workflowName')!r} on {run.get('headBranch')!r}: the complete "
-            f"check is the {CHECK_WORKFLOW!r} workflow on a {CHECK_BRANCH}/<sha> branch")
     if run.get("headSha") != head:
         die(f"run {m.group(2)} ran {str(run.get('headSha'))[:12]}, not HEAD {head[:12]}: "
             "record it in a checkout of the commit it ran")
+    # Any green run on HEAD isn't the complete check: a lint workflow passes on the same
+    # commit, even one that also runs on the check branch.
+    branch = f"{CHECK_BRANCH}/{git('rev-parse', '--short=12', 'HEAD')}"
+    if run.get("workflowName") != CHECK_WORKFLOW or run.get("headBranch") != branch:
+        die(f"run {m.group(2)} is {run.get('workflowName')!r} on {run.get('headBranch')!r}: the complete "
+            f"check is the {CHECK_WORKFLOW!r} workflow on {branch}")
     if run.get("status") != "completed":
         die(f"run {m.group(2)} is {run.get('status')}, not completed: record it once it passes")
     if run.get("conclusion") != "success":
@@ -1852,9 +1854,9 @@ def cmd_queue(root: Path, args) -> int:
         for l in locks:
             stamp(l, cmd, args.full)
         try:
-            # The command holds the locks too, so a jig killed outright (SIGKILL, which it
-            # can't forward) never frees a slot under a command that is still running.
-            proc = subprocess.Popen(cmd, pass_fds=[l.fileno() for l in locks])
+            # The command never inherits the locks: a process it leaves behind would hold the
+            # slot long after the run. The trade is that a jig killed outright frees it early.
+            proc = subprocess.Popen(cmd)
         except OSError as e:
             die(f"cannot run {cmd[0]}: {e.strerror}", 127)
         # A stop sent to jig reaches the command too, so the slot is never freed under a run

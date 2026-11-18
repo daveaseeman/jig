@@ -766,7 +766,7 @@ status` prints the last one's seconds and date: what a complete check costs here
 
 `jig checked --ci <run url> --tier N --effort N --seconds S` records a complete check that ran
 on GitHub Actions (The queue). jig reads the run with `gh run view` and refuses unless it is
-this repo's `origin`'s, is the `jig check` workflow or ran on a `jig-check/*` branch, ran HEAD,
+this repo's `origin`'s, is the `jig check` workflow on `jig-check/<HEAD's short sha>`, ran HEAD,
 completed and succeeded, or when `gh` is missing or can't read it; the record carries the
 run's URL as a sixth field. `jig status` and the gate's mark read it as they read a local one.
 
@@ -775,7 +775,8 @@ run's URL as a sixth field. `jig status` and the gate's mark read it as they rea
 Every test or check run a role starts goes through `jig queue -- <command…>`: it waits for one
 of the machine's slots, runs the command holding it, and returns the command's exit code. jig
 holds the slot; it never chooses what runs. The slots are OS file locks in `.git/jig/queue/`,
-shared by every worktree, so a run that dies frees its slot with nothing to clean up. A run
+shared by every worktree, so a run that dies frees its slot with nothing to clean up. jig holds
+them, not the command, so a process the command leaves behind never keeps a slot. A run
 that finds none free prints `waiting for a slot: N running, M waiting` and waits. `jig queue`
 with no command prints the slots, who holds them, who waits, and whether a complete check runs.
 
