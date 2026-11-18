@@ -49,20 +49,6 @@
     "reserved": {},
     "check": "batch"
   },
-  "bug-meta-agents-block": {
-    "spec": ".jig/specs/bug-meta-agents-block.md",
-    "state": "gated",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh",
-      "plugin/skills/init/SKILL.md"
-    ],
-    "reserved": {},
-    "check": "batch"
-  },
   "bug-decision-records": {
     "spec": ".jig/specs/bug-decision-records.md",
     "state": "gated",
