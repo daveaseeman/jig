@@ -7443,6 +7443,39 @@ expect_pass sh -c "$UP 2>&1 | grep '.jig/scripts/check.sh: never reads --full' |
 msg="update: the template's check.sh, which reads --full, is not listed"
 cp "$P/jig/scripts/check.sh" .jig/scripts/check.sh && git commit -qam "two levels"
 expect_refuse sh -c "$UP 2>&1 | grep -q 'never reads --full'"
+
+# jig checked --ci: the run is read through gh, a stub here, and recorded only when it passed on HEAD.
+cd "$CL"
+mkdir -p "$T/ghbin" "$T/nogh"
+printf '#!/bin/sh\nprintf "%%s" "$GH_RUN"\nexit ${GH_RC:-0}\n' > "$T/ghbin/gh" && chmod +x "$T/ghbin/gh"
+ln -s "$(command -v git)" "$T/nogh/git"; ln -s "$(command -v python3)" "$T/nogh/python3"
+h=$(git rev-parse HEAD); u="https://github.com/o/r/actions/runs/42"
+ghrun() { printf '{"headSha": "%s", "status": "%s", "conclusion": "%s", "url": "%s"}' "$1" "$2" "$3" "$u"; }
+cilines() { wc -l < .git/jig/checked.log | tr -d ' '; }
+n0=$(cilines)
+msg="checked --ci: a run whose headSha isn't HEAD is refused, naming both, and nothing is recorded"
+out=$(GH_RUN=$(ghrun 0123456789abcdef0123456789abcdef01234567 completed success) PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'ran 0123456789ab, not HEAD ${h:0:12}' && test $(cilines) = $n0" "$out"
+msg="checked --ci: a run still in progress is refused"
+out=$(GH_RUN=$(ghrun $h in_progress "") PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'is in_progress, not completed' && test $(cilines) = $n0" "$out"
+msg="checked --ci: a failed run is refused"
+out=$(GH_RUN=$(ghrun $h completed failure) PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'concluded failure, not success' && test $(cilines) = $n0" "$out"
+msg="checked --ci: a run gh can't read is refused, with gh's own words"
+out=$(GH_RUN="no such run" GH_RC=1 PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'gh could not read run 42: no such run' && test $(cilines) = $n0" "$out"
+msg="checked --ci: with no gh on PATH it is refused, naming gh"
+out=$(PATH="$T/nogh" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'gh is not installed' && test $(cilines) = $n0" "$out"
+msg="checked --ci: a passing run on HEAD is recorded with its URL as a sixth field"
+GH_RUN=$(ghrun $h completed success) PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 >/dev/null 2>&1
+expect_pass grep -qx "$h	3	4	9	$(date +%Y-%m-%d)	$u" .git/jig/checked.log
+msg="checked --ci: jig status shows the CI record"
+expect_pass sh -c "$J status 2>&1 | grep -qF \"last complete check: 9s on $(date +%Y-%m-%d) (${h:0:12}) on CI: $u\""
+msg="checked --ci: an old five-field line after it is still read"
+printf '%s\t3\t4\t11\t2026-01-02\n' "$h" >> .git/jig/checked.log
+expect_pass sh -c "$J status 2>&1 | grep -qF 'last complete check: 11s on 2026-01-02'"
 }
 
 # ---------------------------------------------------------------- the SessionStart role line
@@ -8195,7 +8228,110 @@ msg="rigger: a folder inside another listed repo's checkout is refused, and no p
 expect_pass sh -c "! $PJ rigger x --folder $T/rg-app/notes >/dev/null 2>&1 && test ! -e $T/rg-app/notes && python3 -c \"import json; assert 'rigger' not in json.load(open('$JIG_CONFIG'))['x']\""
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders rig claims inbox rigger"
+sec_queue() {
+QU="$T/qu"; pcnew "$QU" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+# The queue reads trunk's config, so each setting is committed, as the hubnode would.
+setq() { python3 -c "import json, sys; c = json.load(open('.jig/config.json')); c['queue'] = json.loads(sys.argv[1]); json.dump(c, open('.jig/config.json', 'w'), indent=2)" "$1" && git add -A && git commit -qm "queue $1"; }
+# untilout <file> <text>: wait up to 10s for a background run's output to say TEXT.
+untilout() { for i in $(seq 50); do grep -q "$2" "$1" 2>/dev/null && return 0; sleep 0.2; done; return 1; }
+# holding <n>: wait up to 10s until n runs hold a slot.
+holding() { for i in $(seq 50); do $J queue 2>/dev/null | grep -qx "running: $1" && return 0; sleep 0.2; done; return 1; }
+gone() { for i in $(seq 50); do kill -0 "$1" 2>/dev/null || return 0; sleep 0.2; done; return 1; }
+
+setq '{"slots": 1}'
+$J queue -- sleep 30 & p1=$!
+holding 1
+$J queue -- touch second > "$T/q2.out" 2>&1 & p2=$!
+msg="queue: with one slot, a second run waits, printing that it waits and how many run and wait"
+expect_pass sh -c "untilout() { for i in \$(seq 50); do grep -q \"\$2\" \"\$1\" 2>/dev/null && return 0; sleep 0.2; done; return 1; }; untilout '$T/q2.out' 'waiting for a slot: 1 running, 1 waiting' && test ! -e second"
+msg="queue: with no command it lists the slots, the holder and the waiter"
+out=$($J queue 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^slots: 1 (queue.slots)' && echo \"\$0\" | grep -A1 '^running: 1' | grep -q 'sleep 30  in .*/qu  for' && echo \"\$0\" | grep -A1 '^waiting: 1' | grep -q 'touch second  in .*/qu  for' && echo \"\$0\" | grep -qx 'complete check: none'" "$out"
+msg="queue: killing the holder lets the waiter run, and leaves no waiting file behind"
+kill $p1; wait $p1 2>/dev/null
+expect_pass sh -c "for i in \$(seq 50); do test -e second && break; sleep 0.2; done; test -e second && ! ls .git/jig/queue/wait-* 2>/dev/null | grep -q ."
+wait $p2 2>/dev/null
+msg="queue: after the kill, no run holds a slot"
+expect_pass sh -c "$J queue | grep -qx 'running: 0' && $J queue | grep -qx 'waiting: 0'"
+msg="queue: the command's exit code passes through"
+expect_pass sh -c "$J queue -- false; test \$? = 1 && $J queue -- sh -c 'exit 7'; test \$? = 7 && $J queue -- true"
+msg="queue: no command after --full is a usage error"
+expect_pass sh -c "$J queue --full >/dev/null 2>&1; test \$? = 2"
+
+cores=$(python3 -c "import os; print(os.cpu_count())")
+setq '{"width": "all"}'
+msg="queue: width all and no slots gives one slot"
+expect_pass sh -c "$J queue | grep -q '^slots: 1 ($cores cores / width all)'"
+setq '{"width": 2}'
+msg="queue: width 2 gives the core count divided by 2"
+expect_pass sh -c "$J queue | grep -q \"^slots: $(( cores / 2 > 0 ? cores / 2 : 1 )) ($cores cores / width 2)\""
+
+setq '{"slots": 4}'
+$J queue --full -- sleep 30 & p1=$!
+holding 1
+$J queue --full -- touch full2 > "$T/qf.out" 2>&1 & p2=$!
+msg="queue --full: two complete checks never overlap, even with free slots: the second waits"
+expect_pass sh -c "for i in \$(seq 50); do grep -q 'waiting for a slot' '$T/qf.out' && break; sleep 0.2; done; grep -q 'waiting for a slot: 1 running, 1 waiting' '$T/qf.out' && test ! -e full2 && $J queue | grep -qx 'complete check: running'"
+msg="queue --full: an ordinary run still takes a free slot beside a complete check"
+expect_pass sh -c "$J queue -- touch beside && test -e beside"
+kill $p1; wait $p1 2>/dev/null
+msg="queue --full: once the first ends, the second runs"
+expect_pass sh -c "for i in \$(seq 50); do test -e full2 && break; sleep 0.2; done; test -e full2"
+wait $p2 2>/dev/null
+
+setq '{"slots": 4, "overflow": {"to": "github", "reason": "the owner: keep the standing yes"}}'
+$J queue --full -- sleep 30 & p1=$!
+holding 1
+msg="queue --full: with the overflow key and a complete check running, it exits 3 and prints the CI route for jig-check/<sha>"
+short=$(git rev-parse --short=12 HEAD)
+out=$($J queue --full -- touch over 2>&1); rc=$?
+expect_pass sh -c "test $rc = 3 && test ! -e over && echo \"\$0\" | grep -q 'keep the standing yes' && echo \"\$0\" | grep -qF 'HEAD:refs/heads/jig-check/$short' && echo \"\$0\" | grep -qF 'checked --ci <run url> --tier 3 --effort 4' && echo \"\$0\" | grep -qF -- '--delete jig-check/$short'" "$out"
+kill $p1; wait $p1 2>/dev/null
+setq '{"slots": 1, "overflow": {"to": "github", "reason": "the owner: keep the standing yes"}}'
+$J queue -- sleep 30 & p1=$!
+holding 1
+msg="queue --full: with the overflow key and every slot held by ordinary runs, it exits 3 too"
+short=$(git rev-parse --short=12 HEAD)
+out=$($J queue --full -- touch over 2>&1); rc=$?
+expect_pass sh -c "test $rc = 3 && test ! -e over && echo \"\$0\" | grep -qF 'jig-check/$short'" "$out"
+msg="queue: an ordinary run never overflows: it waits"
+$J queue -- touch plain > "$T/qp.out" 2>&1 & p2=$!
+expect_pass sh -c "for i in \$(seq 50); do grep -q 'waiting for a slot' '$T/qp.out' && break; sleep 0.2; done; grep -q 'waiting for a slot' '$T/qp.out' && test ! -e plain"
+kill $p1 $p2; wait $p1 $p2 2>/dev/null
+
+# Run through a stand-in getloadavg, so the test knows whether jig read the load at all.
+loadrun() { python3 -c "import os, sys, runpy; os.getloadavg = lambda: sys.exit(9); sys.argv = ['jig.py', 'queue', '--', 'true']; runpy.run_path('.jig/jig.py', run_name='__main__')"; }
+setq '{"slots": 4}'
+msg="queue: with no max_load, the machine's load is never read"
+expect_pass sh -c "$(declare -f loadrun); loadrun"
+setq '{"slots": 4, "max_load": 0}'
+msg="queue: with max_load set, the load is read"
+expect_pass sh -c "$(declare -f loadrun); loadrun; test \$? = 9"
+msg="queue: with max_load 0, a run waits even with every slot free"
+$J queue -- touch loaded > "$T/ql.out" 2>&1 & p1=$!
+expect_pass sh -c "for i in \$(seq 50); do grep -q 'waiting for a slot' '$T/ql.out' && break; sleep 0.2; done; grep -q 'waiting for a slot: 0 running, 1 waiting' '$T/ql.out' && test ! -e loaded"
+kill $p1; wait $p1 2>/dev/null
+
+msg="queue config: an overflow key with no reason is refused by the commit hook"
+expect_refuse setq '{"overflow": {"to": "github"}}'
+undo
+msg="queue config: an overflow wider than its two keys is refused"
+expect_refuse setq '{"overflow": {"to": "github", "reason": "r", "branches": "*"}}'
+undo
+msg="queue config: an unknown queue key, or a bad width, is refused"
+expect_refuse setq '{"push": true}'
+undo
+expect_refuse setq '{"width": 0}'
+undo
+msg="queue config: a config that weakens another fixed rule is still refused"
+setroles '{"review": {"fresh": false, "reason": "r"}}'
+expect_refuse sh -c "git add -A && git commit -qm weaken"
+undo
+msg="queue config: the overflow key with the owner's words commits"
+expect_pass setq '{"width": "all", "overflow": {"to": "github", "reason": "the owner: keep the standing yes"}}'
+}
+
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders rig claims inbox rigger queue"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file
