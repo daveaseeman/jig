@@ -660,8 +660,9 @@ else stops with the files named, and a person resolves it.
    spec naming a metarepo proposal or pointers branch stays: `jig sync` follows the branch
    through it. A conflicted merge closes at `jig merge --number`, its last step before the
    commit. Once the commit lands, the merge drops each staged file a removed spec carried and
-   no spec left carries: its job built it (after a conflicted merge, `--number` names the
-   `jig staging drop` to run after `git commit`). `jig rig --close` closes the rest (Workflow).
+   no spec left carries: its job built it. A merge whose commit it doesn't make (a conflict, a
+   failing `derive.sh`, a refused commit) names each `jig staging drop` that commit owes, and so
+   does `--number`; one nobody made is dropped by the next `jig rig --close`. `jig rig --close` closes the rest (Workflow).
    `jig open` refuses a name whose earlier job's `Bug-for:` spec is still on trunk, which would
    lift the new job's strike limit, naming `jig rig --close`. The job's sessions end at its merge: the merge
    prints `close the sessions that worked on <job>`, and the hubnode closes them.
@@ -805,16 +806,22 @@ data, each group with, per member, the Touches it shares with the rest and wheth
 are append files (`append_only`): a member that meets its group only in the log is the one most
 likely kept apart. A staged decisions file's Touches are its entries' `Touches:` lines, less a
 pointer into another repo, plus `.jig/decisions.md`, so it meets the spec written from it by
-the same rule. A staged file a waiting spec or an open job's spec carries, by its exact mark, is
-**taken**: it waits on that spec or job, in no group, and counts nowhere. In the jig repo a
+the same rule. A staged file a spec in the tree or an open job's spec carries, by its exact
+mark, is **taken**: it waits on that spec or job, in no group, and counts nowhere; a spec a
+partial note names, or one rig keeps, carries its files too. One only a spec trunk's history
+closed carried was built by that close, whose drop nobody made (a merge finished by hand): it
+waits on that closed spec, and `jig rig --close` drops it. In the jig repo a
 staged feedback report not taken is a **feedback** item, in no group and counted only as
 `feedback`: the hubnode starts `/jig:fix` on it and stores the call `fixing` (keyed on the
 report alone, so opening a job doesn't start a second fix), which `--store-put` takes for a
-feedback item only. A model's open/ready call, its questions and its recommendation are kept per item in
+feedback item only. A report `/jig:fix` ends with still staged (nothing reproduced, a note of
+what's missing) is stored `concluded`, with what it found as `about`: it leaves Running and
+waits on the owner, to drop or keep. A model's open/ready call, its questions and its recommendation are kept per item in
 `.git/jig/rig.json` (never committed) with a key of the item's content and the board, and
 replayed while both are unchanged: `jig rig --store-put <path>` stores one (a JSON object on
 stdin), `--store-get <path>` prints one that still holds, and `--fresh` forgets them all. It
-never writes the roadmap or staging. It is called by name only: `jig next` is unchanged.
+never writes the roadmap, and writes staging only to drop what `--close` closes. It is called
+by name only: `jig next` is unchanged.
 It also lists the **finished** specs, which count in neither number: each complete spec (a
 landed handoff note that isn't partial names it) that no open job names, and each `Bug-for:`
 spec whose job has left the board, with the note that completed it. A spec a cached metarepo

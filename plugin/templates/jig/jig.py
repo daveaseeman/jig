@@ -1902,9 +1902,10 @@ def cmd_merge(root: Path, args) -> int:
             die("resolve and `git add` the conflicted files first")
         for line in number_placeholders(root, trunk) or ["nothing to number"]:
             print(f"numbered {line}" if "→" in line else line)
-        # The conflicted merge's last step before its commit, so it closes what a clean one does.
-        drops = close_merged(root, board, trunk)
-        for sf, by in drops:
+        # The conflicted merge's last step before its commit, so it closes what a clean one does;
+        # a merge stopped after its close (derive.sh failed) has its close in the index already.
+        close_merged(root, board, trunk)
+        for sf, by in pending_drops():
             print(f"after `git commit`: `jig staging drop {sf.name}`, which {by} built")
         return 0 if setup_and_derive(root, board, "the job") else 1
     if not name:
@@ -2011,7 +2012,7 @@ def cmd_merge(root: Path, args) -> int:
                 print(f"removed from {ROADMAP}, built: {', '.join(sorted(built))}")
     snap = Snapshot(where="index")
     # A merged job leaves nothing in flight: its spec and bug specs leave in the merge commit,
-    # their scopes kept on the note. A conflicted merge closes nothing; `jig rig --close` does later.
+    # their scopes kept on the note. A conflicted merge closes at `jig merge --number` instead.
     closed, drops = ([], []) if p.returncode else close_specs(
         finished_specs(snap, board, name, job_specs(branch, name, trunk)), snap)
     # States change when work lands, so the view is rewritten in the merge commit itself.
@@ -2044,6 +2045,7 @@ def cmd_merge(root: Path, args) -> int:
             print(f"jig: {DERIVE} didn't run: a hand merge leaves derived files stale until the "
                   f"next `jig merge`{now}", file=sys.stderr)
     elif not setup_and_derive(root, board, name):
+        owed_drops("after `jig merge --number` and `git commit`")
         return 1
     commit = ["git", "commit", "-q", "--no-edit"] if merging else \
         ["git", "commit", "-q", "-m", f"{msg}: already in {trunk}, entry deleted"]
@@ -2054,6 +2056,7 @@ def cmd_merge(root: Path, args) -> int:
               f"--abort`, which puts {name}'s entry back, fix it on {branch}, and hand "
               f"off and gate again; if it refused the merge alone, fix that, then `git commit`",
               file=sys.stderr)
+        owed_drops("after that `git commit`")
         return 1
     print(f"merged {name}; its entry is gone from {JOBS} in the same commit. Sync the clean jobs.")
     drop_built(drops)
@@ -2072,15 +2075,15 @@ def job_specs(rev: str, name: str, trunk: str) -> set[str]:
             if (m := re.search(r"^Spec: (\S+)", git("show", f"{rev}:{n}"), re.M))}
 
 
-def close_merged(root: Path, board: "Board", trunk: str) -> list[tuple[Path, str]]:
+def close_merged(root: Path, board: "Board", trunk: str) -> None:
     """In a merge being finished by hand, close what its job leaves, as a clean merge does:
     the job is named by the merge's subject, and its notes are on MERGE_HEAD."""
     first = Path(git("rev-parse", "--path-format=absolute", "--git-path", "MERGE_MSG")).read_text().split("\n", 1)[0]
     m = re.search(r"(?:^|: )merge (\S+)$", first)
     if not m:
-        return []
+        return
     snap = Snapshot(where="index")
-    lines, drops = close_specs(finished_specs(snap, board, m.group(1), job_specs("MERGE_HEAD", m.group(1), trunk)), snap)
+    lines, _ = close_specs(finished_specs(snap, board, m.group(1), job_specs("MERGE_HEAD", m.group(1), trunk)), snap)
     for line in lines:
         print(line)
     if lines and git("show", f":{ROADMAP}"):
@@ -2088,7 +2091,6 @@ def close_merged(root: Path, board: "Board", trunk: str) -> list[tuple[Path, str
         if phases is not None:
             (main_root() / ROADMAP_VIEW).write_text(roadmap_view(snap, phases))
             git("add", "--", ROADMAP_VIEW, check=True)
-    return drops
 
 
 def clean_up_job(name: str, branch: str) -> None:
@@ -9730,7 +9732,7 @@ def close_specs(finished: list[dict], snap: Snapshot) -> tuple[list[str], list[t
         if note and scope:
             body = read_raw(root / note)
             if not re.search(r"^Scope:", note_head(body), re.M):
-                body = re.sub(r"^(Spec: .*\n)", lambda m: m.group(1) + scope.group(0) + "\n", body, 1, re.M)
+                body = re.sub(r"^(Spec: .*\n)", lambda m: m.group(1) + scope.group(0) + "\n", body, count=1, flags=re.M)
                 write_raw(root / note, body)
                 git("add", "--", note, check=True, cwd=str(root))
         # -f: mid-merge the spec is staged from the job, as a new file.
@@ -9746,6 +9748,54 @@ def close_specs(finished: list[dict], snap: Snapshot) -> tuple[list[str], list[t
         if by and not any(mark in t for t in left):
             drops.append((sf, by))
     return out, drops
+
+
+def pending_drops() -> list[tuple[Path, str]]:
+    """The staged files a close in the index has built and its commit hasn't dropped yet: each
+    carried by a spec HEAD or the merge's other side holds and the index doesn't, and by no spec
+    the index still holds. Read from git, so a close any earlier run staged is found too."""
+    root = str(main_root())
+    merge = git("rev-parse", "-q", "--verify", "MERGE_HEAD", cwd=root)
+    now = {f for f in git("-c", "core.quotePath=false", "ls-files", "--", SPECS, cwd=root).splitlines() if is_spec(f)}
+    gone: dict[str, str] = {}
+    for rev in ["HEAD"] + ([merge] if merge else []):
+        for f in git("-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", rev, "--", SPECS, cwd=root).splitlines():
+            if is_spec(f) and f not in now and f not in gone:
+                gone[f] = git("show", f"{rev}:{f}", cwd=root)
+    left = [git("show", f":{f}", cwd=root) for f in now]
+    out = []
+    for sf in staged_files(main_root()):
+        mark = provenance(read_staged(sf)[0], sf)
+        by = next((f for f, text in sorted(gone.items()) if mark in text), None)
+        if by and not any(mark in t for t in left):
+            out.append((sf, by))
+    return out
+
+
+def closed_carriers(rev: str, loose: list[tuple[Path, str]]) -> list[tuple[Path, str]]:
+    """Each staged file in LOOSE (with its mark) that a spec REV's history closed carried: built,
+    with the drop its closing left to someone (a merge finished by hand, a refused commit). Read
+    only when a staged file has no carrier in the tree, so rig pays for it only then."""
+    if not loose:
+        return []
+    root, out, seen, commit = str(main_root()), [], set(), ""
+    # First parent with each merge diffed against it: a merge is where a job's spec closes.
+    for line in git("-c", "core.quotePath=false", "log", "-m", "--first-parent", "--diff-filter=D",
+                    "--format=@%H", "--name-only", rev, "--", SPECS, cwd=root).splitlines():
+        if line.startswith("@"):
+            commit = line[1:]
+        elif is_spec(line) and line not in seen:
+            seen.add(line)
+            text = git("show", f"{commit}^:{line}", cwd=root)
+            out += [(sf, line) for sf, mark in loose if mark in text and sf not in {x for x, _ in out}]
+    return out
+
+
+def owed_drops(why: str) -> None:
+    """A close staged but not committed: name what its commit will have built, since nothing
+    drops it once someone else makes that commit."""
+    for sf, by in pending_drops():
+        print(f"{why}: `jig staging drop {sf.name}`, which {by} built", file=sys.stderr)
 
 
 def drop_built(drops: list[tuple[Path, str]]) -> None:
@@ -13528,17 +13578,24 @@ def rig_items(root: Path, board: "Board") -> list[dict]:
                       "kept": sorted(kept_separate(text)), "scopes": spec_scopes(text)})
     # A staged file a spec already carries, by its exact mark as `resolve` finds it, is that
     # spec's work: it waits on the spec, or on the job building it, and is never offered again.
-    carriers = [(f"spec {path}", text) for path, text in specs.items()]
+    # An open job stands for the spec it builds: the file waits on the job, not on both.
+    building = {Path(j["spec"]).name for j in board.open_jobs().values() if j.get("spec", "").endswith(".md")}
+    carriers = [(f"spec {f.relative_to(root).as_posix()}", f.read_text(errors="replace"))
+                for f in sorted((root / SPECS).glob("*.md"))
+                if is_spec(f.relative_to(root).as_posix()) and f.name not in building]
     for name, job in sorted(board.open_jobs().items()):
         spec = job.get("spec", "")
         f = root / spec_key(root, spec) if spec.endswith(".md") else None
         carriers.append((f"job {name}", f.read_text(errors="replace") if f and f.is_file() else spec))
     # Feedback is `/jig:fix`'s in the jig repo, so rig starts that there; elsewhere it is staged.
     jig_here = addressed_here("jig", root)
-    for f in staged_files(main_root()):
+    staged = [(f, provenance(read_staged(f)[0], f)) for f in staged_files(main_root())]
+    closed = dict(closed_carriers(board.trunk, [(f, m) for f, m in staged
+                                                 if not any(m in text for _, text in carriers)]))
+    for f, mark in staged:
         head, body, _ = read_staged(f)
-        mark = provenance(head, f)
-        by = sorted(w for w, text in carriers if mark in text)
+        by = sorted(w for w, text in carriers if mark in text) or \
+            ([f"spec {closed[f]}, closed: `jig rig --close` drops it"] if f in closed else [])
         kind = "feedback" if not by and jig_here and head.get("kind") == "feedback" else "staged"
         item = {"kind": kind, "id": f.name, "path": f"{STAGING}/{f.name}",
                 "content": f.read_text(errors="replace"), "header": head,
@@ -13627,7 +13684,7 @@ def rig_state(root: Path, board: "Board") -> dict:
         call = (i["judged"] or {}).get("call")
         i["state"] = ("ready" if i["kind"] == "spec" else "taken" if "covered" in i
                       else "open" if i["kind"] == "next-step"
-                      else ("fixing" if call == "fixing" else "new") if i["kind"] == "feedback"
+                      else (call if call in ("fixing", "concluded") else "new") if i["kind"] == "feedback"
                       else call if call in ("ready", "open") else "unjudged")
     by_name = {}
     for i in items:
@@ -13721,7 +13778,7 @@ def rig_state(root: Path, board: "Board") -> dict:
         jobs.append({"name": name, "step": step, "who": who, "session": session, "why": why})
     # Every block that asks the owner something counts once: a ring is one question, not one per
     # member, and a group with overlaps is one question, "one job, or keep some apart", not one per pair.
-    asks = [i for i in items if i["state"] in ("open", "unjudged")]
+    asks = [i for i in items if i["state"] in ("open", "unjudged", "concluded")]
     pairs = sorted({tuple(p) for p in overlaps})
     by_path = {i["path"]: i for i in items}
     appends = append_globs(board)
@@ -13768,9 +13825,11 @@ def rig_text(state: dict) -> str:
     waits = [i for i in items if i["waits_on"]]
     out += [f"  {i['kind']:<7} {i['path']}  waits on {', '.join(i['waits_on'])}" for i in waits] or ["  nothing"]
     out.append("\nWaiting on you:")
-    asks = [i for i in items if i["state"] in ("open", "unjudged")]
+    asks = [i for i in items if i["state"] in ("open", "unjudged", "concluded")]
     for i in asks:
-        if i["kind"] == "next-step":
+        if i["state"] == "concluded":
+            out.append(f"  feedback {i['path']}  /jig:fix concluded: {(i['judged'] or {}).get('about', '')}")
+        elif i["kind"] == "next-step":
             out.append(f"  next    {i['id']} ({i['from']}): {i['what']}")
         else:
             out.append(f"  {i['kind']:<7} {i['path']}  {'not judged yet' if i['state'] == 'unjudged' else 'open'}")
@@ -13785,7 +13844,7 @@ def rig_text(state: dict) -> str:
     out += [f"  {j['name']}: {j['step']} — {j['who']}, {j['session']}" + (f" ({j['why']})" if j["why"] else "")
             for j in state["jobs"]] or ["  no open jobs"]
     for i in items:
-        if i["kind"] == "feedback":
+        if i["kind"] == "feedback" and i["state"] != "concluded":
             j = i["judged"] or {}
             out.append(f"  feedback {i['path']}: " + (f"/jig:fix, {j.get('about', '')}, {j.get('context', '')}"
                                                     if i["state"] == "fixing" else "/jig:fix not started"))
@@ -13809,15 +13868,23 @@ def rig_close(root: Path, board: "Board") -> int:
     closed = [Path(l.split(" ", 1)[1]).stem for l in lines if l.startswith("closed ")]
     for l in lines:
         print(l)
+    left = [snap.show(f) for f in snap.ls(SPECS) if is_spec(f)]
+    marks = [(f, provenance(read_staged(f)[0], f)) for f in staged_files(root)]
+    loose = [(f, m) for f, m in marks if not any(m in t for t in left) and f not in {d for d, _ in drops}]
+    # A staged file a close already committed has built, whose drop nobody made, goes now.
+    earlier = closed_carriers(trunk, loose)
     if not closed:
-        print("nothing to close")
+        drop_built(earlier)
+        print("nothing to close" if not earlier else f"dropped {len(earlier)} staged file(s) closed specs built")
         return 0
+    drops += earlier
     phases = roadmap_state(snap)
     if phases is not None:
         (root / ROADMAP_VIEW).write_text(roadmap_view(snap, phases))
         git("add", "--", ROADMAP_VIEW, check=True)
     if subprocess.run(["git", "commit", "-q", "-m", f"close finished specs: {', '.join(closed)}"]).returncode:
         print("the close isn't committed: fix what the hook refused, then `git commit`", file=sys.stderr)
+        owed_drops("after that `git commit`")
         return 1
     drop_built(drops)
     print(f"committed the close of {len(closed)} spec{'s' if len(closed) != 1 else ''}")
@@ -13826,7 +13893,8 @@ def rig_close(root: Path, board: "Board") -> int:
 
 def cmd_rig(root: Path, args) -> int:
     """The repo's picture: what can start, what waits on what, what waits on the owner, and the
-    running jobs. It reads and never writes the roadmap or staging; its one file is the store."""
+    running jobs. It reads and never writes the roadmap; its one file is the store, and it writes
+    staging only to drop what `--close` closes."""
     board = Board.load(root)
     if args.close:
         return rig_close(root, board)
@@ -13849,9 +13917,9 @@ def cmd_rig(root: Path, args) -> int:
         # A staged file's call is what places it: one stored without it would replay as unjudged.
         call = judgment.get("call", "ready" if item["kind"] not in ("staged", "feedback") else None) \
             if isinstance(judgment, dict) else None
-        if item["kind"] == "feedback" and call != "fixing":
-            die('--store-put on a feedback report reads a JSON object whose "call" is "fixing": '
-                "/jig:fix is working on it", 2)
+        if item["kind"] == "feedback" and call not in ("fixing", "concluded"):
+            die('--store-put on a feedback report reads a JSON object whose "call" is "fixing" (/jig:fix '
+                'is working on it) or "concluded" (it ended with the report still staged)', 2)
         if item["kind"] != "feedback" and call not in ("ready", "open"):
             die(f'--store-put reads a JSON object whose "call" is "ready" or "open"'
                 f'{" (a staged file needs one)" if item["kind"] == "staged" else ""}', 2)

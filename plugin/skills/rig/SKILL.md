@@ -22,7 +22,8 @@ First, in the jig repo, each `feedback` item whose `state` is `new`: start `/jig
 fix for every new report, grouped as that skill says), without waiting for it, and store
 `{"call": "fixing", "about": "<its group>", "context": "<the session that took it>"}` with
 `jig rig --store-put <path>`. A `fixing` report is never started twice. Its drops and specs show
-as `/jig:fix` shows them; its specs come back as waiting specs on a later run.
+as `/jig:fix` shows them; its specs come back as waiting specs on a later run. A report `/jig:fix`
+ended with still staged is stored `concluded` (that skill says when): it waits on the owner.
 
 For each item whose `judged` is null: each staged file, and the next-step item whose `state`
 is `open` (a next-step item whose `state` is `taken` is already under way: it is listed under
@@ -52,7 +53,8 @@ inline visual, it may; the sections and their contents stay these.
    after, and each overlapping pair the group's `overlaps` names.
 3. **Waiting on:** each item and what it waits for: a job, a spec or a staged file. A taken
    staged file waits on the spec or job that carries it.
-4. **Waiting on you:** the open staged files, the next step whose `state` is `open`, each
+4. **Waiting on you:** the open staged files, each `concluded` feedback report with what
+   `/jig:fix` found, the next step whose `state` is `open`, each
    group with an overlap (one line: one job for its items, or keep some apart) and each
    dependency cycle (`cycles`).
 5. **Running:** each open job with its step, who takes it, and whether it continues a session
@@ -88,6 +90,9 @@ in this order:
    `after` gets no other block: it builds after another item in its group, and once that
    opens as a job, it waits on that job.
 6. Each dependency cycle named under Waiting on: which item goes first?
+7. Each `concluded` feedback report: drop it (`jig staging drop`), or keep it staged for more
+   of what its `about` says is missing. A changed report is new again, and rig starts
+   `/jig:fix` on it.
 
 Every block has "not now". It is an answer: the item stays as it is and comes back next run.
 Nothing is ever dropped for it.

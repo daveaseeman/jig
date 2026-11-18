@@ -8146,6 +8146,10 @@ expect_pass sh -c "$J rig --json | grep -q '\"state\": \"fixing\"' && $J rig | s
 msg="rig feedback: a change to the report voids its judgment"
 printf 'more\n' >> .jig/staging/fb.md
 expect_pass rj "assert i['.jig/staging/fb.md']['state'] == 'new'"
+printf '{"call": "concluded", "about": "no repro: needs the board config"}' | $J rig --store-put .jig/staging/fb.md >/dev/null
+msg="rig feedback: a report /jig:fix ended with still staged is concluded: it leaves Running and waits on the owner, counted"
+expect_pass sh -c "$J rig | sed -n '/^Waiting on you:/,/^\$/p' | grep -q '  feedback .jig/staging/fb.md  /jig:fix concluded: no repro: needs the board config' \
+  && ! $J rig | sed -n '/^Running:/,/^\$/p' | grep -q fb.md && $J rig | head -1 | grep -q '^1 thing waiting on your answers'"
 printf '{"call": "fixing", "about": "group 1", "context": "fix-1"}' | $J rig --store-put .jig/staging/fb.md >/dev/null
 bspec fbs docs/other.md "$(printf 'Source: chat fb.md (staged as fb.md)')"
 msg="rig feedback: once a waiting spec carries its mark it is taken, waits on that spec, leaves Running and isn't counted"
@@ -8198,6 +8202,8 @@ msg="close: a spec a second open job still names stays after the first job's mer
 expect_pass test -f .jig/specs/s2.md
 msg="close: a spec whose only note is Partial: yes stays, and so does the staged file it carries"
 expect_pass sh -c "test -f .jig/specs/sp.md && test -f .jig/staging/d2.md && ! echo \"\$0\" | grep -q '^closed'" "$out"
+msg="close: that staged file is taken by the partial spec, and offered nowhere"
+expect_pass cfin "x = i['.jig/staging/d2.md']; assert x['state'] == 'taken' and x['waits_on'] == ['spec .jig/specs/sp.md'] and x['group'] is None, x"
 
 msg="close: after the merge, a job opened again under the name isn't let through by the old Bug-for spec"
 $J open JC --owns 'jc2/**' >/dev/null && git add -A && git commit -qm "open JC again"
@@ -8235,7 +8241,8 @@ expect_pass sh -c "test $rc = 0 && test \$(git rev-list --count $head..HEAD) = 1
   && git diff --name-status HEAD^ HEAD | grep -qx 'D	.jig/specs/so.md' && test ! -e .jig/staging/d3.md && echo \"\$0\" | grep -qx 'dropped d3.md: built by .jig/specs/so.md' \
   && test \"\$($J roadmap | grep '^  ')\" = \"\$1\" && ! $J roadmap | grep -q stale && test -z \"\$(git status --porcelain)\"" "$out" "$before"
 # A merge finished by hand after a conflict closes what a clean one does, at `jig merge --number`.
-cspec cf && printf 'trunk\n' > shared.txt && git add -A && git commit -qm "cf, shared" >/dev/null
+cspec cf '' 'Source: chat d5.md (staged as d5.md)' && printf 'trunk\n' > shared.txt && git add -A && git commit -qm "cf, shared" >/dev/null
+stage d5.md this decisions new .jig/decisions.md
 $J open CF --spec .jig/specs/cf.md --owns 'CF/**' --shares shared.txt >/dev/null && git add -A && git commit -qm "open CF" >/dev/null
 ( cd .git/jig/worktrees/CF && printf '# cf bug\n\nBug-for: CF\n' > .jig/specs/cf-bug.md && printf 'job\n' > shared.txt && git add -A && git commit -qm "CF: x" \
   && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note CF" ) >/dev/null 2>&1
@@ -8243,8 +8250,12 @@ printf 'trunk2\n' > shared.txt && git commit -qam "trunk: shared" >/dev/null
 gated CF; $J merge CF >/dev/null 2>&1; printf 'both\n' > shared.txt && git add shared.txt
 msg="close: after a conflict, jig merge --number closes the job's spec and its Bug-for spec, and the commit passes"
 out=$($J merge --number 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -qx 'closed .jig/specs/cf.md' && echo \"\$0\" | grep -qx 'closed .jig/specs/cf-bug.md' && git commit -q --no-edit \
+expect_pass sh -c "echo \"\$0\" | grep -qx 'closed .jig/specs/cf.md' && echo \"\$0\" | grep -qx 'closed .jig/specs/cf-bug.md' \
+  && echo \"\$0\" | grep -qx 'after .git commit.: .jig staging drop d5.md., which .jig/specs/cf.md built' && git commit -q --no-edit \
   && ! git cat-file -e HEAD:.jig/specs/cf.md 2>/dev/null && ! git cat-file -e HEAD:.jig/specs/cf-bug.md 2>/dev/null && test -z \"\$(git status --porcelain)\"" "$out"
+msg="close: a drop nobody made leaves the file taken by its closed spec, and jig rig --close drops it"
+expect_pass sh -c "$J rig --json | python3 -c \"import json,sys; d=json.load(sys.stdin); i={x['path']: x for x in d['items']}; x=i['.jig/staging/d5.md']; assert x['state'] == 'taken' and x['waits_on'][0].startswith('spec .jig/specs/cf.md, closed'), x\" \
+  && $J rig --close | grep -qx 'dropped d5.md: built by .jig/specs/cf.md' && test ! -e .jig/staging/d5.md && test -z \"\$(git status --porcelain)\""
 msg="close: jig open refuses a name whose earlier job's Bug-for spec is still on trunk, naming jig rig --close"
 printf '# old bug\n\nBug-for: OB\n' > .jig/specs/ob-bug.md && git add -A && git commit -qm "an old bug spec" >/dev/null
 out=$($J open OB --owns 'ob/**' 2>&1); rc=$?
@@ -8260,9 +8271,9 @@ msg="close: a staged file another spec still carries stays when the first one cl
 gated H1; out=$($J merge H1 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -qx 'closed .jig/specs/h1.md' && test -f .jig/staging/d4.md && ! echo \"\$0\" | grep -q 'dropped d4.md'" "$out"
 cjob H2 h2; printf '#!/bin/sh\nexit 3\n' > .jig/scripts/derive.sh && chmod +x .jig/scripts/derive.sh && git add -A && git commit -qm "derive fails" >/dev/null
-msg="close: a merge that stops before its commit drops nothing, and its abort puts the spec back"
-gated H2; $J merge H2 >/dev/null 2>&1
-expect_pass sh -c "test -f .jig/staging/d4.md && git merge --abort && test -f .jig/specs/h2.md && test -f .jig/staging/d4.md"
+msg="close: a merge that stops before its commit drops nothing, names the drop it owes, and its abort puts the spec back"
+gated H2; out=$($J merge H2 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'jig staging drop d4.md., which .jig/specs/h2.md built' && test -f .jig/staging/d4.md && git merge --abort && test -f .jig/specs/h2.md && test -f .jig/staging/d4.md" "$out"
 printf '#!/bin/sh\nexit 0\n' > .jig/scripts/derive.sh && git add -A && git commit -qm "derive passes" >/dev/null
 msg="close: once the last spec carrying it closes in a landed merge, it is dropped"
 out=$($J merge H2 2>&1)

@@ -43,7 +43,9 @@ investigation. Elsewhere, stop and say where to run it. If `jig staging` refuses
   - **a workaround for one repo** (`/jig:bug` step 4): `jig staging drop <file>`, saying why and what that repo
     should do instead.
   - **already fixed**: `jig staging drop <file>`, naming the commit that fixed it.
-  - **can't reproduce**: leave it staged, and say what's missing to reproduce it.
+  - **can't reproduce**: leave it staged, and say what's missing to reproduce it. Store that
+    as its end: `jig rig --store-put <path>` with `{"call": "concluded", "about": "<what's
+    missing>"}`, so `/jig:rig` stops listing it as running and puts it to the owner.
 - **Showing** each decision as you make it: the group, the reports in it, the decision and its
   one-line reason. Don't wait for the owner between reports. A drop records nothing, so its
   reason lives only in what you show: the owner overrules it from there.

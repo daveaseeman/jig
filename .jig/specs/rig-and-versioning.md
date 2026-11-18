@@ -569,6 +569,20 @@ From the merge with versioning:
   rewritten request covers releases the open job's spec doesn't — [seen] (`provenance` includes
   the `source:`, which names the release).
 
+From the reviews of parts 1 and 2:
+- A conflicted merge closes nothing and leaves it to `jig rig --close` — rejected because once
+  the name is open again `--close` can't remove its `Bug-for:` spec, which then lifts the new
+  job's strike limit — [seen] (review of d8b8fa8, B1's repro).
+- Drop a carried staged file as soon as its spec is staged for removal — rejected because a
+  refused commit or an aborted merge then loses an uncommitted file git can't bring back —
+  [seen] (review of d8b8fa8, S1).
+- Name the owed drops only, with no sweep — rejected because a drop nobody runs brings the file
+  back as unjudged — [seen] (review of a12af04, B1's repro).
+- Count only waiting specs and open jobs' specs as carriers — rejected because a spec a partial
+  note names is neither, and its file was offered again — [seen] (review of a12af04, B2's repro).
+- Keep the board in a feedback report's judgment key — rejected because opening any job would
+  void `fixing` and rig would start a second `/jig:fix` on the same report — [assumed].
+
 ## Decisions
 - The owner, 2026-11-18: "Three rig ones as one job".
 - The owner, 2026-11-18: "Merge versioning with rig".
@@ -595,6 +609,15 @@ From the merge:
 - Interpreted: the closing step drops the staged files a closed spec carries, the seam
   bug-rig-batch-one-job left to this consolidate and bug-merged-job-cleanup's design didn't
   reach.
+- Interpreted (review of part 2): a feedback report's judgment is keyed on the report alone,
+  not the board, so a `fixing` report outlives a job opened; a report `/jig:fix` ends with still
+  staged is stored `concluded` and waits on the owner, to drop or keep.
+- Interpreted (review of part 2): a group's line counts in its K items each waiting spec
+  outside the group that one of its pairs reaches ("one job for 2 items" for theta and gamma).
+- Interpreted (review of a12af04): every spec in the tree carries its staged files, a partial
+  one too; a file only a spec trunk's history closed carried waits on that closed spec, and
+  `jig rig --close` drops it. Every path that stages a close without making its commit names
+  the `jig staging drop` that commit owes.
 - Interpreted (review of part 1): a staged file is dropped only when no spec left in the tree
   carries its mark (a request split into two specs is built when the last one closes), and only
   after the commit that closes its spec lands: staged files are never committed, so a refused
