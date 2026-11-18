@@ -9982,11 +9982,18 @@ def built_by(root: Path, board: "Board", mark: str, finished: list[dict] | None 
 
 def quiet_resolve(root: Path, f: Path, carrier: str) -> bool:
     """Whether `resolve` lands a staged file CARRIER built writing nothing: a story, request or
-    report, which its spec carried. A decisions file never is: whether its job logged its entries
+    report, which its spec carried, or a pin-bump whose release trunk's pin holds. A decisions
+    file never is: whether its job logged its entries
     is the hubnode's to read (the owner, 2026-11-18), so it stays, noted, for the hubnode."""
     head, _, problems = read_staged(f)
     if not carrier or problems or not addressed_here(head.get("target", ""), root):
         return False
+    if head.get("kind") == "pin-bump":
+        # Its landing is the pin itself, read from trunk now, as resolve reads it: no content is
+        # matched. A job that didn't move the pin leaves it noted, the hubnode's step.
+        trunk = Board.trunk_name(root)
+        pin = json.loads(git("show", f"{trunk}:{PARA}", cwd=str(root)) or "{}").get("pin") or ""
+        return bool(pin) and bool(head.get("release")) and version_key(pin) >= version_key(head["release"])
     return head.get("kind") in ("user-story", "feature-request", "feedback")
 
 

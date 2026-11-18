@@ -8215,10 +8215,13 @@ out=$(cd .git/jig/worktrees/pin && sed -i.bak 's|M/docs/products/x.md|M/docs/pro
   && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: M v0.1.0 → v0.1.2" 2>&1 && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 \
   && sed -i.bak -e 's/^- \[ \]/- [x]/' -e '/ vs .* § /s/___/agrees/' -e 's/___/smoke/g' .jig/handoffs/*.md && rm .jig/handoffs/*.bak && git add -A && git commit -qm "note pin" 2>&1); rc=$?
 [ "$rc" = 0 ] || echo "$out"
-msg="pin bump: merging the job that carries the request and moves the pin drops it"
+msg="pin bump: merging the job that carries the request and moves the pin says nothing of staging; the request is built"
 gated pin; out=$($J merge pin 2>&1); rc=$?
-expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'dropped pin-bump-M.md: built by .jig/specs/pin.md' && test ! -e .jig/staging/pin-bump-M.md && grep -q '\"pin\": \"v0.1.2\"' .jig/para.json" "$out"
+expect_pass sh -c "test $rc = 0 && ! echo \"\$0\" | grep -qi 'drop' && test -f .jig/staging/pin-bump-M.md && grep -q '\"pin\": \"v0.1.2\"' .jig/para.json \
+  && $J rig --json | python3 -c \"import json,sys; i={x['path']: x for x in json.load(sys.stdin)['items']}; x=i['.jig/staging/pin-bump-M.md']; assert x['state'] == 'built' and x['built'].startswith('.jig/handoffs/pin-'), x\"" "$out"
 [ "$rc" = 0 ] || echo "$out"
+msg="pin bump: jig rig --close resolves it, the pin holding its release"
+expect_pass sh -c "$J rig --close | grep -q '^resolved pin-bump-M.md: main pins v0.1.2' && test ! -e .jig/staging/pin-bump-M.md"
 msg="pin bump: a request whose release the pin holds resolves"
 cd "$M" && printf 'Again.\n' >> docs/products/w.md && ulog '- w again.' && emerge w2 "E-003: w again" docs/products/w.md .jig/decisions.md && $J release >/dev/null 2>&1
 cd "$PBT/B" && setjson .jig/para.json pin v0.1.3 && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: M v0.1.0 → v0.1.3" >/dev/null 2>&1

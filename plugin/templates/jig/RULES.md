@@ -1225,8 +1225,10 @@ A pin-bump request (`kind: pin-bump`) is the one kind jig itself stages: a metar
 writes it in a pararepo (Metarepo and pararepos). Its destination is `.jig/para.json` and its
 change `update`, and `check` accepts no other. `resolve` refuses it until trunk's `para.json`
 pins its release or a later one, naming how it lands: a job (`/jig:spec` from it) whose pin
-commit carries the request as its body, with the uses it lists rewritten. That job's merge drops
-it, as for any carried file; `drop` works as for any staged file. It doesn't hold the
+commit carries the request as its body, with the uses it lists rewritten. Once that job has
+merged and trunk pins the release, the request is built, and `jig rig --close` resolves it; a
+job that merged without moving the pin leaves it noted, the hubnode's step. `drop` works as for
+any staged file. It doesn't hold the
 pararepo's own release, which names it.
 
 A feature request is `kind: feature-request`: the owner's own words for what the product
@@ -1500,13 +1502,14 @@ jig repos use `MILESTONE.FEATURE.PATCH`. A version says how much the product cha
 
 **Choosing the level.** A release takes the highest level of any change in it. The hubnode proposes the level with a one-line reason, and the owner's word releases it.
 
+A repo published to a package registry, whose users expect SemVer, needs a rule of its own; jig has none yet.
+
 ### Before 1.0.0
 
 *Only for a repo whose latest release is `0.y.z`. A repo at `1.0.0` or later skips this section.*
 
 Y and Z work as above, and X stays 0. Releasing `1.0.0` is the owner's call that the core is complete and the product is ready for general use. Before that, a change that would be a Milestone is a Y.
 
-A repo published to a package registry, whose users expect SemVer, needs a rule of its own; jig has none yet.
 
 ## Release
 

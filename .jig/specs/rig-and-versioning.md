@@ -633,12 +633,21 @@ From bug-versioning-pin-trigger:
   block the pararepo's release; and the kind name `pin-bump`, one file per metarepo.
 
 From the merge with versioning:
+- The hubnode, 2026-11-18: the registry sentence sits at the end of `## Versioning`'s main
+  body, before `### Before 1.0.0`, not inside it: a repo at 1.0.0 or later skips that
+  subsection, and the sentence applies to every repo; the spec's "ends with" means the block's
+  own rules, not the pre-1.0 note. Rejected: the literal last line.
 - Interpreted: a staged pin-bump is an ordinary staged item in rig, with no Touches read, as a
   staged request is; a ready one gets "write its spec?", which is versioning's landing.
 - Interpreted: a pin-bump rewritten by a later release is a new item to rig (its mark changed),
   with no special case; its spec covers what the open job's doesn't.
 - A carried pin-bump is resolved after its job's merge, by `jig rig --close`, like any carried
   file (the owner, 2026-11-18: "Only via resolve").
+- Interpreted (part 3 after bug-rav-staged-drops): a carried pin-bump is `built` when trunk's pin
+  holds its release, since `resolve` reads the pin, not the content, and lands it writing
+  nothing; `jig rig --close` resolves it. One whose job didn't move the pin is `noted`, the
+  hubnode's step. Rejected: noted always, as a kind that is neither a story, request nor
+  report, which would leave a step the pin already answers.
 
 ## Roles
 spec: tier 2, effort 2
