@@ -1907,7 +1907,7 @@ done
 printf -- '- trunk\n' >> CHANGELOG.md && git commit -qam "trunk appends"
 msg="gate: with an append conflict between trunk and the note commit, the scratch checkout has trunk merged and no conflict, and the check is printed"
 out=$($J gate K 2>&1); s=.git/jig/worktrees/gate-K
-expect_pass sh -c "echo \"\$0\" | grep -q 'cd $s && ./.jig/scripts/check.sh' && test \"\$(git -C $s rev-list --parents -n1 HEAD | wc -w | tr -d ' ')\" = 3 && test -z \"\$(git -C $s status --porcelain)\" && ! grep -q '^<<<<<<<' $s/CHANGELOG.md && grep -q '^- K' $s/CHANGELOG.md && grep -q '^- trunk' $s/CHANGELOG.md" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -qF 'cd $s && python3 .jig/jig.py queue --full -- ./.jig/scripts/check.sh --full' && test \"\$(git -C $s rev-list --parents -n1 HEAD | wc -w | tr -d ' ')\" = 3 && test -z \"\$(git -C $s status --porcelain)\" && ! grep -q '^<<<<<<<' $s/CHANGELOG.md && grep -q '^- K' $s/CHANGELOG.md && grep -q '^- trunk' $s/CHANGELOG.md" "$out"
 msg="gate: a second gate of K, with no mark between, replaces the leftover checkout"
 expect_pass sh -c "$J gate K >/dev/null 2>&1 && test -d $s"
 msg="mark: with a tracked edit in the gate checkout, jig mark K gated refuses, naming it"
@@ -3100,11 +3100,11 @@ for j in K L M N O; do
 done
 msg="gate: an executable check.sh is printed as ./.jig/scripts/check.sh, and marking gated is the cleanup, not a hand-run remove"
 out=$($J gate L 2>&1); git worktree remove --force .git/jig/worktrees/gate-L 2>/dev/null
-expect_pass sh -c "echo \"\$0\" | grep -q '&& ./.jig/scripts/check.sh' && echo \"\$0\" | grep -q 'jig mark L gated, which removes .git/jig/worktrees/gate-L' && ! echo \"\$0\" | grep -q 'git worktree remove'" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -qF 'queue --full -- ./.jig/scripts/check.sh --full' && echo \"\$0\" | grep -q 'jig mark L gated, which removes .git/jig/worktrees/gate-L' && ! echo \"\$0\" | grep -q 'git worktree remove'" "$out"
 chmod -x .jig/scripts/check.sh && git add .jig/scripts/check.sh && git commit -qm "check.sh not executable"
 msg="gate: a check.sh that isn't executable is printed as bash ./.jig/scripts/check.sh"
 out=$($J gate L 2>&1); git worktree remove --force .git/jig/worktrees/gate-L 2>/dev/null
-expect_pass sh -c "echo \"\$0\" | grep -q '&& bash ./.jig/scripts/check.sh'" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -qF 'queue --full -- bash ./.jig/scripts/check.sh --full'" "$out"
 gated K; $J merge K >/dev/null 2>&1
 msg="gate: M conflicts with trunk in common.txt: the gate stops, naming it, and removes its own checkout"
 out=$($J gate M 2>&1); rc=$?
