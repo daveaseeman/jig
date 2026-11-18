@@ -297,8 +297,8 @@ git add -A && git commit -qm init && $J init >/dev/null && git add -A && git com
 msg="init: root holds only AGENTS.md, CLAUDE.md and .jig/"
 expect_pass test "$(ls -A | grep -v '^\.git$' | LC_ALL=C sort | tr '\n' ' ')" = ".jig AGENTS.md CLAUDE.md "
 
-msg="init: .jig/ holds jig.py, RULES.md, docs-page.md, config.json, jobs.json, decisions.md, the five scripts and staging/.gitignore, nothing else"
-expect_pass test "$(find .jig -type f | LC_ALL=C sort | tr '\n' ' ')" = ".jig/RULES.md .jig/config.json .jig/decisions.md .jig/docs-page.md .jig/jig.py .jig/jobs.json .jig/scripts/check.sh .jig/scripts/derive.sh .jig/scripts/format.sh .jig/scripts/publish.sh .jig/scripts/release.sh .jig/scripts/setup.sh .jig/staging/.gitignore "
+msg="init: .jig/ holds jig.py, RULES.md, docs-page.md, config.json, jobs.json, decisions.md, the five scripts, staging/.gitignore and inbox/.gitignore, nothing else"
+expect_pass test "$(find .jig -type f | LC_ALL=C sort | tr '\n' ' ')" = ".jig/RULES.md .jig/config.json .jig/decisions.md .jig/docs-page.md .jig/inbox/.gitignore .jig/jig.py .jig/jobs.json .jig/scripts/check.sh .jig/scripts/derive.sh .jig/scripts/format.sh .jig/scripts/publish.sh .jig/scripts/release.sh .jig/scripts/setup.sh .jig/staging/.gitignore "
 
 msg="init: the spec template and both ledgers stay in the plugin until first use"
 expect_pass sh -c "test ! -e .jig/specs -a ! -e .jig/ledgers -a ! -e '$P/jig/specs' -a ! -e '$P/jig/ledgers' && test -f '$P/specs/_template.md' -a -f '$P/ledgers/WORKAROUNDS.md' -a -f '$P/ledgers/DEFERRED.md'"
@@ -493,7 +493,7 @@ for layout in "eaec973 dot" "66a044c dot" "62c8d9f jig" "eaec973 aidev" "5d955a2
   expect_pass python3 -c "
 import subprocess
 allowed = {'$board', '.jig/config.json', '.jig/jobs.json', '.aidev/aidev.py', 'jig/jig.py', '.jig/jig.py',
-           '.aidev/RULES.md', 'jig/RULES.md', '.jig/RULES.md', '.jig/docs-page.md', '.gitignore', '.jig/scripts/setup.sh', '.jig/scripts/derive.sh', '.jig/scripts/release.sh', '.jig/scripts/publish.sh', '.jig/staging/.gitignore', '.jig/decisions.md'}
+           '.aidev/RULES.md', 'jig/RULES.md', '.jig/RULES.md', '.jig/docs-page.md', '.gitignore', '.jig/scripts/setup.sh', '.jig/scripts/derive.sh', '.jig/scripts/release.sh', '.jig/scripts/publish.sh', '.jig/staging/.gitignore', '.jig/inbox/.gitignore', '.jig/decisions.md'}
 for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
     status, *paths = line.split('\t')
     assert status == 'R100' or set(paths) <= allowed | {'AGENTS.md'}, line
@@ -723,7 +723,7 @@ EOF
 import subprocess, sys
 removed = set(sys.argv[1].split())
 jig = {'.jig/config.json', '.jig/jobs.json', '.jig/jig.py', '.jig/RULES.md', '.jig/docs-page.md', '.jig/scripts/setup.sh', '.jig/scripts/derive.sh', '.jig/scripts/release.sh', '.jig/scripts/publish.sh',
-       '.jig/ledgers/DEFERRED.md', '.jig/staging/.gitignore', '.gitignore', '.jig/decisions.md'}
+       '.jig/ledgers/DEFERRED.md', '.jig/staging/.gitignore', '.jig/inbox/.gitignore', '.gitignore', '.jig/decisions.md'}
 for line in subprocess.check_output(['git', 'diff', '--cached', '-M', '--name-status'], text=True).splitlines():
     status, *paths = line.split('\t')
     assert status == 'R100' or (status == 'D' and paths[0] in removed) or paths[-1] in jig, line" "$removed $board"
@@ -1291,8 +1291,8 @@ cd .git/jig/worktrees/b-gl && git apply -C1 "$T/dm.patch" && git add -A
 msg="staging: and a job's commit of it passes M3 and R3, the entry being its line"; expect_pass git commit -qm "D-?wire: x"
 cd "$M"
 
-msg="plugin: only the skills that change the repo, tag, write user config or report on jig are user-only; read-only ones stay listed"
-expect_pass test "$(grep -l '^disable-model-invocation: true' $P/../skills/*/SKILL.md | xargs -n1 dirname | xargs -n1 basename | sort | tr '\n' ' ')" = "adopt feedback init redocument release repos update "
+msg="plugin: only the skills that change the repo, tag, write user config, speak for the owner or report on jig are user-only; read-only ones stay listed"
+expect_pass test "$(grep -l '^disable-model-invocation: true' $P/../skills/*/SKILL.md | xargs -n1 dirname | xargs -n1 basename | sort | tr '\n' ' ')" = "adopt feedback init redocument relay release repos rigger send update "
 
 msg="plugin: no skill description holds angle brackets (the desktop app reads them as XML tags)"
 expect_refuse grep -lE '^description:.*[<>]' $P/../skills/*/SKILL.md $P/skills/*/SKILL.md
@@ -1997,6 +1997,58 @@ $J repos rename tools >/dev/null
 JD="$T/jigdev"; mkdir -p "$JD/.jig" && echo '{"name": "jig"}' > "$JD/.jig/config.json"
 $J repos add jigdev "$JD" >/dev/null
 expect_refuse sh -c "$J repos | grep -q 'tool reports wait'"
+
+# Aliases, and the one name rule every typed repo name goes through.
+export JIG_CONFIG="$T/repos-alias.json"
+for n in app other; do mkdir -p "$T/al-$n" && (cd "$T/al-$n" && git init -q -b main); done
+$J repos add app "$T/al-app" >/dev/null && $J repos add other "$T/al-other" >/dev/null
+msg="repos alias: an alias is added, and jig repos lists it"
+$J repos alias app ap >/dev/null
+expect_pass sh -c "$J repos | grep -q 'aliases: ap'"
+alias_stage() { mkdir -p "$T/al-st" && printf -- '---\nstaged: true\ntarget: %s\nkind: spec\nchange: new\ndestination: .jig/specs/x.md\nsource: chat\nstatus: staged\n---\nx\n' "$1" > "$T/al-st/x.md"; }
+msg="repos alias: staging check takes the alias as the target"
+alias_stage ap; expect_pass $J staging check "$T/al-st/x.md"
+msg="repos alias: and the alias in upper case"
+alias_stage AP; expect_pass $J staging check "$T/al-st/x.md"
+msg="repos alias: a target that matches only without its punctuation fails, naming the alias"
+alias_stage a_p; out=$($J staging check "$T/al-st/x.md"); rc=$?
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q 'did you mean ap'" "$out"
+msg="repos alias: an alias another entry has is refused"
+expect_refuse $J repos alias other ap
+msg="repos alias: an alias that is another entry's name is refused"
+expect_refuse $J repos alias other app
+mkdir -p "$T/al-third" && (cd "$T/al-third" && git init -q -b main)
+msg="repos alias: repos add of a third repo leaves the alias in the file"
+$J repos add third "$T/al-third" >/dev/null
+expect_pass python3 -c "import json; assert json.load(open('$JIG_CONFIG'))['app']['aliases'] == ['ap']"
+msg="repos alias: re-adding the same checkout keeps its alias"
+$J repos add app "$T/al-app" >/dev/null
+expect_pass python3 -c "import json; assert json.load(open('$JIG_CONFIG'))['app']['aliases'] == ['ap']"
+msg="repos alias: rename to another entry's alias is refused, case ignored"
+expect_refuse $J repos rename other AP
+msg="repos alias: add --name taking another entry's alias is refused"
+mkdir -p "$T/al-fourth" && (cd "$T/al-fourth" && git init -q -b main)
+out=$($J repos add repo "$T/al-fourth" --name ap 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'ap already names app'" "$out"
+msg="repos alias: add <name> <path> re-pointing a name takes none of the old checkout's aliases"
+$J repos alias third th >/dev/null && $J repos add third "$T/al-fourth" >/dev/null
+expect_pass python3 -c "import json; e = json.load(open('$JIG_CONFIG'))['third']; assert e['path'].endswith('al-fourth') and 'aliases' not in e, e"
+msg="repos which: an alias in upper case prints the repo's path"
+expect_pass sh -c "test \"\$($J repos which AP)\" = '$T/al-app' || test \"\$($J repos which AP)\" = \"\$(cd $T/al-app && pwd -P)\""
+msg="repos which: a near name is refused, naming the alias"
+out=$($J repos which a_p); rc=$?
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q 'did you mean ap'" "$out"
+msg="repos which: an unknown name is refused"
+expect_refuse $J repos which nope
+msg="repos alias: a hand-written string alias reads as one alias"
+python3 -c "import json; f='$JIG_CONFIG'; r=json.load(open(f)); r['other']['aliases']='oth'; json.dump(r, open(f,'w'))"
+expect_pass sh -c "$J repos which oth >/dev/null && ! $J repos which o >/dev/null"
+python3 -c "import json; f='$JIG_CONFIG'; r=json.load(open(f)); del r['other']['aliases']; json.dump(r, open(f,'w'))"
+msg="repos alias: --remove drops it"
+$J repos alias app ap --remove >/dev/null
+expect_pass python3 -c "import json; assert 'aliases' not in json.load(open('$JIG_CONFIG'))['app']"
+msg="repos alias: an alias near-identical to another entry's name warns, naming both"
+expect_pass sh -c "$J repos alias other A-pp | grep -q 'warning: A-pp and app differ only'"
 }
 
 # ---------------------------------------------------------------- workflow
@@ -7471,6 +7523,31 @@ git worktree remove --force "$RO/.git/jig/worktrees/check-main"
 msg="role line: it writes no file, in the trunk checkout or the worktree"
 b=$(fsnap "$RO"); role "$RO" >/dev/null; role "$RO/.git/jig/worktrees/K" >/dev/null
 expect_pass test "$(fsnap "$RO")" = "$b"
+msg="role line: on trunk whose only work is one unread message, it names /jig:hubnode"
+RI="$T/rl-inbox"; pcnew "$RI" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+printf -- '---\ninbox: true\nto: rl-inbox\nfrom: s\nsent: 2026-11-17 10:00\n---\nhi\n' > .jig/inbox/2026-11-17-a.md
+out=$(role "$RI")
+expect_pass sh -c "test \"\$(echo \"\$0\" | grep -c '1 unread message: this session is the hubnode')\" = 3" "$out"
+IB="$P/../scripts/inbox.sh"
+ihook() { printf '{"prompt": "x"}' | CLAUDE_PROJECT_DIR="$1" bash "$IB"; echo "rc=$?"; }
+msg="inbox hook: in the trunk checkout it announces the count and the command, exits 0, and moves nothing"
+out=$(ihook "$RI")
+expect_pass sh -c "echo \"\$0\" | grep -q '^jig: 1 unread message in .jig/inbox/.*jig.py inbox' && ! echo \"\$0\" | grep -q '^hi\$' && echo \"\$0\" | tail -1 | grep -qx 'rc=0' && test -e .jig/inbox/2026-11-17-a.md" "$out"
+msg="inbox hook: once jig inbox has read it, the hook prints nothing"
+$J inbox >/dev/null
+expect_pass test "$(ihook "$RI")" = "rc=0"
+cp .jig/inbox/read/2026-11-17-a.md .jig/inbox/2026-11-17-b.md
+msg="inbox hook: in a repo without .git/jig/enabled it prints nothing"
+mv .git/jig/enabled .git/jig/enabled.off
+expect_pass test "$(ihook "$RI")" = "rc=0"
+mv .git/jig/enabled.off .git/jig/enabled
+$J open K2 >/dev/null && git add -A && git commit -qm "open K2"
+msg="inbox hook: in a job's worktree it prints nothing and moves nothing"
+expect_pass sh -c "test \"\$(CLAUDE_PROJECT_DIR=$RI/.git/jig/worktrees/K2 bash $IB </dev/null)\" = '' && test -e .jig/inbox/2026-11-17-b.md"
+msg="inbox hook: in a folder with no .jig/ it prints nothing"
+expect_pass test "$(ihook "$T/rl-none")" = "rc=0"
+msg="inbox hook: registered under UserPromptSubmit"
+expect_pass python3 -c "import json,sys; h=json.load(open('$P/../hooks/hooks.json'))['hooks']['UserPromptSubmit'][0]; sys.exit('inbox.sh' not in h['hooks'][0]['command'])"
 msg="role line: the hook is registered for startup, resume and compact"
 expect_pass sh -c "python3 -c \"import json,sys; h=json.load(open('$P/../hooks/hooks.json'))['hooks']['SessionStart'][0]; sys.exit(not (h['matcher']=='startup|resume|compact' and 'session-start.sh' in h['hooks'][0]['command']))\""
 }
@@ -8023,7 +8100,155 @@ msg="claims: reading-list without --claims prints the pages to read, as before"
 expect_pass sh -c "$J reading-list docs/store/store.md | grep -q '^Read first:' && ! $J reading-list docs/store/store.md | grep -q 'Every copy'"
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders rig claims"
+# ---------------------------------------------------------------- inbox
+sec_inbox() {
+export JIG_CONFIG="$T/inbox-repos.json"
+IN="$T/in"; pcnew "$IN" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J repos add repo --name app >/dev/null && $J repos alias app ap >/dev/null
+msg="inbox: init makes .jig/inbox/.gitignore"
+expect_pass test -f .jig/inbox/.gitignore
+msg="inbox: a message written there leaves git status empty"
+imsg() { printf -- '---\ninbox: true\nto: %s\nfrom: rigger session\nsent: %s\n---\n> the question\n\n%s\n' "$2" "$3" "$4" > "$1"; }
+imsg .jig/inbox/2026-11-17-b.md app "2026-11-17 11:00" "second answer"
+imsg .jig/inbox/2026-11-17-a.md app "2026-11-17 09:00" "first answer"
+expect_pass test -z "$(git status --porcelain)"
+$J open K >/dev/null && git add -A && git commit -qm "open K"
+msg="inbox: in a job's worktree it refuses and moves nothing"
+expect_pass sh -c "! (cd .git/jig/worktrees/K && $J inbox) >/dev/null 2>&1 && test \"\$(ls .jig/inbox/*.md | wc -l | tr -d ' ')\" = 2"
+msg="inbox: in the trunk checkout it prints both, older first, and moves both to read/"
+out=$($J inbox)
+expect_pass sh -c "echo \"\$0\" | grep -n answer | tr '\n' ' ' | grep -q 'first answer.*second answer' && test ! -e .jig/inbox/2026-11-17-a.md && test -e .jig/inbox/read/2026-11-17-a.md && test -e .jig/inbox/read/2026-11-17-b.md" "$out"
+msg="inbox: a second run says there are no unread messages"
+expect_pass sh -c "$J inbox | grep -q 'no unread messages'"
+mkdir -p "$T/in-beta" && (cd "$T/in-beta" && git init -q -b main) && $J repos add beta "$T/in-beta" >/dev/null
+imsg .jig/inbox/2026-11-17-c.md beta "2026-11-17 12:00" "for beta"
+imsg .jig/inbox/2026-11-17-d.md AP "2026-11-17 12:30" "for this repo by alias"
+msg="inbox check: a file in a listed repo's inbox addressed to another repo fails"
+out=$(python3 "$P/jig/jig.py" inbox check .jig/inbox/2026-11-17-c.md); rc=$?
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q 'but the file is in'" "$out"
+msg="inbox check: a file in a listed repo's inbox addressed to it by alias passes"
+imsg .jig/inbox/2026-11-17-e.md ap "2026-11-17 13:00" x
+expect_pass python3 "$P/jig/jig.py" inbox check .jig/inbox/2026-11-17-e.md
+msg="inbox: a message to another repo is named and moved to misaddressed/, unshown; one to this repo's alias is read"
+out=$($J inbox)
+expect_pass sh -c "echo \"\$0\" | grep -q 'misaddressed: 2026-11-17-c.md is to beta' && ! echo \"\$0\" | grep -q 'for beta' && echo \"\$0\" | grep -q 'for this repo by alias' && test -e .jig/inbox/misaddressed/2026-11-17-c.md && test -e .jig/inbox/read/2026-11-17-d.md && test -z \"\$(ls .jig/inbox/*.md 2>/dev/null)\"" "$out"
+msg="inbox: the misaddressed one is no longer counted by the prompt hook, and git status stays empty"
+expect_pass sh -c "test -z \"\$(printf '{}' | CLAUDE_PROJECT_DIR=$IN bash $P/../scripts/inbox.sh)\" && test -z \"\$(git status --porcelain)\""
+# A checkout answers to its own board name: a label equal to one would route two ways.
+mkdir -p "$T/in-web/.jig" && echo '{"name": "frontend"}' > "$T/in-web/.jig/config.json" && $J repos add web "$T/in-web" >/dev/null
+msg="inbox: an alias equal to another checkout's board name is refused"
+expect_refuse $J repos alias beta frontend
+msg="inbox: rename to another checkout's board name is refused"
+expect_refuse $J repos rename beta FRONTEND
+python3 -c "import json; f='$JIG_CONFIG'; r=json.load(open(f)); r['beta']['aliases']=['frontend']; json.dump(r, open(f,'w'))"
+msg="inbox: a name two entries answer to (hand-edited) is refused by which, naming both"
+out=$($J repos which frontend); rc=$?
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q 'names more than one repo' && echo \"\$0\" | grep -q 'beta, web'" "$out"
+msg="inbox: and by inbox check, and jig inbox sets such a message aside"
+imsg "$T/fe.md" frontend "2026-11-17 14:00" x
+cp "$T/fe.md" .jig/inbox/2026-11-17-f.md
+python3 -c "import json; f='$JIG_CONFIG'; r=json.load(open(f)); r['app']['aliases']=['ap', 'frontend']; json.dump(r, open(f,'w'))"
+expect_pass sh -c "! python3 $P/jig/jig.py inbox check $T/fe.md >/dev/null && $J inbox | grep -q 'misaddressed: 2026-11-17-f.md' && test -e .jig/inbox/misaddressed/2026-11-17-f.md"
+# Case is ignored throughout: a board name and a listed alias that differ only in case are one name.
+python3 -c "import json; f='$JIG_CONFIG'; r=json.load(open(f)); r['app']['aliases']=['ap']; json.dump(r, open(f,'w'))"
+echo '{"name": "Frontend"}' > "$T/in-web/.jig/config.json"
+out1=$($J repos which Frontend); r1=$?; out2=$($J repos which frontend); r2=$?
+msg="inbox: a board name and another entry's alias differing only in case find neither, typed either way"
+expect_pass sh -c "test $r1 = 1 && test $r2 = 1 && echo \"\$0\" | grep -q '(beta, web)' && echo \"\$1\" | grep -q '(beta, web)'" "$out1" "$out2"
+msg="inbox: that refusal says to change one checkout's name in its config, or remove one entry"
+expect_pass sh -c "echo \"\$0\" | grep -q \"change .name. in one checkout's config (.*in-web/.jig/config.json), or remove one entry\"" "$out1"
+msg="repos add: a checkout calling itself what another entry answers to, case ignored, is refused naming both"
+mkdir -p "$T/in-web2/.jig" && echo '{"name": "FRONTEND"}' > "$T/in-web2/.jig/config.json"
+out=$($J repos add web2 "$T/in-web2" 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'in-web2 calls itself FRONTEND, which already names ' && ! $J repos which web2 >/dev/null" "$out"
+msg="repos add: a second clone sharing the first's board name is refused"
+mkdir -p "$T/clone1/.jig" "$T/clone2/.jig" && echo '{"name": "shared"}' > "$T/clone1/.jig/config.json" && cp "$T/clone1/.jig/config.json" "$T/clone2/.jig/config.json"
+$J repos add c1 "$T/clone1" >/dev/null
+expect_refuse $J repos add c2 "$T/clone2"
+msg="staging resolve: target Frontend, which two entries answer to, is refused and stays staged; staging check fails it too"
+stage fe.md Frontend spec new .jig/specs/fe.md
+expect_pass sh -c "! $J staging resolve fe.md >/dev/null 2>&1 && test -e .jig/staging/fe.md && test ! -e .jig/specs/fe.md && ! python3 $P/jig/jig.py staging check .jig/staging/fe.md >/dev/null"
+rm .jig/staging/fe.md
+msg="staging resolve: target app, this repo's listed name, lands here"
+stage ap.md app spec new .jig/specs/ap.md
+expect_pass sh -c "$J staging resolve ap.md >/dev/null && test -e .jig/specs/ap.md && test ! -e .jig/staging/ap.md"
+CK="$T/inbox-out"; mkdir -p "$CK"
+msg="inbox check: a good message passes, from outside any repo"
+imsg "$CK/good.md" app "2026-11-17 10:00" x
+expect_pass sh -c "cd $CK && python3 $P/jig/jig.py inbox check good.md"
+msg="inbox check: a missing sent fails"
+printf -- '---\ninbox: true\nto: app\nfrom: s\n---\nx\n' > "$CK/nosent.md"
+out=$(python3 "$P/jig/jig.py" inbox check "$CK/nosent.md"); rc=$?
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q 'no sent'" "$out"
+msg="inbox check: a to not in the repos list fails"
+imsg "$CK/nope.md" nope "2026-11-17 10:00" x
+expect_refuse python3 "$P/jig/jig.py" inbox check "$CK/nope.md"
+msg="inbox check: to set to an alias passes, and in upper case"
+imsg "$CK/al.md" ap "2026-11-17 10:00" x && imsg "$CK/AL.md" AP "2026-11-17 10:00" x
+expect_pass python3 "$P/jig/jig.py" inbox check "$CK/al.md" "$CK/AL.md"
+UX="$T/in-up"; pcnew "$UX" && git add -A && git commit -qm init && $J init >/dev/null && rm -rf .jig/inbox && git add -A && git commit -qm board
+msg="inbox: update on a repo without it lists the step"
+expect_pass sh -c "$UP | grep -q 'add .jig/inbox/'"
+msg="inbox: update --apply adds .jig/inbox/.gitignore"
+$UP --apply >/dev/null 2>&1
+expect_pass test -f .jig/inbox/.gitignore
+}
+
+# ---------------------------------------------------------------- rigger
+sec_rigger() {
+export JIG_CONFIG="$T/rigger-repos.json"
+PJ="python3 $P/jig/jig.py"           # the plugin's copy, outside any repo, as the skill runs it
+mkdir -p "$T/rg" && cd "$T/rg"
+for r in app other x; do mkdir -p "$T/rg-$r/.jig/staging" "$T/rg-$r/.jig/inbox"; done
+mkdir -p "$T/rg-m/.jig" "$T/rg-p1/.jig/staging" "$T/rg-p2/.jig"
+echo '{"name": "m", "pararepos": ["p1", "p2"]}' > "$T/rg-m/.jig/meta.json"
+echo '{"meta": "m"}' > "$T/rg-p1/.jig/para.json" && echo '{"meta": "m"}' > "$T/rg-p2/.jig/para.json"
+printf -- '---\nstaged: true\ntarget: p1\nkind: spec\nchange: new\ndestination: .jig/specs/s.md\nsource: another chat / 2026-11-17\nstatus: staged\n---\nx\n' > "$T/rg-p1/.jig/staging/s.md"
+for r in app other x; do $PJ repos add $r "$T/rg-$r" >/dev/null; done
+$PJ repos add meta "$T/rg-m" --name m >/dev/null
+$PJ repos add para "$T/rg-p1" --name p1 >/dev/null && $PJ repos add para "$T/rg-p2" --name p2 >/dev/null
+$PJ repos alias app ap >/dev/null
+msg="rigger: no --folder with no rigger folder set anywhere is refused, asking for --folder"
+out=$($PJ rigger app 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q -- '--folder'" "$out"
+msg="rigger: --folder creates record/, drafts/, staged/ and handoff.md, and writes the rigger key, the alias kept"
+$PJ rigger app --folder "$T/_riggers/app" >/dev/null
+expect_pass sh -c "test -d $T/_riggers/app/record && test -d $T/_riggers/app/drafts && test -d $T/_riggers/app/staged && test -f $T/_riggers/app/handoff.md && python3 -c \"import json; e = json.load(open('$JIG_CONFIG'))['app']; assert e['rigger'] == '$T/_riggers/app' or e['rigger'].endswith('/_riggers/app'), e; assert e['aliases'] == ['ap'], e\""
+msg="rigger: a second run with no --folder reuses the pointer and keeps what handoff.md holds"
+echo "open thread: x" >> "$T/_riggers/app/handoff.md"
+out=$($PJ rigger app)
+expect_pass sh -c "echo \"\$0\" | grep -q '_riggers/app' && grep -q 'open thread: x' $T/_riggers/app/handoff.md && echo \"\$0\" | grep -q 'created: nothing'" "$out"
+msg="rigger: APP takes app's entry"
+expect_pass sh -c "$PJ rigger APP | grep -q '^rigger for app:'"
+msg="rigger: a_pp is refused, naming app"
+out=$($PJ rigger a_pp 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'did you mean app'" "$out"
+msg="rigger: an unknown repo is refused"
+expect_refuse $PJ rigger nope
+msg="rigger: a metarepo is refused"
+out=$($PJ rigger m 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'metarepo'" "$out"
+msg="rigger: app's alias works"
+expect_pass sh -c "$PJ rigger ap | grep -q '^rigger for app:'"
+msg="rigger: other with no --folder makes its folder beside app's"
+$PJ rigger other >/dev/null
+expect_pass sh -c "test -d $T/_riggers/other/record && python3 -c \"import json; assert json.load(open('$JIG_CONFIG'))['other']['rigger'].endswith('/_riggers/other')\""
+out=$($PJ rigger p1)
+msg="rigger: for pararepo p1, it marks p1 yours, m its metarepo, p2 a pararepo of m, and x on request"
+expect_pass sh -c "echo \"\$0\" | grep -qE '^  p1 +yours\$' && echo \"\$0\" | grep -qE '^  m +reads: its metarepo\$' && echo \"\$0\" | grep -qE '^  p2 +reads: a pararepo of m\$' && echo \"\$0\" | grep -qE '^  x +on request\$'" "$out"
+msg="rigger: it lists the file staged in p1 with its source"
+expect_pass sh -c "echo \"\$0\" | grep -qE '^  s.md +source: another chat / 2026-11-17\$'" "$out"
+msg="rigger: it says whether the repo has .jig/staging/ and .jig/inbox/"
+expect_pass sh -c "echo \"\$0\" | grep -q 'p1 has .jig/staging/: yes; .jig/inbox/: no'" "$out"
+msg="rigger: jig repos shows each entry's rigger folder"
+expect_pass sh -c "$PJ repos | grep -q 'rigger: .*_riggers/p1'"
+msg="rigger: a folder inside the repo's checkout is refused"
+expect_refuse $PJ rigger x --folder "$T/rg-x/notes"
+msg="rigger: a folder inside another listed repo's checkout is refused, and no pointer is written"
+expect_pass sh -c "! $PJ rigger x --folder $T/rg-app/notes >/dev/null 2>&1 && test ! -e $T/rg-app/notes && python3 -c \"import json; assert 'rigger' not in json.load(open('$JIG_CONFIG'))['x']\""
+}
+
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders rig claims inbox rigger"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file

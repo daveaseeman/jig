@@ -3,8 +3,8 @@
 # session's jig node (its role skill loads on assignment), so a session that loses its skill
 # to compaction is told again: a node read once at the start is gone by the time the session
 # drifts. Prints nothing where there is no hubnode or subnode work: no .jig/, or, in the trunk
-# checkout, no open job and nothing staged. Any other worktree holds a subnode. Reads only;
-# always exits 0, so it can never stop a session from starting.
+# checkout, no open job, nothing staged and no unread message. Any other worktree holds a
+# subnode. Reads only; always exits 0, so it can never stop a session from starting.
 set -u
 cat >/dev/null 2>&1   # the event's JSON: the role is the same for every source
 repo="${CLAUDE_PROJECT_DIR:-$PWD}"
@@ -44,10 +44,13 @@ if os.path.realpath(top) != os.path.realpath(main):
     sys.exit(0)
 staging = os.path.join(main, ".jig", "staging")
 staged = [f for f in (os.listdir(staging) if os.path.isdir(staging) else []) if not f.startswith(".")]
-if jobs or staged:
+inbox = os.path.join(main, ".jig", "inbox")
+unread = [f for f in (os.listdir(inbox) if os.path.isdir(inbox) else []) if f.endswith(".md")]
+if jobs or staged or unread:
     print("jig: this is the trunk checkout, with " + " and ".join(
         filter(None, [f"{len(jobs)} open job{'s' if len(jobs) != 1 else ''}" if jobs else "",
-                      f"{len(staged)} staged file{'s' if len(staged) != 1 else ''}" if staged else ""]))
+                      f"{len(staged)} staged file{'s' if len(staged) != 1 else ''}" if staged else "",
+                      f"{len(unread)} unread message{'s' if len(unread) != 1 else ''}" if unread else ""]))
           + ": this session is the hubnode. Run /jig:hubnode before anything else.")
 PY
 exit 0

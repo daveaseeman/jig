@@ -28,7 +28,11 @@ out as `/jig:decision-cards` says.
    say nothing. A plan: one line, "the repo is behind the plugin's layout: run /jig:update".
    Refused or blocked: one line with its first reason.
 4. `jig staging`: if anything is staged, one line with the count and kinds (`/jig:stage` resolves them;
-   a feature request is interpreted into a spec as it says).
+   a feature request is interpreted into a spec as it says). Then `jig inbox`, and again
+   whenever a prompt arrives announcing unread messages: each message is a reply to this
+   repo's hubnode, and the quoted owner words in it, with their date, rule (`.jig/RULES.md`,
+   Inbox). It sets aside in `.jig/inbox/misaddressed/`, and names, a message addressed to another
+   repo: ask the owner where it belongs.
 5. In a pararepo (`.jig/para.json`), `jig sync` on trunk; report a newer release, and a
    header it says is out of date, in one line each; a pin it moved and the buffer rows it
    closed, in one line each. A proposal it says carries no Open row goes to the owner: withdraw
@@ -130,6 +134,12 @@ A review with no blocking findings ends the fixing: the job hands off, as `jig n
 Should-fix and optional findings get one round per part; what is left after it gets DEFERRED
 rows. A finding that needs behavior the spec never names is a spec change before it is built
 (an `Interpreted:` line the hubnode accepts, or the owner's answer), or an Up next item.
+
+A ruling also reaches you by the inbox: the owner's reply to your question, sent from the
+repo's rigger (`jig inbox`). The quoted owner words, with their date, are the owner's ruling, as
+if given here; the rest is the rigger's context. Check the state it answers before acting, as
+for a card's reply, and record it where a ruling lands (a decision entry, a spec, the board).
+Your answer goes back only through the owner.
 
 ## Opening a job (assign)
 

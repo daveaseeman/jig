@@ -34,8 +34,8 @@ the repo, records the pointer in jig's repos list and briefs it; a rigger skill 
 may read and touch, the record it keeps current and has checked, and how it stages and sends.
 It answers its repo's hubnode through a one-way `.jig/inbox/`: the owner marks pasted hubnode
 text with `/jig:relay <repo>`, settles a reply, and `/jig:send` shows it in a window he edits
-and approves before one file is written; the hubnode sees it at the start of its next turn, and
-the quoted owner words in it rule. A repo in the repos list can carry short aliases, and a typed
+and approves before one file is written; the owner's next prompt to the hubnode announces it,
+`jig inbox` there shows it, and the quoted owner words in it rule. A repo in the repos list can carry short aliases, and a typed
 repo name or alias matches case-insensitively everywhere one is typed.
 
 ## Parts
@@ -50,7 +50,8 @@ Part 1:
 1. **The inbox.** `.jig/inbox/`, made by `jig init` and added by `jig update` (a STEPS entry
    beside staging's), holding only a `.gitignore` (`*`, `!.gitignore`) when empty: never
    committed, as staging isn't. One Markdown file per message, written by the sender. Read
-   messages move to `.jig/inbox/read/`.
+   messages move to `.jig/inbox/read/`; one addressed to another repo moves to
+   `.jig/inbox/misaddressed/`, named.
 2. **A message.** File `<YYYY-MM-DD>-<slug>.md`, header:
    ```yaml
    ---
@@ -69,9 +70,10 @@ Part 1:
    from the plugin's copy outside any repo as `staging check` is: fails on a missing header key
    or a `to` the name rule (7) doesn't find.
 4. **The hook.** `plugin/hooks/hooks.json` gains `UserPromptSubmit` → `plugin/scripts/inbox.sh`:
-   when the project is the trunk checkout of a jig repo and `.jig/inbox/` holds an unread `.md`,
-   it runs the repo's own `python3 .jig/jig.py inbox`, whose output reaches the turn; otherwise
-   it prints nothing. Always exits 0. `session-start.sh` counts unread messages beside open jobs
+   when the project is the trunk checkout of a jig repo that opted in (`.git/jig/enabled`) and
+   `.jig/inbox/` holds an unread `.md`, it prints one line with the count and the command,
+   `python3 .jig/jig.py inbox`, which shows the messages and marks them read; it reads and
+   moves nothing itself. Otherwise it prints nothing. Always exits 0. `session-start.sh` counts unread messages beside open jobs
    and staged files when it decides the trunk checkout is the hubnode's.
 5. **`/jig:relay <repo>`** (skill, `disable-model-invocation: true`): the text after it is the
    named repo's hubnode's words, never the owner's; the repo is found by the name rule (7),
@@ -84,7 +86,8 @@ Part 1:
    text. Nothing is written until the owner sends that reply; then the skill writes the
    message from the sent text exactly, into `<repo>/.jig/inbox/` (folder granted as staging's
    is), runs `inbox check`, and says it is sent, with the path, only once that passes. Where no
-   card can be drawn: the text in a fenced block, and "reply `send`, or send your edited text".
+   card can be drawn: the text in a fenced block, and "reply `send to <repo>:` followed by the
+   text, as it stands or as you edit it".
 7. **Aliases and the name rule.** `jig repos alias <repo> <alias>` adds one to the entry's
    `aliases` list (`--remove` drops it); `jig repos` lists them; an alias equal to another
    entry's name or alias is refused, and near-duplicate warnings include aliases.
@@ -92,7 +95,10 @@ Part 1:
    One rule, in `repo_path`, finds the repo for staging's target, `/jig:relay`, `jig inbox
    check`'s `to` and `jig rigger`: a name or alias from the list, case-insensitively. A name
    that matches one only once punctuation is dropped too (`near_duplicates`' key) is refused,
-   naming it.
+   naming it. After review (the hubnode, 2026-11-17): `repos add`, `rename` and `alias` refuse
+   a label any other entry answers to (its checkout's own name included); a name more than one
+   entry answers to finds none, refused naming them; `jig repos which <name>` prints the repo
+   or the refusal, and the two skills call it.
 8. **RULES.md**, an Inbox paragraph after Staging: a message is not a staged file (read and
    done with, never landed or resolved, and nothing else (commit, gate, release) looks at the
    inbox); one-way; quoted owner words with their date are the owner's ruling, as if given in
@@ -165,9 +171,10 @@ From manager-relay-inbox (Part 1):
       `to` not in a `JIG_CONFIG` repos list; it passes with `to` set to an alias, and to that
       alias in upper case.
 - [ ] Smoke `role_line` (or `inbox`): `inbox.sh` fed `{"prompt": "x"}` with
-      `CLAUDE_PROJECT_DIR` at the trunk checkout holding one unread message prints it and exits
-      0; a second run prints nothing; in a job worktree, or a folder with no `.jig/`, it prints
-      nothing and moves nothing. `hooks.json` registers it under `UserPromptSubmit`.
+      `CLAUDE_PROJECT_DIR` at the trunk checkout holding one unread message announces the count
+      and `jig inbox`, exits 0 and moves nothing; once `jig inbox` has read it, it prints
+      nothing; in a job worktree, a folder with no `.jig/`, or a repo without
+      `.git/jig/enabled`, it prints nothing and moves nothing. `hooks.json` registers it under `UserPromptSubmit`.
       `session-start.sh` names the hubnode in a trunk checkout whose only work is one unread
       message.
 - [ ] Smoke `repos`: `repos alias app ap` then `jig repos` lists `ap`; `staging check` with
@@ -237,8 +244,10 @@ From rigger (Part 2):
 - A button that writes the file on click — not possible: a card's button only fills the
   owner's reply box and appends, so the owner's sent reply is the approval — [seen]
   (`plugin/skills/decision-cards/SKILL.md`, "Fill, never send").
-- The hook shows a count and the hubnode runs `jig inbox` — rejected: one more step between the
-  owner's prompt and the ruling, for no gain — [assumed].
+- The hook shows and marks the messages read — rejected after review (the hubnode, 2026-11-17):
+  a subnode session shares the trunk folder as its project, so its prompt would mark the
+  hubnode's messages read; the hook announces a count and the hubnode runs `jig inbox` — [seen]
+  (this repo's subnode sessions).
 - An alias by `jig repos rename` — rejected because a rename replaces the name the list shows,
   one per checkout; the owner wants a shorthand beside it — [seen] (`cmd_repos`).
 - The folder inside the repo — rejected by the owner: drafting must not reach the repo — [seen]
@@ -275,7 +284,7 @@ The owner, 2026-11-17:
   exactly as the repos list has it", this spec reads it by W2.
 
 - Interpreted: the requesting session's proposal is adopted for the two commands, the editable
-  window, the question quoted above the answer, the hook that shows and marks read, and the
+  window, the question quoted above the answer, the hook that announces unread messages, and the
   inbox folder granted per repo as staging is. None of it is the owner's wording.
 - Interpreted: the message marks the owner's words the way the rigger request asks of staged
   files (`The owner, <date>: "<words>"`, the rest plain), not with headings; only those quoted
@@ -283,10 +292,8 @@ The owner, 2026-11-17:
 - Interpreted: marking read moves the file to `.jig/inbox/read/`, gitignored and kept, so the
   hubnode can read it again; the ruling's durable home is whatever the hubnode records from it
   (a decision entry, a spec).
-- Interpreted: `jig inbox` and the hook act only in the trunk checkout, so a subnode never
-  marks a ruling read before the hubnode sees it.
-- Interpreted: the hook calls the repo's own `.jig/jig.py` (the update that adds the inbox
-  adds the command), and stays silent where either is missing.
+- Interpreted: `jig inbox` acts only in the trunk checkout, and the hook announces only there,
+  so a subnode never marks a ruling read before the hubnode sees it.
 - Interpreted: aliases are a list on the repos-list entry, set by `jig repos alias`, and count
   as the repos list naming the repo.
 - Interpreted: the thread `/jig:relay` opens lives in the conversation; part 2's `handoff.md`
@@ -313,6 +320,9 @@ The owner, 2026-11-17:
   host's memory or cloud project files.
 - Interpreted: the quote rule goes into `/jig:stage` for every chat, not only riggers, since the
   resolving hubnode reads every staged file the same way.
+- Interpreted (hubnode, 2026-11-17): the inbox hook runs only in a repo that opted in (`.git/jig/enabled`), as check.sh does; rejected: no marker check, which would run a fetched repo's jig.py on any prompt.
+- Interpreted (hubnode, 2026-11-17): the hook announces unread messages; the hubnode reads them with `jig inbox`, which marks them read; rejected: the hook marks them read, since a subnode session shares the trunk folder.
+- Interpreted (hubnode, 2026-11-17): `jig rigger` refuses a --folder inside any listed repo's checkout, since a rigger's folder lives outside every repo (the owner: 'I lean towards outside the repo'); rejected: allowing it, which puts drafts in a repo.
 - Kept separate from bug-decision-records: both add lines to RULES.md Commands and a step in `STEPS`, side by side; no shared function. The owner, 2026-11-17: "K1: no merges among the four; the six jobs as proposed", which has this one job apart.
 - Kept separate from bug-gate-pair-answers: nothing shared beyond the files. The owner, 2026-11-17: "K1: no merges among the four; the six jobs as proposed", which has this one job apart.
 - Kept separate from bug-meta-agents-block: nothing shared beyond the files. The owner, 2026-11-17: "K1: no merges among the four; the six jobs as proposed", which has this one job apart.
