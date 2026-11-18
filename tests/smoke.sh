@@ -7795,15 +7795,32 @@ expect_pass sh -c "$J inbox | grep -q 'no unread messages'"
 mkdir -p "$T/in-beta" && (cd "$T/in-beta" && git init -q -b main) && $J repos add beta "$T/in-beta" >/dev/null
 imsg .jig/inbox/2026-11-17-c.md beta "2026-11-17 12:00" "for beta"
 imsg .jig/inbox/2026-11-17-d.md AP "2026-11-17 12:30" "for this repo by alias"
-msg="inbox: a message to another repo is left unread and named; one to this repo's alias is read"
-out=$($J inbox)
-expect_pass sh -c "echo \"\$0\" | grep -q 'left unread: .jig/inbox/2026-11-17-c.md is to beta' && ! echo \"\$0\" | grep -q 'for beta' && echo \"\$0\" | grep -q 'for this repo by alias' && test -e .jig/inbox/2026-11-17-c.md && test -e .jig/inbox/read/2026-11-17-d.md" "$out"
 msg="inbox check: a file in a listed repo's inbox addressed to another repo fails"
 out=$(python3 "$P/jig/jig.py" inbox check .jig/inbox/2026-11-17-c.md); rc=$?
 expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q 'but the file is in'" "$out"
 msg="inbox check: a file in a listed repo's inbox addressed to it by alias passes"
 imsg .jig/inbox/2026-11-17-e.md ap "2026-11-17 13:00" x
 expect_pass python3 "$P/jig/jig.py" inbox check .jig/inbox/2026-11-17-e.md
+msg="inbox: a message to another repo is named and moved to misaddressed/, unshown; one to this repo's alias is read"
+out=$($J inbox)
+expect_pass sh -c "echo \"\$0\" | grep -q 'misaddressed: 2026-11-17-c.md is to beta' && ! echo \"\$0\" | grep -q 'for beta' && echo \"\$0\" | grep -q 'for this repo by alias' && test -e .jig/inbox/misaddressed/2026-11-17-c.md && test -e .jig/inbox/read/2026-11-17-d.md && test -z \"\$(ls .jig/inbox/*.md 2>/dev/null)\"" "$out"
+msg="inbox: the misaddressed one is no longer counted by the prompt hook, and git status stays empty"
+expect_pass sh -c "test -z \"\$(printf '{}' | CLAUDE_PROJECT_DIR=$IN bash $P/../scripts/inbox.sh)\" && test -z \"\$(git status --porcelain)\""
+# A checkout answers to its own board name: a label equal to one would route two ways.
+mkdir -p "$T/in-web/.jig" && echo '{"name": "frontend"}' > "$T/in-web/.jig/config.json" && $J repos add web "$T/in-web" >/dev/null
+msg="inbox: an alias equal to another checkout's board name is refused"
+expect_refuse $J repos alias beta frontend
+msg="inbox: rename to another checkout's board name is refused"
+expect_refuse $J repos rename beta FRONTEND
+python3 -c "import json; f='$JIG_CONFIG'; r=json.load(open(f)); r['beta']['aliases']=['frontend']; json.dump(r, open(f,'w'))"
+msg="inbox: a name two entries answer to (hand-edited) is refused by which, naming both"
+out=$($J repos which frontend); rc=$?
+expect_pass sh -c "test $rc = 1 && echo \"\$0\" | grep -q 'names more than one repo' && echo \"\$0\" | grep -q 'beta, web'" "$out"
+msg="inbox: and by inbox check, and jig inbox sets such a message aside"
+imsg "$T/fe.md" frontend "2026-11-17 14:00" x
+cp "$T/fe.md" .jig/inbox/2026-11-17-f.md
+python3 -c "import json; f='$JIG_CONFIG'; r=json.load(open(f)); r['app']['aliases']=['ap', 'frontend']; json.dump(r, open(f,'w'))"
+expect_pass sh -c "! python3 $P/jig/jig.py inbox check $T/fe.md >/dev/null && $J inbox | grep -q 'misaddressed: 2026-11-17-f.md' && test -e .jig/inbox/misaddressed/2026-11-17-f.md"
 CK="$T/inbox-out"; mkdir -p "$CK"
 msg="inbox check: a good message passes, from outside any repo"
 imsg "$CK/good.md" app "2026-11-17 10:00" x

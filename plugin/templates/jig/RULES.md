@@ -1074,7 +1074,7 @@ the hubnode answers only through the owner.
 
 `jig inbox`, in the trunk checkout only, prints each unread message in full, oldest first, and
 moves it to `.jig/inbox/read/`, where it can be read again. A message whose `to` isn't this repo
-is left unread and named: it is no ruling here. A tool may announce unread messages with each
+is moved to `.jig/inbox/misaddressed/` and named: it is no ruling here, and the owner places it. A tool may announce unread messages with each
 of the owner's prompts, but only `jig inbox` marks one read, and it refuses outside the trunk
 checkout: a subnode marking a message read would hide a ruling from the hubnode. In a message, the owner's own words appear as
 `The owner, <date>: "<words>"`; those are the owner's ruling, as if given in the hubnode's own
@@ -1083,10 +1083,12 @@ the state it answers, as for any reply that may have gone stale. What it rules l
 ruling does: a decision entry, a spec, the board.
 
 A typed repo name, wherever jig takes one (a staged file's `target`, a message's `to`), is a
-name or alias in `jig repos` with case ignored. One that matches only once punctuation is
+name or alias in `jig repos`, or the name a listed checkout gives itself, with case ignored. A
+name more than one entry answers to finds none, and is refused naming them. One that matches only once punctuation is
 dropped (`a_p` for `ap`) is refused, naming the near one: two near-identical names have sent
 work to the wrong repo. `jig repos alias <repo> <alias>` adds an alias, and refuses one any
-other entry already answers to, as `add` and `rename` refuse such a name; `jig repos which
+other entry already answers to, its checkout's own name included, as `add` and `rename` refuse
+such a name; `jig repos which
 <name>` prints the repo a typed name finds, or the refusal. `jig inbox check <file>…` checks a
 message's header from outside any repo, as `staging check` does: a missing key, a `to` no entry
 answers to, or, for a file already in a listed repo's inbox, a `to` naming another repo.

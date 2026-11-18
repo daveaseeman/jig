@@ -6603,7 +6603,7 @@ def near_miss(name: str) -> str | None:
     """The listed name or alias a typed name only matches once punctuation is dropped: never
     taken for it, since two near-identical names have sent work to the wrong repo, but named
     in the refusal."""
-    if not name or repo_path(name):
+    if not name or repo_matches(name):
         return None
     for n, e in sorted(load_repos().items()):
         for label in sorted({n} | repo_names(e)):
@@ -6613,6 +6613,10 @@ def near_miss(name: str) -> str | None:
 
 
 def unknown_repo(name: str) -> str:
+    many = repo_matches(name) if name else []
+    if len(many) > 1:
+        return (f"{name!r} names more than one repo in {repos_file()} ({', '.join(many)}): give "
+                "each a name of its own (`jig repos rename`) and use that")
     near = near_miss(name)
     return (f"{name!r} isn't in {repos_file()}" + (f": did you mean {near}? A name that matches "
             "only without its punctuation is refused" if near else " (`jig repos` lists them)"))
@@ -6637,18 +6641,19 @@ def repo_identity(path: Path) -> set[str]:
 def repo_path(name: str) -> Path | None:
     """Where a repo lives, by the name you gave it or the name it gives itself, so an alias
     never breaks a lookup that uses the real one (a pararepo naming its metarepo)."""
+    found = repo_matches(name)
+    return Path(load_repos()[found[0]]["path"]) if len(found) == 1 else None
+
+
+def repo_matches(name: str) -> list[str]:
+    """The entries a typed name finds: by its listed name, an alias, or the name the checkout
+    gives itself. One rule for every place a repo is typed (a staged target, an inbox
+    message's `to`, a rigger). A human types it, so `App` finds `app`; an exact match wins
+    over one by case alone. More than one is no answer: the lookup never picks by order."""
     repos = load_repos()
-    if name in repos:
-        return Path(repos[name]["path"])
-    for e in repos.values():
-        if name in repo_names(e) | repo_identity(Path(e["path"])):
-            return Path(e["path"])
-    # A human types the name, so `App` finds `app`, as a staged header's target does: one rule
-    # for every place a repo is typed (a staged target, an inbox message's `to`, a rigger).
-    for n, e in repos.items():
-        if name_in(name, {n} | repo_names(e) | repo_identity(Path(e["path"]))):
-            return Path(e["path"])
-    return None
+    answers = {n: {n} | repo_names(e) | repo_identity(Path(e["path"])) for n, e in repos.items()}
+    exact = [n for n, a in answers.items() if name in a]
+    return exact or [n for n, a in answers.items() if name_in(name, a)]
 
 
 def labels(repos: dict) -> list[tuple[str, str]]:
@@ -6756,6 +6761,11 @@ def refuse_taken(repos: dict, label: str, mine: str) -> None:
         if n != mine and lb.casefold() == label.casefold():
             die(f"{label} already names {n}" + (f" (its alias {lb})" if lb != n else "")
                 + f", {repos[n]['path']}", 2)
+    # A checkout answers to its own board or metarepo name too, so a label equal to one would
+    # route there as well.
+    for n, e in repos.items():
+        if n != mine and name_in(label, repo_identity(Path(e["path"]))):
+            die(f"{label} is the name {n}'s checkout gives itself, {e['path']}", 2)
 
 
 def repos_which(name: str | None) -> int:
@@ -9589,6 +9599,24 @@ def cmd_inbox_check(args) -> int:
     return 1 if bad else 0
 
 
+def free_name(folder: Path, f: Path) -> Path:
+    """Where f goes in folder: a name reused later never overwrites what was set there."""
+    dest, n = folder / f.name, 1
+    while dest.exists():
+        n += 1
+        dest = folder / f"{f.stem}-{n}{f.suffix}"
+    return dest
+
+
+def addressed_here(to: str, root: Path) -> bool:
+    """`to` finds this repo by the lookup `which` and `inbox check` use; a repo missing from
+    the list answers to its own names. A name more than one entry answers to finds none."""
+    found = repo_matches(to) if to else []
+    if found:
+        return len(found) == 1 and Path(load_repos()[found[0]]["path"]).resolve() == main_root().resolve()
+    return names_this_repo(to, root)
+
+
 def cmd_inbox(root: Path, args) -> int:
     """Print each unread message, oldest first, and move it to read/. The trunk checkout's
     only: the inbox is the hubnode's, and a subnode reading it would mark a ruling read
@@ -9598,10 +9626,16 @@ def cmd_inbox(root: Path, args) -> int:
     msgs, wrong = [], []
     for f in inbox_messages(root):
         # A message names its repo: one meant for another is no ruling here, whatever it says.
-        (msgs if names_this_repo(read_inbox(f)[0].get("to"), root) else wrong).append(f)
-    for f in wrong:
-        print(f"left unread: {INBOX}/{f.name} is to {read_inbox(f)[0].get('to') or 'no repo'}, "
-              "not this one; it is no ruling here. Ask the owner where it belongs")
+        (msgs if addressed_here(read_inbox(f)[0].get("to", ""), root) else wrong).append(f)
+    if wrong:
+        # Set aside, so the prompt hook stops counting it, and kept for the owner to place.
+        aside = root / INBOX / "misaddressed"
+        aside.mkdir(exist_ok=True)
+        for f in wrong:
+            to = read_inbox(f)[0].get("to") or "no repo"
+            f.rename(free_name(aside, f))
+            print(f"misaddressed: {f.name} is to {to}, not this repo; it is no ruling here. Moved "
+                  f"to {INBOX}/misaddressed/: ask the owner where it belongs")
     if not msgs:
         print(f"no unread messages in {INBOX}/" + (" for this repo" if wrong else ""))
         return 0
@@ -9610,11 +9644,7 @@ def cmd_inbox(root: Path, args) -> int:
     for f in msgs:
         print(f"===== {INBOX}/{f.name} (moved to {INBOX}/read/)")
         print(f.read_text(errors="replace").rstrip("\n") + "\n")
-        dest, n = read / f.name, 1
-        while dest.exists():                # a name reused later never overwrites what was read
-            n += 1
-            dest = read / f"{f.stem}-{n}{f.suffix}"
-        f.rename(dest)
+        f.rename(free_name(read, f))
     print(f"{len(msgs)} message{'s' if len(msgs) != 1 else ''} read: quoted owner words with "
           "their date are the owner's ruling; check the state each answers before acting on it")
     return 0
