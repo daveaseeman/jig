@@ -98,9 +98,11 @@ their turn in the queue.
     same commit as the overflow key. For jig's own repo, its job also installs the `claude`
     CLI, because `check.sh` runs `claude plugin validate`.
 11. **Recording a CI run:** `jig checked --ci <run url> --tier N --effort N --seconds S`.
-    - jig reads the run with `gh run view <id> --json headSha,conclusion,status,url`.
-    - It refuses unless the run's `headSha` is HEAD, its status is completed and its
-      conclusion is success.
+    - jig reads the run with `gh run view <id> --json
+      headSha,conclusion,status,url,workflowName,headBranch`.
+    - It refuses unless the run is this repo's `origin`'s, its workflow is `jig check` and its
+      `headBranch` is `jig-check/<HEAD short sha>` (the short form the route pushes), its
+      `headSha` is HEAD, its status is completed and its conclusion is success.
     - It also refuses when `gh` is missing or can't read the run, and names which.
     - On success it appends the record with the URL as a sixth field.
     - `checked_records()` reads both 5- and 6-field lines.
@@ -127,6 +129,9 @@ their turn in the queue.
   that weakens any other fixed rule is still refused.
 - [ ] Smoke `check_levels` (where the `jig checked` cases live), with a stub `gh` on PATH:
   - a run whose `headSha` isn't HEAD is refused;
+  - a run of another repo than `origin`, or with no GitHub `origin`, is refused;
+  - a passing run of another workflow on `jig-check/<sha>`, or of `jig check` on another
+    branch, is refused;
   - a failed or in-progress run is refused;
   - a missing `gh` is refused, naming it;
   - a passing run on HEAD is recorded with its URL;
@@ -139,8 +144,9 @@ their turn in the queue.
   - RULES.md says jig holds the slot and never chooses what runs.
   - RULES.md's "Fixed, whatever the config says" and the hubnode's own steps name the
     `jig-check/*` exception (item 8), and nothing wider.
-- [ ] This repo's `.jig/config.json` sets `queue.width: "all"`. Its AGENTS.md Commands lines
-  for smoke and check run through `jig queue`.
+- [ ] This repo's `.jig/config.json` sets `queue.width: "all"`, in the hubnode's commit on
+  main right after the merge (R5 keeps the board's config on trunk). Its AGENTS.md Commands
+  lines for smoke and check run through `jig queue`.
 - [ ] `plugin/templates/github/jig-check.yml` exists and is valid YAML. Nothing
   Claude-specific is in it; the `claude` CLI step is in this repo's own copy only.
 - [ ] `.jig/scripts/check.sh` exits 0. `bash tests/smoke.sh queue check_levels` passes, and
@@ -171,9 +177,11 @@ their turn in the queue.
 - `plugin/templates/github/jig-check.yml` (new).
 - `plugin/skills/work/SKILL.md`, `review/SKILL.md`, `check/SKILL.md`, `hubnode/SKILL.md`.
 - `tests/smoke.sh`: a new `queue` section, and `--ci` cases in `check_levels`; UNITS.
-- `AGENTS.md` and `.jig/config.json` (`queue.width`), in part 1.
-- `.jig/config.json` (`queue.overflow`) and `.github/workflows/jig-check.yml` in this repo: part
-  2, on the owner's yes only.
+- `AGENTS.md`, in part 1.
+- `.github/workflows/jig-check.yml` in this repo: part 2, on the owner's yes.
+- `.jig/config.json` (`queue.width: "all"` and `queue.overflow`): the hubnode's commit on main
+  right after the merge, since R5 keeps the board's config on trunk and main's hook must know
+  the `queue` keys before it accepts them.
 
 ## Alternatives considered
 - Machine load as the trigger — rejected as the default, because it's noisy and
@@ -223,6 +231,13 @@ their turn in the queue.
 - The owner, 2026-11-17, on item 8's amendment (a standing yes for `jig-check/*` pushes, or
   approval each push): "Keep the standing yes". Item 8 stands as written. The overflow key's
   reason in this repo quotes these words.
+- The owner, 2026-11-18, on S-c and S-d: "Fix before release".
+- Interpreted (S-d): the command doesn't inherit the slot's lock, so a process it leaves
+  behind never holds a slot after the run. The trade: a jig killed outright (SIGKILL) frees its
+  slot under a command that is still running. No stdlib way passes an fd to the direct child
+  and not to the processes it starts.
+- Interpreted: R5 keeps `.jig/config.json` trunk-only, so the queue keys land in the hubnode's
+  commit after the merge.
 - Risk [assumed]: `claude plugin validate` runs in CI without a login. If it doesn't, this
   repo's workflow skips the validate line and the check role runs it locally. The by-hand
   done-when item settles this.

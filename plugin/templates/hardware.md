@@ -52,9 +52,9 @@ TODO: one paragraph, what this board is and why the product uses it. Defined fro
 - TODO (e.g. `esp-idf` — the framework this board's firmware is built with)
 
 ## Invariants
-<!-- Check these before blaming firmware. Keep an entry only once something holds it; until
-     then it is a TODO, and an entry nothing holds is deleted. -->
-- Every module's logic level matches the board — a 5V signal on a 3.3V pin damages it; held by TODO (a named test, review, or on screen).
+<!-- Check these before blaming firmware. Keep an entry only once something holds it: a named test, or what is
+     seen on the board. Until then it is a TODO, and an entry nothing holds is deleted. -->
+- Every module's logic level matches the board — a 5V signal on a 3.3V pin damages it; held by TODO (a named test, or what is seen on the board).
 - Every input has its pull-up or pull-down set explicitly — a floating input reads noise as data; held by TODO.
 - Every output is driven to a known state right after it is configured — a glitch at boot can fire a peripheral; held by TODO.
 - No two devices on a shared bus share an address — a collision corrupts both; held by TODO.

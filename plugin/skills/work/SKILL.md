@@ -23,7 +23,9 @@ A fix or a sync on the same job continues this session with a message, never a n
 ## Work
 
 While working, run `.jig/scripts/check.sh` and the parts of the suite your change touched,
-never `check.sh --full`: the complete check is the check role's, once per gate or batch.
+never `check.sh --full`: the complete check is the check role's, once per gate or batch. Run
+each through the queue, `jig queue -- <command>`: it waits for one of the machine's slots, so
+parallel jobs don't fight for its cores.
 
 - Your files are your `owns`, your `shares`, `common`, and anything new you create. If you
   need another, ask the hubnode to add it to `shares` and build elsewhere meanwhile.

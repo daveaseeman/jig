@@ -2449,7 +2449,7 @@ expect_pass sh -c "$J survey | grep -qF 'docs/band/band.md -> docs/watch/datashe
 printf '# Band\n\nThe strap. [ds](../datasheets/qx-9.pdf)\n' > docs/band/band.md && git add -A && git commit -qm "band its own"
 
 msg="survey: a page-shaped file beside its system's page is a flat part page, at home; a note there is a linked file"
-printf '# Power\n\nThe rails.\n\n## Invariants\n- 3.3V — the parts are 3.3V; held by review.\n' > docs/watch/power.md
+printf '# Power\n\nThe rails.\n\n## Invariants\n- 3.3V — the parts are 3.3V; held by test_rails.\n' > docs/watch/power.md
 printf '# Bring-up\n' > docs/watch/bringup.md && printf '[bring-up](bringup.md)\n' >> docs/watch/watch.md
 git add -A && git commit -qm "candidate"
 expect_pass hrsurvey "assert r['homeless'] == [], r['homeless']
@@ -2470,6 +2470,8 @@ msg="page contract: the board template, filled in nowhere, is on the contract"
 # Planted: alone in its folder, which the hook refuses; only its contract is asked here.
 mkdir -p docs/tmpl && cp "$P/hardware.md" docs/tmpl/tmpl.md && git add -A && git -c core.hooksPath=/dev/null commit -qm tmpl
 expect_pass hrsurvey "assert 'docs/tmpl/tmpl.md' not in [e['path'] for e in r['page_contract']], r['page_contract']"
+msg="process: the board template, copied onto a page, names no .jig/ path survey lists"
+expect_pass hrsurvey "assert not [e for e in r['process_in_pages'] if e['path'] == 'docs/tmpl/tmpl.md'], r['process_in_pages']"
 git rm -rq docs/tmpl && git commit -qm "no tmpl"
 
 msg="datasheets: survey's Homes line names both datasheets homes"
@@ -3839,8 +3841,8 @@ out=$($J survey 2>&1)
 expect_pass sh -c "l=\$(echo \"\$0\" | sed -n '/^Pages below a subsystem/,/^\$/p' | grep '^  docs/a/c/d.md: ')
 echo \"\$l\" | grep -q 'fold it into docs/a/c.md' && ! echo \"\$l\" | grep -q deep_subsystems" "$out"
 msg="structure: a page with no docmap key is unmapped, not a section; update lists it the same, with no fold drafted"
-printf '# G\n\nThe g page.\n\n## Invariants\n- g is g — it is; held by review.\n' > docs/a/g.md && printf 'x\n' > src/a/g.py
-printf '# E\n\nThe e page.\n\n## Invariants\n- e is e — it is; held by review.\n' > docs/a/c/e.md && git add -A && git commit -qm "g, and e below c"
+printf '# G\n\nThe g page.\n\n## Invariants\n- g is g — it is; held by test_g.\n' > docs/a/g.md && printf 'x\n' > src/a/g.py
+printf '# E\n\nThe e page.\n\n## Invariants\n- e is e — it is; held by test_e.\n' > docs/a/c/e.md && git add -A && git commit -qm "g, and e below c"
 printf '# behind\n' >> .jig/jig.py && git commit -qam behind
 out=$($J survey 2>&1); up=$($UP 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -qF '  docs/a/g.md: unmapped: no docmap key: name its files in docmap, or fold it into docs/a/a.md' \
@@ -3857,7 +3859,7 @@ python3 -c "print('{\"a\": {\"c\": ' * 1000 + '1' + '}}' * 1000)" > deep.json
 printf '# ADRs\n\n## 1. Use SQLite\n\nAccepted.\n' > docs/adr/log.md
 board "b['reserve']['adr'] = {'pattern': r'^## (\d+)\. ', 'files': ['docs/adr/*.md']}"
 # docs/core.md makes `core` a page's name: a word beside it, or a § after another name, cites nothing.
-printf '# Core\n\nThe core system.\n\n## Invariants\n- core is core — it is; held by review.\n' > docs/core.md
+printf '# Core\n\nThe core system.\n\n## Invariants\n- core is core — it is; held by test_core.\n' > docs/core.md
 printf -- '## 1.1 Setup\n- Caching follows RFC 9111 §5.2.\n- Lint Rules and Checks run in CI.\n' >> AGENTS.md
 printf -- '- Our lint rules follow the Google style guide §3.2.\n- Keep the docs current with each change (§ 2 of CONTRIBUTING).\n' >> AGENTS.md
 printf -- '- Do not change core without a review; see CONTRIBUTING §2.\n- The core loop runs its Rules and Checks in CI.\n' >> AGENTS.md
@@ -4056,7 +4058,7 @@ expect_pass sh -c "test \"\$(grep -c -- '^- \[ \] docs/' .git/jig/worktrees/RL/.
 HF="$T/homes-flat"; pcnew "$HF" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 mkdir -p docs/a src/a src/b src/c && printf '# A\n\nThe a system. [notes](notes.md)\n' > docs/a/a.md
 printf '# B\n\nThe b part.\n' > docs/a/b.md && printf '# Notes\n\nsome notes\n' > docs/a/notes.md
-printf '# C\n\nThe c part.\n\n## Invariants\n- c is c — it is; held by review.\n' > docs/a/c.md
+printf '# C\n\nThe c part.\n\n## Invariants\n- c is c — it is; held by test_c.\n' > docs/a/c.md
 printf 'x\n' > src/a/lib.rs && printf 'x\n' > src/b/b.rs && printf 'x\n' > src/c/c.rs
 board "b['docmap'] = {'docs/a/a.md': ['src/a/**'], 'docs/a/b.md': ['src/b/**'], 'docs/a/c.md': ['src/c/**']}"
 git add -A && git commit -qm flat
@@ -4100,8 +4102,8 @@ expect_pass homes "assert [(e['path'], e['to'], e['into'], e['fold']) for e in r
 # A flat page still owns the folder it has started to fill.
 HF2="$T/homes-flat-owner"; pcnew "$HF2" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 mkdir -p docs/a docs/b/datasheets src/a src/b && printf 'docs/**/datasheets/\n' > .gitignore
-printf '# A\n\nThe a system.\n\n## Invariants\n- a — x; held by review.\n' > docs/a.md
-printf '# B\n\nThe b part.\n\n## Invariants\n- b — x; held by review.\n' > docs/a/b.md
+printf '# A\n\nThe a system.\n\n## Invariants\n- a — x; held by test_a.\n' > docs/a.md
+printf '# B\n\nThe b part.\n\n## Invariants\n- b — x; held by test_b.\n' > docs/a/b.md
 printf '# B board\n\nThe b board. [x](b/datasheets/x.pdf)\n' > docs/b.md && printf 'pdf\n' > docs/b/datasheets/x.pdf
 printf 'x\n' > src/a/a.rs && printf 'x\n' > src/b/b.rs
 board "b['docmap'] = {'docs/a.md': ['src/a/**'], 'docs/a/b.md': ['src/a/b/**'], 'docs/b.md': ['src/b/**']}" && git add -A && git -c core.hooksPath=/dev/null commit -qm owners  # planted: both flat pages hold files
@@ -4713,13 +4715,47 @@ printf '# Old\n\n## Now\nx\n\n## Rules\n### 1.1 y\n\n## Checks\n- 1.1 review\n' 
 printf '# Inv\n\nInv holds keys.\n\n## Invariants\n\n- Keys are sorted — lookups bisect; held by test_sorted.\n- Keys are short.\n- Keys are ASCII — the wire format.\n' > docs/inv/inv.md
 printf '# After\n\nAfter does things.\n\n## Undefined\n\n- Sync — parked 2026-11-01.\n\n## Notes\n\nmore\n' > docs/after/after.md
 printf '# Nolead\n\n## Part\n\nText.\n' > docs/nolead/nolead.md
-printf '# Misc\n\nMisc is a part.\n\n## Invariants\n\n- A — b; held by review.\n' > docs/misc/x.md
+printf '# Misc\n\nMisc is a part.\n\n## Invariants\n\n- A — b; held by test_a.\n' > docs/misc/x.md
 # Planted: each page alone in its folder, which the hook refuses; only the contract is asked here.
 git add -A && git -c core.hooksPath=/dev/null commit -qm pages
 msg="page contract: survey flags an old-format page as old contract — convert"
 expect_pass pc "assert len(c['docs/old/old.md']) == 1 and c['docs/old/old.md'][0].startswith('old contract — convert'), c"
 msg="page contract: survey flags invariants missing a holder or a why, and passes the one with both"
 expect_pass pc "p = c['docs/inv/inv.md']; assert len(p) == 2 and any('Keys are short.' in x for x in p) and any('Keys are ASCII' in x for x in p), p"
+msg="page contract: each invariant whose holder names review is listed as such, never as no holder; a test, a path or a compound naming review is not; no holder is still listed"
+mkdir -p docs/held && cat > docs/held/held.md <<'PAGE'
+# Held
+
+Held keeps sums.
+
+## Invariants
+
+- R1 — w; held by review.
+- R2 — w; held by review of the log calls in `chain_tests.py`.
+- R3 — w; held by peer review only.
+- R4 — w; held by test_p and review.
+- R5 — w; held by TestSumWraps and review.
+- R6 — w; held by review of the calls in `log.py` and `chain.py`.
+- R7 — w; held by the reviewer.
+- R8 — w; held by reviewing each diff.
+- N1 — w; held by test_x.
+- N2 — w; held by review.py.
+- N3 — w; held by `tests/review/test_flow.py`.
+- N4 — w; held by test_review_mode.
+- N5 — w; held by preview_test.py.
+- Z — W.
+PAGE
+git add -A && git -c core.hooksPath=/dev/null commit -qm held
+expect_pass pc "p = c['docs/held/held.md']
+named = [x for x in p if 'whose holder names review' in x]
+assert len(p) == 9 and len(named) == 8, p
+assert all(any(f'R{i} —' in x for x in named) for i in range(1, 9)), named
+assert not any('N' + str(i) + ' —' in x for x in p for i in range(1, 6)), p
+assert not any('no holder' in x for x in p), p
+assert any('Z — W' in x and 'a holder' in x for x in p), p"
+msg="page contract: update lists the same eight entries under Repo files to review"
+expect_pass sh -c "$J update 2>&1 | grep '^  docs/held/held.md: off the page contract' | python3 -c 'import sys; t = sys.stdin.read(); assert t.count(\"whose holder names review\") == 8, t'"
+git rm -rq docs/held && git commit -qm "no held"
 msg="page contract: survey flags a page with no lead paragraph; a page still carrying ## Undefined is in the contract otherwise"
 expect_pass pc "assert any('no lead paragraph' in x for x in c['docs/nolead/nolead.md']), c
 assert 'docs/after/after.md' not in c, c"
@@ -5078,6 +5114,62 @@ $J open M --spec .jig/specs/y.md --owns 'docs/**' >/dev/null && git add -A && gi
   && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note M" )
 gated M; $J merge M >/dev/null 2>&1
 expect_pass sh -c "grep -q 'touches docs/d.md' .jig/roadmap.md && git show --name-only --format= HEAD | grep -qx .jig/roadmap.md"
+
+# How the repository is worked is no page's (RULES.md, Documentation: Product and process).
+BP="$T/process"; pcnew "$BP" && mkdir -p docs src scripts && printf 'x = 1\n' > src/a.py
+printf '# A\n\nA keeps the list.\n' > docs/a.md && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+cat >> docs/a.md <<'PAGE'
+
+jig's `docmap` in `.jig/config.json` says which page owns a file.
+
+Links: [rules](../.jig/RULES.md), [board](../../.jig/config.json), `./.jig/scripts/check.sh`, and `~/.jig/repos.json` is the user's.
+
+The question waits in `.jig/decisions.md § Open`.
+
+<!-- jig's template, on .jig/RULES.md -->
+A quoted `<!--` hides nothing: .jig/scripts/derive.sh
+<!--
+spans .jig/RULES.md too
+-->
+
+```
+.jig/RULES.md
+```
+
+    .
+    ├── .jig/
+    └── src/
+
+The app runs the user's pytest suite and shows its results.
+The service builds each pushed branch and reports the result.
+PAGE
+msg="process: page lines naming .jig/ paths, the decision log, and product lines about tests and builds commit"
+git add -A && expect_pass git commit -qm process
+printf '# B\n\nB is.\n\nCited .jig/specs/x.md once.\n' > docs/b.md && git add -A && git -c core.hooksPath=/dev/null commit -qm planted
+printf '# Process\n\nHow this repo is worked.\n\n## Code style\n\nNames say why; see .jig/RULES.md.\n\n## Release\n\nTag, then .jig/scripts/publish.sh.\n\n## CI\n\nFlaky on Mondays.\n' > .jig/process.md && git add -A && git commit -qm process.md
+msg="process: survey lists the .jig/config.json line, relative links to .jig/ at any depth, and the layout tree, and nothing else (not ~/.jig/): no decision log, comment, fence, product line, spec path or process.md"
+expect_pass python3 -c "
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+got = [(e['path'], e['names']) for e in r['process_in_pages']]
+assert got == [('docs/a.md', '.jig/config.json'), ('docs/a.md', '../.jig/RULES.md'), ('docs/a.md', '../../.jig/config.json'),
+               ('docs/a.md', './.jig/scripts/check.sh'), ('docs/a.md', '.jig/scripts/derive.sh'), ('docs/a.md', '.jig/')], got
+assert not [e for e in r['homeless'] if 'process' in e['path']], r['homeless']
+assert any('.jig/specs/' in p for e in r['project_in_product'] if e['path'] == 'docs/b.md' for p in e['problems']), r['project_in_product']"
+msg="process: survey prints them under a heading naming the repo's process and its homes"
+s=$($J survey 2>&1); expect_pass sh -c "echo \"\$0\" | grep -A2 '^How the repository is worked, in the product' | grep -q 'process.md' && echo \"\$0\" | grep -q '^  docs/a.md:5: \".jig/config.json\"' && ! echo \"\$0\" | grep -A12 '^How the repository is worked' | grep -q 'docs/b.md'" "$s"
+msg="process: survey's Doc homes line names .jig/process.md"
+expect_pass sh -c "echo \"\$0\" | grep '^Doc homes: ' | grep -qF '.jig/process.md = how the repo is worked'" "$s"
+msg="process: the update dry run lists the line under Repo files to review"
+out=$($J update 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/a.md: line 5: \".jig/config.json\" names how the repository is worked'" "$out"
+msg="process: survey's Too long line names where a cut line goes, and never a page"
+python3 -c "open('AGENTS.md','a').write(''.join(f'- rule {i}\n' for i in range(61)))" && git add -A && git -c core.hooksPath=/dev/null commit -qm long
+s=$($J survey 2>&1); expect_pass sh -c "echo \"\$0\" | grep -A4 '^Too long' | tr '\n' ' ' | grep -q '.jig/process.md.*.jig/scripts/release.sh.*system.s page.*git.*never goes *to a page'" "$s"
+msg="process: the fold-in's UNOWNED line names the repository's own tooling as needing no page"
+mkdir -p .jig/specs && printf '# p\n\nSource: smoke\n\n## Intent\nx\n' > .jig/specs/p.md && git add -A && git commit -qm spec
+$J open PR --spec .jig/specs/p.md --owns 'scripts/**' >/dev/null && git add -A && git commit -qm "open PR"
+( cd .git/jig/worktrees/PR && mkdir -p scripts && printf 'print(1)\n' > scripts/release.py && git add -A && git commit -qm rel && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 )
+expect_pass grep -q "UNOWNED scripts/release.py — .*no page needed because ___ (the repository's own tooling, its build, CI, release and dev scripts, needs none)" .git/jig/worktrees/PR/.jig/handoffs/PR-*.md
 
 # A line only moved within a file isn't added: accepting entries moves them, and old text moves with them.
 BV="$T/boundary-move"; pcnew "$BV" && mkdir -p docs && printf '# Shared\n\nThe shared page.\n\nSee `exits/capital-event` for the plan.\n\nAnother paragraph.\n' > docs/shared.md
@@ -7366,9 +7458,9 @@ s=.git/jig/worktrees/gate-K
 msg="mark: gated with no gate checkout at all is refused, naming jig gate and jig checked"
 out=$($J mark K gated 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'no gate checkout for K: .jig gate K.*jig checked' && grep -q '\"state\": \"claimed\"' .jig/jobs.json" "$out"
-msg="gate: prints check.sh --full in the scratch checkout, the check step's tier and effort, jig checked and jig mark gated"
+msg="gate: prints check.sh --full through jig queue --full in the scratch checkout, the check step's tier and effort, jig checked and jig mark gated"
 out=$($J gate K 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -qF '(cd $s && ./.jig/scripts/check.sh --full)' && echo \"\$0\" | grep -q 'check step runs it: tier 3, effort 4' && echo \"\$0\" | grep -qF 'checked --tier 3 --effort 4 --seconds <s>' && echo \"\$0\" | grep -q 'jig mark K gated'" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -qF '(cd $s && python3 .jig/jig.py queue --full -- ./.jig/scripts/check.sh --full)' && echo \"\$0\" | grep -q 'check step runs it: tier 3, effort 4' && echo \"\$0\" | grep -qF 'checked --tier 3 --effort 4 --seconds <s>' && echo \"\$0\" | grep -q 'jig mark K gated'" "$out"
 msg="gate: a repo override of the check role shows its numbers"
 setroles '{"check": {"tier": 2, "effort": 3, "reason": "r"}}'
 out=$($J gate K 2>&1); git checkout -q -- .jig/config.json
@@ -7488,6 +7580,55 @@ expect_pass sh -c "$UP 2>&1 | grep '.jig/scripts/check.sh: never reads --full' |
 msg="update: the template's check.sh, which reads --full, is not listed"
 cp "$P/jig/scripts/check.sh" .jig/scripts/check.sh && git commit -qam "two levels"
 expect_refuse sh -c "$UP 2>&1 | grep -q 'never reads --full'"
+
+# jig checked --ci: the run is read through gh, a stub here, and recorded only when it passed on HEAD.
+cd "$CL"
+mkdir -p "$T/ghbin" "$T/nogh"
+printf '#!/bin/sh\nprintf "%%s" "$GH_RUN"\nexit ${GH_RC:-0}\n' > "$T/ghbin/gh" && chmod +x "$T/ghbin/gh"
+ln -s "$(command -v git)" "$T/nogh/git"; ln -s "$(command -v python3)" "$T/nogh/python3"
+h=$(git rev-parse HEAD); u="https://github.com/o/r/actions/runs/42"
+ghrun() { printf '{"headSha": "%s", "status": "%s", "conclusion": "%s", "url": "%s", "workflowName": "%s", "headBranch": "%s"}' "$1" "$2" "$3" "$u" "${4:-jig check}" "${5:-jig-check/${1:0:12}}"; }
+cilines() { wc -l < .git/jig/checked.log | tr -d ' '; }
+n0=$(cilines)
+msg="checked --ci: a repo with no GitHub origin is refused"
+out=$(GH_RUN=$(ghrun $h completed success) PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'no GitHub origin' && test $(cilines) = $n0" "$out"
+git remote add origin https://github.com/o/r.git
+msg="checked --ci: a run whose headSha isn't HEAD is refused, naming both, and nothing is recorded"
+out=$(GH_RUN=$(ghrun 0123456789abcdef0123456789abcdef01234567 completed success) PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'ran 0123456789ab, not HEAD ${h:0:12}' && test $(cilines) = $n0" "$out"
+msg="checked --ci: a run of another repo than origin is refused, naming both"
+out=$(GH_RUN=$(ghrun $h completed success) PATH="$T/ghbin:$PATH" $J checked --ci https://github.com/x/y/actions/runs/42 --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"run 42 is x/y's, not this repo's origin, o/r\" && test $(cilines) = $n0" "$out"
+msg="checked --ci: a green run of another workflow on another branch is refused, naming the jig check workflow"
+out=$(GH_RUN=$(ghrun $h completed success lint main) PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"is 'lint' on 'main': the complete check is the 'jig check' workflow\" && test $(cilines) = $n0" "$out"
+msg="checked --ci: a green run of another workflow on jig-check/<HEAD's sha> is refused"
+out=$(GH_RUN=$(ghrun $h completed success lint) PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"is 'lint' on 'jig-check/${h:0:12}'\" && test $(cilines) = $n0" "$out"
+msg="checked --ci: a green jig check run on another branch is refused, naming jig-check/<HEAD's sha>"
+out=$(GH_RUN=$(ghrun $h completed success "jig check" jig-check/0123456789ab) PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"the complete check is the 'jig check' workflow on jig-check/${h:0:12}\" && test $(cilines) = $n0" "$out"
+msg="checked --ci: a run still in progress is refused"
+out=$(GH_RUN=$(ghrun $h in_progress "") PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'is in_progress, not completed' && test $(cilines) = $n0" "$out"
+msg="checked --ci: a failed run is refused"
+out=$(GH_RUN=$(ghrun $h completed failure) PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'concluded failure, not success' && test $(cilines) = $n0" "$out"
+msg="checked --ci: a run gh can't read is refused, with gh's own words"
+out=$(GH_RUN="no such run" GH_RC=1 PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'gh could not read run 42: no such run' && test $(cilines) = $n0" "$out"
+msg="checked --ci: with no gh on PATH it is refused, naming gh"
+out=$(PATH="$T/nogh" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'gh is not installed' && test $(cilines) = $n0" "$out"
+msg="checked --ci: a passing run on HEAD is recorded with its URL as a sixth field"
+GH_RUN=$(ghrun $h completed success) PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 >/dev/null 2>&1
+expect_pass grep -qx "$h	3	4	9	$(date +%Y-%m-%d)	$u" .git/jig/checked.log
+msg="checked --ci: jig status shows the CI record"
+expect_pass sh -c "$J status 2>&1 | grep -qF \"last complete check: 9s on $(date +%Y-%m-%d) (${h:0:12}) on CI: $u\""
+msg="checked --ci: an old five-field line after it is still read"
+printf '%s\t3\t4\t11\t2026-01-02\n' "$h" >> .git/jig/checked.log
+expect_pass sh -c "$J status 2>&1 | grep -qF 'last complete check: 11s on 2026-01-02'"
 }
 
 # ---------------------------------------------------------------- the SessionStart role line
@@ -8043,6 +8184,10 @@ msg="claims id: D-003 and D-3 list the same lines"
 expect_pass test "$out" = "$($J reading-list --claims D-003 | sed 's/D-003:/D-3:/')"
 msg="claims id: run from a subfolder, it lists the same lines"
 expect_pass test "$out" = "$(cd docs/store && python3 ../../.jig/jig.py reading-list --claims D-3)"
+msg="claims id: a copy in .jig/process.md is listed, as in the ledgers"
+printf '# Process\n\nReleases keep the store read-only, per D-3.\n' > .jig/process.md && git add -A && nohook process
+expect_pass sh -c "$J reading-list --claims D-3 | grep -q '^  copy     .jig/process.md:3 '"
+git rm -q .jig/process.md && nohook "no process"
 
 out=$($J reading-list --claims mote)
 msg="claims term: the glossary heading is home, a use is a copy, an entry whose Touches names it is listed"
@@ -8248,7 +8393,125 @@ msg="rigger: a folder inside another listed repo's checkout is refused, and no p
 expect_pass sh -c "! $PJ rigger x --folder $T/rg-app/notes >/dev/null 2>&1 && test ! -e $T/rg-app/notes && python3 -c \"import json; assert 'rigger' not in json.load(open('$JIG_CONFIG'))['x']\""
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders rig claims inbox rigger"
+sec_queue() {
+QU="$T/qu"; pcnew "$QU" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+# The queue reads trunk's config, so each setting is committed, as the hubnode would.
+setq() { python3 -c "import json, sys; c = json.load(open('.jig/config.json')); c['queue'] = json.loads(sys.argv[1]); json.dump(c, open('.jig/config.json', 'w'), indent=2)" "$1" && git add -A && git commit -qm "queue $1"; }
+# untilout <file> <text>: wait up to 10s for a background run's output to say TEXT.
+untilout() { for i in $(seq 50); do grep -q "$2" "$1" 2>/dev/null && return 0; sleep 0.2; done; return 1; }
+# holding <n>: wait up to 10s until n runs hold a slot.
+holding() { for i in $(seq 50); do $J queue 2>/dev/null | grep -qx "running: $1" && return 0; sleep 0.2; done; return 1; }
+gone() { for i in $(seq 50); do kill -0 "$1" 2>/dev/null || return 0; sleep 0.2; done; return 1; }
+
+setq '{"slots": 1}'
+$J queue -- sleep 30 & p1=$!
+holding 1
+$J queue -- touch second > "$T/q2.out" 2>&1 & p2=$!
+msg="queue: with one slot, a second run waits, printing that it waits and how many run and wait"
+expect_pass sh -c "untilout() { for i in \$(seq 50); do grep -q \"\$2\" \"\$1\" 2>/dev/null && return 0; sleep 0.2; done; return 1; }; untilout '$T/q2.out' 'waiting for a slot: 1 running, 1 waiting' && test ! -e second"
+msg="queue: with no command it lists the slots, the holder and the waiter"
+out=$($J queue 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^slots: 1 (queue.slots)' && echo \"\$0\" | grep -A1 '^running: 1' | grep -q 'sleep 30  in .*/qu  for' && echo \"\$0\" | grep -A1 '^waiting: 1' | grep -q 'touch second  in .*/qu  for' && echo \"\$0\" | grep -qx 'complete check: none'" "$out"
+msg="queue: killing the holder lets the waiter run, and leaves no waiting file behind"
+kill $p1; wait $p1 2>/dev/null
+expect_pass sh -c "for i in \$(seq 50); do test -e second && break; sleep 0.2; done; test -e second && ! ls .git/jig/queue/wait-* 2>/dev/null | grep -q ."
+wait $p2 2>/dev/null
+msg="queue: after the kill, no run holds a slot"
+expect_pass sh -c "$J queue | grep -qx 'running: 0' && $J queue | grep -qx 'waiting: 0'"
+msg="queue: the command's exit code passes through"
+expect_pass sh -c "$J queue -- false; test \$? = 1 && $J queue -- sh -c 'exit 7'; test \$? = 7 && $J queue -- true"
+msg="queue: a command killed by a signal exits 128 + the signal, as a shell reports it"
+expect_pass sh -c "$J queue -- sh -c 'kill -TERM \$\$'; test \$? = 143"
+msg="queue: a process the command leaves behind holds no slot and no full lock once the command returns"
+expect_pass sh -c "$J queue --full -- sh -c 'sleep 6 >/dev/null 2>&1 & echo bg' | grep -qx bg && $J queue | grep -qx 'running: 0' && $J queue | grep -qx 'complete check: none'"
+msg="queue: jig killed outright (SIGKILL) frees its slot, the trade for never handing the lock to the command"
+$J queue -- sh -c 'echo $$ > child.pid; exec sleep 30' & p1=$!
+holding 1
+kill -9 $p1; wait $p1 2>/dev/null
+expect_pass sh -c "$J queue | grep -qx 'running: 0'"
+kill $(cat child.pid) 2>/dev/null
+msg="queue: no command after --full is a usage error"
+expect_pass sh -c "$J queue --full >/dev/null 2>&1; test \$? = 2"
+
+cores=$(python3 -c "import os; print(os.cpu_count())")
+setq '{"width": "all"}'
+msg="queue: width all and no slots gives one slot"
+expect_pass sh -c "$J queue | grep -q '^slots: 1 ($cores cores / width all)'"
+setq '{"width": 2}'
+msg="queue: width 2 gives the core count divided by 2"
+expect_pass sh -c "$J queue | grep -q \"^slots: $(( cores / 2 > 0 ? cores / 2 : 1 )) ($cores cores / width 2)\""
+
+setq '{"slots": 4}'
+$J queue --full -- sleep 30 & p1=$!
+holding 1
+$J queue --full -- touch full2 > "$T/qf.out" 2>&1 & p2=$!
+msg="queue --full: two complete checks never overlap, even with free slots: the second waits"
+expect_pass sh -c "for i in \$(seq 50); do grep -q 'waiting for a slot' '$T/qf.out' && break; sleep 0.2; done; grep -q 'waiting for a slot: 1 running, 1 waiting' '$T/qf.out' && test ! -e full2 && $J queue | grep -qx 'complete check: running'"
+msg="queue --full: an ordinary run still takes a free slot beside a complete check"
+expect_pass sh -c "$J queue -- touch beside && test -e beside"
+kill $p1; wait $p1 2>/dev/null
+msg="queue --full: once the first ends, the second runs"
+expect_pass sh -c "for i in \$(seq 50); do test -e full2 && break; sleep 0.2; done; test -e full2"
+wait $p2 2>/dev/null
+
+setq '{"slots": 4, "overflow": {"to": "github", "reason": "the owner: keep the standing yes"}}'
+$J queue --full -- sleep 30 & p1=$!
+holding 1
+msg="queue --full: with the overflow key and a complete check running, it exits 3 and prints the CI route for jig-check/<sha>"
+short=$(git rev-parse --short=12 HEAD)
+out=$($J queue --full -- touch over 2>&1); rc=$?
+expect_pass sh -c "test $rc = 3 && test ! -e over && echo \"\$0\" | grep -q 'keep the standing yes' && echo \"\$0\" | grep -qF 'HEAD:refs/heads/jig-check/$short' && echo \"\$0\" | grep -qF 'checked --ci <run url> --tier 3 --effort 4' && echo \"\$0\" | grep -qF -- '--delete jig-check/$short'" "$out"
+kill $p1; wait $p1 2>/dev/null
+setq '{"slots": 1, "overflow": {"to": "github", "reason": "the owner: keep the standing yes"}}'
+$J queue -- sleep 30 & p1=$!
+holding 1
+msg="queue --full: with the overflow key and every slot held by ordinary runs, it exits 3 too"
+short=$(git rev-parse --short=12 HEAD)
+out=$($J queue --full -- touch over 2>&1); rc=$?
+expect_pass sh -c "test $rc = 3 && test ! -e over && echo \"\$0\" | grep -qF 'jig-check/$short'" "$out"
+msg="queue: an ordinary run never overflows: it waits"
+$J queue -- touch plain > "$T/qp.out" 2>&1 & p2=$!
+expect_pass sh -c "for i in \$(seq 50); do grep -q 'waiting for a slot' '$T/qp.out' && break; sleep 0.2; done; grep -q 'waiting for a slot' '$T/qp.out' && test ! -e plain"
+kill $p1 $p2; wait $p1 $p2 2>/dev/null
+
+# Run through a stand-in getloadavg, so the test knows whether jig read the load at all.
+loadrun() { python3 -c "import os, sys, runpy; os.getloadavg = lambda: sys.exit(9); sys.argv = ['jig.py', 'queue', '--', 'true']; runpy.run_path('.jig/jig.py', run_name='__main__')"; }
+setq '{"slots": 4}'
+msg="queue: with no max_load, the machine's load is never read"
+expect_pass sh -c "$(declare -f loadrun); loadrun"
+setq '{"slots": 4, "max_load": 0}'
+msg="queue: with max_load set, the load is read"
+expect_pass sh -c "$(declare -f loadrun); loadrun; test \$? = 9"
+msg="queue: with max_load 0, a run waits even with every slot free"
+$J queue -- touch loaded > "$T/ql.out" 2>&1 & p1=$!
+expect_pass sh -c "for i in \$(seq 50); do grep -q 'waiting for a slot' '$T/ql.out' && break; sleep 0.2; done; grep -q 'waiting for a slot: 0 running, 1 waiting' '$T/ql.out' && test ! -e loaded"
+kill $p1; wait $p1 2>/dev/null
+setq '{"slots": 4, "max_load": 0, "overflow": {"to": "github", "reason": "the owner: keep the standing yes"}}'
+msg="queue --full: with the overflow key, free slots and only the load over, it waits and never exits 3"
+$J queue --full -- touch loadfull > "$T/qlf.out" 2>&1 & p1=$!
+expect_pass sh -c "for i in \$(seq 50); do grep -q 'waiting for a slot' '$T/qlf.out' && break; sleep 0.2; done; grep -q 'waiting for a slot: 0 running, 1 waiting' '$T/qlf.out' && kill -0 $p1 && ! grep -q jig-check '$T/qlf.out' && test ! -e loadfull"
+kill $p1; wait $p1 2>/dev/null
+
+msg="queue config: an overflow key with no reason is refused by the commit hook"
+expect_refuse setq '{"overflow": {"to": "github"}}'
+undo
+msg="queue config: an overflow wider than its two keys is refused"
+expect_refuse setq '{"overflow": {"to": "github", "reason": "r", "branches": "*"}}'
+undo
+msg="queue config: an unknown queue key, or a bad width, is refused"
+expect_refuse setq '{"push": true}'
+undo
+expect_refuse setq '{"width": 0}'
+undo
+msg="queue config: a config that weakens another fixed rule is still refused"
+setroles '{"review": {"fresh": false, "reason": "r"}}'
+expect_refuse sh -c "git add -A && git commit -qm weaken"
+undo
+msg="queue config: the overflow key with the owner's words commits"
+expect_pass setq '{"width": "all", "overflow": {"to": "github", "reason": "the owner: keep the standing yes"}}'
+}
+
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders rig claims inbox rigger queue"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file

@@ -81,8 +81,10 @@ dropped — and prints what is left to you for the same commit: the references i
 the list (an edit, a fold, a nest) you make by hand on its yes; jig acts on the record, never
 on an answer in chat.
 
-Some of them are survey's home findings. A **rules** file off root: fold what still binds into
-`AGENTS.md` or a page's Invariants, repoint the lines named, delete it — but a package's own rules
+Some of them are survey's home findings. A **rules** file off root: sort it line
+by line by the test in `.jig/RULES.md` (Homes): a rule every task needs into `AGENTS.md`, the
+rest of how the repo is worked into `.jig/process.md` (from `${CLAUDE_PLUGIN_ROOT}/templates/process.md`
+when absent, and add `AGENTS.md`'s pointer line naming its trigger ("Before a release, read `.jig/process.md` § Release")), and only a fact the product must keep into its page's Invariants; repoint the lines named, delete it — but a package's own rules
 file in a monorepo may stay on the owner's word, so ask before proposing the delete. A **copy** of `.jig/RULES.md`:
 delete it and point what names it at `.jig/RULES.md`. A page at home but **off the page contract** (no lead paragraph, an invariant with
 no why or holder, the old Now / Rules / Checks shape) is fixed where it sits: show its problems and the
@@ -138,7 +140,8 @@ old text is left alone unless the owner raises it.
 - A **plan or register file** is listed with where its content goes: `TODO.md`, `BACKLOG.md`,
   `STATUS.md`, `PLAN.md` or a hand-written `ROADMAP.md` to `.jig/roadmap.md`; `FEATURES.md` to its
   systems' pages, each row's who and why to a decision entry; `RULES.md`, `CONVENTIONS.md`,
-  `CONTRIBUTING.md` to `AGENTS.md` (40 lines at most) or a skill. Propose each conversion;
+  `CONTRIBUTING.md` sorted line by line by the test in `.jig/RULES.md` (Homes), its overflow past
+  `AGENTS.md`'s 40 lines to `.jig/process.md`. Propose each conversion;
   remove the file in the same change once all of it moved. A file that holds pages goes to
   `/jig:redocument`.
 

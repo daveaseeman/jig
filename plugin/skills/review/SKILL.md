@@ -77,7 +77,10 @@ Its job is to find the reason this change is wrong. Its questions:
    Two outcomes for one situation, neither an exception the other permits, is a conflict:
    blocking until the change resolves it. Does each added entry open with its rule sentence?
 
-9. For each decision entry and each page change the diff adds, ask: is this about the product, or about when and in what order we build it? An entry or a page
+9. For each decision entry and each page change the diff adds, ask: is this about the product, about when and in what order we build it, or about how the
+   repository is worked? A page line about how the repo is worked (its commands, code style,
+   review, jig's `.jig/` files, build, CI or release steps, not what the product does with them)
+   is blocking: it goes to its home by the test in `.jig/RULES.md` (Homes), often `.jig/process.md`. An entry or a page
    line that is the project (a priority order, a delivery queue, a phase, build status, "not
    built yet", parked work) is blocking: it goes to `.jig/roadmap.md` (`## Up next` for work
    parked mid-build, naming its pages; `## No phase` for named work with no phase yet), and the
@@ -91,7 +94,7 @@ A file in `.jig/staging/` is not decided; a finding that rests on one says so.
 
 Rerun no check the builder's report shows for the same commit: the author ran it and showed
 the output, and the check role runs the complete check. Run only the narrowest check a specific finding needs (one smoke section, one command),
-and say which one and why.
+through the queue (`jig queue -- <command>`), and say which one and why.
 
 A reviewer that runs jig to test a finding does it in a throwaway repo. There, set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched.
 

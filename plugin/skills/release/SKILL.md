@@ -53,7 +53,7 @@ is "nothing", delete the line and leave no steps. Commit it before the release.
 - **no v\* tag yet**: ask for the first version and pass `--version X.Y.Z` (or `--minor` for
   0.1.0).
 - **merges owe the batch's check** (`Check: batch`): jobs merged on one complete check of the
-  trunk they made, and it hasn't run. The check role runs `.jig/scripts/check.sh --full` in a
+  trunk they made, and it hasn't run. The check role runs `jig queue --full -- ./.jig/scripts/check.sh --full` in a
   detached worktree of trunk's tip, then `jig checked --tier N --effort N --seconds S` there
   (`/jig:check`); then run the release again. When it fails, `jig checked --trace "<failing
   command>"` there prints the bisect that names the merge.

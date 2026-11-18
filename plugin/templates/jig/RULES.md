@@ -227,6 +227,21 @@ writes the line judges it, and the spec, fold-in and review ask. The hook also r
 metarepo's `entry_files`: the roadmap is `.jig/roadmap.md`, and the root `ROADMAP.md` is
 exempt only where `.jig/roadmap.md` exists.
 
+**Product and process.** A page describes the product, never how the repository is worked: the
+order a builder reads in, the commands that build, test and check it, its code style, its review
+and handoff, jig and its files under `.jig/`, and the steps of its build, CI and release. Each
+has its own home, by the test under Homes: `AGENTS.md` for rules every task needs and the
+commands, `jig reading-list` for what to read, `.jig/scripts/` for steps a script runs, a skill
+for a procedure an agent runs, CI's own files for CI, and `.jig/process.md` for the rest, code
+style included. What the product does with the same things is the product's: a page describes
+an app that runs a user's tests, a CI service, an app that reads a user's instruction files, or
+a tool whose product is jig. A board page's Toolchain and Flash / rollback belong to the board.
+Whoever writes the line judges it, and the spec and review ask. `jig survey` and `jig update`
+list a page line that names a path under `.jig/` other than `.jig/decisions.md`, outside fenced
+code and HTML comments; the hook refuses nothing for it, since a product that reads jig's files
+names them too. It searches no words ("jig", "CI", a test runner's name): each may be the
+product's.
+
 **Docs point only at docs.** The root documents (`README.md`, `AGENTS.md`, `CLAUDE.md`,
 `GEMINI.md`, `CHANGELOG.md`) are for outsiders and for agents: they may point into `docs/`, and
 a page or a decision entry never names one. The hook refuses an added line in a page under
@@ -251,9 +266,11 @@ current, is the skeleton):
    calls it and what passes between them, each linked to its seam page or contract where one
    exists. Calls inside the system stay in the body.
 4. **`## Invariants`**, optional: only the facts that are load-bearing. Each entry states,
-   inline, why it must hold and what holds it — a named test, review, or on screen:
+   inline, why it must hold and what holds it — a named test, or what is seen on screen (on a
+   board, on the board):
    `- Rows are at least 44px — the touch-target minimum; held by test_touch_targets.` An
-   entry without a why and a holder is description, and goes in the body or nowhere.
+   entry without a why and a holder is description, and goes in the body or nowhere. Review is
+   no holder: no step reads a page's Invariants, so what only review would hold goes in the body.
 
 A page has no `## Undefined` section, and no section that holds the project: build status
 (done, pending, not built yet), or when and in what order work will happen. What the section
@@ -387,8 +404,32 @@ Each kind of document has one home: rules in `AGENTS.md`, and the rules about do
 here; what the code is now and its invariants in `docs/`; a task in flight in
 `.jig/specs/`; decisions that outlive their spec, and what a release changed, in
 `.jig/decisions.md`; the phases, scopes and parked work ahead in `.jig/roadmap.md`; patches in the code in `.jig/ledgers/WORKAROUNDS.md`; review findings not taken
-in `.jig/ledgers/DEFERRED.md`; know-how in the agent's skills; what outsiders need in
-`README.md`; history in git.
+in `.jig/ledgers/DEFERRED.md`; a procedure an agent runs in a skill, and the rest of how the
+repo is worked in `.jig/process.md`, never in `docs/`; what outsiders need in `README.md`;
+history in git.
+
+`.jig/process.md` holds how the repository is worked wherever no other home takes it, one `##`
+section per topic, a new topic its own section. It is read on demand, never always-loaded, with
+no line cap, and `AGENTS.md` points to it, naming when to read which section. It is created on
+first use from jig's template, as the ledgers are. Where new process goes, one test decides, and
+whoever places it (the owner, a hubnode, a spec, a retro) applies this table rather than
+restating it:
+
+| The process is… | Home |
+|---|---|
+| a rule every task needs | `AGENTS.md` |
+| a rule for one situation (releasing, a migration, touching the build) | a section of `.jig/process.md`, its trigger named in `AGENTS.md`'s pointer line |
+| knowledge behind how the repo is worked: code style, why the build is shaped so, packaging, a release's judgment calls, debugging recipes, CI quirks | a section of `.jig/process.md` |
+| a procedure an agent runs when a task calls for it: steps, often a script, invoked by name | a skill; its knowledge stays in `.jig/process.md`, and the skill points to the section |
+| something a machine can do or check | a script or a check (`.jig/scripts/`, `check.sh`, a hook), which a skill may call |
+| a role's tier or effort | `roles` in `.jig/config.json`, with its reason |
+| jig's own rules | `.jig/RULES.md` holds them; the lines every task needs arrive as jig's own lines in `AGENTS.md` (the template's, or a generated block) |
+| the product | `docs/` |
+
+A line cut from `AGENTS.md` to keep it under its cap goes by the same test: a rule every task
+needs stays; the rest of how the repo is worked, code style included, to a section of
+`.jig/process.md`; a release step to `.jig/scripts/release.sh`; a fact about the product to its
+system's page; history to git. How the repo is worked never goes to a page.
 
 A repo's terms are its glossary, `docs/glossary.md`: a `# Glossary` title, an optional lead
 line, then the terms, each saying what it means and what it is not, in one of two forms: a
@@ -413,9 +454,11 @@ handoff, a released section of the decision log or of a root `CHANGELOG.md`. A R
 `jig survey` also reads each page at home under `docs/`, board pages included, against the
 contract above, and names a page in the old Now, Rules and Checks shape (convert it: fold
 what it says into description, delete what no longer holds, keep as Invariants only what
-passes the test), an Invariants entry with no why (` — `) or no holder (`held by`), and a
+passes the test), an Invariants entry with no why (` — `) or no holder (`held by`), or whose
+holder names review (listed: survey reads the word, never the other holders), and a
 page whose first line of text after its title is a heading rather than a lead paragraph. It
-lists, apart, the project in the product: an `## Undefined` heading on a page or a metarepo's
+lists, apart, a page line naming a `.jig/` path other than the decision log (Product and
+process), and the project in the product: an `## Undefined` heading on a page or a metarepo's
 entry file, and what the hook refuses on an added line (a `.jig/specs/`, `.jig/handoffs/` or
 `.jig/roadmap.md` path, a scope id in code quotes) in old text on a page or in the decision
 log, each with where it goes. It searches no words that may be the product's. `jig update --apply` brings this file; it
@@ -426,7 +469,8 @@ review it lists each page's `## Undefined` entry as the `## Up next` item it wou
 project paths and quoted scope ids above, and the repo's plan and register files with where
 each one's content goes: `TODO.md`, `BACKLOG.md`, `STATUS.md`, `PLAN.md` and a hand-written
 `ROADMAP.md` to `.jig/roadmap.md`; `FEATURES.md` to its systems' pages and decision entries;
-`RULES.md`, `CONVENTIONS.md` and `CONTRIBUTING.md` to `AGENTS.md` or a skill. It judges none of
+`RULES.md`, `CONVENTIONS.md` and `CONTRIBUTING.md` sorted line by line by the test under Homes.
+It lists, too, each page line naming a `.jig/` path (Product and process). It judges none of
 them. `jig update --apply --sweep` writes the Up next items to `.jig/roadmap.md`, creating it when
 absent, on trunk (R5), and removes each emptied Undefined section where the pages may change:
 on trunk, or in a metarepo a job's worktree (M4), where it removes only the sections whose
@@ -570,7 +614,7 @@ else stops with the files named, and a person resolves it.
 2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it sets
    up a **detached scratch checkout of the commit the note names**, with trunk merged in the
    way `jig sync` merges it, and prints the complete check to run there
-   (`.jig/scripts/check.sh --full`), the check role's tier and effort, and the `jig checked`
+   (`jig queue --full -- ./.jig/scripts/check.sh --full`), the check role's tier and effort, and the `jig checked`
    that records it. It never runs the check: whoever runs it runs the same command. Never the
    job's live worktree, which the subnode may still be building in.
    The scratch checkout lives until the job is marked gated or merged: `jig mark <job> gated`
@@ -641,6 +685,8 @@ order.
 
 The hubnode's own steps, which are no role's: assign, gate, merge, release, push, publish. jig itself
 (no model) refuses a step out of order, and removes a merged job's clean worktree and branch.
+One push is the check role's: with `queue.overflow` set (The queue), it pushes and deletes
+`jig-check/*` branches for an overflowed complete check, and no other branch.
 
 Tier 1 is the best model the tool has; a higher number is a lesser model. Effort 0 is the
 tool's highest; each number up is one level lower. The defaults leave effort 0 free, so a
@@ -663,7 +709,10 @@ job's work session); `⇢` starts a new one.
 | Redocument | spec ⇢ Jobs ⇢ Batch ⇢ Job | `/jig:redocument` | the spec is the remap; the last job is the cleanup |
 
 **Fixed, whatever the config says:** the owner's word before merge, push and publish; a fresh
-session for every review; a complete check before a release. Everything else the hubnode may
+session for every review; a complete check before a release. The one exception is the owner's
+word given once: `queue.overflow`, with the owner's words as its reason, stands for every push of
+a `jig-check/*` branch, and for nothing wider. The commit hook refuses it without a reason, and
+refuses any other key that weakens a fixed rule. Everything else the hubnode may
 propose to reconfigure, with a reason, and apply only on the owner's yes; on a no it continues
 with the defaults.
 
@@ -761,7 +810,39 @@ check role's numbers, the seconds and the date, in `.git/jig/checked.log` (never
 shared by every worktree). It warns when the numbers differ from the check role's. `jig
 status` prints the last one's seconds and date: what a complete check costs here.
 
-A single job keeps its own gate check: `check.sh --full` once in the gate's checkout, `jig
+`jig checked --ci <run url> --tier N --effort N --seconds S` records a complete check that ran
+on GitHub Actions (The queue). jig reads the run with `gh run view` and refuses unless it is
+this repo's `origin`'s, is the `jig check` workflow on `jig-check/<HEAD's short sha>`, ran HEAD,
+completed and succeeded, or when `gh` is missing or can't read it; the record carries the
+run's URL as a sixth field. `jig status` and the gate's mark read it as they read a local one.
+
+### The queue
+
+Every test or check run a role starts goes through `jig queue -- <command…>`: it waits for one
+of the machine's slots, runs the command holding it, and returns the command's exit code. jig
+holds the slot; it never chooses what runs. The slots are OS file locks in `.git/jig/queue/`,
+shared by every worktree, so a run that dies frees its slot with nothing to clean up. jig holds
+them, not the command, so a process the command leaves behind never keeps a slot. A run
+that finds none free prints `waiting for a slot: N running, M waiting` and waits. `jig queue`
+with no command prints the slots, who holds them, who waits, and whether a complete check runs.
+
+`queue` in `.jig/config.json` sets it: `width` is the cores one run uses (default 1, `"all"`
+for every core), and the slots are the core count over the width, at least 1; `slots` sets
+the number outright. `max_load`, a load average per core, stops handing out slots while the
+machine's 1-minute load is above it; unset, only the queue counts. The Stop hook's quick check
+doesn't queue: it has a time limit, and waiting would spend it.
+
+The complete check runs as `jig queue --full -- check.sh --full`: it also takes the single
+full lock, so two complete checks never run at once. With `queue.overflow: {"to": "github",
+"reason": "<the owner's words>"}` set on trunk, a complete check that finds every slot held, or
+another complete check running, doesn't wait: it exits 3 and prints the route. A wait for
+the load alone is still a wait. The check role
+pushes HEAD as `jig-check/<sha>`, where `.github/workflows/jig-check.yml` (copied from jig's
+template in the same commit as the key) runs setup and the complete check; records the run
+with `jig checked --ci` once it passes; and deletes the branch. Without the key it waits.
+
+A single job keeps its own gate check: `jig queue --full -- ./.jig/scripts/check.sh --full`
+once in the gate's checkout, `jig
 checked` there, then `jig mark <job> gated`, which refuses without that record.
 
 A batch of jobs gated together owes one complete check instead: each is marked `jig mark <job>
@@ -1390,6 +1471,10 @@ jig decision <id>           a decision entry and its supersedes chain
 jig sync                    merge trunk in, append rule applied; on a pararepo's trunk, the metarepo
 jig reviewed [--change] [--tier N --effort N] [--ran text] [--blocking N]   record that HEAD has had its review-work (or review-change), at what, and its blocking findings
 jig checked --tier N --effort N --seconds S   record that the complete check passed on HEAD
+jig checked --ci <run url> --tier N --effort N --seconds S   ... a GitHub Actions run of HEAD, once gh shows it passed
+jig queue -- <command…>     run a test or check holding one of the machine's slots; waits when none is free
+jig queue --full -- <command…>   the complete check: also the single full lock; exit 3 and the CI route on overflow
+jig queue                   the slots, who holds them, who waits, and whether a complete check runs
 jig checked --trace [command]   on trunk: the merges since the last complete check, and the bisect that finds the breaking one
 jig roles                   each role's model tier and effort in effect
 jig flows                   each workflow's steps, who does each, and its session links

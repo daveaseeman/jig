@@ -1,0 +1,24 @@
+# The complete check, run on GitHub Actions only when the local queue overflows it: `jig queue
+# --full` prints the push of HEAD to jig-check/<sha>, this runs it, `jig checked --ci <run url>`
+# records it once jig has read the result, and the branch is deleted. Copy it to
+# .github/workflows/ in the same commit as queue.overflow in .jig/config.json.
+name: jig check
+on:
+  push:
+    branches: ["jig-check/**"]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # A full clone: a suite may read the repo's history.
+          fetch-depth: 0
+      # As jig's hooks run them: the script itself when executable, through bash when not.
+      # This repo's check.sh runs `claude plugin validate`.
+      - name: claude CLI
+        run: npm install -g @anthropic-ai/claude-code
+      - name: setup
+        run: if [ -x .jig/scripts/setup.sh ]; then ./.jig/scripts/setup.sh; else bash .jig/scripts/setup.sh; fi
+      - name: complete check
+        run: if [ -x .jig/scripts/check.sh ]; then ./.jig/scripts/check.sh --full; else bash .jig/scripts/check.sh --full; fi

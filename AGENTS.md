@@ -8,17 +8,17 @@ Risk: R0 — one user, nothing shipped. Optimize for simplicity and clarity, not
 `.jig/` is jig running on this repo — the installed release. `plugin/` is the product. Edit `plugin/`; `.jig/` changes only by `/jig:update`.
 
 ## Commands
-- smoke:  `bash tests/smoke.sh` (the rules, end to end, in throwaway repos; sections run in parallel, ~2 min). `bash tests/smoke.sh <section>…` reruns only those (`--list` names them)
+- smoke:  `python3 .jig/jig.py queue -- bash tests/smoke.sh` (the rules, end to end, in throwaway repos; sections run in parallel, ~2 min). `python3 .jig/jig.py queue -- bash tests/smoke.sh <section>…` reruns only those (`--list` names them). Every test or check run goes through `jig queue`, which waits for the machine's one slot (`queue.width: "all"`: smoke uses every core)
 - validate: `claude plugin validate ./plugin`
 - reload in a session: `/reload-plugins`
-- check: `.jig/scripts/check.sh` (the validator and a syntax check of `jig.py`); the full smoke is the complete check
+- check: `python3 .jig/jig.py queue -- .jig/scripts/check.sh` (the validator and a syntax check of `jig.py`); the full smoke is the complete check
 - setup:  `.jig/scripts/setup.sh` (runs itself in new worktrees and after merges; run it after changing dependencies)
 - derive: `.jig/scripts/derive.sh` (writes the files built from several sources that separate jobs change; `jig merge` runs it and commits what `derived_files` in `.jig/config.json` lists; branches don't commit them)
 
 ## Workflow
 - Task bigger than a one-sentence diff → `.jig/specs/<task>.md` first (/jig:spec).
 - Every change to the plugin is proposed before it is made. One proposal, approved, then one pass.
-- While working, run `check` and the smoke sections you touched (`bash tests/smoke.sh <section>…`), and show the output. That is the evidence. The full suite is the check role's, once per gate or batch.
+- While working, run `check` and the smoke sections you touched (`python3 .jig/jig.py queue -- bash tests/smoke.sh <section>…`), and show the output. That is the evidence. The full suite is the check role's, once per gate or batch.
 - A mergeable chunk is a handoff: checks pass → /jig:review → `jig reviewed` → `jig handoff`. `jig next` names each job's next step and who takes it (`jig roles`, `jig flows`).
 - A diff that changes only skill text, docs or specs (no `jig.py`, hooks, templates or `tests/`) gets a lighter review: tier 2, effort 3. Anything else gets the review role's settings. This is the owner's setting, not a hubnode's pick; `jig gate` warns that it ran below the spec's review line, and that warning is expected.
 - A release, on the owner's word: write `dist/notes-X.Y.Z.md` (install line, then New / Changed / Fixed), then `python3 .jig/jig.py release --minor` (or `--patch`, `--major`). After the tag, `.jig/scripts/publish.sh` pushes main and the tag (the marketplace serves `./plugin` from main) and publishes `dist/jig-X.Y.Z.plugin` as the GitHub release, failing unless the release lists it. Then the hubnode archives the subnode sessions it started whose jobs have merged: the release is the owner's yes for those. A session whose job is still open, or that is still working, stays.
