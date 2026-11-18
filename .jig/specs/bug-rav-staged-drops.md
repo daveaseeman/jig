@@ -194,17 +194,11 @@ prints nothing about staging.
   inference, now with a second place nobody reads — [assumed].
 
 ## Decisions
-- Owner question (open): **should a merge and `jig rig --close` stop deleting staged files, with
-  `jig staging resolve` the only way a carried file leaves?**
-  - (a) Recommended: yes, as Correction says. No drops; the close copies the spec's `Source:`
-    lines onto its note; `resolve` lands a carried file from the note, and a decisions file whose
-    entries the log holds, writing nothing; `--close` runs those resolves. Wrong cases leave a file
-    staged (visible, judged again), never lost.
-  - (b) Keep the auto-drop on the reviewer's narrowed rule (landed non-partial note, or a merged
-    job's `Bug-for:`). Fewer moving parts in `resolve`, but still a delete of an uncommitted file
-    decided from history.
-  - (c) No automatic step at all: rig lists files whose spec closed, and the hubnode resolves or
-    drops each by hand. Simplest code; a question or a hand step per carried file.
+- The owner, 2026-11-18: "Only via resolve". That is option (a): no drops; the close copies the
+  spec's `Source: … (staged as …)` lines onto its note; `resolve` lands a carried file from the
+  note, and a decisions file whose entries the log holds, writing nothing; `jig rig --close` runs
+  those resolves. Rejected: (b) the auto-drop on a narrowed history rule, and (c) a hand step per
+  carried file.
 - Interpreted: `taken` covers a spec in flight (waiting, open job's, partial note); `built` covers
   a finished spec still in the tree or a closed spec's note. A released spec with no note carries
   nothing (F2).

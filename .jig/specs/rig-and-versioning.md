@@ -128,11 +128,13 @@ all three:
   `rig_text` lists feedback items under Running and finished specs under Finished, the parts
   the skill draws them in.
 - **A carried staged file after its job merges.** bug-rig-batch-one-job left this to "the
-  closing consolidate"; bug-merged-job-cleanup's Finished part didn't cover it. `close_specs`
-  drops each staged file whose mark a spec it closes carries (as `jig staging drop` does, since
-  staged files are never committed) and prints `dropped <file>: built by <spec>`. A decisions
-  file the job wrote into the log is never resolved into it again, and no carried file comes
-  back as ready once its spec is gone. A spec kept by a partial note keeps its files taken.
+  closing consolidate"; bug-merged-job-cleanup's Finished part didn't cover it. As
+  `bug-rav-staged-drops` corrects it (the owner, 2026-11-18: "Only via resolve"): nothing is
+  dropped. `close_specs` copies the spec's `Source: … (staged as …)` lines onto its note's
+  header, and the file is `built`; `jig rig --close` resolves it where `resolve` writes nothing
+  (`carried by <note>`, or a decisions file `its entries are in <log>`, by title). No carried
+  file comes back as ready once its spec is gone. A spec kept by a partial note keeps its files
+  taken.
 - **The run's order** (rig skill). § 1: start `/jig:fix` on new feedback and store `fixing`,
   judge every other unjudged item, then `jig rig --json` again. § 2: draw parts 1–5 (Running
   holds the open jobs, then the `fixing` reports). Then `jig rig --close` and the archiving of
@@ -240,16 +242,15 @@ meet in five places, and one design holds both in each:
   mark changes and it is a staged item again, judged afresh. Interpreted: no special case. The
   rewritten request covers the whole gap from the pin, and its spec covers what the open job's
   doesn't.
-- **After the pin-bump job merges.** `close_specs` drops each staged file its closed spec carries
-  (Where they meet). The merge moved the pin, so `resolve` would accept the request too; the drop
-  prints `dropped <file>: built by <spec>` as for any carried file. A request rewritten during the
-  job carries a newer mark, isn't dropped, and `resolve` still refuses it until the pin reaches
-  its release.
+- **After the pin-bump job merges.** Nothing is dropped (`bug-rav-staged-drops`): the merge
+  moved the pin, so `resolve` lands the request, writing nothing, and `jig rig --close` runs it.
+  A request rewritten during the job carries a newer mark, and `resolve` still refuses it until
+  the pin reaches its release.
 - **The same text, edited for both.** `AGENTS.md`'s release line: versioning changes its flags
   (`--feature` or `--patch`), and rig drops its release-time archiving sentence. RULES.md's
   Commands block: `jig release`'s flags, and `jig rig`'s `--close`. RULES.md's Staging section:
-  the `pin-bump` kind and how it resolves; that a merge or `jig rig --close` drops a staged file
-  a closed spec carries; and its `jig rig` sentence (rig "lists every staged file") saying a
+  the `pin-bump` kind and how it resolves; that a staged file leaves only by `resolve` or
+  `drop`, `--close` resolving what closed specs built; and its `jig rig` sentence (rig "lists every staged file") saying a
   taken file waits on its spec and, in the jig repo, feedback goes to `/jig:fix`. The hubnode
   skill: Merging (rig's archiving), step 5 and the release step (versioning's). `tests/smoke.sh`'s
   `staging` section takes both inputs' cases. `marketing/FEATURES.md` gains or changes the rows
@@ -344,11 +345,10 @@ From the merge (Where they meet):
   not under Running, and `feedback` no longer counts it.
 - [ ] Smoke `rig`: `--store-put` with `"call": "fixing"` on a staged file that isn't feedback
   is refused, and on a feedback item it is stored.
-- [ ] Smoke `roadmap` or `merge_derived`: a staged decisions file carried by the merged job's
-  spec is gone from `.jig/staging/` after the merge, the output prints
-  `dropped <file>: built by <spec>`, and the next `jig rig --json` doesn't list it. The same
-  holds for `jig rig --close`. A staged file carried by a spec whose only note is
-  `Partial: yes` stays, `taken`.
+- [ ] Smoke `close` (as `bug-rav-staged-drops` corrects it): a staged request and decisions file
+  carried by the merged job's spec stay after the merge, `built`, their marks on the note's
+  header, and `jig rig --close` prints resolve's lines for them. A staged file carried by a spec
+  whose only note is `Partial: yes` stays, `taken`.
 - [ ] `plugin/skills/rig/SKILL.md` gives the run's order as Where they meet says: feedback in
   § 1, the picture, then `--close` and Finished, then the decisions.
 
@@ -395,11 +395,11 @@ From the merge with versioning (Where rig and versioning meet):
   `pin-bump-M.md` as `kind: "staged"`, `touches` `[]`. With a waiting spec carrying its mark it is
   `taken`. After a second `M` release rewrites it, it is no longer `taken` and its stored
   judgment is void.
-- [ ] Smoke: in `A`, merging the job whose spec carries the request's mark and moves the pin
-  drops `pin-bump-M.md`, printing `dropped pin-bump-M.md: built by <spec>`.
+- [ ] Smoke: in `A`, after merging the job whose spec carries the request's mark and moves the
+  pin, `jig rig --close` resolves `pin-bump-M.md`; the merge prints nothing about staging.
 - [ ] `AGENTS.md`'s release line names `--feature` or `--patch` and holds no archiving sentence.
   RULES.md's Commands block shows both `jig release`'s new flags and `jig rig --close`. RULES.md's
-  Staging section names `pin-bump`, the drop of a carried file at a merge or `--close`, and rig's
+  Staging section names `pin-bump`, resolve as a staged file's one exit (`--close` resolving what closed specs built), and rig's
   `taken` and feedback items.
 
 ## Out of scope
@@ -463,7 +463,7 @@ From bug-versioning-pin-trigger:
 - `plugin/templates/jig/RULES.md`: Documentation's `.jig/specs/` line, Roadmap (a note's
   `Scope:`), Merging, Workflow (the
   `jig rig` paragraph, the Feedback row), Decision log, Writing it, Metarepo and pararepos,
-  Staging (the `pin-bump` kind, the carried-file drop, its `jig rig` sentence), new Versioning,
+  Staging (the `pin-bump` kind, resolve as the one exit, its `jig rig` sentence), new Versioning,
   Release, Commands (`jig release`'s flags, `jig rig --close`); Homes row: a rule, so RULES.md
 - `plugin/skills/rig/SKILL.md`: § 1 (feedback), § 2 (count line, Waiting on you, Running,
   Finished), § 3 (blocks 3 and 5), § 4 ("Write a spec", one job, keep apart), the run's order
@@ -606,24 +606,17 @@ From rig-runs-fix:
 From the merge:
 - Interpreted: `taken` wins over `fixing`: a feedback report whose spec exists waits on that
   spec, and `feedback` counts only reports not taken.
-- Interpreted: the closing step drops the staged files a closed spec carries, the seam
-  bug-rig-batch-one-job left to this consolidate and bug-merged-job-cleanup's design didn't
-  reach.
+- The owner, 2026-11-18: "Only via resolve" (`bug-rav-staged-drops`, option (a)): a staged file
+  leaves only by `resolve` or `drop`; the close keeps the spec's marks on its note; carriers are
+  present state (`taken` in flight, `built` finished); `jig rig --close` runs the resolves that
+  write nothing. This replaces the drop this spec first interpreted.
 - Interpreted (review of part 2): a feedback report's judgment is keyed on the report alone,
   not the board, so a `fixing` report outlives a job opened; a report `/jig:fix` ends with still
   staged is stored `concluded` and waits on the owner, to drop or keep.
 - Interpreted (review of part 2): a group's line counts in its K items each waiting spec
   outside the group that one of its pairs reaches ("one job for 2 items" for theta and gamma).
-- Interpreted (review of a12af04): every spec in the tree carries its staged files, a partial
-  one too; a file only a spec trunk's history closed carried waits on that closed spec, and
-  `jig rig --close` drops it. Every path that stages a close without making its commit names
-  the `jig staging drop` that commit owes.
-- Interpreted (review of part 1): a staged file is dropped only when no spec left in the tree
-  carries its mark (a request split into two specs is built when the last one closes), and only
-  after the commit that closes its spec lands: staged files are never committed, so a refused
-  commit or an aborted merge would otherwise lose them. A conflicted merge closes at `jig merge
-  --number` and names the drops to make after `git commit`. `jig open` refuses a name whose
-  earlier job's `Bug-for:` spec is still on trunk, naming `jig rig --close`.
+- Interpreted (review of part 1): a conflicted merge closes at `jig merge --number`; `jig open`
+  refuses a name whose earlier job's `Bug-for:` spec is still on trunk, naming `jig rig --close`.
 - Interpreted: `/jig:fix` sessions are archived by the hubnode's no-job rule, not by rig's
   Finished step, which archives only sessions of jobs no longer on the board.
 - Interpreted: rig starting `/jig:fix` is named in the `/jig:rig` FEATURES row, which
@@ -640,8 +633,8 @@ From the merge with versioning:
   staged request is; a ready one gets "write its spec?", which is versioning's landing.
 - Interpreted: a pin-bump rewritten by a later release is a new item to rig (its mark changed),
   with no special case; its spec covers what the open job's doesn't.
-- Interpreted: a carried pin-bump is dropped at its job's merge like any carried file, not
-  resolved; both are open to it, since the merge moved the pin.
+- A carried pin-bump is resolved after its job's merge, by `jig rig --close`, like any carried
+  file (the owner, 2026-11-18: "Only via resolve").
 
 ## Roles
 spec: tier 2, effort 2

@@ -62,13 +62,14 @@ inline visual, it may; the sections and their contents stay these.
    with its group and its session.
 
 Then close what merges left, which needs no answer: `jig rig --close` removes every spec in
-`finished` in one commit on trunk, each one's scopes kept on its note, and drops the staged
-files they carry; archive the sessions you started for jobs no longer on the board, with the
+`finished` in one commit on trunk, each one's scopes and staged marks kept on its note, then
+resolves each `built` staged file (resolve writes nothing for those); archive the sessions you started for jobs no longer on the board, with the
 host's tool where it has one, unless one is still working (that one stays, and you say why).
 Draw both as the sixth part:
 
-6. **Finished:** each spec `jig rig --close` closed or kept, and each session archived or
-   still working.
+6. **Finished:** each spec `jig rig --close` closed or kept, each staged file it resolved,
+   and each session archived or still working. A staged file whose spec closed but that
+   `resolve` would write is an ordinary item, naming its note: it is the owner's.
 
 ## 3. The decisions
 

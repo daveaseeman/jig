@@ -91,8 +91,8 @@ open"). Run in the detached worktree of trunk the hubnode names, and commit noth
      finds the spec carrying a report, and the record of who asked. An input may be a staged
      file (`/jig:rig`'s "one job" for a group): its mark,
      `Source: <source> (staged as <file>)`, is its `Source:` line, and its content is the input.
-     It is never deleted: `jig rig` lists it as taken by the merged spec, and the merge that
-     builds the spec drops it.
+     It is never deleted: `jig rig` lists it as taken by the merged spec, and once the job that
+     builds it merges, `jig rig --close` resolves it.
    - `## Done when`: each input's items as a labelled group (`From <input>:`), wording kept.
      Drop an item only when another input's item states it; say which.
    - `## Out of scope`, `## Alternatives considered` and `## Decisions`: each input's entries,

@@ -8172,11 +8172,12 @@ cjob() {  # cjob <job> <spec> [--partial] [extra command in the worktree]: open,
 cstate() { $J roadmap | grep -E "^  $1 " | awk '{print $2}'; }
 cfin() { $J rig --json | python3 -c "import json,sys; d=json.load(sys.stdin); f=[x['spec'] for x in d['finished']]; i={x['path']: x for x in d['items']}; $1"; }
 printf '# Roadmap\n\n## a\nScopes:\n- `x`: the x\n- `y`: the y\n- `z`: the z\n' > .jig/roadmap.md
-cspec sc a/x 'Source: chat d1.md (staged as d1.md)' && cspec s2 && cspec sp '' 'Source: chat d2.md (staged as d2.md)'
+cspec sc a/x "$(printf 'Source: chat d1.md (staged as d1.md)\nSource: chat rq.md (staged as rq.md): "please x"')" && cspec s2 && cspec sp '' 'Source: chat d2.md (staged as d2.md)'
 cspec w '' 'Build after `sc` merges.'
 $J roadmap --write >/dev/null && git add -A && git commit -qm "specs and roadmap"
-stage d1.md this decisions new .jig/decisions.md && stage d2.md this decisions new .jig/decisions.md
-cjob JC sc "" "printf '# sc bug\n\nBug-for: JC\n' > .jig/specs/sc-bug.md"
+stage d1.md this decisions new .jig/decisions.md '### D-?d1 Use d1\nAccepted (owner, 2026-11-18).\nTouches: none — smoke\n' \
+  && stage d2.md this decisions new .jig/decisions.md && stage rq.md this feature-request new .jig/specs/sc.md '# x\n\nplease x\n'
+cjob JC sc "" "printf '# sc bug\n\nBug-for: JC\n' > .jig/specs/sc-bug.md && ulog \"\$(printf '### D-?d1 Use d1\nAccepted (owner, 2026-11-18).\nTouches: none — smoke')\""
 cjob K1 s2 && cjob K2 s2 && cjob P sp --partial
 
 msg="close: before the merge, a spec built after the job's waits on it"
@@ -8190,8 +8191,15 @@ msg="close: the note keeps the spec's scope, on a Scope: line after its Spec: li
 expect_pass sh -c "git show HEAD:$note | grep -A1 '^Spec: .jig/specs/sc.md' | grep -qx 'Scope: a/x'"
 msg="close: the close-sessions line follows the removal line"
 expect_pass sh -c "echo \"\$0\" | grep -A1 \"^removed JC's\" | grep -qx 'close the sessions that worked on JC'" "$out"
-msg="close: a staged file the closed spec carries is dropped, named, and gone from jig rig"
-expect_pass sh -c "test ! -e .jig/staging/d1.md && echo \"\$0\" | grep -qx 'dropped d1.md: built by .jig/specs/sc.md' && ! $J rig --json | grep -q d1.md" "$out"
+msg="close: the merge deletes nothing in staging and names no drop; the note's header keeps both marks"
+expect_pass sh -c "test -f .jig/staging/d1.md && test -f .jig/staging/rq.md && ! echo \"\$0\" | grep -qi 'drop' \
+  && git show HEAD:$note | sed '/^## /,\$d' | grep -qx 'Source: chat d1.md (staged as d1.md)' && git show HEAD:$note | sed '/^## /,\$d' | grep -q '^Source: chat rq.md (staged as rq.md)'" "$out"
+msg="close: both carried files are built, listed under Finished"
+expect_pass sh -c "$J rig --json | python3 -c \"import json,sys; i={x['path']: x for x in json.load(sys.stdin)['items']}; assert i['.jig/staging/d1.md']['state'] == i['.jig/staging/rq.md']['state'] == 'built', i\" && $J rig | sed -n '/^Finished:/,\$p' | grep -q 'staged  .jig/staging/rq.md  built: $note carries it'"
+msg="close: jig rig --close resolves both, writing nothing; the log holds the entry once"
+out=$($J rig --close 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -qx 'resolved rq.md: carried by $note' && echo \"\$0\" | grep -qx 'resolved d1.md: its entries are in .jig/decisions.md' \
+  && test \$(grep -c 'Use d1' .jig/decisions.md) = 1 && test ! -e .jig/staging/d1.md && test ! -e .jig/staging/rq.md && test -z \"\$(git status --porcelain)\"" "$out"
 msg="close: the scope stays done, ROADMAP.md is fresh, and its link points at the note"
 expect_pass sh -c "test '$(cstate a/x)' = done && ! $J roadmap | grep -q stale && grep -qF '[sc]($note) ✓' ROADMAP.md"
 msg="close: a waiting spec built after the merged spec is offered as it was"
@@ -8235,14 +8243,14 @@ printf 'dirty\n' >> so.txt; out=$($J rig --close 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && test \"\$(git status --porcelain)\" = ' M so.txt' && test -f .jig/specs/so.md" "$out"
 git checkout -q -- so.txt
 before=$($J roadmap | grep '^  '); head=$(git rev-parse HEAD)
-msg="close: --close removes the finished spec in one commit, drops what it carries, and leaves the scope states as they were"
+msg="close: --close removes the finished spec in one commit, deletes no staged file, and leaves the scope states as they were"
 out=$($J rig --close 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && test \$(git rev-list --count $head..HEAD) = 1 && git log -1 --format=%s | grep -qx 'close finished specs: so' \
-  && git diff --name-status HEAD^ HEAD | grep -qx 'D	.jig/specs/so.md' && test ! -e .jig/staging/d3.md && echo \"\$0\" | grep -qx 'dropped d3.md: built by .jig/specs/so.md' \
+  && git diff --name-status HEAD^ HEAD | grep -qx 'D	.jig/specs/so.md' && test -f .jig/staging/d3.md && ! echo \"\$0\" | grep -q dropped \
   && test \"\$($J roadmap | grep '^  ')\" = \"\$1\" && ! $J roadmap | grep -q stale && test -z \"\$(git status --porcelain)\"" "$out" "$before"
 # A merge finished by hand after a conflict closes what a clean one does, at `jig merge --number`.
 cspec cf '' 'Source: chat d5.md (staged as d5.md)' && printf 'trunk\n' > shared.txt && git add -A && git commit -qm "cf, shared" >/dev/null
-stage d5.md this decisions new .jig/decisions.md
+stage d5.md this feature-request new .jig/specs/cf.md
 $J open CF --spec .jig/specs/cf.md --owns 'CF/**' --shares shared.txt >/dev/null && git add -A && git commit -qm "open CF" >/dev/null
 ( cd .git/jig/worktrees/CF && printf '# cf bug\n\nBug-for: CF\n' > .jig/specs/cf-bug.md && printf 'job\n' > shared.txt && git add -A && git commit -qm "CF: x" \
   && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold && git add -A && git commit -qm "note CF" ) >/dev/null 2>&1
@@ -8251,11 +8259,10 @@ gated CF; $J merge CF >/dev/null 2>&1; printf 'both\n' > shared.txt && git add s
 msg="close: after a conflict, jig merge --number closes the job's spec and its Bug-for spec, and the commit passes"
 out=$($J merge --number 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -qx 'closed .jig/specs/cf.md' && echo \"\$0\" | grep -qx 'closed .jig/specs/cf-bug.md' \
-  && echo \"\$0\" | grep -qx 'after .git commit.: .jig staging drop d5.md., which .jig/specs/cf.md built' && git commit -q --no-edit \
+  && ! echo \"\$0\" | grep -qi drop && git commit -q --no-edit \
   && ! git cat-file -e HEAD:.jig/specs/cf.md 2>/dev/null && ! git cat-file -e HEAD:.jig/specs/cf-bug.md 2>/dev/null && test -z \"\$(git status --porcelain)\"" "$out"
-msg="close: a drop nobody made leaves the file taken by its closed spec, and jig rig --close drops it"
-expect_pass sh -c "$J rig --json | python3 -c \"import json,sys; d=json.load(sys.stdin); i={x['path']: x for x in d['items']}; x=i['.jig/staging/d5.md']; assert x['state'] == 'taken' and x['waits_on'][0].startswith('spec .jig/specs/cf.md, closed'), x\" \
-  && $J rig --close | grep -qx 'dropped d5.md: built by .jig/specs/cf.md' && test ! -e .jig/staging/d5.md && test -z \"\$(git status --porcelain)\""
+msg="close: after the conflicted merge's commit, its request is built, and jig rig --close resolves it"
+expect_pass sh -c "$J rig --json | grep -q '\"built\": \".jig/handoffs/CF-' && $J rig --close | grep -q '^resolved d5.md: carried by .jig/handoffs/CF-' && test ! -e .jig/staging/d5.md && test -z \"\$(git status --porcelain)\""
 msg="close: jig open refuses a name whose earlier job's Bug-for spec is still on trunk, naming jig rig --close"
 printf '# old bug\n\nBug-for: OB\n' > .jig/specs/ob-bug.md && git add -A && git commit -qm "an old bug spec" >/dev/null
 out=$($J open OB --owns 'ob/**' 2>&1); rc=$?
@@ -8263,21 +8270,45 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'ob-bug.md on main is
 msg="close: after jig rig --close, the name opens"
 expect_pass sh -c "$J rig --close >/dev/null && $J open OB --owns 'ob/**' >/dev/null && git add -A && git commit -qm 'open OB' >/dev/null"
 
-# A staged file is dropped only once its merge commit lands, and only when no spec left carries it.
+# Staging's one exit is resolve: a file split across two specs is taken until the last closes.
 cspec h1 '' 'Source: chat d4.md (staged as d4.md)' && cspec h2 '' 'Source: chat d4.md (staged as d4.md)' && git add -A && git commit -qm "h1 h2" >/dev/null
-stage d4.md this decisions new .jig/decisions.md
+stage d4.md this feature-request new .jig/specs/h.md
 cjob H1 h1
 msg="close: a staged file another spec still carries stays when the first one closes"
 gated H1; out=$($J merge H1 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -qx 'closed .jig/specs/h1.md' && test -f .jig/staging/d4.md && ! echo \"\$0\" | grep -q 'dropped d4.md'" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -qx 'closed .jig/specs/h1.md' && test -f .jig/staging/d4.md && $J rig --json | python3 -c \"import json,sys; i={x['path']: x for x in json.load(sys.stdin)['items']}; assert i['.jig/staging/d4.md']['state'] == 'taken', i['.jig/staging/d4.md']\"" "$out"
 cjob H2 h2; printf '#!/bin/sh\nexit 3\n' > .jig/scripts/derive.sh && chmod +x .jig/scripts/derive.sh && git add -A && git commit -qm "derive fails" >/dev/null
-msg="close: a merge that stops before its commit drops nothing, names the drop it owes, and its abort puts the spec back"
+msg="close: a merge that stops at derive.sh names no drop, and its abort puts the spec back"
 gated H2; out=$($J merge H2 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -q 'jig staging drop d4.md., which .jig/specs/h2.md built' && test -f .jig/staging/d4.md && git merge --abort && test -f .jig/specs/h2.md && test -f .jig/staging/d4.md" "$out"
+expect_pass sh -c "! echo \"\$0\" | grep -qi drop && test -f .jig/staging/d4.md && git merge --abort && test -f .jig/specs/h2.md && test -f .jig/staging/d4.md" "$out"
 printf '#!/bin/sh\nexit 0\n' > .jig/scripts/derive.sh && git add -A && git commit -qm "derive passes" >/dev/null
-msg="close: once the last spec carrying it closes in a landed merge, it is dropped"
+msg="close: once the last spec carrying it closes, it is built, and jig rig --close resolves it"
 out=$($J merge H2 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -qx 'dropped d4.md: built by .jig/specs/h2.md' && test ! -e .jig/staging/d4.md" "$out"
+expect_pass sh -c "! echo \"\$0\" | grep -qi drop && test -f .jig/staging/d4.md && $J rig --close | grep -q '^resolved d4.md: carried by .jig/handoffs/H[12]-' && test ! -e .jig/staging/d4.md" "$out"
+msg="close: a decisions file with one of two entries in the log is refused by resolve, naming it, writing nothing"
+stage dd.md this decisions new .jig/decisions.md '### D-?d1 Use d1\nAccepted (owner, 2026-11-18).\nTouches: none — smoke\n\n### D-?d9 Use d9\nAccepted (owner, 2026-11-18).\nTouches: none — smoke\n'
+before=$(shasum < .jig/decisions.md); out=$($J staging resolve dd.md 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'D-?d1 already in .jig/decisions.md by title, D-?d9 not' && test \"\$(shasum < .jig/decisions.md)\" = '$before' && test -f .jig/staging/dd.md" "$out"
+rm .jig/staging/dd.md
+
+# The third review's repros: a spec removed by hand, a revert, an old mark, a released spec. Nothing deletes.
+cspec ab '' 'Source: chat da.md (staged as da.md)' && git add -A && git commit -qm "spec ab" >/dev/null
+stage da.md this decisions new .jig/decisions.md
+git rm -q .jig/specs/ab.md && git commit -qm "owner: drop spec ab" >/dev/null
+cspec rv '' 'Source: chat dr.md (staged as dr.md)' && git add -A && git commit -qm "spec rv" >/dev/null
+stage dr.md this decisions new .jig/decisions.md && git revert --no-edit HEAD >/dev/null
+cspec old '' 'Source: chat notes.md (staged as notes.md)' && git add -A && git commit -qm "spec old" >/dev/null
+git rm -q .jig/specs/old.md && git commit -qm "old done" >/dev/null && stage notes.md this decisions new .jig/decisions.md
+msg="close: a spec removed by hand, a reverted one and an old one leave their files ordinary staged items"
+expect_pass cfin "assert all(i['.jig/staging/' + n]['state'] == 'unjudged' and 'covered' not in i['.jig/staging/' + n] for n in ('da.md', 'dr.md', 'notes.md')), [i['.jig/staging/' + n] for n in ('da.md', 'dr.md', 'notes.md')]"
+msg="close: jig rig --close deletes none of them"
+out=$($J rig --close 2>&1)
+expect_pass sh -c "! echo \"\$0\" | grep -q dropped && test -f .jig/staging/da.md && test -f .jig/staging/dr.md && test -f .jig/staging/notes.md" "$out"
+rm .jig/staging/da.md .jig/staging/dr.md .jig/staging/notes.md
+cspec rel '' 'Source: chat dx.md (staged as dx.md)' && git add -A && git commit -qm "spec rel" >/dev/null && git tag v9.0.0
+stage dx.md this decisions new .jig/decisions.md
+msg="close: a released spec with no note carries nothing: its file is ordinary, counted until judged"
+expect_pass cfin "x = i['.jig/staging/dx.md']; assert x['state'] == 'unjudged' and 'covered' not in x and d['waiting_on_you'] >= 1, x"
 msg="close: the merge and --close share one rule"
 expect_pass test "$(grep -c 'finished_specs(' .jig/jig.py)" -ge 3
 }
