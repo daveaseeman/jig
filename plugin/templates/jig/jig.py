@@ -8252,9 +8252,13 @@ def stage_pin_bumps(root: Path, meta: dict, prev: str, tag: str) -> list[str]:
                 moved[parts[1]] = parts[2]
         # A row citation's loss is the id list's; this list is the paths and headings.
         was = {key(l) for l in meta_citations(there, para, decision_ids(root, since), root, (trunk, since))}
-        rewrites = []
+        rewrites, rows = [], {}
         for l in meta_citations(there, para, decision_ids(root, tag), root, (trunk, tag)):
-            if key(l) in was or " bare: " in l or " has no row for" in l:
+            if key(l) in was or " bare: " in l:
+                continue
+            # A citation of a row the release took away: the ids' list, with where it is cited.
+            if " has no row for" in l and (m := re.match(r"(.+?:\d+) cites .*? § (\S+), which ", l)):
+                rows.setdefault(m.group(2), []).append(m.group(1))
                 continue
             cited = re.search(rf"cites {re.escape(name)}/(\S+?)(?:[ ,]|$)", l)
             if cited and cited.group(1) in moved and ": now " not in l:
@@ -8264,14 +8268,19 @@ def stage_pin_bumps(root: Path, meta: dict, prev: str, tag: str) -> list[str]:
                       - {e["id"] for e in log_entries(now_log, prefix)})
         own = log_prefix_of(git("show", f"{trunk}:{LOG}", cwd=str(there)))
         ids = []
-        # Where the pararepo numbers its own decisions with the same prefix, a bare id is its own.
-        for i in gone if own != prefix else []:
-            files = git("grep", "-l", "-w", "-F", i, trunk, "--", ".", f":!{HANDOFFS}",
-                        cwd=str(there)).splitlines()
+        for i in sorted(set(gone) | set(rows)):
+            files = list(rows.get(i, []))
+            # A bare id is this metarepo's only where the pararepo numbers its own decisions with
+            # another prefix; with the same one, only a qualified citation (above) is its.
+            if own != prefix and i in gone:
+                cited = {f.split(":", 1)[0] for f in files}
+                files += [g for f in git("grep", "-l", "-w", "-F", i, trunk, "--", ".", f":!{HANDOFFS}",
+                                         cwd=str(there)).splitlines()
+                          if (g := f.split(":", 1)[1]) not in cited]
             if files:
                 by = holds_now(i, now_log, prefix, tag, str(root))
                 ids.append(f"{i}{f' (now {by})' if by else ' (removed)'}: cited in "
-                           + ", ".join(f.split(":", 1)[1] for f in files))
+                           + ", ".join(files))
         return rewrites, ids
 
     for para_name in meta.get("pararepos", []):
@@ -8280,6 +8289,9 @@ def stage_pin_bumps(root: Path, meta: dict, prev: str, tag: str) -> list[str]:
             out.append(f"{para_name}: skipped, it isn't in `jig repos`")
             continue
         there = Path(where)
+        if old := old_board(there):
+            out.append(f"{para_name}: skipped, it is on an older jig layout ({old}): `jig update` there")
+            continue
         try:
             trunk = json.loads((there / CONFIG).read_text()).get("trunk") or "main"
             para = json.loads(git("show", f"{trunk}:{PARA}", cwd=str(there)) or "{}")
@@ -8298,7 +8310,9 @@ def stage_pin_bumps(root: Path, meta: dict, prev: str, tag: str) -> list[str]:
             continue
         dest = there / STAGING / f"pin-bump-{name}.md"
         h = read_staged(dest)[0] if dest.exists() else {}
-        asked = h.get("kind") == PIN_BUMP_KIND and h.get("from") == name
+        # A request the pin already holds is answered: a later release asks afresh, or not.
+        asked = (h.get("kind") == PIN_BUMP_KIND and h.get("from") == name and bool(h.get("release"))
+                 and (not pin or version_key(h["release"]) > version_key(pin)))
         if not asked and not any(broken(there, para, trunk, prev)):
             out.append(f"{para_name}: skipped, it cites nothing {tag} broke")
             continue
@@ -10837,9 +10851,17 @@ def handoff_rows(root: Path, files: list[str]) -> tuple[list[tuple[str, list[str
     return rows, folders
 
 
+def log_head(root: Path) -> str:
+    """The log's header, above its first section: where the versioning lines are."""
+    return read_raw(root / LOG).split("\n## ", 1)[0] if (root / LOG).is_file() else ""
+
+
 def swap_log_head(root: Path, here: Path) -> None:
+    # A metarepo's trunk takes its log only by merge (M4): there the swap is listed for a job.
+    if (root / META).exists():
+        return
     text = read_raw(root / LOG)
-    if OLD_LOG_HEAD in text:
+    if OLD_LOG_HEAD in log_head(root):
         write_raw(root / LOG, text.replace(OLD_LOG_HEAD, LOG_HEAD, 1))
         git("add", "--", LOG, check=True)
 
@@ -10871,12 +10893,14 @@ STEPS: list = [
     (f"widen {META}'s tag_pattern to accept vX.Y.Z: every repo now releases with three parts",
      lambda root, after: meta_pattern_old(root), widen_meta_pattern),
     (ledger_step, lambda root, after: REVIEW_LEDGER in after, fold_ledger),
-    (lambda root: (f"swap {LOG}'s two versioning header lines for the new ones: a Breaking line no "
-                   "longer sets the version's level (`.jig/RULES.md`, Versioning)")
-     if OLD_LOG_HEAD in read_raw(root / LOG) else
+    (lambda root: ((f"swap {LOG}'s two versioning header lines for the new ones: a Breaking line no "
+                    "longer sets the version's level (`.jig/RULES.md`, Versioning)")
+                   + (f"; in a metarepo a job's (M4): open one sharing {LOG} and make that swap there, "
+                      "word for word, since trunk takes it only by merge" if (root / META).exists() else ""))
+     if OLD_LOG_HEAD in log_head(root) else
      (f"{LOG}'s header still names Semantic Versioning, in words of its own: edit it by hand to "
       "say what `.jig/RULES.md` § Versioning says; nothing is rewritten"),
-     lambda root, after: (root / LOG).is_file() and "Semantic Versioning" in read_raw(root / LOG),
+     lambda root, after: (root / LOG).is_file() and "Semantic Versioning" in log_head(root),
      swap_log_head),
     (f"add {LOG}, the decision log: no CHANGELOG.md or register here to merge into it",
      lambda root, after: LOG not in after and not (root / LOG).exists() and not log_sources(root),

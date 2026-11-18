@@ -218,7 +218,9 @@ built. A staged decisions file it carried (or any carried file resolve would wri
 `noted` with the job's note: read that job's
 diff and the log. If the job logged its entries, `jig staging drop <file>`, saying so; if it
 didn't, `jig staging resolve <file>`; if only some, judge with the owner. Any other noted file:
-resolve or drop it by hand, saying why. A conflicted merge
+resolve or drop it by hand, saying why, but never a noted pin-bump request: it stays, and you
+spec a job that moves the pin (`/jig:spec` from it); `jig rig --close` resolves it once trunk
+pins its release. A conflicted merge
 closes at `jig merge --number`. Then it prints `close the
 sessions that worked on <job>`: archive every session you started for that job (work, review,
 check, bug), with the host's tool where it has one, unless one is still working; that one stays,

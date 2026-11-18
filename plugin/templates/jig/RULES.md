@@ -1217,9 +1217,6 @@ Proposed. It doesn't fail the check, since an entry accepted in the chat is righ
 become a spec or open on the owner's answers to the model that reads it. A staged file whose
 mark a waiting spec or an open job's spec carries is taken: it waits on that spec or job and is
 never offered again. In the jig repo, a feedback report is `/jig:fix`'s, which rig starts.
-When the job building a spec merges, or `jig rig --close` closes the spec, each staged file it
-carries is dropped, named: its job built it, and resolving a decisions file would add its
-entries again. A spec kept by a partial note keeps its files taken.
 
 A pin-bump request (`kind: pin-bump`) is the one kind jig itself stages: a metarepo's release
 writes it in a pararepo (Metarepo and pararepos). Its destination is `.jig/para.json` and its

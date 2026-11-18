@@ -108,7 +108,8 @@ Nothing is ever dropped for it.
 - **A noted file** (no question, your own step, as `/jig:hubnode`'s Merging gives it): read the
   job that note names and the log. A decisions file whose entries that job logged: `jig staging
   drop <file>`, saying so; none logged: `jig staging resolve <file>`; some: put it to the owner.
-  Any other noted file: resolve or drop it by hand, saying why.
+  A noted pin-bump request (its job merged without moving the pin) is never dropped: keep it,
+  and spec a job that moves the pin. Any other noted file: resolve or drop it by hand, saying why.
 
 - **An open file's answers:** append them to the staged file under `## Owner's answers`, dated,
   in the owner's words. The file changed, so the next run judges it again.

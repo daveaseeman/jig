@@ -8120,6 +8120,10 @@ git checkout -q -- . 2>/dev/null; git reset -q --hard
 VM="$T/vm"; mkdir -p "$VM" && cd "$VM" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init && $J init --meta --name vm >/dev/null && git add -A && git commit -qm "TOOL: meta-init"
 old_head && git add -A && git -c core.hooksPath=/dev/null commit -qm "TOOL: old header"
+msg="versioning: in a metarepo, jig update lists the header swap as a job's, and --apply leaves the log on trunk"
+out=$($UP 2>&1); before=$(shasum < .jig/decisions.md); $UP --apply >/dev/null 2>&1
+expect_pass sh -c "echo \"\$0\" | grep -q 'in a metarepo a job.s (M4)' && test \"\$(shasum < .jig/decisions.md)\" = '$before' && test -z \"\$(git status --porcelain -- .jig/decisions.md)\"" "$out"
+git checkout -q -- . 2>/dev/null; git reset -q --hard
 $J open hd --branch b-hd --shares .jig/decisions.md >/dev/null && git add -A && git commit -qm "TOOL: open hd"
 msg="versioning: in a metarepo, a job swapping the header passes R3, and its merge passes"
 out=$(cd .git/jig/worktrees/b-hd && python3 -c "
@@ -8229,8 +8233,36 @@ expect_pass sh -c "$J staging resolve pin-bump-M.md && test ! -e .jig/staging/pi
 msg="pin bump: a same-named file that isn't the metarepo's request is left alone, and named"
 printf -- '---\nstaged: true\ntarget: C\nkind: spec\nchange: new\ndestination: .jig/specs/x.md\nsource: chat\nstatus: staged\n---\n# mine\n' > "$PBT/C/.jig/staging/pin-bump-M.md"
 cd "$PBT/C" && printf 'Per `M/docs/products/w.md § W`.\n' > docs.md 2>/dev/null; mkdir -p docs && printf '# C\n\nC reads `M/docs/products/w.md`.\n' > docs/c.md && git add -A && git commit -qm "c cites w" >/dev/null
+printf -- '---\nstaged: true\ntarget: A\nkind: pin-bump\nchange: update\ndestination: .jig/para.json\nsource: M release v0.1.2 / 2026-11-18\nfrom: M\npin: v0.1.0\nrelease: v0.1.2\nstatus: staged\n---\n# old\n' > "$PBT/A/.jig/staging/pin-bump-M.md"
 cd "$M" && git mv docs/products/w.md docs/products/v.md && ulog '- **Breaking:** w is v.' && emerge mvw "E-003: w is v" docs .jig/decisions.md && out=$($J release 2>&1)
+msg="pin bump: a request the pin already holds isn't asked again by a release that breaks nothing it cites"
+expect_pass sh -c "echo \"\$0\" | grep -qx 'A: skipped, it cites nothing v0.1.4 broke' && grep -qx 'release: v0.1.2' '$PBT/A/.jig/staging/pin-bump-M.md'" "$out"
+msg="pin bump: a same-named file that isn't the metarepo's request is left alone, and named"
 expect_pass sh -c "echo \"\$0\" | grep -q \"C: not staged, .jig/staging/pin-bump-M.md there isn't M's pin bump\" && grep -q '^# mine' '$PBT/C/.jig/staging/pin-bump-M.md'" "$out"
+
+# Both logs on the default D- prefix: a qualified citation of a superseded id still selects.
+N="$PBT/N"; mkdir -p "$N" && cd "$N" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs/products && printf '# X\n\nThe x product.\n' > docs/products/x.md
+git add -A && git commit -qm init && $J init --meta --name N >/dev/null && git add -A && git commit -qm "TOOL: meta-init"
+python3 -c "import json; f='.jig/meta.json'; d=json.load(open(f)); d['pararepos']=['Q']; json.dump(d, open(f,'w'), indent=2)"
+ulog '### D-001 one
+Accepted (owner, 2026-11-01).
+Touches: docs/products/x.md' && ulog '### D-002 two
+Accepted (owner, 2026-11-01).
+Touches: docs/products/x.md' && emerge n1 "D-001, D-002: start" .jig/meta.json .jig/decisions.md && $J release >/dev/null 2>&1
+mkdir -p "$PBT/Q" && cd "$PBT/Q" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+$J init --para N --location "$N" --pin v0.1.0 >/dev/null && $J repos add repo "$PBT/Q" --name Q >/dev/null && git add -A && git commit -qm para
+mkdir -p .jig/specs && printf '# q\n\nSource: chat\n\nPer `N/.jig/decisions.md § D-002`, and our own D-002 too.\n' > .jig/specs/q.md && git add -A && git commit -qm "q cites D-002"
+cd "$N" && python3 - <<'PY'
+f = '.jig/decisions.md'; s = open(f).read()
+s = s.replace("### D-002 two\nAccepted (owner, 2026-11-01).\nTouches: docs/products/x.md\n", "")
+open(f, 'w').write(s.replace("## Unreleased\n", "## Unreleased\n\n### D-003 two, again\nAccepted (owner, 2026-11-02). Supersedes D-002.\nTouches: docs/products/x.md\n", 1))
+PY
+emerge sup "D-003: supersede D-002" .jig/decisions.md
+msg="pin bump: with D- on both sides, a qualified citation of a superseded id selects; the bare one isn't counted"
+out=$($J release 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -qx 'Q: staged .jig/staging/pin-bump-N.md (1 superseded id)' && grep -q '^- D-002 (now D-003): cited in .jig/specs/q.md:5$' '$PBT/Q/.jig/staging/pin-bump-N.md'" "$out"
 }
 
 # ---------------------------------------------------------------- rig: one question per batch, taken and feedback items
