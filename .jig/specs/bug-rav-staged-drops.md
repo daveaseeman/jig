@@ -168,8 +168,11 @@ prints nothing about staging.
 - `plugin/templates/jig/jig.py`: `close_specs`, `pending_drops`, `closed_carriers`, `owed_drops`,
   `drop_built`, `cmd_merge`, `close_merged`, `rig_close`, `rig_items`, `rig_text`, `cmd_staging`
   (resolve)
-- `plugin/templates/jig/RULES.md`: Staging
+- `plugin/templates/jig/RULES.md`: Staging, Handoff, gate, merge (step 3), Workflow (the
+  `jig rig` paragraph)
 - `plugin/skills/rig/SKILL.md`: Finished
+- `plugin/skills/hubnode/SKILL.md`: Merging
+- `plugin/skills/spec/SKILL.md`: Consolidate
 - `tests/smoke.sh`: `close`, `rig_batch`, `staging`
 - `.jig/specs/rig-and-versioning.md`: the bullets, Decisions and Done-when lines Design names
 
@@ -202,8 +205,14 @@ prints nothing about staging.
 - Interpreted: `taken` covers a spec in flight (waiting, open job's, partial note); `built` covers
   a finished spec still in the tree or a closed spec's note. A released spec with no note carries
   nothing (F2).
-- Interpreted: a decisions entry is "in the log" by its title, since its id changes at the merge;
-  a partial match refuses rather than guessing which entries are new.
+- Interpreted (review of 205589b): a decisions entry is "in the log" when the log holds it word
+  for word but its id, which the merge renumbers, and only when a finished spec or a closed
+  spec's note carries the file; without such a carrier, resolve's own duplicate check stands. A
+  partial match refuses rather than guessing which entries are new.
+- Interpreted (review of 205589b): `built` needs a finished spec still in the tree or a landed,
+  non-partial note's header carrying the file's mark as a whole `Source:` line; `jig rig --close`
+  resolves only what rig marks `built`, and a file resolve refuses is left, named, while the
+  rest are tried.
 
 ## Roles
 spec: tier 2, effort 2

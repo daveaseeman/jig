@@ -9267,13 +9267,16 @@ def cmd_staging(root: Path, args) -> int:
         if problems:
             die("\n  ".join([f"{path.name} isn't ready for the log:", *problems]), 1)
         text = log.read_text() if log.exists() else LOG_SEED
-        # A job that built it wrote its entries, renumbered at the merge: by title they're there.
-        there, missing = logged_entries(body, text, prefix)
-        if there and not missing:
-            return done(f"its entries are in {dest}")
-        if there:
-            die(f"{', '.join(there)} already in {dest} by title, {', '.join(missing)} not: judge it, "
-                "then drop it or stage the rest as `change: update`", 1)
+        # A job that built it wrote its entries, renumbered at the merge: when a finished spec or
+        # a closed spec's note carries this file, entries the log holds word for word but the id
+        # are those. Without such a carrier a match proves nothing, and the checks below stand.
+        if built_by(root, Board.load(root, working_tree=True), mark):
+            there, missing = logged_entries(body, text, prefix)
+            if there and not missing:
+                return done(f"its entries are in {dest}")
+            if there:
+                die(f"{', '.join(there)} already in {dest} as its job wrote them, {', '.join(missing)} "
+                    "not: judge it, then drop it or stage the rest as `change: update`", 1)
         have = {decision_id(e["id"]) for e in log_entries(text, prefix)}
         dupes = [e["id"] for e in entries if decision_id(e["id"]) in have]
         if dupes:
@@ -9767,40 +9770,63 @@ def close_specs(finished: list[dict], snap: Snapshot) -> list[str]:
     return out
 
 
-def note_carrying(root: Path, mark: str) -> str:
-    """The handoff note whose header carries MARK: a closed spec's record of what it built."""
+def carries(text: str, mark: str) -> bool:
+    """TEXT holds MARK as a whole `Source: … (staged as …)` line, a request's quote after it or
+    not: the mark, not a substring of some longer one."""
+    return any(l == mark or l.startswith(mark + ":") for l in MARK_LINE.findall(text))
+
+
+def note_carrying(root: Path, mark: str, trunk: str = "") -> str:
+    """The landed, non-partial handoff note whose header carries MARK: a closed spec's record of
+    what its job built. A partial note's spec is still in flight, so its header counts for nothing."""
+    trunk = trunk or Board.trunk_name(root)
     for n in sorted((root / HANDOFFS).glob("*.md")):
-        if mark in note_head(n.read_text(errors="replace")):
+        body = n.read_text(errors="replace")
+        commit = re.search(r"^Commit: (\w+)", body, re.M)
+        if (carries(note_head(body), mark) and commit and not re.search(r"^Partial: yes", body, re.M)
+                and is_ancestor(commit.group(1), trunk)):
             return n.relative_to(root).as_posix()
     return ""
 
 
+def built_by(root: Path, board: "Board", mark: str, finished: list[dict] | None = None) -> str:
+    """What built a staged file, by what the tree holds now: a finished spec still in it (its close
+    pending, or kept) carrying the mark, or a closed spec's note. "" for anything else."""
+    for x in finished if finished is not None else finished_specs(Snapshot(board.trunk), board):
+        if carries((root / x["spec"]).read_text(errors="replace") if (root / x["spec"]).is_file() else "", mark):
+            return x["spec"]
+    return note_carrying(root, mark, board.trunk)
+
+
+def entry_text(e: dict) -> str:
+    """An entry as a job writes it, less its id, which the merge renumbers."""
+    return "\n".join([e["title"].strip(), *e["block"].split("\n")[1:]]).strip()
+
+
 def logged_entries(body: str, log: str, prefix: str) -> tuple[list[str], list[str]]:
-    """A staged decisions file's entries the log already holds, and those it doesn't, by title:
-    a job's entry is renumbered at its merge, so its id can't say."""
-    have = {e["title"].strip() for e in log_entries(log, prefix)}
+    """A staged decisions file's entries the log already holds word for word but the id, and those
+    it doesn't."""
+    have = {entry_text(e) for e in log_entries(log, prefix)}
     entries = log_entries(body, prefix)
-    return ([e["id"] for e in entries if e["title"].strip() in have],
-            [e["id"] for e in entries if e["title"].strip() not in have])
+    return ([e["id"] for e in entries if entry_text(e) in have],
+            [e["id"] for e in entries if entry_text(e) not in have])
 
 
-def quiet_resolve(root: Path, f: Path) -> str:
-    """What already landed a staged file, when `resolve` would land it writing nothing: a spec in
-    the tree or a note's header carrying its mark (a story, request or report), or the log holding
-    every entry (a decisions file). "" when resolve would write, refuse or forward."""
+def quiet_resolve(root: Path, f: Path, carrier: str) -> bool:
+    """Whether `resolve` lands a staged file CARRIER built writing nothing: a story, request or
+    report, or a decisions file whose every entry the log holds as its job wrote it."""
     head, body, problems = read_staged(f)
-    if problems or not addressed_here(head.get("target", ""), root):
-        return ""
-    mark, kind = provenance(head, f), head.get("kind")
+    if not carrier or problems or not addressed_here(head.get("target", ""), root):
+        return False
+    kind = head.get("kind")
     if kind in ("user-story", "feature-request", "feedback"):
-        spec = next((s.relative_to(root).as_posix() for s in sorted((root / SPECS).glob("*.md"))
-                     if mark in s.read_text(errors="replace")), "")
-        return spec or note_carrying(root, mark)
-    if kind == "decisions" and head.get("change") == "new" and (root / LOG).exists():
-        prefix = log_prefix(Board.trunk_name(root))
-        there, missing = logged_entries(body, (root / LOG).read_text(errors="replace"), prefix)
-        return LOG if there and not missing else ""
-    return ""
+        return True
+    if kind == "decisions" and head.get("change") == "new" and head.get("destination") == LOG \
+            and (root / LOG).exists():
+        there, missing = logged_entries(body, (root / LOG).read_text(errors="replace"),
+                                        log_prefix(Board.trunk_name(root)))
+        return bool(there) and not missing
+    return False
 
 
 def roadmap_state(snap: Snapshot) -> list[dict] | None:
@@ -13592,13 +13618,15 @@ def rig_items(root: Path, board: "Board") -> list[dict]:
         carriers.append((f"job {name}", f.read_text(errors="replace") if f and f.is_file() else spec))
     # Feedback is `/jig:fix`'s in the jig repo, so rig starts that there; elsewhere it is staged.
     jig_here = addressed_here("jig", root)
+    finished = finished_specs(snap, board)
     for f in staged_files(main_root()):
         head, body, _ = read_staged(f)
         mark = provenance(head, f)
         by = sorted(w for w, text in carriers if mark in text)
         # Built: a finished spec still in the tree or a closed spec's note carries it, and
         # `resolve` would land it writing nothing. `jig rig --close` resolves it.
-        built = "" if by else quiet_resolve(root, f)
+        carrier = "" if by else built_by(root, board, mark, finished)
+        built = carrier if quiet_resolve(root, f, carrier) else ""
         kind = "feedback" if not by and not built and jig_here and head.get("kind") == "feedback" else "staged"
         item = {"kind": kind, "id": f.name, "path": f"{STAGING}/{f.name}",
                 "content": f.read_text(errors="replace"), "header": head,
@@ -13609,9 +13637,9 @@ def rig_items(root: Path, board: "Board") -> list[dict]:
             item["covered"] = by
         elif built:
             item["built"] = built
-        elif note := note_carrying(root, mark):
-            # Its spec closed, but resolve would write it: the owner's, with the note it names.
-            item["noted"] = note
+        elif carrier:
+            # Built, but resolve would write it: the owner's, naming what built it.
+            item["noted"] = carrier
         items.append(item)
     covering = [(f"{i['kind']} {i['path']}", i["touches"]) for i in items]
     covering += [(f"job {n}", ts) for n, ts in job_touches(root, board).items()]
@@ -13825,7 +13853,8 @@ def rig_text(state: dict) -> str:
         for p in paths:
             i = next(x for x in items if x["path"] == p)
             after = [d for d in i["deps"] if d in paths]
-            out.append(f"    {i['kind']:<7} {p}" + (f"  (after {', '.join(after)})" if after else ""))
+            out.append(f"    {i['kind']:<7} {p}" + (f"  (after {', '.join(after)})" if after else "")
+                       + (f"  (noted: {i['noted']})" if i.get("noted") else ""))
         for a, b in group["overlaps"]:
             out.append(f"    {a} and {b} overlap: one job, or kept apart")
     if not state["groups"]:
@@ -13841,7 +13870,8 @@ def rig_text(state: dict) -> str:
         elif i["kind"] == "next-step":
             out.append(f"  next    {i['id']} ({i['from']}): {i['what']}")
         else:
-            out.append(f"  {i['kind']:<7} {i['path']}  {'not judged yet' if i['state'] == 'unjudged' else 'open'}")
+            out.append(f"  {i['kind']:<7} {i['path']}  {'not judged yet' if i['state'] == 'unjudged' else 'open'}"
+                       + (f"  (noted: {i['noted']})" if i.get("noted") else ""))
     # A waiting spec outside the group that one of its items overlaps is one of the items asked about.
     asked = [(g, len(set(group["paths"]) | {x for p in group["overlaps"] for x in p}))
              for g, group in enumerate(state["groups"], 1) if group["overlaps"]]
@@ -13896,11 +13926,17 @@ def rig_close(root: Path, board: "Board") -> int:
 
 
 def close_resolves(root: Path) -> int:
-    """After the close: `resolve` each staged file a closed or finished spec built, where it
-    lands writing nothing. Staging's one exit, so a file nothing in the tree carries stays."""
-    for f in staged_files(root):
-        if quiet_resolve(root, f):
-            cmd_staging(root, argparse.Namespace(action="resolve", file=f.name))
+    """After the close: `resolve` each staged file `jig rig` marks built, where it lands writing
+    nothing. Staging's one exit, so a file nothing built stays, and a file resolve refuses stays,
+    named, while the rest are tried."""
+    board = Board.load(root)
+    for i in rig_items(root, board):
+        if not i.get("built"):
+            continue
+        try:
+            cmd_staging(root, argparse.Namespace(action="resolve", file=i["id"]))
+        except SystemExit:
+            print(f"left {i['id']} staged: resolve refused it (above)")
     return 0
 
 

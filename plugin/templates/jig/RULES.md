@@ -808,8 +808,8 @@ pointer into another repo, plus `.jig/decisions.md`, so it meets the spec writte
 the same rule. A staged file a spec in the tree or an open job's spec carries, by its exact
 mark, is **taken**: it waits on that spec or job, in no group, and counts nowhere. A spec in
 flight carries: a waiting spec, an open job's spec, or one whose only notes are partial. One a
-finished spec still in the tree or a landed note's header carries, which `resolve` would land
-writing nothing, is **built**: rig lists it under Finished, and `jig rig --close` resolves it.
+finished spec still in the tree or a landed, non-partial note's header carries (a whole
+`Source:` line), which `resolve` would land writing nothing, is **built**: rig lists it under Finished, and `jig rig --close` resolves it.
 One that would need writing (a decisions file whose job didn't log its entries) is an ordinary
 item for the owner, naming the note. Only what the tree holds now counts: nothing is read from
 history. In the jig repo a
@@ -1185,10 +1185,12 @@ source is in it; a file for another repo moves into that repo's staging, found t
 `jig repos`. `jig staging drop <file>` deletes it and records nothing: it was never committed.
 Those are a staged file's only exits: a merge or a close deletes nothing in staging. When a
 spec carrying a file closes, its note's header keeps the file's mark, and `resolve` lands a
-story, request or report from there (`carried by <note>`). A `change: new` decisions file whose
-every entry the log already holds, by title (its job wrote them and the merge renumbered them),
-resolves writing nothing (`its entries are in <log>`); when only some are there, it refuses,
-naming them.
+story, request or report from there (`carried by <note>`). A `change: new` decisions file that
+such a note or a finished spec carries, whose every entry the log already holds word for word
+but the id (its job wrote them and the merge renumbered them), resolves writing nothing (`its
+entries are in <log>`); when only some are there, it refuses, naming them. Without such a
+carrier, a match proves nothing, and resolve's own duplicate check stands. `jig rig --close`
+resolves only what rig marks built; a file resolve refuses there is left, named.
 A story, request or report whose spec is in an unanswered group of overlapping waiting specs
 (The board) isn't resolved until the group is answered.
 

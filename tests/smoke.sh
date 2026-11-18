@@ -8285,10 +8285,12 @@ printf '#!/bin/sh\nexit 0\n' > .jig/scripts/derive.sh && git add -A && git commi
 msg="close: once the last spec carrying it closes, it is built, and jig rig --close resolves it"
 out=$($J merge H2 2>&1)
 expect_pass sh -c "! echo \"\$0\" | grep -qi drop && test -f .jig/staging/d4.md && $J rig --close | grep -q '^resolved d4.md: carried by .jig/handoffs/H[12]-' && test ! -e .jig/staging/d4.md" "$out"
-msg="close: a decisions file with one of two entries in the log is refused by resolve, naming it, writing nothing"
+msg="close: a decisions file a closed spec carried, with one of two entries in the log, is refused by resolve, naming it, writing nothing"
+cspec dq '' 'Source: chat dd.md (staged as dd.md)' && git add -A && git commit -qm "spec dq" >/dev/null
 stage dd.md this decisions new .jig/decisions.md '### D-?d1 Use d1\nAccepted (owner, 2026-11-18).\nTouches: none — smoke\n\n### D-?d9 Use d9\nAccepted (owner, 2026-11-18).\nTouches: none — smoke\n'
+cjob DQ dq && gated DQ && $J merge DQ >/dev/null 2>&1
 before=$(shasum < .jig/decisions.md); out=$($J staging resolve dd.md 2>&1); rc=$?
-expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'D-?d1 already in .jig/decisions.md by title, D-?d9 not' && test \"\$(shasum < .jig/decisions.md)\" = '$before' && test -f .jig/staging/dd.md" "$out"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'D-?d1 already in .jig/decisions.md as its job wrote them, D-?d9 not' && test \"\$(shasum < .jig/decisions.md)\" = '$before' && test -f .jig/staging/dd.md" "$out"
 rm .jig/staging/dd.md
 
 # The third review's repros: a spec removed by hand, a revert, an old mark, a released spec. Nothing deletes.
@@ -8309,6 +8311,35 @@ cspec rel '' 'Source: chat dx.md (staged as dx.md)' && git add -A && git commit 
 stage dx.md this decisions new .jig/decisions.md
 msg="close: a released spec with no note carries nothing: its file is ordinary, counted until judged"
 expect_pass cfin "x = i['.jig/staging/dx.md']; assert x['state'] == 'unjudged' and 'covered' not in x and d['waiting_on_you'] >= 1, x"
+# Built is only what a finished spec or a closed spec's note carries (the review of 205589b).
+cspec rel2 '' 'Source: chat rq9.md (staged as rq9.md)' && git add -A && git commit -qm "spec rel2" >/dev/null && git tag v9.1.0
+stage rq9.md this feature-request new .jig/specs/rel2.md
+cspec wt '' 'Source: chat us.md (staged as us.md)' && git add -A && git commit -qm "spec wt" >/dev/null
+stage us.md this user-story new .jig/specs/wt.md
+ulog '### D-500 Use SQLite
+Accepted (Dave, 2026-10-01).
+Touches: none — storage choice
+
+Old reasoning: the prototype is single-user.' && git add -A && git commit -qm "an old entry" >/dev/null
+stage dc.md this decisions new .jig/decisions.md '### D-?sqlite Use SQLite\nProposed (2026-11-18).\nTouches: none — storage choice\n\nRevisit: the multi-user build needs a different answer.\n'
+msg="close: a released spec's request is ordinary, a waiting spec's story taken, a title-only match ordinary; none is built"
+expect_pass cfin "s = {n: i['.jig/staging/' + n]['state'] for n in ('rq9.md', 'us.md', 'dc.md')}; assert s == {'rq9.md': 'unjudged', 'us.md': 'taken', 'dc.md': 'unjudged'} and not any(i['.jig/staging/' + n].get('built') for n in s), s"
+msg="close: jig rig --close resolves none of them"
+out=$($J rig --close 2>&1)
+expect_pass sh -c "! echo \"\$0\" | grep -q '^resolved' && test -f .jig/staging/rq9.md && test -f .jig/staging/us.md && test -f .jig/staging/dc.md" "$out"
+msg="close: by hand, the title-only match isn't taken for the log's entry: resolve adds the new one"
+expect_pass sh -c "$J staging resolve dc.md | grep -q '1 entry added' && test \$(grep -c 'Use SQLite' .jig/decisions.md) = 2"
+git checkout -q -- .jig/decisions.md; rm -f .jig/staging/rq9.md .jig/staging/us.md .jig/staging/dc.md
+
+cspec ra '' "$(printf 'Source: chat ra1.md (staged as ra1.md)\nSource: chat ra2.md (staged as ra2.md)')" && git add -A && git commit -qm "spec ra" >/dev/null
+stage ra1.md this feature-request new .jig/specs/ra.md && sed -i.bak 's/^status: staged$/after: ra2.md\nstatus: staged/' .jig/staging/ra1.md && rm .jig/staging/ra1.md.bak
+stage ra2.md this feature-request new .jig/specs/ra.md
+cjob RA ra && gated RA && $J merge RA >/dev/null 2>&1
+msg="close: a built file resolve refuses is left, named, and --close goes on to the next"
+out=$($J rig --close 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'left ra1.md staged: resolve refused it (above)' && echo \"\$0\" | grep -q '^resolved ra2.md: carried by .jig/handoffs/RA-' && test -f .jig/staging/ra1.md" "$out"
+msg="close: the next --close resolves it"
+expect_pass sh -c "$J rig --close | grep -q '^resolved ra1.md: carried by .jig/handoffs/RA-' && test ! -e .jig/staging/ra1.md"
 msg="close: the merge and --close share one rule"
 expect_pass test "$(grep -c 'finished_specs(' .jig/jig.py)" -ge 3
 }
