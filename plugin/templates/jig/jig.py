@@ -2049,7 +2049,7 @@ def cmd_merge(root: Path, args) -> int:
         return 1
     print(f"merged {name}; its entry is gone from {JOBS} in the same commit. Sync the clean jobs.")
     clean_up_job(name, branch)
-    # Sessions are the host's, so jig only says it: the hubnode archives them with its tool.
+    # Sessions are the host's, so jig only says it: the hubnode closes them with its tool.
     print(f"close the sessions that worked on {name}")
     for l in later:
         print(l)
