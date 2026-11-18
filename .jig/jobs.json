@@ -64,7 +64,7 @@
   },
   "bug-decision-records": {
     "spec": ".jig/specs/bug-decision-records.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
@@ -74,7 +74,8 @@
       "plugin/skills/adopt/SKILL.md",
       "plugin/skills/update/SKILL.md"
     ],
-    "reserved": {}
+    "reserved": {},
+    "check": "batch"
   },
   "bug-process-in-pages": {
     "spec": ".jig/specs/bug-process-in-pages.md",
