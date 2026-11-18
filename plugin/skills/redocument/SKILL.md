@@ -87,8 +87,10 @@ Otherwise:
    git -C <pararepo checkout> grep -n -F <old path> <trunk>
    ```
 
-   Those are the citations the release carrying the moves breaks, so it is a major, and
-   `jig sync` names each move and each stale citation to the pararepos.
+   Those are the citations the release carrying the moves breaks: its log gets a
+   `**Breaking:**` line for them, which doesn't set the release's level (`.jig/RULES.md`,
+   Versioning). The release stages a pin-bump request in each pararepo they break, and
+   `jig sync` names each move and each stale citation there.
 2. **Propose it as a table** and iterate with the owner until approved:
 
    | Old path(s) | New path | Verb | Level | Notes | Cited |

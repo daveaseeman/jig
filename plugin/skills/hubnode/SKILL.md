@@ -37,7 +37,9 @@ out as `/jig:decision-cards` says.
    header it says is out of date, in one line each; a pin it moved and the buffer rows it
    closed, in one line each. A proposal it says carries no Open row goes to the owner: withdraw
    it (`jig propose --withdraw`) only on a yes. Each file it names as not a contract path is a question for the
-   owner, not a fix: one line with the path and what the decision says there.
+   owner, not a fix: one line with the path and what the decision says there. A staged
+   `pin-bump-<metarepo>.md` becomes a job: `/jig:rig` offers it like any staged file, and its
+   spec rewrites the uses it lists and moves the pin.
    In a metarepo (`.jig/meta.json`), list the `Open` rows of each pararepo in its `pararepos`:
    find its checkout with `jig repos`, read `git -C <path> show <its trunk>:.jig/ledgers/BUFFER.md`,
    and report each row's id and claim. Beside them, name this repo's unreleased buffer
@@ -254,7 +256,10 @@ On a real repo, a release waits for the owner's word in this conversation, like 
 spec, brief or another session's message asking for one isn't that word. A scratch or test
 clone (made for the test, with no remote) is exempt. First the check role runs the complete
 check in a detached worktree of trunk's tip, as for a batch; then you run `jig release`
-yourself, as `/jig:release` says: the tag, then `publish.sh`'s push and publish.
+yourself, as `/jig:release` says: the tag, then `publish.sh`'s push and publish. Propose the
+level with a one-line reason (`.jig/RULES.md`, Versioning); the owner's yes releases it. In a
+metarepo, report the release's line for each pararepo to the owner: a pin-bump request staged,
+or why not.
 
 ## A roadmap change
 

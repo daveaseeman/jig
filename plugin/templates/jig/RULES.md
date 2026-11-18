@@ -965,8 +965,8 @@ The product is the repo, so there is one roadmap and no product level in it.
 
 Every repo keeps one log, `.jig/decisions.md`, which `jig init` writes: what was decided and
 why, and what changed, grouped by release. Its format is Keep a Changelog's, plus decision
-entries; it opens with two lines saying so, that versions follow SemVer, and what breaking
-means here. Then three kinds of section, top to bottom:
+entries; it opens with two lines saying so, that versions are MILESTONE.FEATURE.PATCH, set by
+how much the product changed (Versioning), and what breaking means here. Then three kinds of section, top to bottom:
 
 - `## Open`: open and proposed decisions. An entry's status changes here in place.
 - `## Unreleased`: accepted entries and change lines since the last release.
@@ -1042,8 +1042,8 @@ act on. A spec's own Decisions stay with the task, and history stays in git.
 
 - Lead with what changes for that reader, in their words, not the code's. One change per line,
   in the imperative or the past tense, the same throughout a section.
-- Say what a reader must do when they must do it: a breaking change says what to change, and
-  is a major release.
+- Say what a reader must do when they must do it: a breaking change says what to change, on a
+  `**Breaking:**` line, and doesn't set the version's level (Versioning).
 - No commit hashes, file lists or internal names a reader can't act on; link a page by its
   heading instead.
 - Deprecate before removing: a removal names the release that deprecated it.
@@ -1171,7 +1171,7 @@ the change began, each claimed by one entry. One added later does.
 ## Staging
 
 `.jig/staging/` is where a chat drops a file meant for a repo: a spec, a doc, decision entries, a
-user story, a feature request, a roadmap change. It is never committed, and nothing in it is decided — read it
+user story, a feature request, a roadmap change, a metarepo's pin-bump request. It is never committed, and nothing in it is decided — read it
 for context, never cite it. Each file's header names its `target` (a repo name, or `this`), `kind`, `change`
 (`new` or `update`), `destination` inside the target, and `source`. A destination is a bare
 path, with no space and no `:`, `,` or `;`: a spec, doc or decisions file whose destination
@@ -1218,6 +1218,17 @@ Proposed. It doesn't fail the check, since an entry accepted in the chat is righ
 become a spec or open on the owner's answers to the model that reads it. A staged file whose
 mark a waiting spec or an open job's spec carries is taken: it waits on that spec or job and is
 never offered again. In the jig repo, a feedback report is `/jig:fix`'s, which rig starts.
+When the job building a spec merges, or `jig rig --close` closes the spec, each staged file it
+carries is dropped, named: its job built it, and resolving a decisions file would add its
+entries again. A spec kept by a partial note keeps its files taken.
+
+A pin-bump request (`kind: pin-bump`) is the one kind jig itself stages: a metarepo's release
+writes it in a pararepo (Metarepo and pararepos). Its destination is `.jig/para.json` and its
+change `update`, and `check` accepts no other. `resolve` refuses it until trunk's `para.json`
+pins its release or a later one, naming how it lands: a job (`/jig:spec` from it) whose pin
+commit carries the request as its body, with the uses it lists rewritten. That job's merge drops
+it, as for any carried file; `drop` works as for any staged file. It doesn't hold the
+pararepo's own release, which names it.
 
 A feature request is `kind: feature-request`: the owner's own words for what the product
 should do ("I want it to do xyz"), with no required shape. A story names who wants what and
@@ -1320,7 +1331,7 @@ citations. `jig sync` and the release say when the pinned release has been yanke
 line. A question that binds the pararepos gets its entry under
 `## Open` when it is asked, so it can be cited before it is answered; it moves to `Proposed`,
 then is accepted (moved to `## Unreleased`) or removed. A reversed decision is a new entry that
-supersedes the old, released as a major. A pararepo's own entry that touches a contract cites
+supersedes the old. A pararepo's own entry that touches a contract cites
 its BUFFER row or proposal; once the metarepo accepts it, a new entry here supersedes it and
 points to the metarepo's id without restating it.
 
@@ -1384,13 +1395,31 @@ whose `.jig/decisions.md` has no heading for it, unless it was made before the l
 `CHANGELOG.md` that tag holds has the heading the release wrote then.
 Pre-push judges the commit pushed to the remote's trunk, which may not be the local trunk's;
 a chained `pre-push.local` hook gets the same pushed refs.
-In a metarepo the release needs no `release.sh` steps, and defaults to `--minor`: minor for additions and clarifications, major
-for a rename or a reversed decision. A pararepo pins a release, never `main`, and bumps it in
+In a metarepo the release needs no `release.sh` steps; its first release is v0.1.0, and after
+that its level is set as any repo's is (Versioning): a rename, a move or a reversed decision is
+a `**Breaking:**` line, not a level. A pararepo pins a release, never `main`, and bumps it in
 a commit of its own, `meta: <name> v0.3.0 → v0.4.0`, with the report `jig sync` prints on its
 trunk as the body: each decision id and glossary term that changed, and each entry file the new
 release moved (`<old> (now <new>)`) or removed (`<old> (removed)`), with every file here that
 uses it, specs and ledgers included. A two-part pin (`v0.3`), from before releases had three parts, keeps
-working: it sorts below `v0.3.0`. `jig gate` refuses a job whose spec cites a proposal that isn't in
+working: it sorts below `v0.3.0`. `defer_until` in `para.json` is a date, `YYYY-MM-DD`: before
+it, the pararepo's `jig sync` reports nothing upstream and no metarepo release asks it to move.
+
+**A pin-bump request.** After its tag, a metarepo's `jig release` stages a request in each
+pararepo `meta.json`'s `pararepos` lists, found through `jig repos`, whose trunk `para.json`
+cites it, when the release broke something that pararepo cites: a citation that resolved at the
+previous tag and dangles at the new one, or a decision id the release removed or superseded,
+cited as a whole word (not where the pararepo numbers its own decisions with the same prefix).
+A rewording, an Open entry accepted or a glossary term reworded doesn't select it: its own
+`jig sync` reports those. The request is `.jig/staging/pin-bump-<metarepo>.md`, `kind:
+pin-bump`, `destination: .jig/para.json`, with `from`, `pin` and `release` in its header and,
+from the pin to the new tag, the `**Breaking:**` lines, the citations to rewrite with each new
+home jig can name, and the removed or superseded ids with the files that cite them. A later
+release rewrites it in place, covering the whole gap from the pin; a file of that name that
+isn't this metarepo's request is left alone and named. The release prints a line per pararepo:
+staged, with counts, or skipped and why (not in `jig repos`, not citing it, a future
+`defer_until`, already pinning the release, or citing nothing it broke). A request that can't be
+written doesn't undo the tag. jig commits nothing in a pararepo: the pin is its buffer. `jig gate` refuses a job whose spec cites a proposal that isn't in
 the pinned release, and one whose `pointers` branch isn't on the metarepo it names (one merged
 into its trunk counts, released or not), or names another metarepo; a metarepo it can't reach
 refuses too.
@@ -1462,6 +1491,29 @@ Two rules for the metarepo's own pages:
   entries by `Touches:`, each marked `home`, `pointer` (a `§` reference or a link to the home)
   or `copy`. It finds names only; a copy in other words is the spec writer's to find.
 
+## Versioning
+
+A version is MILESTONE.FEATURE.PATCH, and it says how much the product changed since the last
+release. Whoever releases proposes the level with a one-line reason, the highest level of any
+change under `## Unreleased`, and the owner's word releases it:
+
+- **PATCH** (`--patch`, the default): fixes, rewordings, moves and renames, a page split or
+  joined, a decision reversed or clarified. Most releases.
+- **FEATURE** (`--feature`): the product does something it didn't, or does something
+  differently: a feature, a product, a decision that changes behavior.
+- **MILESTONE** (`--milestone`): a stage of the product reached: a first complete version, a
+  rewrite, a fundamental change in what it is.
+
+A `**Breaking:**` line doesn't set the level: it says what a reader taking the release must
+change, and a move that breaks every citation of a page is still a patch. What others must do
+travels on those lines and, in a metarepo, on a pin-bump request staged in each pararepo whose
+citations the release broke (Metarepo and pararepos).
+
+Before 1.0.0 every release is 0.FEATURE.PATCH, and the move to 1.0.0 is the owner's call
+(`--version 1.0.0`), made when the product is first complete; a repo past it never meets this
+paragraph again. A repo published to a package registry, whose users expect SemVer, needs a rule
+of its own; jig has none yet.
+
 ## Release
 
 `jig release` runs the repo's own protocol. On trunk, with a clean tree and nothing staged, it
@@ -1470,8 +1522,10 @@ bump, which only the repo knows how to do. It commits the tracked files the scri
 checks that each glob in `release.artifacts` matched a file, turns `## Unreleased` in
 `.jig/decisions.md` into `## vX.Y.Z - YYYY-MM-DD` with an empty one above it, and tags
 `vX.Y.Z`. A failure puts the tracked files back and tags nothing. The version is the last tag
-bumped by `--patch` (the default), `--minor` or `--major`; the first is `--version X.Y.Z`, or
-`--minor` (0.1.0) or `--major` (1.0.0).
+bumped by `--patch` (the default), `--feature` or `--milestone` (`--minor` and `--major` are
+the same two), as Versioning says; the first is `--version X.Y.Z`, or `--feature` (0.1.0), and a
+metarepo's first is 0.1.0. `--milestone` refuses while the latest release is 0.y.z: 1.0.0 is
+`--version 1.0.0`, the owner's call.
 
 In a plain repo, until `release.sh` has steps and `config.json` names its artifacts, the release
 refuses and points to `/jig:release`, which asks what the repo builds and ships. A metarepo and
@@ -1481,7 +1535,8 @@ and must match), and jig's own checks run before the tag. A metarepo's are its h
 pin isn't one of its releases (`main`, a hand-made tag), when the `AGENTS.md` header isn't the
 generated one (P1), when `.jig/meta-cache/` is tracked (P3), or when a `BUFFER.md` row is neither
 Open nor Closed or shares its id (P2); a newer metarepo release, a cited path outside
-`contract_paths`, or a metarepo pointer to a file or heading this repo doesn't have, is reported as `jig sync` reports it and refuses nothing. Then the release
+`contract_paths`, or a metarepo pointer to a file or heading this repo doesn't have, is reported as `jig sync` reports it and refuses nothing. So is a staged pin-bump request:
+the release names it, and isn't held by it. Then the release
 settles the sync buffer (above).
 
 After the tag, the release runs `.jig/scripts/publish.sh <version> <artifact>…`: what the repo
@@ -1496,7 +1551,7 @@ jig prints the command to run it again and exits 1.
 ```
 jig init [--trunk main]     config.json, jobs.json, git hooks
 jig init --meta | --para <metarepo> --contract <globs>   ... as a metarepo / pararepo
-jig release [--major|--minor|--patch|--version X.Y.Z] [--force]   the repo's release protocol, then tag, then publish
+jig release [--patch|--feature|--milestone|--version X.Y.Z] [--force]   the repo's release protocol, then tag, then publish
 jig survey [--json] [--levels]   inventory the repo against the jig shape; --levels: each page's level and its evidence
 jig update [--apply]        bring the repo to the current jig layout, and carry out the moves findings approves (dry run without --apply)
 jig update [--apply] --merge-log   on the owner's yes: CHANGELOG.md, the register and folders of decision records into .jig/decisions.md

@@ -5664,13 +5664,22 @@ def cmd_meta_init(root: Path, args) -> int:
 # removed by the commit adding the entry that supersedes it, and git keeps its text. A release's
 # change lines are what that version told its readers, so they are frozen.
 LOG = f"{DIR}/decisions.md"
-LOG_SEED = (
-    "# Decisions and changes\n\n"
+# The log header's two lines on versions. The old pair made every Breaking line a major
+# release, so the version counted dependents' bookkeeping rather than how much the product
+# changed; `jig update` swaps it for the new pair where it stands word for word.
+OLD_LOG_HEAD = (
     "This log follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/) plus decision entries, "
     "and versions follow Semantic Versioning (https://semver.org/).\n"
     "A breaking change is one that a reader taking the release must act on, and it is released "
-    "as a major version.\n\n"
-    "## Open\n\n## Unreleased\n")
+    "as a major version.\n")
+LOG_HEAD = (
+    "This log follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/) plus decision entries, "
+    "and versions are MILESTONE.FEATURE.PATCH, set by how much the product changed "
+    "(`.jig/RULES.md`, Versioning).\n"
+    "A breaking change is one that a reader taking the release must act on: a `**Breaking:**` line "
+    "says what to change, and it doesn't set the version's level.\n")
+LOG_SEED = "# Decisions and changes\n\n" + LOG_HEAD + "\n## Open\n\n## Unreleased\n"
+OLD_LOG_SEED = "# Decisions and changes\n\n" + OLD_LOG_HEAD + "\n## Open\n\n## Unreleased\n"
 LOG_STATUSES = ("Accepted", "Open", "Proposed")
 CHANGE_GROUPS = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
 RELEASE_HEADING = re.compile(r"^## (v\d+\.\d+(?:\.\d+)?) - (\d{4}-\d{2}-\d{2})( \[YANKED\])?[ \t]*$")
@@ -5944,7 +5953,9 @@ def frozen_problems(old: str, new: str, trunk: str, only: set[str] | None = None
 def outside_open_deleted(old: str, new: str) -> bool:
     """Whether NEW drops or rewrites a line of OLD outside ## Open: elsewhere the log only grows,
     but for an entry NEW supersedes, which it removes, and an entry's Touches line, which may
-    change."""
+    change. The swap of the old versioning header for the new one, word for word, is no rewrite."""
+    if OLD_LOG_HEAD in old and OLD_LOG_HEAD not in new and LOG_HEAD in new:
+        old = old.replace(OLD_LOG_HEAD, LOG_HEAD, 1)
     old, bare = removed_entries(old, new)
     if bare:
         return True
@@ -6813,16 +6824,20 @@ def next_version(last: str, args, meta: dict | None) -> str:
         if last and version_key(args.version) <= version_key(last):
             die(f"--version {args.version} is not after {last}", 2)
         return args.version
+    # The level is how much the product changed (RULES.md, Versioning). Leaving 0.y.z is the
+    # owner's call, so a milestone counts from 1.0.0 and never makes it.
+    if args.milestone and (not last or version_key(last)[0] == 0):
+        die(f"--milestone counts milestones from 1.0.0, and the latest release is {last or 'none'}: "
+            "1.0.0 is the owner's call, `--version 1.0.0`", 2)
     if not last:
-        # --minor or --major says which part the first version counts from; a patch doesn't.
-        if not (meta or args.minor or args.major):
-            die("no v* tag yet: name the first version with --version X.Y.Z, or --minor for 0.1.0", 2)
-        last = "v0.0.0"
+        # A metarepo starts at 0.1.0; any other repo names its first version.
+        if not (meta or args.feature):
+            die("no v* tag yet: name the first version with --version X.Y.Z, or --feature for 0.1.0", 2)
+        return "0.1.0"
     x, y, z = (version_key(last) + (0, 0, 0))[:3]
-    if args.major:
+    if args.milestone:
         return f"{x + 1}.0.0"
-    # A metarepo's changes are additions unless they rename or reverse, so minor is its default.
-    if args.minor or (meta and not args.patch):
+    if args.feature:
         return f"{x}.{y + 1}.0"
     return f"{x}.{y}.{z + 1}"
 
@@ -6858,9 +6873,13 @@ def cmd_release(root: Path, args) -> int:
     problems, loc = (meta_problems(root, meta, trunk) if meta else []), None
     if para:
         problems, loc = para_problems(root, para, trunk)
-    left = release_waits_for()
+    left = [f for f in release_waits_for() if not (para and pin_bump(f))]
+    bumps = [f for f in release_waits_for() if para and pin_bump(f)]
+    for f in bumps:
+        print(f"staged {f.name}: {para['meta']} {read_staged(f)[0].get('release')} waits to be taken "
+              f"in a job; it doesn't hold this release")
     if not args.force:
-        problems += staged_refusal("the release")
+        problems += staged_refusal("the release", pin_bumps_wait=not para)
         # A batch's jobs merged on a check owed by one complete run on the trunk they made.
         owed = batch_merges(trunk)
         if owed:
@@ -6962,6 +6981,10 @@ def cmd_release(root: Path, args) -> int:
         git("reset", "-q")
     git("tag", "-a", tag, "-m", tag, commit, check=True)
     print(f"released {tag} at {commit[:12]}.")
+    if meta:
+        # After the tag: a request that can't be written doesn't undo the release.
+        for line in stage_pin_bumps(root, meta, last, tag):
+            print(line)
     if proposed:
         print(f"proposed {', '.join(listed_rows(proposed[0].read_text()))} to {para['meta']} as "
               f"{proposed[1]} ({proposed[0].relative_to(root)}): write the change there; "
@@ -8178,12 +8201,141 @@ def sync_answered(root: Path, ids: str, release: str | None, reason: str | None)
     return 0
 
 
+BULLET = re.compile(r"^[-*+][ \t]+")
+
+
+def breaking_lines(loc: Path, pin: str, latest: str) -> list[str]:
+    """Each `**Breaking:**` line released after PIN up to LATEST, oldest release first, with its
+    release: what a reader taking them must act on, which the version's level doesn't say."""
+    text = git("show", f"{latest}:{LOG}", cwd=str(loc))
+    out = []
+    for version, (_, _, lines) in sorted(release_sections(text).items(), key=lambda v: version_key(v[0])):
+        if version_key(pin) < version_key(version) <= version_key(latest):
+            out += [f"  {version}: {BULLET.sub('', l.strip())}" for l in lines if "**Breaking:**" in l]
+    return out
+
+
 def newer_release(root: Path, loc: Path, name: str, pin: str, latest: str) -> list[str]:
-    major = version_key(latest)[0] > version_key(pin)[0]
-    return [f"{name} {latest} is out; this repo pins {pin}{' (a major release)' if major else ''}.\n",
+    breaking = breaking_lines(loc, pin, latest)
+    return [f"{name} {latest} is out; this repo pins {pin}.",
+            *(["Breaking, to act on:", *breaking] if breaking else []), "",
             *changes_report(root, loc, pin, latest),
             f"\nTo take it: set \"pin\" to \"{latest}\" in {PARA}, run `jig init --para {name}`, and commit "
             f"those alone as `meta: {name} {pin} → {latest}` with this report as the body."]
+
+
+PIN_BUMP_KIND = "pin-bump"
+
+
+def stage_pin_bumps(root: Path, meta: dict, prev: str, tag: str) -> list[str]:
+    """A metarepo release asks each pararepo whose citations it broke to move its pin: a staged
+    request in that pararepo, carrying the releases' Breaking lines and what to rewrite, from its
+    pin to TAG. Broke means a citation that resolved at PREV and dangles at TAG, or a decision id
+    TAG removed or superseded, cited as a whole word; a request already staged from here is
+    rewritten whatever this release broke. A line per pararepo. Writes nothing but that file."""
+    name = meta.get("name") or root.name
+    out: list[str] = []
+    if not prev:
+        return out
+    prefix = decision_prefix_at(root, tag)
+    now_log = git("show", f"{tag}:{LOG}")
+    key = lambda line: line.split(", which ")[0]
+
+    def broken(there: Path, para: dict, trunk: str, since: str) -> tuple[list[str], list[str]]:
+        """What the releases after SINCE up to TAG broke there: its citations that resolve at
+        SINCE and dangle at TAG, each with the new home a move gives it, and the decision ids
+        SINCE had and TAG doesn't, each with the files citing it."""
+        moved = {}
+        for l in git("-c", "core.quotePath=false", "diff", "-M", "--name-status", since, tag).splitlines():
+            parts = l.split("\t")
+            if parts[0].startswith("R") and len(parts) == 3:
+                moved[parts[1]] = parts[2]
+        # A row citation's loss is the id list's; this list is the paths and headings.
+        was = {key(l) for l in meta_citations(there, para, decision_ids(root, since), root, (trunk, since))}
+        rewrites = []
+        for l in meta_citations(there, para, decision_ids(root, tag), root, (trunk, tag)):
+            if key(l) in was or " bare: " in l or " has no row for" in l:
+                continue
+            cited = re.search(rf"cites {re.escape(name)}/(\S+?)(?:[ ,]|$)", l)
+            if cited and cited.group(1) in moved and ": now " not in l:
+                l += f": now `{name}/{moved[cited.group(1)]}`"
+            rewrites.append(l)
+        gone = sorted({e["id"] for e in log_entries(git("show", f"{since}:{LOG}"), prefix)}
+                      - {e["id"] for e in log_entries(now_log, prefix)})
+        own = log_prefix_of(git("show", f"{trunk}:{LOG}", cwd=str(there)))
+        ids = []
+        # Where the pararepo numbers its own decisions with the same prefix, a bare id is its own.
+        for i in gone if own != prefix else []:
+            files = git("grep", "-l", "-w", "-F", i, trunk, "--", ".", f":!{HANDOFFS}",
+                        cwd=str(there)).splitlines()
+            if files:
+                by = holds_now(i, now_log, prefix, tag, str(root))
+                ids.append(f"{i}{f' (now {by})' if by else ' (removed)'}: cited in "
+                           + ", ".join(f.split(":", 1)[1] for f in files))
+        return rewrites, ids
+
+    for para_name in meta.get("pararepos", []):
+        where = repo_path(para_name)
+        if not where:
+            out.append(f"{para_name}: skipped, it isn't in `jig repos`")
+            continue
+        there = Path(where)
+        try:
+            trunk = json.loads((there / CONFIG).read_text()).get("trunk") or "main"
+            para = json.loads(git("show", f"{trunk}:{PARA}", cwd=str(there)) or "{}")
+        except (OSError, ValueError):
+            para = {}
+        if para.get("meta") != name:
+            out.append(f"{para_name}: skipped, its {PARA} doesn't cite {name}")
+            continue
+        until = para.get("defer_until")
+        if until and date.today().isoformat() < until:
+            out.append(f"{para_name}: skipped, it defers {name} until {until}")
+            continue
+        pin = para.get("pin") or ""
+        if pin and version_key(pin) >= version_key(tag):
+            out.append(f"{para_name}: skipped, it already pins {pin}")
+            continue
+        dest = there / STAGING / f"pin-bump-{name}.md"
+        h = read_staged(dest)[0] if dest.exists() else {}
+        asked = h.get("kind") == PIN_BUMP_KIND and h.get("from") == name
+        if not asked and not any(broken(there, para, trunk, prev)):
+            out.append(f"{para_name}: skipped, it cites nothing {tag} broke")
+            continue
+        if dest.exists() and not asked:
+            out.append(f"{para_name}: not staged, {STAGING}/{dest.name} there isn't {name}'s pin bump: "
+                       "left as it is")
+            continue
+        # The request covers the whole gap from the pin, so one file serves every release since.
+        since = pin if pin and git("rev-parse", "-q", "--verify", f"{pin}^{{commit}}") else prev
+        rewrites, ids = broken(there, para, trunk, since)
+        breaking = breaking_lines(root, since, tag)
+        body = [f"# {name}: move the pin from {pin} to {tag}", "",
+                f"{name} {tag} broke what this repo cites. Take it in a job: rewrite the uses below, "
+                f"set \"pin\" to \"{tag}\" in {PARA}, run `jig init --para {name}`, and commit the pin "
+                f"as `meta: {name} {pin} → {tag}` with this request as the body.", ""]
+        if breaking:
+            body += ["## Breaking", "", *[f"-{l[1:]}" for l in breaking], ""]
+        if rewrites:
+            body += ["## Rewrites", "", *[f"- {l}" for l in rewrites], ""]
+        if ids:
+            body += ["## Removed or superseded", "", *[f"- {l}" for l in ids], ""]
+        head = {"staged": "true", "target": para_name, "kind": PIN_BUMP_KIND, "change": "update",
+                "destination": PARA, "source": f"{name} release {tag} / {date.today().isoformat()}",
+                "from": name, "pin": pin, "release": tag, "status": "staged"}
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text("---\n" + "".join(f"{k}: {v}\n" for k, v in head.items()) + "---\n" + "\n".join(body))
+        except OSError as e:
+            out.append(f"{para_name}: not staged, {e}")
+            continue
+        plural = lambda n, what: f"{n} {what}{'s' if n != 1 else ''}"
+        sup = sum(" (now " in i for i in ids)
+        counts = ([plural(len(rewrites), "rewrite")] if rewrites else []) \
+            + ([plural(sup, "superseded id")] if sup else []) \
+            + ([plural(len(ids) - sup, "removed id")] if len(ids) > sup else [])
+        out.append(f"{para_name}: staged {STAGING}/{dest.name} ({', '.join(counts) or 'nothing to rewrite'})")
+    return out
 
 
 def merged_registers(loc: Path, old: str, new: str) -> list[str]:
@@ -8246,10 +8398,10 @@ def changes_report(root: Path, loc: Path, old: str, new: str) -> list[str]:
     return out
 
 
-def head_texts(paths: list[str]) -> list[tuple[str, str]]:
-    """PATHS' text at HEAD, read in one git call; binary files (a NUL byte) left out."""
-    raw = subprocess.run(["git", "cat-file", "--batch"], capture_output=True,
-                         input="".join(f"HEAD:{p}\n" for p in paths).encode()).stdout
+def head_texts(paths: list[str], rev: str = "HEAD", cwd: str | None = None) -> list[tuple[str, str]]:
+    """PATHS' text at REV (HEAD), read in one git call; binary files (a NUL byte) left out."""
+    raw = subprocess.run(["git", "cat-file", "--batch"], capture_output=True, cwd=cwd,
+                         input="".join(f"{rev}:{p}\n" for p in paths).encode()).stdout
     out, at = [], 0
     for p in paths:
         head_end = raw.index(b"\n", at)
@@ -8265,19 +8417,38 @@ def head_texts(paths: list[str]) -> list[tuple[str, str]]:
     return out
 
 
-def meta_citations(root: Path, para: dict, ids: str, loc: Path | None = None) -> list[str]:
+def meta_citations(root: Path, para: dict, ids: str, loc: Path | None = None,
+                   at: tuple[str, str] | None = None) -> list[str]:
     """This repo's citations of the metarepo checked against the cache: the mirror of
     stale_pointers. A citation is `<meta>/<path> § <section>`; a section that is a decision id
     (IDS, the metarepo's prefix) names a row, any other a heading. A bare path that names an
     entry file at the pin and nothing here is named too, since it can't be told from this repo's
     own. Handoffs and Closed BUFFER rows cite the pin they were written at, so they are left out.
-    Reported, never refused. Read at HEAD, as stale_pointers reads it."""
+    Reported, never refused. Read at HEAD against the cache, as stale_pointers reads it; with AT,
+    (this repo's revision, the metarepo's tag in LOC), read there instead: a metarepo's release
+    compares its pararepos' citations against two of its tags."""
     cache, name, pin = root / CACHE, para["meta"], para["pin"]
-    if not cache.is_dir():
-        return []
-    entries = [f.relative_to(cache).as_posix() for f in sorted(cache.rglob("*"))
-               if f.is_file() and f.name != "PIN" and f != cache / CHANGELOG]
-    sized = [l.split("\t", 1) for l in git("-c", "core.quotePath=false", "ls-tree", "-r", "-l", "HEAD").splitlines()]
+    if at:
+        rev, pin = at
+        mfiles = git("-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", pin, cwd=str(loc)).splitlines()
+        have = set(mfiles)
+        mdirs = {"/".join(f.split("/")[:k]) for f in mfiles for k in range(1, f.count("/") + 1)}
+        entries = [f for f in mfiles if f != CHANGELOG]
+
+        def meta_text(path: str) -> str | None:
+            return git("show", f"{pin}:{path}", cwd=str(loc)) if path in have else "" if path.rstrip("/") in mdirs else None
+    else:
+        if not cache.is_dir():
+            return []
+        rev = "HEAD"
+        entries = [f.relative_to(cache).as_posix() for f in sorted(cache.rglob("*"))
+                   if f.is_file() and f.name != "PIN" and f != cache / CHANGELOG]
+
+        def meta_text(path: str) -> str | None:
+            target = cache / path
+            return target.read_text(errors="replace") if target.is_file() else "" if target.is_dir() else None
+    sized = [l.split("\t", 1) for l in git("-c", "core.quotePath=false", "ls-tree", "-r", "-l", rev,
+                                           cwd=str(root)).splitlines()]
     here = [p for _, p in sized]
     tracked = set(here)
     # A citation lives in prose: a blob over a megabyte (an image, a firmware build) isn't read.
@@ -8290,10 +8461,11 @@ def meta_citations(root: Path, para: dict, ids: str, loc: Path | None = None) ->
     one = re.compile("|".join(map(re.escape, bare))) if bare else None
     rows = re.compile(rf"(?<!\w)({ids})(?!\w)")
     named = (f"{name.casefold()}/", f"{name.casefold()}:")
-    gloss = glossary_terms((cache / GLOSSARY).read_text(errors="replace")) if (cache / GLOSSARY).is_file() else []
+    gloss = glossary_terms(meta_text(GLOSSARY) or "")
     out = []
     for f, text in head_texts([p for p in small if not p.startswith(f"{DIR}/")
-                               or p.startswith((f"{DIR}/specs/", f"{DIR}/ledgers/", LOG, PROCESS))]):
+                               or p.startswith((f"{DIR}/specs/", f"{DIR}/ledgers/", LOG, PROCESS))],
+                              rev, str(root)):
         folded = text.casefold()
         if not any(t in folded for t in named) and not (one and one.search(text)):
             continue
@@ -8314,8 +8486,7 @@ def meta_citations(root: Path, para: dict, ids: str, loc: Path | None = None) ->
                 code = m.start() > 0 and line[m.start() - 1] == "`" and not m.group("shut")
                 rest = m.group("rest")
                 section = (rest.split("`")[0].strip() if code else rest) if rest else None
-                target = cache / path
-                body = target.read_text(errors="replace") if target.is_file() else "" if target.is_dir() else None
+                body = meta_text(path)
                 row = rows.match(plain(section)) if section and body else None
                 if row and (not code or row.group(1) == plain(section)):
                     # A decision is a log entry's heading, or a row in a register from before the log.
@@ -8844,7 +9015,7 @@ def buffer_proposal(root: Path, para: dict, loc: Path, slug: str) -> tuple[Path,
 # Where a chat drops a file meant for this repo, or another. Untracked: nothing in it is
 # authoritative, and it can reach a contract only through `jig staging resolve`.
 STAGING = f"{DIR}/staging"
-KINDS = ("spec", "doc", "decisions", "user-story", "feature-request", "feedback", "roadmap")
+KINDS = ("spec", "doc", "decisions", "user-story", "feature-request", "feedback", "roadmap", "pin-bump")
 HEADER_KEYS = ("staged", "target", "kind", "change", "destination", "source", "status")
 
 
@@ -8882,6 +9053,10 @@ def read_staged(path: Path) -> tuple[dict, str, list[str]]:
         bad.append("staged is not true")
     if head.get("kind") == "roadmap" and head.get("destination") and head["destination"] != ROADMAP:
         bad.append(f"destination {head['destination']!r}: a roadmap change lands in {ROADMAP} only")
+    if head.get("kind") == "pin-bump" and (head.get("destination") != PARA or head.get("change") != "update"):
+        bad.append(f"a pin bump is `change: update` to {PARA} only")
+    if head.get("kind") == "pin-bump" and not head.get("release"):
+        bad.append("no release: a pin bump names the release it moves the pin to")
     if head.get("kind") == "roadmap" and head.get("change") == "new":
         bad.append(f"change new: a roadmap change is `change: update` to {ROADMAP}")
     return head, m.group(2), bad
@@ -8914,10 +9089,14 @@ def release_waits_for() -> list[Path]:
                                         if addressed_here(read_staged(f)[0].get("target", ""), main_root())]
 
 
-def staged_refusal(what: str) -> list[str]:
+def pin_bump(f: Path) -> bool:
+    return read_staged(f)[0].get("kind") == "pin-bump"
+
+
+def staged_refusal(what: str, pin_bumps_wait: bool = True) -> list[str]:
     """Release waits while anything is staged. Reading it only refuses more, so a branch can't
-    weaken it."""
-    files = release_waits_for()
+    weaken it. A pararepo's staged pin bump doesn't hold its release: the pin is its buffer."""
+    files = [f for f in release_waits_for() if pin_bumps_wait or not pin_bump(f)]
     return [f"{what} waits while {len(files)} file{'s' if len(files) > 1 else ''} sit in "
             f"{STAGING} or {feedback_dir()}: {', '.join(f.name for f in files)}. Resolve or "
             f"drop each (`jig staging resolve` / `drop`), or force it"] if files else []
@@ -9175,6 +9354,16 @@ def cmd_staging(root: Path, args) -> int:
         text = f.read_text(errors="replace") if f.exists() else None
         return text is not None and (carries(text, mark) if carrier else mark in text)
 
+    if kind == "pin-bump":
+        # The pin is this repo's buffer: it moves in a reviewed job that rewrites the uses the
+        # request lists, never by resolving the request.
+        trunk = Board.load(root, working_tree=True).trunk
+        pin = json.loads(git("show", f"{trunk}:{PARA}") or "{}").get("pin") or ""
+        if not pin or version_key(pin) < version_key(head["release"]):
+            die(f"{path.name} waits for {trunk}'s {PARA} to pin {head['release']} (it pins "
+                f"{pin or 'nothing'}): land it as a job (`/jig:spec` from it), whose pin commit carries "
+                "the request as its body, with the uses it lists rewritten; then resolve again", 1)
+        return done(f"{trunk} pins {pin}")
     if kind == "roadmap":
         # The roadmap carries no provenance lines, so the owner reads it as the plan; the
         # commit that applied the change on trunk carries the mark in its message instead.
@@ -10641,6 +10830,13 @@ def handoff_rows(root: Path, files: list[str]) -> tuple[list[tuple[str, list[str
     return rows, folders
 
 
+def swap_log_head(root: Path, here: Path) -> None:
+    text = read_raw(root / LOG)
+    if OLD_LOG_HEAD in text:
+        write_raw(root / LOG, text.replace(OLD_LOG_HEAD, LOG_HEAD, 1))
+        git("add", "--", LOG, check=True)
+
+
 STEPS: list = [
     (f"add {STAGING}/ (its .gitignore), where chats drop files for this repo",
      lambda root, after: f"{STAGING}/.gitignore" not in after
@@ -10668,6 +10864,13 @@ STEPS: list = [
     (f"widen {META}'s tag_pattern to accept vX.Y.Z: every repo now releases with three parts",
      lambda root, after: meta_pattern_old(root), widen_meta_pattern),
     (ledger_step, lambda root, after: REVIEW_LEDGER in after, fold_ledger),
+    (lambda root: (f"swap {LOG}'s two versioning header lines for the new ones: a Breaking line no "
+                   "longer sets the version's level (`.jig/RULES.md`, Versioning)")
+     if OLD_LOG_HEAD in read_raw(root / LOG) else
+     (f"{LOG}'s header still names Semantic Versioning, in words of its own: edit it by hand to "
+      "say what `.jig/RULES.md` § Versioning says; nothing is rewritten"),
+     lambda root, after: (root / LOG).is_file() and "Semantic Versioning" in read_raw(root / LOG),
+     swap_log_head),
     (f"add {LOG}, the decision log: no CHANGELOG.md or register here to merge into it",
      lambda root, after: LOG not in after and not (root / LOG).exists() and not log_sources(root),
      lambda root, here: ((root / LOG).write_text(LOG_SEED), git("add", "--", LOG))),
@@ -12119,7 +12322,7 @@ def old_log_files(root: Path) -> list[tuple[str, str]]:
 
 
 def log_is_seed(root: Path) -> bool:
-    return (root / LOG).is_file() and (root / LOG).read_text() == LOG_SEED
+    return (root / LOG).is_file() and (root / LOG).read_text() in (LOG_SEED, OLD_LOG_SEED)
 
 
 def log_sources(root: Path) -> list[tuple[str, str]]:
@@ -14073,9 +14276,11 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--levels", action="store_true", help="each page's level with its evidence, imports included")
     rl_ = sub.add_parser("release", help="run this repo's release protocol, then tag vX.Y.Z")
     bump = rl_.add_mutually_exclusive_group()
-    bump.add_argument("--major", action="store_true", help="in a metarepo: a rename or a reversed decision")
-    bump.add_argument("--minor", action="store_true")
-    bump.add_argument("--patch", action="store_true", help="the default, except in a metarepo")
+    bump.add_argument("--milestone", "--major", dest="milestone", action="store_true",
+                      help="X: a milestone reached, from 1.0.0 on")
+    bump.add_argument("--feature", "--minor", dest="feature", action="store_true",
+                      help="Y: a feature added or changed")
+    bump.add_argument("--patch", action="store_true", help="Z: a fix or a move (the default)")
     bump.add_argument("--version", help="X.Y.Z: the first release, or a jump")
     rl_.add_argument("--force", action="store_true", help="release though files are staged")
     pp = sub.add_parser("propose", help="pararepo: open a proposal branch on the metarepo for a spec")
