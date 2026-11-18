@@ -42,7 +42,7 @@
   },
   "check-queue": {
     "spec": ".jig/specs/check-queue.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/templates/github/jig-check.yml",
@@ -60,6 +60,7 @@
       ".github/workflows/jig-check.yml",
       "plugin/skills/release/SKILL.md"
     ],
-    "reserved": {}
+    "reserved": {},
+    "check": "batch"
   }
 }
