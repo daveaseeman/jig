@@ -1,13 +1,25 @@
-# rig-close-and-batch: `/jig:rig` starts `/jig:fix`, asks one question per batch, and closes what a merge leaves
+# rig-and-versioning: `/jig:rig` starts `/jig:fix`, asks one question per batch and closes what a merge leaves; versions measure the product, and a metarepo release stages pin bumps
 
 Source: Maige-Eco hubnode session / 2026-11-18 / Dave Seeman (staged as feedback-maige-ecosystem-2026-11-18-rig-batch-one-job.md): "write the /jig:feedback so that these would be offered together in the first round in the future"
 Source: jig hubnode session / 2026-11-18 / Dave (staged as feedback-jig-2026-11-18-merged-job-cleanup.md): "make sure subnodes archive and their specs are removed when jobs are done and merged"
 Source: jig hubnode session / 2026-11-18 / Dave (staged as feedback-jig-2026-11-18-merged-job-cleanup.md): "make jig:rig also close finished specs and subnodes"
 Source: the owner, jig hubnode session, 2026-11-18: "make `/jig:rig` in the jig repo also run `/jig:fix`(only in the jig repo)"
+Source: Maige-Eco hubnode session / 2026-11-18 / Dave Seeman (staged as feedback-maige-ecosystem-2026-11-18-versioning-and-pin-trigger.md): "Maige-Eco's next release moves its glossary from `README.md § Glossary` to `docs/glossary.md`. That release carries a `**Breaking:**` line, so jig's rule makes it a major release, v4.0.0."
 
-Merged from `bug-rig-batch-one-job`, `bug-merged-job-cleanup` and `rig-runs-fix`. Their
+The owner's words, quoted in the versioning report's Source line:
+- "I just dont think that's what major release version should be for, they should be for more fundamental changes or significant progress or something like that."
+- "in terms of significance to the meta repo this change is a +0.0.1 in my opinion. So maybe we need a better way to update other repos. I mean, why not update them on every version move of the meta?"
+- "I think jig's rule should be updated for meta repos. The breaking line should be enough for paras to move their pin. I think semantic versioning is too strict."
+
+The versioning report also quotes the owner's rulings on its Versioning draft, made in that
+session (quoted under Part A). Everything else that report proposes is the reporter's. What this
+spec adopts from it is marked `Interpreted:`.
+
+Merged from `rig-close-and-batch` (itself merged from `bug-rig-batch-one-job`,
+`bug-merged-job-cleanup` and `rig-runs-fix`) and `bug-versioning-pin-trigger`. Their
 investigations (Why, Givens, One layer up, General?) are unchanged at c721fd3:
-`git show c721fd3:.jig/specs/<input>.md`.
+`git show c721fd3:.jig/specs/<input>.md`, and versioning's at d397071:
+`git show d397071:.jig/specs/bug-versioning-pin-trigger.md`.
 
 ## Intent
 `/jig:rig` carries work through its whole life in one run. In the jig repo it starts
@@ -18,11 +30,15 @@ name, and a staged file a spec already carries is listed as taken by that spec, 
 again. A merged job leaves nothing behind: its spec and bug specs leave `.jig/specs/` in the
 merge commit, their scopes kept in its handoff note, and its sessions are archived; rig closes
 whatever a merge left. In any other repo, rig treats feedback as it does now.
+And every jig repo versions by how much its product changed, so a `**Breaking:**` line no
+longer raises the level. A metarepo release instead stages a pin-bump request in each pararepo
+whose citations it broke, carrying those Breaking lines and the rewrite list; in that pararepo,
+rig offers it like any other staged file.
 
 ## Design
 
-Each input's design holds, as written at c721fd3, except where **Where they meet** below
-joins two of them. In short:
+Each input's design holds, as written at c721fd3 and d397071, except where **Where they meet**
+and **Where rig and versioning meet** below join two of them. In short:
 
 **From bug-rig-batch-one-job** (Design 1–8 there).
 1. Part A, `rig_items`: a `kind: decisions` staged file's touches are the union of
@@ -127,6 +143,121 @@ all three:
 - **FEATURES.** The `/jig:rig` row also says that in the jig repo it starts `/jig:fix` on
   staged feedback (AGENTS.md: every feature has a row).
 
+**From bug-versioning-pin-trigger** (its Design there, as written).
+
+*Part A: versions measure the product.*
+
+1. RULES.md gets a `## Versioning` section just before `## Release`. Interpreted: its text is
+   the report's block, which the report says the owner agreed in the session. That agreement is
+   [assumed]: it isn't in the Source line. The owner's rulings, as the report quotes them: "1.
+   Agreed, adapt it to work for regular repos, meta, and para universally"; "2. I would drop it
+   [user effort as a criterion] or dramatically change it then, because this should be an 0.0.1
+   in my opinion, a minor fix"; "4. No the policy is for jig which often starts from zero, so it
+   needs a policy that applies there and it should be written such that it's clear this section
+   simply doesn't apply to repos that are past it"; "Your trigger idea is good, but I dont wanna
+   pick the version every time, I'd rather give the hubnodes some idea of how to judge it."
+   Two changes to the block: its "What others must do" paragraph says the request goes to "each
+   pararepo whose citations the release broke" (Part B's selector), and it ends with one
+   sentence: "A repo published to a package registry, whose users expect SemVer, needs a rule of
+   its own; jig has none yet."
+2. Interpreted: the flags are `--milestone` (X), `--feature` (Y) and `--patch` (Z, the default
+   in every kind after the first release), with `--major` and `--minor` kept as aliases. A
+   metarepo's first release stays v0.1.0, and a plain repo's first still needs `--version` or
+   `--feature`. `--milestone` refuses while the latest release is `0.y.z` or there is none, and
+   names `--version 1.0.0` as the owner's call.
+3. `LOG_SEED`'s two lines become: "…plus decision entries, and versions are
+   MILESTONE.FEATURE.PATCH, set by how much the product changed (`.jig/RULES.md`, Versioning)."
+   and "A breaking change is one that a reader taking the release must act on: a `**Breaking:**`
+   line says what to change, and it doesn't set the version's level." `log_is_seed` also
+   accepts the old seed.
+4. Interpreted: `jig update` gets a step that swaps the old two header lines for the new ones,
+   only where they match the old text exactly; a header that differs is named, not rewritten.
+   R3 allows exactly that swap and nothing else. In a metarepo the swap lands through a job (M4).
+5. `newer_release` drops "(a major release)". Under the "is out" line, it prints each
+   `**Breaking:**` line of the releases between the pin and the latest, each with its release,
+   read with `release_sections` from the metarepo's log at the latest tag.
+6. The text, each changed to say Versioning sets the level and a Breaking line doesn't: RULES.md
+   923, 1000-1001, 1266-1267 (drop ", released as a major"), 1331-1332, 1416-1418, 1443; release
+   skill 16, 20-21 ("Propose the level as RULES.md § Versioning says: the highest level of any
+   change in Unreleased, with a one-line reason; a `**Breaking:**` line doesn't raise it") and 53;
+   redocument skill 90; hubnode skill's release step ("propose the level with a one-line reason;
+   the owner's yes releases it"); jig's own `AGENTS.md` release line (`--feature` or `--patch`).
+   RULES.md 991 and 1021-1022 (Breaking lines themselves) stay. Nothing is renumbered.
+
+*Part B: a metarepo release stages a pin-bump request.*
+
+1. **When.** In a metarepo's `jig release`, after the tag. A request that can't be written
+   doesn't undo the tag. It prints one line saying why.
+2. **Who.** Each name in `meta.json`'s `pararepos`, found through `jig repos`, whose trunk
+   `para.json` names this metarepo. One line per pararepo: staged (with counts), or skipped
+   because it isn't in `jig repos`, doesn't cite this metarepo, has a future `defer_until`
+   (compared exactly as `sync_meta` does), already pins this release, or cites nothing the
+   release broke.
+3. **Selector.** Interpreted from "The breaking line should be enough for paras to move their
+   pin": a pararepo is selected when this release broke something it cites. It reads the
+   pararepo's trunk with `meta_citations`' files and exclusions, comparing the previous tag with
+   the new one:
+   - (a) a citation that resolves at the previous tag and dangles at the new one;
+   - (b) a decision id the release removed or superseded, cited as a whole word.
+
+   Rewordings, Open → Accepted, and glossary rewording don't select. The pararepo's own sync
+   reports those, as today. `changes_report`'s word grep doesn't select. `meta_citations` takes
+   the pararepo and metarepo revisions as arguments instead of reading the cache and HEAD.
+4. **What it writes.** `<para>/.jig/staging/pin-bump-<meta>.md`. Its header: `staged: true`,
+   `target`, `kind: pin-bump`, `change: update`, `destination: .jig/para.json`,
+   `source: <meta> release <tag> / <date>`, `from`, `pin`, `release`, `status: staged`. Its body
+   runs from the pin to the new tag: the `**Breaking:**` lines with their releases, the rewrite
+   list with each new home jig can name, the removed or superseded ids with the files that cite
+   them, and the commit line `newer_release` prints. A later release rewrites the same file in
+   place. jig writes nothing else there, and leaves a same-named file that isn't a pin-bump from
+   this metarepo alone, naming it. It uses `forward`'s checks.
+5. **Landing.** `kind: pin-bump` joins `KINDS`. `jig staging resolve` refuses it until the
+   pararepo's trunk `para.json` pins the request's release or a later one. Its message names the
+   way to land it: a job (`/jig:spec`) whose pin commit carries the request as its body, with
+   the listed uses rewritten. `jig staging check` accepts the kind only with that destination.
+   `drop` works as for any staged file. jig commits nothing in a pararepo.
+6. Interpreted: a staged pin-bump doesn't block the pararepo's own `jig release`. The release
+   names it instead, as RULES.md already says a newer metarepo release "refuses nothing" there.
+   The pin stays the pararepo's buffer.
+7. RULES.md: Staging gains the kind and how it resolves. The pin-bump paragraph (1332-1336) says
+   the release stages the request. `defer_until` is documented as a date. hubnode step 5: in a
+   pararepo, a staged pin-bump becomes a job; in a metarepo, report the release's per-pararepo
+   lines to the owner. The stage skill covers resolving `pin-bump`.
+
+**Where rig and versioning meet.** Versioning's code is the release, `jig sync`'s report and
+staging's resolve; rig's is the picture, the merge and `--close`. They share no function. They
+meet in five places, and one design holds both in each:
+
+- **A staged pin-bump in rig's picture.** Rig lists it as any staged file (`kind: "staged"`): it
+  is judged, and a ready one gets "write its spec?", which is versioning's landing (a job from
+  `/jig:spec`). So hubnode step 5's "a staged pin-bump becomes a job" goes through rig's usual
+  blocks. Interpreted: its touches read as today (`[]`, no `## Touches` in its body), like a
+  staged request's (Out of scope, from bug-rig-batch-one-job); it meets other items only through
+  `after:`.
+- **Taken, and a request rewritten in place.** The pin-bump's mark carries its release
+  (`source: <meta> release <tag> / <date>`), and rig's Part C matches the exact mark. While its
+  spec waits or its job is open, it is `taken`. A later metarepo release rewrites the file, so the
+  mark changes and it is a staged item again, judged afresh. Interpreted: no special case. The
+  rewritten request covers the whole gap from the pin, and its spec covers what the open job's
+  doesn't.
+- **After the pin-bump job merges.** `close_specs` drops each staged file its closed spec carries
+  (Where they meet). The merge moved the pin, so `resolve` would accept the request too; the drop
+  prints `dropped <file>: built by <spec>` as for any carried file. A request rewritten during the
+  job carries a newer mark, isn't dropped, and `resolve` still refuses it until the pin reaches
+  its release.
+- **The same text, edited for both.** `AGENTS.md`'s release line: versioning changes its flags
+  (`--feature` or `--patch`), and rig drops its release-time archiving sentence. RULES.md's
+  Commands block: `jig release`'s flags, and `jig rig`'s `--close`. RULES.md's Staging section:
+  the `pin-bump` kind and how it resolves; that a merge or `jig rig --close` drops a staged file
+  a closed spec carries; and its `jig rig` sentence (rig "lists every staged file") saying a
+  taken file waits on its spec and, in the jig repo, feedback goes to `/jig:fix`. The hubnode
+  skill: Merging (rig's archiving), step 5 and the release step (versioning's). `tests/smoke.sh`'s
+  `staging` section takes both inputs' cases. `marketing/FEATURES.md` gains or changes the rows
+  each names.
+- **The release and staging.** A release refuses while anything is staged; versioning exempts a
+  staged pin-bump in a pararepo. Rig changes nothing there: a `taken` file still blocks a
+  release, as today.
+
 ## Done when
 From bug-rig-batch-one-job:
 - [ ] Part A fires: in the reproduction repo (two staged decisions files, entries
@@ -221,6 +352,56 @@ From the merge (Where they meet):
 - [ ] `plugin/skills/rig/SKILL.md` gives the run's order as Where they meet says: feedback in
   § 1, the picture, then `--close` and Finished, then the decisions.
 
+From bug-versioning-pin-trigger:
+In throwaway repos, with `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config` on every jig
+command and `<dir>` beside the repos:
+- [ ] `jig init` writes a log header that names MILESTONE.FEATURE.PATCH and Versioning, without
+  "Semantic Versioning" or "released as a major version". RULES.md has `## Versioning` just
+  before `## Release`.
+- [ ] Plain repo at v0.3.0 with a `**Breaking:**` line under Unreleased: `jig release` tags
+  v0.3.1, and `--feature` tags v0.4.0. `--milestone` exits non-zero naming `--version 1.0.0`, and
+  tags nothing. `--version 1.0.0` then `--milestone` tags v2.0.0. `--major` and `--minor` behave
+  as `--milestone` and `--feature`.
+- [ ] **The reported symptom is gone.** Metarepo after v0.1.0, with only a page move and its
+  `**Breaking:**` line merged: `jig release` with no flag tags v0.1.1 (v0.2.0 today), and no rule
+  text tells the hubnode to pass `--major`. `grep` over RULES.md, `LOG_SEED` and
+  `plugin/skills/**/SKILL.md` finds none of "means `--major`", "is a major release", "released as
+  a major", "so it is a major", "Semantic Versioning", "follow SemVer".
+- [ ] A pararepo pinned to v0.1.0 of a metarepo at v1.0.0, whose log has one `**Breaking:**`
+  line: the pararepo's `jig sync` prints that line under "is out", and no "(a major release)".
+- [ ] A log with the old header: `jig update` lists the header step, and `--apply` swaps exactly
+  those two lines. The commit passes the hook, and in a metarepo so do the job commit and its
+  merge. A log equal to the old seed still counts as the seed.
+- [ ] **The trigger fires.** Metarepo `M` lists pararepos `A`, `B` and `C` (each `jig repos add`-ed,
+  `init --para M --pin v0.1.0`). `A` cites `` `M/docs/products/x.md` `` in a doc, `B` cites
+  `M/.jig/decisions.md § E-002` in a spec, and `C` uses a glossary word in source only. `M` merges
+  a job that moves `x.md` (with its Breaking line) and supersedes E-002. Then `jig release` in `M`
+  tags v0.1.1 and prints one line each: `A` staged (1 rewrite), `B` staged (1 superseded id),
+  `C` cites nothing v0.1.1 broke.
+- [ ] `A`'s request passes `jig staging check`, carries the Breaking line and the citation's new
+  home, and `B`'s names E-002's successor. In every repo, `git rev-list --count HEAD` and the pin
+  are unchanged.
+- [ ] In `A`, `jig staging resolve pin-bump-M.md` refuses while trunk pins v0.1.0, naming the
+  job. It resolves after a merge that moves the pin to v0.1.1. A second `M` release before then
+  leaves one file, covering v0.1.0 → v0.1.2. `A`'s `jig release` with the request staged isn't
+  refused, and names it.
+- [ ] A pararepo with `defer_until` in the future gets no request, and its skip line says why.
+- [ ] `python3 plugin/templates/jig/jig.py queue -- bash tests/smoke.sh` passes, with these
+  cases in `release`, `metarepo`, `pararepo`, `decisions`, `staging` and `update`, and smoke.sh's
+  1043-1045, 1725-1726 and 5226 moved to the new header and flags.
+
+From the merge with versioning (Where rig and versioning meet):
+- [ ] Smoke `rig` (or `pararepo`): in `A` after `M`'s release, `jig rig --json` lists
+  `pin-bump-M.md` as `kind: "staged"`, `touches` `[]`. With a waiting spec carrying its mark it is
+  `taken`. After a second `M` release rewrites it, it is no longer `taken` and its stored
+  judgment is void.
+- [ ] Smoke: in `A`, merging the job whose spec carries the request's mark and moves the pin
+  drops `pin-bump-M.md`, printing `dropped pin-bump-M.md: built by <spec>`.
+- [ ] `AGENTS.md`'s release line names `--feature` or `--patch` and holds no archiving sentence.
+  RULES.md's Commands block shows both `jig release`'s new flags and `jig rig --close`. RULES.md's
+  Staging section names `pin-bump`, the drop of a carried file at a merge or `--close`, and rig's
+  `taken` and feedback items.
+
 ## Out of scope
 From bug-rig-batch-one-job:
 - Touches for staged requests and stories. They have no Touches shape to read. They still meet a
@@ -261,24 +442,41 @@ From rig-runs-fix:
   decides how they meet this one.
   *(Merged: decided here; Where they meet.)*
 
+From bug-versioning-pin-trigger:
+- Renumbering any release, and the level of Maige-Eco's next release: its hubnode proposes that.
+- A check that judges a level. The hubnode proposes it, and the owner's word releases it.
+- Holds set by the metarepo, and re-staging from a metarepo's trunk `jig sync` (General?).
+- A `defer_until` that isn't a date, which holds forever by accident. It's a bug of its own:
+  this spec compares the same way `sync_meta` does and leaves it.
+- Rewriting a pararepo's citations. The job does that.
+- Changes inside a cited section whose heading and path still resolve. The pararepo's sync
+  report covers those.
+
 ## Touches
 - `plugin/templates/jig/jig.py`: `RIG_KINDS`, `rig_items`, `rig_state` (state, counts,
   `feedback`, `taken`, groups' shared Touches and flag), `rig_text` (the group line, Running,
   Finished), `cmd_rig` (`--store-put`'s `fixing`, `--close`), rig's argparse, `cmd_merge`,
   `complete_specs` callers (`finished_specs`, `close_specs`), `roadmap_state`, `scope_cell`,
-  `roadmap_rules`
+  `roadmap_rules`; `LOG_SEED`, `log_is_seed`, `outside_open_deleted`, update `STEPS`,
+  `next_version`, release arguments, `newer_release`, `cmd_release`, `meta_citations`, `KINDS`,
+  `read_staged`, `cmd_staging_check`, staging resolve, `staged_refusal` callers
 - `plugin/templates/jig/RULES.md`: Documentation's `.jig/specs/` line, Merging, Workflow (the
-  `jig rig` paragraph, the Feedback row), the command list
+  `jig rig` paragraph, the Feedback row), Decision log, Writing it, Metarepo and pararepos,
+  Staging (the `pin-bump` kind, the carried-file drop, its `jig rig` sentence), new Versioning,
+  Release, Commands (`jig release`'s flags, `jig rig --close`); Homes row: a rule, so RULES.md
 - `plugin/skills/rig/SKILL.md`: § 1 (feedback), § 2 (count line, Waiting on you, Running,
   Finished), § 3 (blocks 3 and 5), § 4 ("Write a spec", one job, keep apart), the run's order
 - `plugin/skills/spec/SKILL.md`: Consolidate (staged files as inputs, their marks kept)
-- `plugin/skills/hubnode/SKILL.md`: Merging
+- `plugin/skills/hubnode/SKILL.md`: Merging; Every session step 5; Release, push, publish
 - `plugin/skills/fix/SKILL.md`
+- `plugin/skills/release/SKILL.md`, `plugin/skills/redocument/SKILL.md`,
+  `plugin/skills/stage/SKILL.md` (resolving `pin-bump`)
 - `tests/smoke.sh`: `rig` (c7 rewritten; parts A, B, C, the batch fixture, `finished` and
-  `--close`, feedback), `roadmap`, `merge_derived` or `workflow`
-- `AGENTS.md`
+  `--close`, feedback, a staged pin-bump), `roadmap`, `merge_derived` or `workflow`, `release`,
+  `metarepo`, `pararepo`, `decisions`, `staging`, `update`
+- `AGENTS.md` (the release line: its flags, and the archiving sentence dropped)
 - `marketing/FEATURES.md` (gitignored, in the main checkout): the `/jig:rig` row, a row for
-  merge-time cleanup and `rig --close`
+  merge-time cleanup and `rig --close`, rows for both versioning parts
 
 ## Alternatives considered
 From bug-rig-batch-one-job:
@@ -343,8 +541,36 @@ From the merge:
   already wrote its entries, and `resolve` (`change: new`) would add them again — [seen]
   (bug-rig-batch-one-job, Out of scope; `resolve`'s duplicate check by numbered id).
 
+From bug-versioning-pin-trigger:
+- Keep SemVer and pass `--patch` by hand — rejected because the header, RULES.md and /jig:release
+  still say major, and the next hubnode proposes major again — [seen] (release skill 20-21).
+- Apply the policy to metarepos only — rejected by the owner: "1. Agreed, adapt it to work for
+  regular repos, meta, and para universally" — [seen] (quoted in the report).
+- Request to every pararepo on every release ("why not update them on every version move of the
+  meta?") — rejected because a pararepo the release didn't break has nothing to do, and the
+  owner's later word ties the move to the Breaking line — [seen] (the Source line).
+- Select by `changes_report`'s "used in" — rejected because a word grep matches nearly every
+  pararepo on every term — [assumed] (the report's 37-40 hits, not rerun here).
+- Select on any changed id or reworded term, as the report does — rejected because those don't
+  break a citation, and the pararepo's own sync reports them — [assumed] (that the owner meant
+  "broke", not "changed").
+- Deliver through the inbox — rejected because a message is read and done with, and nothing
+  tracks that the pin moved — [seen] (RULES.md Inbox).
+- Commit the pin bump in the pararepo — rejected because the pin is the pararepo's buffer, and
+  the rewrites are reviewed work — [seen] (RULES.md, Metarepo and pararepos).
+- A `"versioning": "semver"` switch now — rejected because no jig repo publishes to a registry
+  today — [seen, per the report: publish.sh steps].
+- `meta.json` `holds` — rejected as one repo's policy, since jig's hold is `defer_until` — [seen].
+
+From the merge with versioning:
+- Keep a pin-bump `taken` across a rewrite, by matching its file name instead of its mark —
+  rejected because `resolve` and Part C link a staged file to its spec by the exact mark, and the
+  rewritten request covers releases the open job's spec doesn't — [seen] (`provenance` includes
+  the `source:`, which names the release).
+
 ## Decisions
 - The owner, 2026-11-18: "Three rig ones as one job".
+- The owner, 2026-11-18: "Merge versioning with rig".
 
 From bug-rig-batch-one-job:
 - Interpreted: a pointer into another repo is left out of a staged decisions file's Touches,
@@ -372,6 +598,20 @@ From the merge:
   Finished step, which archives only sessions of jobs no longer on the board.
 - Interpreted: rig starting `/jig:fix` is named in the `/jig:rig` FEATURES row, which
   rig-runs-fix's Touches left out.
+
+From bug-versioning-pin-trigger:
+- Interpreted, open to the owner at review: the flag names and their aliases; `--patch` as the
+  default in every kind; `--milestone` refusing before 1.0.0; the header swap through `jig update`
+  with the narrow R3 allowance; the selector's "broke", not "changed"; a pin-bump that doesn't
+  block the pararepo's release; and the kind name `pin-bump`, one file per metarepo.
+
+From the merge with versioning:
+- Interpreted: a staged pin-bump is an ordinary staged item in rig, with no Touches read, as a
+  staged request is; a ready one gets "write its spec?", which is versioning's landing.
+- Interpreted: a pin-bump rewritten by a later release is a new item to rig (its mark changed),
+  with no special case; its spec covers what the open job's doesn't.
+- Interpreted: a carried pin-bump is dropped at its job's merge like any carried file, not
+  resolved; both are open to it, since the merge moved the pin.
 
 ## Roles
 spec: tier 2, effort 2

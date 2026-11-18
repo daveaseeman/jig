@@ -2,7 +2,7 @@
 
 Source: Dave, chat with Claude, 2026-11-17 (staging Daisy's settings decisions and spec) (staged as feedback-Daisy-2026-11-17-stage-second-reader.md): "we should always double-check staged documents with an opus worker because every time ive done it they found things to correct, make it part of the staging command. please include this example."
 
-Kept separate from rig-close-and-batch: the owner, 2026-11-18, chose the three rig specs as one job; this is a skill-only change to stage that shares only tests/smoke.sh, and ships on its own lighter review.
+Kept separate from rig-and-versioning: the owner, 2026-11-18, chose the rig specs and then versioning as one job, keeping this apart; this is a skill-only change to stage that shares tests/smoke.sh and the stage skill (a different section: versioning adds the pin-bump kind's resolving), and ships on its own lighter review.
 
 ## Intent
 Before `/jig:stage` calls a batch staged, a fresh worker that did not write it reads every file
