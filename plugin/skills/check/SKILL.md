@@ -28,8 +28,9 @@ checkout; a failure nobody can reproduce is reported with that path, so it can b
 
 ## Check
 
-Run the complete check once: `(cd <checkout> && ./.jig/scripts/check.sh --full)`, output to
-`<out>`, timed. When the suite makes repos, in any throwaway repo set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched.
+Run the complete check once, through the queue: `(cd <checkout> && python3 .jig/jig.py queue
+--full -- ./.jig/scripts/check.sh --full)`, output to `<out>`, timed. It waits for a slot and for
+any other complete check; jig holds the slot and never chooses what runs. When the suite makes repos, in any throwaway repo set both variables on every jig command, not by one `export`: an agent's shell may not keep it to the next command. Point them at a folder `<dir>` beside the repo, not inside its working tree, so jig's files never show as untracked there: `JIG_CONFIG=<dir>/repos.json XDG_CONFIG_HOME=<dir>/config python3 .jig/jig.py …`. That keeps the user's own jig config untouched.
 
 It outlasts your shell's foreground limit: start it in the background with its output to the
 file, and act on its exit notice. Where the shell gives no notice, start it with
@@ -42,6 +43,21 @@ and a log line never comes from a run that dies early.
 If it passes, record it in that checkout:
 `jig checked --tier <N> --effort <N> --seconds <s>`, the check role's numbers. Report the
 exit code, the seconds and the output's tail.
+
+### Overflow to CI
+
+Exit 3 from `jig queue --full` means the machine is full and the repo set `queue.overflow`,
+the owner's standing yes for `jig-check/*` pushes (`.jig/RULES.md`, The queue). It printed
+the route; take it, in the same checkout:
+
+1. `git push <remote> HEAD:refs/heads/jig-check/<sha>`, as printed.
+2. Watch the run of `jig-check.yml` on that branch (`gh run watch`) to its end.
+3. If it passed: `jig checked --ci <run url> --tier <N> --effort <N> --seconds <the run's
+   seconds>`. jig reads the run through `gh` and refuses unless it ran HEAD and succeeded.
+4. `git push <remote> --delete jig-check/<sha>`, passed or not.
+
+Report the run's URL, its result and the record. A failed run is reported like a failed local
+one, with the URL in place of `<out>`.
 
 ## Trace
 
@@ -65,5 +81,6 @@ owner's word (`/jig:release`).
 
 ## Never
 
-Edit a file, fix a failure, or rerun a passing check to grep it. Run a second complete suite
-while one runs on this machine.
+Edit a file, fix a failure, or rerun a passing check to grep it. Run a complete suite outside
+`jig queue --full`. Push any branch but the `jig-check/<sha>` the overflow printed, or push
+that one without `queue.overflow` set.
