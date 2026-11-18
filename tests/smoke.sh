@@ -6289,8 +6289,17 @@ msg="stage skill: the target rule names What the metarepo holds, Accepted only f
 expect_pass sh -c "f='$P/../skills/stage/SKILL.md'; grep -q 'repo that owns the subject' \"\$f\" && grep -q 'What the metarepo holds' \"\$f\" && grep -q 'only for what that person accepted' \"\$f\" && grep -q 'is it as settled as it says' \"\$f\""
 msg="stage skill: a batch gets a second reader at tier 2, effort 2, from a verbatim record, and a host with no worker stages it unreviewed, which Resolving names"
 expect_pass sh -c "f='$P/../skills/stage/SKILL.md'; sed -n '/^### A batch/,/^## Resolving/p' \"\$f\" | tr '\n' ' ' > '$T/sr' && grep -q 'Second reader' '$T/sr' && grep -q 'tier 2, effort 2' '$T/sr' && grep -q 'tiers.json' '$T/sr' && grep -q 'messages verbatim' '$T/sr' && grep -q '; unreviewed' '$T/sr' && sed -n '/^## Resolving/,\$p' \"\$f\" | grep -q 'unreviewed' && ! grep -qiE 'opus|sonnet|haiku' \"\$f\""
-msg="stage skill: every file is written unreviewed and the mark comes off only after the findings are shown; a failed worker, an ended session or a record that isn't verbatim leaves it"
-expect_pass sh -c "sed -n '/^### A batch/,/^## Resolving/p' '$P/../skills/stage/SKILL.md' | tr '\n' ' ' | tr -s ' ' > '$T/sr2' && grep -q 'Write every file into staging with its .source:. ending .; unreviewed.' '$T/sr2' && grep -q 'Only then remove .; unreviewed.' '$T/sr2' && grep -q 'errors, times out or returns nothing leaves it' '$T/sr2' && grep -q 'ends or compacts first' '$T/sr2' && grep -q \"can't give the owner's messages verbatim\" '$T/sr2' && grep -q 'leave .; unreviewed. on every file' '$T/sr2' && grep -q 'A summary is not this record, and neither is a rigger.s .record/.' '$T/sr2'"
+msg="stage skill: the reader reads drafts before staging; no reader, or a record that isn't verbatim, means ; unreviewed from the start, and source: is final once written"
+expect_pass sh -c "sed -n '/^### A batch/,/^## Resolving/p' '$P/../skills/stage/SKILL.md' | tr '\n' ' ' | tr -s ' ' > '$T/sr2' && grep -q 'Before you write anything into the target.s .\.jig/staging/., start a fresh worker' '$T/sr2' && grep -q 'Only then write the files into staging' '$T/sr2' && grep -q 'errors, times out or returns no report), write each file with its .source:. ending .; unreviewed.' '$T/sr2' && grep -q \"can't give the owner's messages verbatim\" '$T/sr2' && grep -q 'A summary is not this record, and neither is a rigger.s .record/.' '$T/sr2' && grep -q 'final once written' '$T/sr2' && grep -q 'never add or remove .; unreviewed. afterwards' '$T/sr2' && ! grep -q 'remove .; unreviewed. from each file' '$T/sr2' && sed -n '/^## Resolving/,\$p' '$P/../skills/stage/SKILL.md' | tr '\n' ' ' | grep -q 'staged with no reader, or against a record that wasn.t verbatim'"
+msg="staging: a request staged ; unreviewed resolves against a spec carrying that exact source, and no longer does once the mark is taken off"
+stage un.md this feature-request new 'export' 'I want csv.\n'
+sed -i.bak 's/^source: chat un.md$/source: chat; unreviewed/' .jig/staging/un.md && rm .jig/staging/un.md.bak
+printf '# Un\n\nSource: chat; unreviewed (staged as un.md): "I want csv."\n' > .jig/specs/un.md
+cp .jig/staging/un.md "$T/un.md"
+sed 's/^source: chat; unreviewed$/source: chat/' "$T/un.md" > .jig/staging/un.md
+expect_refuse $J staging resolve un.md
+cp "$T/un.md" .jig/staging/un.md
+expect_pass sh -c "$J staging resolve un.md && test ! -e .jig/staging/un.md"
 msg="RULES.md § Staging: the target sentence and the Accepted warning"
 expect_pass sh -c "sed -n '/^## Staging/,/^## Metarepo/p' '$P/jig/RULES.md' | tr '\n' ' ' > '$T/st' && grep -q 'repo that owns the subject' '$T/st' && grep -q 'warns on each entry of a .decisions. file whose status says Accepted' '$T/st'"
 }

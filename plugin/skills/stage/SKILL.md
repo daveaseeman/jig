@@ -61,12 +61,13 @@ that spec carries the mark.
   describes it. `jig staging` lists the batch in that order, and `resolve` refuses a file while
   one it waits for is still staged. Leave `after:` out when the files are independent, and never
   make two files wait on each other.
-- **Second reader.** Write every file into staging with its `source:` ending `; unreviewed`.
-  Then start a fresh worker that has not seen your reasoning, at tier 2, effort 2, as `${CLAUDE_PLUGIN_ROOT}/tiers.json` maps them. Hand it every
-  file of the batch and a record of the conversation: the owner's messages verbatim and in
-  order, with your own proposals between them, marked as yours. The record is not a summary of
-  what was agreed. Tell the worker it cannot see the target repo, so it judges no code fact, and
-  that it reports and edits nothing. It answers five questions for each file:
+- **Second reader.** Before you write anything into the target's `.jig/staging/`, start a fresh
+  worker that has not seen your reasoning, at tier 2, effort 2, as `${CLAUDE_PLUGIN_ROOT}/tiers.json`
+  maps them. Hand it every draft of the batch and a record of the conversation: the owner's
+  messages verbatim and in order, with your own proposals between them, marked as yours. The
+  record is not a summary of what was agreed. Tell the worker it cannot see the target repo, so
+  it judges no code fact, and that it reports and edits nothing. It answers five questions for
+  each file:
   1. What did the chat raise that the files leave out: a question the owner held, a point left
      open?
   2. What do the files call agreed, accepted or the owner's that the owner did not say,
@@ -75,18 +76,18 @@ that spec carries the mark.
   4. What could a cold reader in the target not act on?
   5. Where do the files contradict themselves or each other?
 
-  Fix what it reports, then show the owner its findings and what you changed, before the word
-  "staged". Nothing you filled in stands unmarked: mark it in place or as an `Interpreted:` line,
-  never under a heading about whose words it is (Whose words). Only then remove `; unreviewed`
-  from each file. Until then the mark stays: a worker that errors, times out or returns nothing
-  leaves it, and so does a session that ends or compacts first, so a batch nobody finished
-  reading never looks reviewed. Where the host can start no worker, say in the reply that the
-  batch is staged unreviewed.
+  Fix what it reports, then show the owner its findings and what you changed. Nothing you filled
+  in stands unmarked: mark it in place or as an `Interpreted:` line, never under a heading about
+  whose words it is (Whose words). Only then write the files into staging.
 
-  If you can't give the owner's messages verbatim (after compaction, say), hand the worker what
-  you have, say so in the reply, and leave `; unreviewed` on every file: a reader working from a
-  paraphrase can't catch a misquote copied into both. A summary is not this record, and neither
-  is a rigger's `record/`.
+  With no reader (the host can start no worker, or the worker errors, times out or returns no
+  report), write each file with its `source:` ending `; unreviewed` and say in the reply that the
+  batch is staged unreviewed. So too if you can't give the owner's messages verbatim (after
+  compaction, say): hand the worker what you have, say so, and write every file with
+  `; unreviewed`, since a reader working from a paraphrase can't catch a misquote copied into
+  both. A summary is not this record, and neither is a rigger's `record/`. A file's `source:` is
+  final once written: a spec, page or commit made from it carries that line exactly as its
+  mark, so never add or remove `; unreviewed` afterwards.
 - **Check before you say it's staged.** Run the plugin's copy on every file of the batch at once:
   `python3 "${CLAUDE_PLUGIN_ROOT}/templates/jig/jig.py" staging check <file>…`. It runs outside
   any repo and names each bad header: an unknown kind, a missing key, a destination outside the
@@ -110,7 +111,8 @@ user, and fix one header's `after:` with them. A new spec whose `## Roles` (or a
 empty or missing resolves with `jig roles`' lines in it, or is refused while
 `jig roles` refuses. Before a file's route, read it and ask the user two questions: does this
 repo own the subject, and is it as settled as it says? A file whose `source:` ends
-`unreviewed` had no second reader: say so when you ask the second. Not this repo's: change `target` with
+`unreviewed` was staged with no reader, or against a record that wasn't verbatim: say so when
+you ask the second. Not this repo's: change `target` with
 the user, and `resolve` forwards it. Not settled: back to `Proposed` or `Open`, with the user,
 before `resolve`. The user says; don't judge alone. For each file, with the user:
 
