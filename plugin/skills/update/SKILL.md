@@ -159,6 +159,14 @@ the log itself. Say each removal out loud. On a yes:
 Then, on a yes each, move what had no home and repoint the files it named. A refusal names rows the merged log wouldn't
 pass M2 with: show them, and fix the register with the owner first.
 
+A **folder of decision records** (ADRs: one file per decision, `0001-slug.md`, each with a
+status) merges the same way, into an empty log or one already in use, its records taking the
+next ids. Show the ids it appends, each record it leaves out or refuses (a status word jig
+doesn't read, a superseder that isn't there, a numbered file with no status: fix those with the
+owner first), each citation it rewrites and each it can't, the files still naming the folder,
+what it keeps (a template, the index's prose), and each line of the new entries the hook would
+refuse. On a yes, `--apply --merge-log`, edit those lines, and commit.
+
 A **glossary** in the README's `## Glossary` section, or in a root `GLOSSARY.md`: its home is
 `docs/glossary.md`, since pages cite its terms and docs point only at docs. Show the user
 `jig update --glossary`: the terms it moves, in the form they have (headings, or a table moved as
