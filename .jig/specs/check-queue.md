@@ -220,9 +220,9 @@ their turn in the queue.
     commits until it's deleted. The marketplace serves `./plugin` from main only, so nothing
     ships.
   - **Actions minutes.** A private repo spends them.
-  - **The fixed rule.** Item 8 amends "whatever the config says". The overflow key is the
-    owner's yes to that, and he may prefer to approve each push instead. In that case part 2
-    stops at printing the route, and the hubnode asks every time.
+- The owner, 2026-11-17, on item 8's amendment (a standing yes for `jig-check/*` pushes, or
+  approval each push): "Keep the standing yes". Item 8 stands as written. The overflow key's
+  reason in this repo quotes these words.
 - Risk [assumed]: `claude plugin validate` runs in CI without a login. If it doesn't, this
   repo's workflow skips the validate line and the check role runs it locally. The by-hand
   done-when item settles this.
