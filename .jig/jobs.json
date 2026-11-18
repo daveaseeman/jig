@@ -37,7 +37,7 @@
   },
   "bug-gate-pair-answers": {
     "spec": ".jig/specs/bug-gate-pair-answers.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
@@ -46,7 +46,8 @@
       "tests/smoke.sh",
       "plugin/skills/review/SKILL.md"
     ],
-    "reserved": {}
+    "reserved": {},
+    "check": "batch"
   },
   "bug-meta-agents-block": {
     "spec": ".jig/specs/bug-meta-agents-block.md",
