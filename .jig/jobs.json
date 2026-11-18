@@ -13,12 +13,13 @@
   },
   "bug-gate-tests-queue-line": {
     "spec": ".jig/specs/bug-gate-tests-queue-line.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
       "tests/smoke.sh"
     ],
-    "reserved": {}
+    "reserved": {},
+    "check": "batch"
   }
 }
