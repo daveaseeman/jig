@@ -8340,6 +8340,11 @@ out=$($J rig --close 2>&1); rc=$?
 expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'left ra1.md staged: resolve refused it (above)' && echo \"\$0\" | grep -q '^resolved ra2.md: carried by .jig/handoffs/RA-' && test -f .jig/staging/ra1.md" "$out"
 msg="close: the next --close resolves it"
 expect_pass sh -c "$J rig --close | grep -q '^resolved ra1.md: carried by .jig/handoffs/RA-' && test ! -e .jig/staging/ra1.md"
+cspec tt '' 'Source: chat tt.md (staged as tt.md), and a note after it' && git add -A && git commit -qm "spec tt" >/dev/null
+stage tt.md this feature-request new .jig/specs/tt.md
+msg="close: taken and built read a mark one way: a line with text after the mark carries nothing in flight either"
+expect_pass cfin "x = i['.jig/staging/tt.md']; assert x['state'] == 'unjudged' and 'covered' not in x, x"
+rm .jig/staging/tt.md
 msg="close: the merge and --close share one rule"
 expect_pass test "$(grep -c 'finished_specs(' .jig/jig.py)" -ge 3
 }

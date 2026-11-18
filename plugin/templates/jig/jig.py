@@ -13622,7 +13622,9 @@ def rig_items(root: Path, board: "Board") -> list[dict]:
     for f in staged_files(main_root()):
         head, body, _ = read_staged(f)
         mark = provenance(head, f)
-        by = sorted(w for w, text in carriers if mark in text)
+        # One test for taken and built: the mark as a whole `Source:` line, so a file never
+        # changes kind of carrier just because its spec closed.
+        by = sorted(w for w, text in carriers if carries(text, mark))
         # Built: a finished spec still in the tree or a closed spec's note carries it, and
         # `resolve` would land it writing nothing. `jig rig --close` resolves it.
         carrier = "" if by else built_by(root, board, mark, finished)
