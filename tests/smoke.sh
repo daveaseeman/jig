@@ -1118,10 +1118,18 @@ $J open blk --owns AGENTS.md >/dev/null && git add -A && git commit -qm "TOOL: o
 cd .git/jig/worktrees/blk && out=$($J init --meta 2>&1)
 msg="meta block: in a job's worktree init --meta rewrites the old block and says to commit it on the job's branch"
 expect_pass sh -c "grep -qx -- '- Only .jig release. tags.' AGENTS.md && ! grep -q meta-release AGENTS.md && test \"\$(grep -c '^<!-- jig:meta — ' AGENTS.md)\" = 1 && echo \"\$0\" | tail -1 | grep -q \"job's branch\"" "$out"
+msg="meta block: a rerun in the job's worktree with the block current changes nothing and says so"
+cp AGENTS.md "$T/mab.cur"; out=$($J init --meta 2>&1)
+expect_pass sh -c "cmp -s AGENTS.md \"\$1\" && echo \"\$0\" | tail -1 | grep -q 'block is current: nothing to commit'" "$out" "$T/mab.cur"
 git add -A && git commit -qm "TOOL: AGENTS.md block" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
   && git add -A && git commit -qm "TOOL: note blk" && cd "$MB" && gated blk && $J merge blk --subject "TOOL: blk" >/dev/null 2>&1
 msg="meta block: after the job merges, update's dry run lists no AGENTS.md line"
 out=$($UP 2>&1); expect_pass sh -c "grep -qx -- '- Only .jig release. tags.' AGENTS.md && ! echo \"\$0\" | grep -q '^  AGENTS.md'" "$out"
+MP="$T/mpa"; mkdir -p "$MP" && cd "$MP" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init && $J init >/dev/null && echo '{}' > .jig/para.json && cp AGENTS.md "$T/mpa.before"
+out=$($J init --meta 2>&1); rc=$?
+msg="meta block: init --meta in a pararepo refuses, writing neither meta.json nor a block"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'pararepo' && test ! -e .jig/meta.json && cmp -s AGENTS.md \"\$1\"" "$out" "$T/mpa.before"
 cd "$M"
 }
 
@@ -7402,6 +7410,10 @@ ur_reset; $J init --meta --prefix E- >/dev/null && sed -i.bak 's/^- Only `jig re
 out=$($UP 2>&1)
 msg="update roles: a metarepo block in an older wording is listed the same way"
 expect_pass sh -c "echo \"\$0\" | grep -q '^  AGENTS.md: has no metarepo block, or one older'" "$out"
+ur_reset; $J init --meta --prefix E- >/dev/null && grep -v '^- Rulebook ' AGENTS.md > AGENTS.tmp && mv AGENTS.tmp AGENTS.md && ur_commit norulebook
+out=$($UP 2>&1)
+msg="update roles: the block's citation of .jig/RULES.md loads no rulebook, so a metarepo without the Rulebook line is told to add it"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  AGENTS.md: names no .\.jig/RULES\.md.: add under ## Workflow'" "$out"
 
 # Fixture G: procedures in the repo's own words.
 ur_reset

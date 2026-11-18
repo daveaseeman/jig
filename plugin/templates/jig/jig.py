@@ -5152,7 +5152,11 @@ def latest_tag(tags: list[str]) -> str:
 
 def cmd_meta_init(root: Path, args) -> int:
     """`jig init --meta`."""
+    # One generated block per AGENTS.md: a pararepo's header would be overwritten, and P1 refuses that later.
+    if (root / PARA).exists():
+        die(f"{PARA} exists: this is a pararepo, and a repo is a metarepo or a pararepo, not both", 2)
     path = root / META
+    wrote = []
     if path.exists():
         print(f"{META} already exists")
     else:
@@ -5163,6 +5167,7 @@ def cmd_meta_init(root: Path, args) -> int:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2) + "\n")
         print(f"wrote {META}")
+        wrote.append(META)
     genres = None
     if getattr(args, "genres", None):
         genres = list(GENRE_TEMPLATES.get(args.genres) or
@@ -5177,6 +5182,7 @@ def cmd_meta_init(root: Path, args) -> int:
             entry.append(META_GENRE_ENTRY)
         path.write_text(json.dumps(data, indent=2) + "\n")
         print(f"genres in {META}: {', '.join(genres)}")
+        wrote.append(META)
     meta = {**META_DEFAULTS, **json.loads(path.read_text())}
     # The decision log is every repo's, written by init before this. The terms pararepos cite
     # are the glossary's, a docs file: the README is for outsiders, and no entry file.
@@ -5185,6 +5191,7 @@ def cmd_meta_init(root: Path, args) -> int:
         gloss.parent.mkdir(parents=True, exist_ok=True)
         gloss.write_text(GLOSSARY_SEED)
         print(f"wrote {GLOSSARY}")
+        wrote.append(GLOSSARY)
     # Each genre is a term of the ecosystem's definition, defined once there: it has no page.
     have = set(glossary_terms(gloss.read_text()))
     new = [f"## {g}\n\nTODO: what its pages define, and what they are not.\n"
@@ -5192,6 +5199,7 @@ def cmd_meta_init(root: Path, args) -> int:
     if new:
         gloss.write_text(gloss.read_text().rstrip("\n") + "\n\n" + "\n".join(new))
         print(f"added a ## heading per genre to {GLOSSARY}")
+        wrote.append(GLOSSARY)
     release_script(root, meta=True)
     trunk = Board.trunk_name(root)
     agents = root / "AGENTS.md"
@@ -5200,16 +5208,19 @@ def cmd_meta_init(root: Path, args) -> int:
             trunk, git("branch", "--show-current", cwd=str(root))):
         print(f"AGENTS.md not written: {trunk} takes only reviewed merges (M4). Run `jig init "
               "--meta` in a job's worktree to write its metarepo block, and commit AGENTS.md on "
-              "the job's branch.")
+              "the job's branch"
+              + (f", with {', '.join(dict.fromkeys(wrote))}, written here: move them there." if wrote else "."))
         return 0
     before = agents.read_text() if agents.exists() else "# AGENTS.md\n"
     after = with_header(before, meta_header(meta, trunk))
-    if after != before or not agents.exists():
+    current = after == before and agents.exists()
+    if not current:
         agents.write_text(after)
-        print("wrote AGENTS.md's metarepo block")
     if git("show", f"{trunk}:{META}", cwd=str(root)):
-        print("Commit AGENTS.md on this job's branch.")
+        print("AGENTS.md's metarepo block is current: nothing to commit for it" if current else
+              "wrote AGENTS.md's metarepo block. Commit AGENTS.md on this job's branch.")
     else:
+        print("AGENTS.md's metarepo block is current" if current else "wrote AGENTS.md's metarepo block")
         print(f"Commit these on {trunk}, AGENTS.md among them. From then on {trunk} "
               "takes only reviewed merges, and only `jig release` tags.")
     return 0
@@ -10317,7 +10328,8 @@ def agents_lines(root: Path, template: Path | None, arriving: set[str]) -> list[
     lines = text.splitlines()
     rulebook = next((l for l in tpl if l.startswith("- Rulebook ")), "")
     blocks = retired_blocks(lines)
-    outside = "\n".join(l for k, l in enumerate(lines) if not any(i <= k < e for i, e in blocks))
+    # A generated block's lines are jig's: its citation of RULES.md loads no rulebook.
+    outside = "\n".join(lines[k] for k in outside_header(lines) if not any(i <= k < e for i, e in blocks))
     # A citation of one section, `.jig/RULES.md` (Documentation) or § Roles, doesn't load the
     # rulebook; a plain mention or an aside, `.jig/RULES.md` (the rulebook), does.
     has_rulebook = re.search(r"\.jig/RULES\.md(?!`?[ \t]*(?:\([A-Z]|§))", outside)
