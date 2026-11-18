@@ -66,7 +66,8 @@ Its job is to find the reason this change is wrong. Its questions:
 
 8. For each decision entry the diff adds or changes, `jig decision <id> --peers` lists its
    peers, the entries touching the same pages here and across the metarepo, with their rule
-   sentences. These are the pairs the handoff's fold-in will ask about. For each pair:
+   sentences. The handoff's fold-in asks about them one line per page, listing every peer there.
+   For each pair:
    1. Do both govern the same situation?
    2. Do their outcomes differ?
    3. Is one an exception the other permits? Then the answer is narrows, saying how.

@@ -308,6 +308,8 @@ stays stranded.
   holds now.
 - Interpreted: converted records take the next ids, never their own numbers. So one rule serves
   an empty log and a log in use, and no id is given twice.
+- Interpreted (hubnode, 2026-11-17): the citation rewrite covers Markdown only; other files' matches are listed, since a string in code is behaviour, not a citation.
+- Interpreted (work, after review-work 1): a folder is a record folder when two of its numbered files open their status with a word jig reads and at least one of those is decided (accepted, in force, approved, superseded, rejected, deprecated). A book's chapters all in `draft` decide nothing, so they are not records; the rule "any word jig reads" alone would have taken them.
 - Interpreted: each entry ends with a line naming the record it was, so a citation left in
   history (a handoff's "record 0070") can be followed.
 

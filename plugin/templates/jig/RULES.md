@@ -382,7 +382,9 @@ URL and hash to fetch it again. Notes stay committed, and so does every file the
   say where each of its files goes, and `/jig:redocument` moves them;
 - anything under a `datasheets/` folder, inside a page's folder or at `docs/datasheets/`;
 - in a metarepo, its decision registers, and its pages under a genre folder (Metarepo and
-  pararepos), not the code repo's tree.
+  pararepos), not the code repo's tree;
+- a decision register (a `DECISIONS.md` with rows) or a folder of decision records, and every
+  file in that folder, until `jig update --merge-log` merges it into `.jig/decisions.md`.
 
 Any other file has no home, and survey says which kind: an `AGENTS.md`, `CLAUDE.md` or
 `GEMINI.md` off root is a second rulebook; three or more sentences of this file word for word
@@ -561,24 +563,29 @@ with the ids on its line; an entry that supersedes another asks for the old id t
 are a metarepo's entry pages, and `docmap`'s pages in any other repo. The id matches whole:
 `D-7` is not `D-70`. The log itself is not asked.
 
-An entry the branch adds or changes also gets one line per peer (Decision log), naming both and
-the page they meet on:
+An entry the branch adds or changes also gets one line per page it meets peers on, per peer log
+(Decision log), naming the entry, every peer there and the page:
 
 ```
-- [ ] D-?id-lock vs <meta>/.jig/decisions.md § D-033 (<meta>/docs/features/gestures.md): ___
+- [ ] D-?id-lock vs <meta>/.jig/decisions.md § D-033, D-041 (<meta>/docs/features/gestures.md): ___
 ```
 
-It is answered **agrees**, **narrows: <how>** (one is an exception the other allows), or
-**conflicts: <resolution>**. jig picks the pairs and never judges one; the gate refuses a line
-unanswered, reshaped, answered with another word, or answered conflicts or narrows with nothing
-after it. A peer log jig couldn't read gets a line too, answered by reading it or saying why not.
-The commit hook refuses a note whose pair line has none of the three answers, naming the line,
-so a blank is found when the note is committed, not at the gate.
-The gate finds the pairs again on its merge of trunk, and refuses one the note doesn't answer:
-a job merged since the handoff ruled on the same page. The job adds each pair it names to the
-note's fold-in, ticked and answered, and commits the note alone: no sync, no new review and no
-new handoff, since the note is bookkeeping the merge doesn't count as a change. It syncs only
-when the gate's merge itself needed a hand.
+It is answered once for every id on it: **agrees**, **narrows: <how>** (one is an exception the
+other allows), or **conflicts: <resolution>**. On a line of several ids, narrows and conflicts
+name at least one of them (`narrows: D-041, <how>`). jig picks the pairs and never judges one;
+the gate refuses a line unanswered, reshaped, answered with another word, or answered conflicts
+or narrows with nothing after it. A checklist line `- [ ] <id> vs …` is a pair line: one that
+drops or changes any part of jig's shape is refused, naming it. A line with no checkbox is the
+job's own. A peer log jig couldn't read gets a line too, answered by reading it or saying why
+not. The commit hook refuses a note whose pair line is reshaped or has none of the three
+answers, naming the line, so a blank is found when the note is committed, not at the gate.
+The gate finds the pairs again on its merge of trunk, and refuses one the note doesn't answer,
+naming its cause: a pair jig listed at the handoff and the note left out, or one new on trunk
+since the job's base, where a job merged since ruled on the same page. A pair with another
+repo's log names no cause: jig reads that log as it stands now, not as it stood at the base.
+The job adds each pair it names to the note's fold-in, ticked and answered, and commits the
+note alone: no sync, no new review and no new handoff, since the note is bookkeeping the merge
+doesn't count as a change. It syncs only when the gate's merge itself needed a hand.
 
 ## Sync
 
@@ -1033,10 +1040,51 @@ trunk then rewrites the board (R5). Elsewhere it runs on trunk, board included. 
 judge the change that merges the old files away, one that adds the log and no longer holds
 CHANGELOG.md's sections or a register's rows; one that adds a log beside them is still judged by
 the old rules, as is everything until trunk has the log. A repo with neither file gets an empty log from `jig update --apply`,
-and `jig init` writes none beside them, leaving them for the merge. Numbering, by `jig merge`
-or a counter, starts above every id the log has ever named, so a rejected one's is never given
-again. A pararepo's bump across the merge reports the register's move on one line, and only the
+and `jig init` writes none beside them, leaving them for the merge. Numbering, by `jig merge`,
+a counter or the merge, starts above every id the log has ever named, so a rejected one's is
+never given again. A pararepo's bump across the merge reports the register's move on one line, and only the
 decisions whose title or status changed.
+
+A **folder of decision records** is the ADR layout (adr-tools, MADR): a folder that directly
+holds two or more files named `<n>-<slug>.md` (`adr-` before the number allowed, `template` in
+the name never a record), each with a status jig reads (below), one of them decided (accepted,
+superseded, rejected or deprecated): a front-matter `status:`, a `Status:` line or list item, or
+the first line under `## Status`. A migration's `applied` or a book's chapters in `draft` make no
+such folder. Its other Markdown files, an index or a template,
+belong to the folder but are no records. `jig init` writes no log beside it, `jig update` lists
+it, and `--merge-log` turns each record, in number order, into an entry with the next id above
+every one the log has named, never its own number:
+
+- `accepted`, `in force` and `approved` become `Accepted (<who>, <date>).`, the who from a
+  `decision-makers` or `Deciders` field or `not recorded`; `proposed` and `draft` become
+  `Proposed (<date>).` and `open` `Open (<date>).`, under `## Open`; `superseded by N` (or
+  `superceded`) is accepted, and N's entry supersedes it; `rejected` and `deprecated` are left
+  out and listed. Any other status, two records with one number, a superseder that is no record
+  or is left out, and a numbered file with no status are refused before anything is written;
+- the title loses its number; a relation naming a record by number (`amended by 0033`, `Amends
+  0001 and 0002`, `supersedes`, `replaces`) names its new id, and one it can't map is listed;
+  fields jig doesn't map stay as `Key: value` lines, each heading
+  becomes a bold label paragraph, relative links are rebased to the log's folder, and a last line
+  names the record (`Record 0001 before this log.`), so a citation left in history can be
+  followed. A date missing takes the day git added the file, and the run lists it;
+- accepted entries go after `## Unreleased`'s last entry, before its change lines, the others
+  after `## Open`'s. Into a log in use too: its entries and lines stay byte for byte, and the
+  run says which ids it appends. A `CHANGELOG.md` or a register still goes only into an empty
+  log, since their ids are the log's own form, and the run names each it leaves;
+- in the same change, every tracked Markdown file's citation of a record (a path or link to its file,
+  `record N`, `ADR N`, `ADR-N`) becomes the entry's id. Handoffs, fenced code, released sections
+  and the log's own entries stay as written, and so does any other file, since a string in code
+is behaviour: its matches are listed, to change by hand. The run lists each line it rewrites, each
+  citation it can't (a record left out), each file still naming the folder, and each line of the
+  new entries the hook would refuse (a spec path, a root document), to edit before committing;
+- the records go, and so do the index's rows linking to them; the index goes when nothing else
+  is left in it. What remains is kept and listed. On trunk, `append_files` or a `reserve`
+  counter naming the index, kept or not, or a record counts the log instead; merged on a
+  branch, `--apply --merge-log` on trunk after it rewrites the board.
+
+The commit of that output passes as written: a converted entry whose record the same change
+removes needs no `Touches:` yet, as a register's rows don't: a record in a record folder where
+the change began, each claimed by one entry. One added later does.
 
 ## Staging
 
@@ -1107,6 +1155,45 @@ commit. Commits, pushes and gates don't look at staging. A chat needs access to 
 `jig repos` keeps paths) and then to one repo's `.jig/staging/`; a sweep that skips what the target
 already has also reads its `.jig/specs/`, `.jig/roadmap.md` and `.jig/decisions.md`.
 
+## Inbox
+
+`.jig/inbox/` holds messages to this repo's hubnode, one Markdown file each, written by the
+session that sends it (`<YYYY-MM-DD>-<slug>.md`), with a header naming it `inbox: true`, `to` (a
+repo name or alias from `jig repos`), `from` and `sent`. Like staging, it is never committed.
+A message is not a staged file: it is read and done with, never landed or resolved, and
+nothing else (a commit, a gate, a release) looks at the inbox. It is one-way, to the hubnode;
+the hubnode answers only through the owner.
+
+`jig inbox`, in the trunk checkout only, prints each unread message in full, oldest first, and
+moves it to `.jig/inbox/read/`, where it can be read again. A message whose `to` isn't this repo
+is moved to `.jig/inbox/misaddressed/` and named: it is no ruling here, and the owner places it. A tool may announce unread messages with each
+of the owner's prompts, but only `jig inbox` marks one read, and it refuses outside the trunk
+checkout: a subnode marking a message read would hide a ruling from the hubnode. In a message, the owner's own words appear as
+`The owner, <date>: "<words>"`; those are the owner's ruling, as if given in the hubnode's own
+conversation, and the rest is context from the sender. Before acting on one, the hubnode checks
+the state it answers, as for any reply that may have gone stale. What it rules lands where any
+ruling does: a decision entry, a spec, the board.
+
+A typed repo name, wherever jig takes one (a staged file's `target`, a message's `to`), is a
+name or alias in `jig repos`, or the name a listed checkout gives itself, with case ignored. A
+name more than one entry answers to finds none, and is refused naming them. One that matches only once punctuation is
+dropped (`a_p` for `ap`) is refused, naming the near one: two near-identical names have sent
+work to the wrong repo. `jig repos alias <repo> <alias>` adds an alias, and refuses one any
+other entry already answers to, its checkout's own name included, as `add` and `rename` refuse
+such a name, and `add` refuses a checkout whose own name another entry answers to; `jig repos which
+<name>` prints the repo a typed name finds, or the refusal. `jig inbox check <file>…` checks a
+message's header from outside any repo, as `staging check` does: a missing key, a `to` no entry
+answers to, or, for a file already in a listed repo's inbox, a `to` naming another repo.
+
+## Riggers
+
+A **rigger** is a design session for one product repo, kept outside it: it holds the owner's
+running record of the product and drafts what the repo will get. Its folder lives outside every
+repo, so no repo session can open it, and the user's repos list points to it from the repo's
+entry (`jig rigger <repo>`, run by the rigger when it starts). A rigger reaches its repo only
+by staging and by the inbox; it never edits a repo. A metarepo has no rigger: its pararepos'
+riggers stage to it.
+
 ## Metarepo and pararepos
 
 A set of repos can share one **metarepo**: docs only — definitions, decisions, conventions, the
@@ -1146,7 +1233,13 @@ points to the metarepo's id without restating it.
 
 Each side's gates are on only when its file is on trunk: `.jig/meta.json` or `.jig/para.json`.
 `jig init --meta` and `jig init --para <metarepo>` write them; every other command reads them and
-does what that kind of repo needs.
+does what that kind of repo needs. Each also writes AGENTS.md's generated block, between
+`<!-- jig:meta — ` and `<!-- jig:meta end -->`, so the rules every task meets are always loaded
+in jig's words: `jig init --para` the pararepo's header, `jig init --meta` the metarepo's block
+(M1, M4, M6, M3, and that only `jig release` tags). A block's lines are jig's, never read as
+the repo's procedure. `jig update` lists a metarepo's block when it is missing or older than
+this jig's; once `meta.json` is on trunk it is rewritten in a job, by `jig init --meta` in the
+job's worktree (M4).
 
 **A metarepo's docs tree.** A metarepo's pages are under `docs/`, each in a genre folder:
 `docs/<genre>/<name>.md`, or `docs/<genre>/<name>/<name>.md` once it holds more than itself,
@@ -1313,11 +1406,13 @@ jig init --meta | --para <metarepo> --contract <globs>   ... as a metarepo / par
 jig release [--major|--minor|--patch|--version X.Y.Z] [--force]   the repo's release protocol, then tag, then publish
 jig survey [--json] [--levels]   inventory the repo against the jig shape; --levels: each page's level and its evidence
 jig update [--apply]        bring the repo to the current jig layout, and carry out the moves findings approves (dry run without --apply)
-jig update [--apply] --merge-log   on the owner's yes: CHANGELOG.md and the register into .jig/decisions.md
+jig update [--apply] --merge-log   on the owner's yes: CHANGELOG.md, the register and folders of decision records into .jig/decisions.md
 jig update [--apply] --sweep   on the owner's yes: pages' ## Undefined entries to ## Up next in .jig/roadmap.md
 jig update [--apply] --glossary   on the owner's yes: the README's glossary, or GLOSSARY.md, to docs/glossary.md, its pointers rewritten
 jig staging [resolve|drop <file>]   list staged files, or land / drop one
-jig repos [add repo|meta|para | rename <new>]  where your repos live (user config)
+jig repos [add repo|meta|para | rename <new> | alias <repo> <alias> [--remove] | which <name>]  where your repos live (user config)
+jig inbox [check <file>…]   hubnode, trunk checkout: print unread messages and mark them read; check: a message's header
+jig rigger <repo> [--folder <path>]   outside any repo: make this session the repo's rigger, its folder and pointer
 jig open ... --reserve K    allocate scarce counter K to this job
 jig reserve <job> <K>       hubnode: give an open job the next number of counter K too
 jig consolidate             hubnode: groups of waiting specs whose Touches overlap, to answer before opening
