@@ -34,13 +34,14 @@
   },
   "bug-stage-second-reader": {
     "spec": ".jig/specs/bug-stage-second-reader.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
       "plugin/skills/stage/SKILL.md",
       "tests/smoke.sh"
     ],
-    "reserved": {}
+    "reserved": {},
+    "check": "batch"
   }
 }
