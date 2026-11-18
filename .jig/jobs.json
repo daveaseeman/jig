@@ -50,7 +50,7 @@
   },
   "bug-meta-agents-block": {
     "spec": ".jig/specs/bug-meta-agents-block.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
@@ -59,7 +59,8 @@
       "tests/smoke.sh",
       "plugin/skills/init/SKILL.md"
     ],
-    "reserved": {}
+    "reserved": {},
+    "check": "batch"
   },
   "bug-decision-records": {
     "spec": ".jig/specs/bug-decision-records.md",
