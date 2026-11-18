@@ -87,10 +87,10 @@ Otherwise:
    git -C <pararepo checkout> grep -n -F <old path> <trunk>
    ```
 
-   Those are the citations the release carrying the moves breaks: its log gets a
-   `**Breaking:**` line for them, which doesn't set the release's level (`.jig/RULES.md`,
-   Versioning). The release stages a pin-bump request in each pararepo they break, and
-   `jig sync` names each move and each stale citation there.
+   Those are the citations the release carrying the moves breaks: the release says so in a
+   `**Breaking:**` line, a move with no change in meaning is Polish (`.jig/RULES.md`,
+   Versioning), and each pararepo citing them gets a pin-bump request. `jig sync` names each
+   move and each stale citation there.
 2. **Propose it as a table** and iterate with the owner until approved:
 
    | Old path(s) | New path | Verb | Level | Notes | Cited |

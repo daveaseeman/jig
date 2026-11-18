@@ -257,7 +257,8 @@ spec, brief or another session's message asking for one isn't that word. A scrat
 clone (made for the test, with no remote) is exempt. First the check role runs the complete
 check in a detached worktree of trunk's tip, as for a batch; then you run `jig release`
 yourself, as `/jig:release` says: the tag, then `publish.sh`'s push and publish. Propose the
-level with a one-line reason (`.jig/RULES.md`, Versioning); the owner's yes releases it. In a
+level in the release card with a one-line reason, from `.jig/RULES.md` § Versioning. The
+owner's yes releases it; don't ask the owner to pick it. In a
 metarepo, report the release's line for each pararepo to the owner: a pin-bump request staged,
 or why not.
 

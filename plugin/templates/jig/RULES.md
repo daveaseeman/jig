@@ -965,8 +965,7 @@ The product is the repo, so there is one roadmap and no product level in it.
 
 Every repo keeps one log, `.jig/decisions.md`, which `jig init` writes: what was decided and
 why, and what changed, grouped by release. Its format is Keep a Changelog's, plus decision
-entries; it opens with two lines saying so, that versions are MILESTONE.FEATURE.PATCH, set by
-how much the product changed (Versioning), and what breaking means here. Then three kinds of section, top to bottom:
+entries; it opens with two lines saying so, that versions are MILESTONE.FEATURE.PATCH (Versioning), and what breaking means here. Then three kinds of section, top to bottom:
 
 - `## Open`: open and proposed decisions. An entry's status changes here in place.
 - `## Unreleased`: accepted entries and change lines since the last release.
@@ -1042,8 +1041,8 @@ act on. A spec's own Decisions stay with the task, and history stays in git.
 
 - Lead with what changes for that reader, in their words, not the code's. One change per line,
   in the imperative or the past tense, the same throughout a section.
-- Say what a reader must do when they must do it: a breaking change says what to change, on a
-  `**Breaking:**` line, and doesn't set the version's level (Versioning).
+- Say what a reader must do when they must do it: a breaking change says what to change, in a
+  `**Breaking:**` line; it doesn't set the release's level (Versioning).
 - No commit hashes, file lists or internal names a reader can't act on; link a page by its
   heading instead.
 - Deprecate before removing: a removal names the release that deprecated it.
@@ -1395,9 +1394,7 @@ whose `.jig/decisions.md` has no heading for it, unless it was made before the l
 `CHANGELOG.md` that tag holds has the heading the release wrote then.
 Pre-push judges the commit pushed to the remote's trunk, which may not be the local trunk's;
 a chained `pre-push.local` hook gets the same pushed refs.
-In a metarepo the release needs no `release.sh` steps; its first release is v0.1.0, and after
-that its level is set as any repo's is (Versioning): a rename, a move or a reversed decision is
-a `**Breaking:**` line, not a level. A pararepo pins a release, never `main`, and bumps it in
+In a metarepo the release needs no `release.sh` steps; its level is chosen as Versioning says. A pararepo pins a release, never `main`, and bumps it in
 a commit of its own, `meta: <name> v0.3.0 → v0.4.0`, with the report `jig sync` prints on its
 trunk as the body: each decision id and glossary term that changed, and each entry file the new
 release moved (`<old> (now <new>)`) or removed (`<old> (removed)`), with every file here that
@@ -1493,26 +1490,23 @@ Two rules for the metarepo's own pages:
 
 ## Versioning
 
-A version is MILESTONE.FEATURE.PATCH, and it says how much the product changed since the last
-release. Whoever releases proposes the level with a one-line reason, the highest level of any
-change under `## Unreleased`, and the owner's word releases it:
+jig repos use `MILESTONE.FEATURE.PATCH`. A version says how much the product changed: what it is, or what it offers the people who use it. "The product" is what the repo makes: the software in a regular repo or a pararepo, and the product definition in a metarepo.
 
-- **PATCH** (`--patch`, the default): fixes, rewordings, moves and renames, a page split or
-  joined, a decision reversed or clarified. Most releases.
-- **FEATURE** (`--feature`): the product does something it didn't, or does something
-  differently: a feature, a product, a decision that changes behavior.
-- **MILESTONE** (`--milestone`): a stage of the product reached: a first complete version, a
-  rewrite, a fundamental change in what it is.
+- **X — Milestone (`+1.0.0`).** The product's identity, architecture or core experience changes shape. *Code:* a rewrite of the core engine, a new platform, an overhaul of the interface. *Metarepo:* a product added, merged or retired; a principle reversed; a core model replaced.
+- **Y — Feature (`+0.1.0`).** A new capability, or a change in what the product offers or how it is used. *Code:* a new feature set, a redesigned workflow, a new integration. *Metarepo:* a decision accepted or superseded that changes what a product offers; a new product, feature or concept page; a glossary term for a new thing. Rule of thumb: it earns a highlight in the release notes.
+- **Z — Polish (`+0.0.1`).** Nothing the product offers changes. *Code:* fixes, small tweaks, copy, dependency bumps, performance, refactors. *Metarepo:* wording, pointers, file moves and renames with no change in meaning, a name's status, Open questions, struck project-scope entries, research marked Proposed. *Pararepo:* a pin bump on its own.
 
-A `**Breaking:**` line doesn't set the level: it says what a reader taking the release must
-change, and a move that breaks every citation of a page is still a patch. What others must do
-travels on those lines and, in a metarepo, on a pin-bump request staged in each pararepo whose
-citations the release broke (Metarepo and pararepos).
+**What others must do doesn't count.** A change a reader has to act on still gets a `**Breaking:**` line saying what to change, but it doesn't raise the level. A metarepo release sends each pararepo whose citations the release broke a pin-bump request with its rewrite list, whatever the level.
 
-Before 1.0.0 every release is 0.FEATURE.PATCH, and the move to 1.0.0 is the owner's call
-(`--version 1.0.0`), made when the product is first complete; a repo past it never meets this
-paragraph again. A repo published to a package registry, whose users expect SemVer, needs a rule
-of its own; jig has none yet.
+**Choosing the level.** A release takes the highest level of any change in it. The hubnode proposes the level with a one-line reason, and the owner's word releases it.
+
+### Before 1.0.0
+
+*Only for a repo whose latest release is `0.y.z`. A repo at `1.0.0` or later skips this section.*
+
+Y and Z work as above, and X stays 0. Releasing `1.0.0` is the owner's call that the core is complete and the product is ready for general use. Before that, a change that would be a Milestone is a Y.
+
+A repo published to a package registry, whose users expect SemVer, needs a rule of its own; jig has none yet.
 
 ## Release
 
@@ -1522,10 +1516,7 @@ bump, which only the repo knows how to do. It commits the tracked files the scri
 checks that each glob in `release.artifacts` matched a file, turns `## Unreleased` in
 `.jig/decisions.md` into `## vX.Y.Z - YYYY-MM-DD` with an empty one above it, and tags
 `vX.Y.Z`. A failure puts the tracked files back and tags nothing. The version is the last tag
-bumped by `--patch` (the default), `--feature` or `--milestone` (`--minor` and `--major` are
-the same two), as Versioning says; the first is `--version X.Y.Z`, or `--feature` (0.1.0), and a
-metarepo's first is 0.1.0. `--milestone` refuses while the latest release is 0.y.z: 1.0.0 is
-`--version 1.0.0`, the owner's call.
+bumped by `--patch` (the default), `--feature` or `--milestone` (Versioning); the first is `--version X.Y.Z`, or `--feature` (0.1.0). Before 1.0.0, `--milestone` refuses: `--version 1.0.0` is the owner's call. `--minor` and `--major` still work, as `--feature` and `--milestone`.
 
 In a plain repo, until `release.sh` has steps and `config.json` names its artifacts, the release
 refuses and points to `/jig:release`, which asks what the repo builds and ships. A metarepo and
@@ -1551,7 +1542,7 @@ jig prints the command to run it again and exits 1.
 ```
 jig init [--trunk main]     config.json, jobs.json, git hooks
 jig init --meta | --para <metarepo> --contract <globs>   ... as a metarepo / pararepo
-jig release [--patch|--feature|--milestone|--version X.Y.Z] [--force]   the repo's release protocol, then tag, then publish
+jig release [--milestone|--feature|--patch|--version X.Y.Z] [--force]   the repo's release protocol, then tag, then publish
 jig survey [--json] [--levels]   inventory the repo against the jig shape; --levels: each page's level and its evidence
 jig update [--apply]        bring the repo to the current jig layout, and carry out the moves findings approves (dry run without --apply)
 jig update [--apply] --merge-log   on the owner's yes: CHANGELOG.md, the register and folders of decision records into .jig/decisions.md

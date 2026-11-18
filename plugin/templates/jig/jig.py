@@ -14277,10 +14277,10 @@ def main(argv: list[str] | None = None) -> int:
     rl_ = sub.add_parser("release", help="run this repo's release protocol, then tag vX.Y.Z")
     bump = rl_.add_mutually_exclusive_group()
     bump.add_argument("--milestone", "--major", dest="milestone", action="store_true",
-                      help="X: a milestone reached, from 1.0.0 on")
+                      help="X: identity, architecture or core experience changes shape (RULES.md, Versioning)")
     bump.add_argument("--feature", "--minor", dest="feature", action="store_true",
-                      help="Y: a feature added or changed")
-    bump.add_argument("--patch", action="store_true", help="Z: a fix or a move (the default)")
+                      help="Y: a new capability, or a change in what the product offers")
+    bump.add_argument("--patch", action="store_true", help="Z, the default: nothing the product offers changes")
     bump.add_argument("--version", help="X.Y.Z: the first release, or a jump")
     rl_.add_argument("--force", action="store_true", help="release though files are staged")
     pp = sub.add_parser("propose", help="pararepo: open a proposal branch on the metarepo for a spec")
