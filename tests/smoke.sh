@@ -1095,6 +1095,41 @@ msg="merge: a page on trunk the merge didn't change keeps its placeholder"
 expect_pass grep -q 'D-?retry-cap' pages/d.md
 msg="decision: jig decision D-007 names the entry that supersedes it"
 out=$($J decision D-007 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'D-007 is superseded by D-021'" "$out"
+# AGENTS.md's metarepo block: jig's words for the rules every task meets, written at setup,
+# refreshed only in a job (M4), and no line of it read as the repo's procedure.
+MB="$T/mab"; mkdir -p "$MB" && cd "$MB" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init && $J init >/dev/null
+msg="meta block: a plain jig init writes no metarepo block"
+expect_pass sh -c "! grep -q 'jig:meta' AGENTS.md"
+out=$($J init --meta --name mab --prefix E- 2>&1)
+blk=$(sed -n '/^<!-- jig:meta — /,/^<!-- jig:meta end -->/p' AGENTS.md)
+msg="meta block: init --meta writes one block under AGENTS.md's title, at most 5 lines between its markers"
+expect_pass sh -c "test \"\$(grep -c '^<!-- jig:meta — ' AGENTS.md)\" = 1 && sed -n 3p AGENTS.md | grep -q '^<!-- jig:meta — .*jig init --meta' && test \$(echo \"\$0\" | wc -l) -le 7" "$blk"
+msg="meta block: it states M1, M4, M6 with the E- prefix, M3, that only jig release tags, and names .jig/RULES.md"
+expect_pass sh -c "echo \"\$0\" | grep -q 'docs only.*(M1).*never copied' && echo \"\$0\" | grep -q 'reviewed merges.*branch (M4)' && echo \"\$0\" | grep -q 'E-012: .*(M6)' && echo \"\$0\" | grep -q 'entry_files.*## Unreleased.*decisions.md. (M3)' && echo \"\$0\" | grep -qx -- '- Only .jig release. tags.' && echo \"\$0\" | grep -q '.jig/RULES.md.*Metarepo and pararepos'" "$blk"
+msg="meta block: the console names AGENTS.md among the files to commit"
+expect_pass sh -c "echo \"\$0\" | tail -1 | grep -q 'Commit these on main, AGENTS.md among them'" "$out"
+# trunk gets an older wording, as a repo set up by an earlier jig has
+sed -i.bak 's/^- Only `jig release` tags\.$/- Only `jig meta-release` tags./' AGENTS.md && rm AGENTS.md.bak && git add -A && git commit -qm meta-init
+out=$($J init --meta 2>&1)
+msg="meta block: on trunk with meta.json there, init --meta leaves AGENTS.md alone and names a job's worktree (M4)"
+expect_pass sh -c "test -z \"\$(git status --porcelain)\" && echo \"\$0\" | grep -qi 'run .jig init --meta. in a job.s worktree' && echo \"\$0\" | grep -q '(M4)'" "$out"
+$J open blk --owns AGENTS.md >/dev/null && git add -A && git commit -qm "TOOL: open blk"
+cd .git/jig/worktrees/blk && out=$($J init --meta 2>&1)
+msg="meta block: in a job's worktree init --meta rewrites the old block and says to commit it on the job's branch"
+expect_pass sh -c "grep -qx -- '- Only .jig release. tags.' AGENTS.md && ! grep -q meta-release AGENTS.md && test \"\$(grep -c '^<!-- jig:meta — ' AGENTS.md)\" = 1 && echo \"\$0\" | tail -1 | grep -q \"job's branch\"" "$out"
+msg="meta block: a rerun in the job's worktree with the block current changes nothing and says so"
+cp AGENTS.md "$T/mab.cur"; out=$($J init --meta 2>&1)
+expect_pass sh -c "cmp -s AGENTS.md \"\$1\" && echo \"\$0\" | tail -1 | grep -q 'block is current: nothing to commit'" "$out" "$T/mab.cur"
+git add -A && git commit -qm "TOOL: AGENTS.md block" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
+  && git add -A && git commit -qm "TOOL: note blk" && cd "$MB" && gated blk && $J merge blk --subject "TOOL: blk" >/dev/null 2>&1
+msg="meta block: after the job merges, update's dry run lists no AGENTS.md line"
+out=$($UP 2>&1); expect_pass sh -c "grep -qx -- '- Only .jig release. tags.' AGENTS.md && ! echo \"\$0\" | grep -q '^  AGENTS.md'" "$out"
+MP="$T/mpa"; mkdir -p "$MP" && cd "$MP" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init && $J init >/dev/null && echo '{}' > .jig/para.json && cp AGENTS.md "$T/mpa.before"
+out=$($J init --meta 2>&1); rc=$?
+msg="meta block: init --meta in a pararepo refuses, writing neither meta.json nor a block"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'pararepo' && test ! -e .jig/meta.json && cmp -s AGENTS.md \"\$1\"" "$out" "$T/mpa.before"
 cd "$M"
 }
 
@@ -1279,6 +1314,8 @@ $J init --para docs --location mrclone --contract 'api/**' >/dev/null
 expect_pass sh -c "grep -q '\"pin\": \"v0.1.0\"' .jig/para.json && ! grep -q location .jig/para.json && grep -q '\"docs\"' '$T/repos.json' && grep -q 'jig:meta' AGENTS.md && test -f .jig/meta-cache/.jig/decisions.md && grep -qx '.jig/meta-cache/' .gitignore && grep -qx 'mrclone/' .gitignore"
 msg="para: the generated header is at most 6 lines"
 expect_pass test "$(sed -n '/jig:meta —/,/jig:meta end/p' AGENTS.md | wc -l | tr -d ' ')" -le 6
+msg="para: init --para writes no metarepo block"
+expect_pass sh -c "! grep -q 'jig init --meta' AGENTS.md"
 git add -A && git commit -qm "para-init"
 
 msg="release: a pararepo says so"
@@ -5750,7 +5787,7 @@ done
 gated one; gate_ok one && $J merge one >/dev/null 2>&1
 msg="touches gate: a pair with a job merged since the handoff is refused, naming it"
 out=$($J gate two 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-two 2>/dev/null
-expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"doesn't answer these pairs\" && echo \"\$0\" | grep -qF 'D-?two vs .jig/decisions.md § D-' && echo \"\$0\" | grep -q 'jig sync'" "$out"
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"doesn't answer these pairs\" && echo \"\$0\" | grep -qx \"new on main since the job's base:\" && echo \"\$0\" | grep -qF 'D-?two vs .jig/decisions.md § D-' && echo \"\$0\" | grep -q 'jig sync' && ! echo \"\$0\" | grep -q 'moved since'" "$out"
 
 # A metarepo reads its registered pararepos' trunks: a page two of them rule on is probably its own.
 TH="$T/th"; pcnew "$TH" && git add -A && git commit -qm init && $J init --meta --name house --genres features >/dev/null
@@ -5769,6 +5806,18 @@ done
 msg="touches survey: a metarepo names the page two pararepos rule on and it doesn't, not one it rules on too"
 out=$($J survey 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -qx '  docs/features/x: pa, pb rule on it, and no entry here does' && ! echo \"\$0\" | grep -q 'docs/features/y:'" "$out"
+# Another repo's log is read as it stands now: a pair it gained after the handoff claims no cause.
+$J open m --branch b-m >/dev/null && git add -A && git -c core.hooksPath=/dev/null commit -qm "TOOL: open m"
+(cd .git/jig/worktrees/b-m && ulog '### D-?m m rules x
+Accepted (owner, 2026-11-03).
+Touches: docs/features/x.md
+
+When x runs, m holds.' && git add -A && git commit -qm "D-?m: m rules x" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 \
+  && pcfold && git add -A && git commit -qm "TOOL: note m")
+(cd "$T/pa" && printf '\n### D-002 pa again on x\nAccepted (owner, 2026-11-04).\nTouches: house/docs/features/x.md\n\nWhen x runs, pa yields.\n' >> .jig/decisions.md && git commit -qam "D-002")
+msg="touches gate: a pair a pararepo's log gained after the handoff is named with no cause, not as left out of the note"
+out=$($J gate m 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-m 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -A1 -x \"in another repo's log, read as it stands now:\" | grep -qxF '  - [ ] D-?m vs pa/.jig/decisions.md § D-002 (docs/features/x.md): ___' && ! echo \"\$0\" | grep -q 'left out' && ! echo \"\$0\" | grep -q 'new on main'" "$out"
 msg="touches M2: a metarepo entry naming a pararepo's page is refused"
 expect_refuse m2 '### D-002 z rules
 Accepted (owner, 2026-11-02).
@@ -5825,6 +5874,65 @@ msg="touches M2: with a metarepo named docs, a bare docs/features/gestures.md is
 expect_refuse m2 '### D-?a a rules
 Accepted (owner, 2026-11-02).
 Touches: docs/features/gestures.md'
+
+# A busy page asks one line per entry, page and log, answered once; a reshaped line is refused by name.
+TT="$T/tt"; pcnew "$TT" && mkdir -p docs && printf '# A\n' > docs/a.md && git add -A && git commit -qm init && $J init >/dev/null
+for i in 01 02 03 04 05 06 07 08 09 10; do ulog "### D-0$i a rule $i
+Accepted (owner, 2026-11-01).
+Touches: docs/a.md
+
+When a runs, rule $i holds."; done
+git add -A && git -c core.hooksPath=/dev/null commit -qm "board, D-001..D-010"
+for j in x y; do $J open $j --branch b-$j >/dev/null && git add -A && git commit -qm "open $j"
+  (cd .git/jig/worktrees/b-$j && ulog "### D-?$j $j rules
+Accepted (owner, 2026-11-03).
+Touches: docs/a.md
+
+When $j runs, a waits." && git add -A && git commit -qm "D-?$j" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1); done
+cd .git/jig/worktrees/b-x; note=$(ls .jig/handoffs/*.md)
+msg="touches fold-in: ten entries on one page and an eleventh added make one pair line naming all ten"
+expect_pass sh -c "grep -qxF -- '- [ ] D-?x vs .jig/decisions.md § D-001, D-002, D-003, D-004, D-005, D-006, D-007, D-008, D-009, D-010 (docs/a.md): ___' '$note' && test \$(grep -c '^- \[ \] .* vs ' '$note') = 1"
+sed -i.bak -e 's/^- \[ \]/- [x]/' -e '/ vs .* § /!s/___/smoke/g' "$note" && rm "$note.bak" && cp "$note" "$T/tt-note"
+tnote() { cp "$T/tt-note" "$note" && sed -i.bak "$1" "$note" && rm "$note.bak" && git add -A; }
+msg="touches hook: a pair line left ___ is refused"
+tnote 's/x/x/'; expect_refuse git commit -qm "note x"
+msg="touches hook: narrows naming none of the line's ids is refused, naming the line"
+tnote '/ vs /s/___$/narrows: when a is idle/'; out=$(git commit -qm "note x" 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'D-?x vs .jig/decisions.md § D-001,' && echo \"\$0\" | grep -q 'narrows on a line of several ids names at least one of them'" "$out"
+msg="touches hook: a pair line with its log label dropped is refused, naming it with keep a pair line's shape"
+tnote '/ vs /s/^.*$/- [x] D-?x vs D-001 (docs\/a.md): agrees/'; out=$(git commit -qm "note x" 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'D-?x vs D-001 (docs/a.md): agrees' && echo \"\$0\" | grep -q \"keep a pair line's shape\"" "$out"
+# Hook off: a note the hook never checked; the gate's fold-in check names the line, and blames no trunk.
+git -c core.hooksPath=/dev/null commit -qm "TOOL: reshaped note" && cd "$TT"
+msg="touches gate: a pair line with its label dropped is named in the fold-in check, not blamed on trunk moving"
+out=$($J gate x 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-x 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'D-?x vs D-001 (docs/a.md): agrees' && echo \"\$0\" | grep -q \"keep a pair line's shape\" && ! echo \"\$0\" | grep -q 'moved since'" "$out"
+cd .git/jig/worktrees/b-x
+msg="touches hook: narrows naming one of the line's ids commits, beside a no-checkbox line of the job's own"
+tnote '/ vs /s/___$/narrows: D-004, when a is idle/'; printf -- '- D-?x vs D-075 (not paired): agrees\n' > "$T/own" \
+  && python3 -c "import sys; f=sys.argv[1]; s=open(f).read(); open(f,'w').write(s.replace('## Fold-in\n', '## Fold-in\n'+open(sys.argv[2]).read(), 1))" "$note" "$T/own" && git add -A
+expect_pass git commit -qm "note x"
+msg="touches hook: the line answered agrees commits"
+tnote '/ vs /s/___$/agrees/'; expect_pass git commit -qm "note x agrees"
+cd "$TT"
+msg="touches gate: the one line answered agrees passes"
+expect_pass gate_ok x
+cd .git/jig/worktrees/b-x
+python3 -c "import sys,re; f=sys.argv[1]; s=open(f).read(); s=re.sub(r'^- \[x\] D-\?x vs .*$', '\n'.join(f'- [x] D-?x vs .jig/decisions.md § D-0{i:02d} (docs/a.md): agrees' for i in range(1, 11)), s, flags=re.M); open(f,'w').write(s)" "$note" \
+  && git add -A && git commit -qm "TOOL: one-id lines" && cd "$TT"
+msg="touches gate: a note in the one-id-per-line shape, answered, still passes"
+expect_pass gate_ok x
+msg="touches gate: more than ten unanswered fold-in lines print ten and a count of the rest"
+(cd .git/jig/worktrees/b-x && sed -i.bak '/ vs /s/agrees$/___/' "$note" && rm "$note.bak" && python3 -c "import sys; f=sys.argv[1]; s=open(f).read(); open(f,'w').write(s.replace('## Fold-in\n', '## Fold-in\n- [ ] one more ___\n- [ ] two more ___\n', 1))" "$note" \
+  && git add -A && git -c core.hooksPath=/dev/null commit -qm "TOOL: blanks")
+out=$($J gate x 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-x 2>/dev/null
+expect_pass sh -c "test $rc != 0 && test \$(echo \"\$0\" | grep -c '^  - \[') = 10 && echo \"\$0\" | grep -qx '  … and [0-9]* more'" "$out"
+(cd .git/jig/worktrees/b-x && git reset -q --hard HEAD~1)
+(cd .git/jig/worktrees/b-y && pcfold && git add -A && git commit -qm "note y")
+gated x; $J merge x >/dev/null 2>&1
+msg="touches gate: after a job merged since the handoff, the gate names only its entry, as new on trunk"
+out=$($J gate y 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-y 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qx \"new on main since the job's base:\" && echo \"\$0\" | grep -qxF '  - [ ] D-?y vs .jig/decisions.md § D-011 (docs/a.md): ___' && ! echo \"\$0\" | grep -q 'left out' && ! echo \"\$0\" | grep -q 'moved since'" "$out"
 cd "$T"
 }
 
@@ -5937,8 +6045,8 @@ Touches: docs/glossary.md § products
 
 Always, product names are short.' && git add -A && git commit -qm "D-?ny, D-?nz: names" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1
 note=$(ls .jig/handoffs/*.md)
-msg="touches terms fold-in: an entry on a term gets a pair line with each entry on it, and the none entry gets none"
-expect_pass sh -c "grep -qxF -- '- [ ] D-?ny vs .jig/decisions.md § D-001 (docs/glossary.md § products): ___' '$note' && grep -qF 'D-?ny vs .jig/decisions.md § D-002' '$note' && ! grep -qF 'D-?nz vs' '$note' && ! grep -qF '§ D-004' '$note'"
+msg="touches terms fold-in: an entry on a term gets one pair line naming each entry on it, and the none entry gets none"
+expect_pass sh -c "grep -qF -- '- [ ] D-?ny vs .jig/decisions.md § D-001, D-002' '$note' && grep -qF '(docs/glossary.md § products): ___' '$note' && ! grep -qF 'D-?nz vs' '$note' && ! grep -qF '§ D-004' '$note'"
 pcfold && git add -A && git commit -qm "TOOL: note tj"
 cd "$TA/.git/jig/worktrees/b-tk" && ulog '### D-?nk product length
 Accepted (owner, 2026-11-13).
@@ -6747,6 +6855,142 @@ s = u.spec_from_file_location('j', '.jig/jig.py'); m = u.module_from_spec(s); s.
 got = m.terms_changed(pathlib.Path('.').resolve(), 'HEAD~1', 'HEAD')
 assert m.merged_registers(pathlib.Path('.').resolve(), 'HEAD~1', 'HEAD') and not got, got"
 cd "$MM"
+# A folder of decision records, the ADR layout: found, at home until merged, and appended.
+mlrecs() {  # mlrecs: docs/decisions/ in a numbered-title layout, with a template and an index
+  mkdir -p docs/decisions .jig/handoffs
+  printf '# 0000. Title\n\n- **Date:** YYYY-MM-DD\n- **Status:** proposed\n\n## Context\n' > docs/decisions/0000-template.md
+  printf '# 0001. Use A\n\n- **Date:** 2026-01-01\n- **Status:** in force\n\n## Context\n\nWe needed A.\n\n## Decision\n\nUse A, per [the page](../page.md).\n' > docs/decisions/0001-a.md
+  printf '# 0002. Use B\n\n- **Date:** 2026-01-02\n- **Status:** superseded by 0003\n\n## Context\n\nB first.\n' > docs/decisions/0002-b.md
+  printf '# 0003. Use C\n\n- **Date:** 2026-01-03\n- **Status:** in force\n\n## Context\n\nC replaces B.\n' > docs/decisions/0003-c.md
+  printf '# Decisions\n\n| # | Title | Status |\n|---|---|---|\n| [0001](0001-a.md) | A | in force |\n| [0002](0002-b.md) | B | superseded |\n| [0003](0003-c.md) | C | in force |\n' > docs/decisions/README.md
+  printf '# Page\n\nAs record 0001 says, and docs/decisions/0002-b.md before it.\n' > docs/page.md
+  printf '# Handoff\n\nBuilt per record 0001.\n' > .jig/handoffs/old-2026-01-01.md; }
+srv() { python3 -c "
+import json, subprocess
+r = json.loads(subprocess.check_output(['python3', '.jig/jig.py', 'survey', '--json']))
+h = {e['path'] for e in r['homeless']}
+c = {x['what']: x for x in r['coordination']['found']}
+$1"; }
+MR="$T/ml-records"; pcnew "$MR" && mlrecs && git add -A && git commit -qm init
+out=$($J init 2>&1)
+msg="merge-log records: init writes no log beside a folder of decision records, and names the folder"
+expect_pass sh -c "test ! -e .jig/decisions.md && echo \"\$0\" | grep -q 'not written: docs/decisions/ merge into it'" "$out"
+git add -A && git commit -qm board
+msg="merge-log records: update lists the folder to review, naming --merge-log"
+expect_pass sh -c "$UP 2>&1 | grep -q 'docs/decisions/: a folder of decision records, 3 records: merged into .jig/decisions.md on a yes — \`jig update --merge-log\`'"
+msg="merge-log records: survey lists none of the folder's five files as homeless, and maps the folder to the log"
+expect_pass srv "assert not [p for p in h if p.startswith('docs/decisions/')], h
+assert c['decision records (ADRs)']['at'] == ['docs/decisions'] and c['decision records (ADRs)']['maps_to'].startswith('.jig/decisions.md'), c"
+msg="merge-log records: a plain repo's DECISIONS.md with rows is no stray either"
+printf '| Id | Decision | Status | Date |\n|---|---|---|---|\n| D-001 | a | accepted (Ann) | 2026-01-01 |\n' > docs/DECISIONS.md && git add -A
+expect_pass srv "assert 'docs/DECISIONS.md' not in h, h"
+git reset -q --hard
+out=$($UP --apply --merge-log 2>&1)
+msg="merge-log records: D-001 to D-003 in number order, titles without numbers, D-003 superseding D-002"
+expect_pass sh -c "test \"\$(grep '^### ' .jig/decisions.md)\" = \"\$(printf '### D-001 Use A\n### D-002 Use B\n### D-003 Use C')\" && grep -A1 -x '### D-001 Use A' .jig/decisions.md | grep -qx 'Accepted (not recorded, 2026-01-01).' && grep -A1 -x '### D-003 Use C' .jig/decisions.md | grep -qx 'Accepted (not recorded, 2026-01-03). Supersedes D-002.'"
+msg="merge-log records: the log reads three entries, each with its Context paragraph, the link rebased, the record named last"
+expect_pass python3 -c "
+import importlib.util as u
+s = u.spec_from_file_location('j', '.jig/jig.py'); m = u.module_from_spec(s); s.loader.exec_module(m)
+es = m.log_entries(open('.jig/decisions.md').read(), 'D-')
+assert len(es) == 3 and all('**Context.**' in e['block'] for e in es), es
+assert '[the page](../docs/page.md)' in es[0]['block'] and es[0]['block'].endswith('Record 0001 before this log.'), es[0]['block']"
+msg="merge-log records: the records and the index are gone, the template kept and listed"
+expect_pass sh -c "test ! -e docs/decisions/0001-a.md && test ! -e docs/decisions/README.md && test -f docs/decisions/0000-template.md && echo \"\$0\" | grep -q 'kept, as no record: docs/decisions/0000-template.md'" "$out"
+msg="merge-log records: the page cites D-001 and D-002; the handoff still says record 0001"
+expect_pass sh -c "grep -qx 'As D-001 says, and D-002 before it.' docs/page.md && grep -qx 'Built per record 0001.' .jig/handoffs/old-2026-01-01.md"
+msg="merge-log records: the run's output commits unedited through the hooks"
+expect_pass git commit -qm "TOOL: merge the decision records"
+
+msg="merge-log records: adr-tools' layout in doc/adr and MADR's in docs/decisions list as record folders; numbered guide chapters don't"
+MA="$T/ml-adr"; pcnew "$MA" && mkdir -p doc/adr docs/decisions docs/guide
+printf '# 1. Record architecture decisions\n\nDate: 2026-01-01\n\n## Status\n\nAccepted\n\n## Context\n\nWe record them.\n' > doc/adr/0001-record-architecture-decisions.md
+printf '# 2. Use shell\n\nDate: 2026-01-02\n\n## Status\n\nSuperceded by [3. Use python](0003-use-python.md)\n\n## Context\n\nShell is there.\n' > doc/adr/0002-use-shell.md
+printf '# 3. Use python\n\nDate: 2026-01-03\n\n## Status\n\nAccepted\n\nSupercedes [2. Use shell](0002-use-shell.md)\n\n## Decision\n\nPython.\n' > doc/adr/0003-use-python.md
+printf -- '---\nstatus: accepted\ndate: 2026-02-01\ndecision-makers: [Ann, Bo]\n---\n\n# Use Markdown records\n\n## Context and Problem Statement\n\nWhere do decisions go?\n' > docs/decisions/0001-use-markdown.md
+printf -- '---\nstatus: proposed\ndate: 2026-02-02\n---\n\n# Use a log\n\n## Context and Problem Statement\n\nOne file?\n' > docs/decisions/0002-use-a-log.md
+printf -- '---\nstatus: "{proposed | accepted}"\n---\n\n# {title}\n' > docs/decisions/adr-template.md
+printf '# Intro\n\nHello.\n' > docs/guide/01-intro.md && printf '# Setup\n\nInstall.\n' > docs/guide/02-setup.md
+git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
+out=$($UP 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^  doc/adr/: a folder of decision records, 3 records' && echo \"\$0\" | grep -q '^  docs/decisions/: a folder of decision records, 2 records' && ! echo \"\$0\" | grep -q 'docs/guide/: a folder'" "$out"
+$UP --apply --merge-log >/dev/null 2>&1
+msg="merge-log records: both convert: Superceded read from adr-tools' link, MADR's who from decision-makers, its proposed under Open"
+expect_pass sh -c "grep -A1 -x '### D-003 Use python' .jig/decisions.md | grep -qx 'Accepted (not recorded, 2026-01-03). Supersedes D-002.' && grep -A1 -x '### D-004 Use Markdown records' .jig/decisions.md | grep -qx 'Accepted (Ann, Bo, 2026-02-01).' && sed -n '/^## Open/,/^## Unreleased/p' .jig/decisions.md | grep -A1 -x '### D-005 Use a log' | grep -qx 'Proposed (2026-02-02).' && test -f docs/decisions/adr-template.md && test ! -e doc/adr/0002-use-shell.md"
+msg="merge-log records: their output commits unedited"
+expect_pass git commit -qm "TOOL: merge the decision records"
+
+msg="merge-log records, a log in use: the dry run lists the folder and says it appends D-003 to D-005"
+MU="$T/ml-in-use"; pcnew "$MU" && git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
+dec 001 && git commit -qm "D-001: x" && dec 002 && git commit -qm "D-002: x"
+before=$(sed -n '/^## Unreleased/,$p' .jig/decisions.md)
+mlrecs && git add -A && git -c core.hooksPath=/dev/null commit -qm records
+out=$($UP --merge-log 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q '^  docs/decisions/ (a folder of decision records, 3 records)' && echo \"\$0\" | grep -q '^  appends D-003 to D-005\$' && ! echo \"\$0\" | grep -q 'nothing to merge'" "$out"
+$UP --apply --merge-log >/dev/null 2>&1
+msg="merge-log records, a log in use: D-003 to D-005 come after D-002, which with D-001 stays byte for byte"
+expect_pass sh -c "test \"\$(grep '^### ' .jig/decisions.md | tr '\n' ' ')\" = '### D-002 x ### D-001 x ### D-003 Use A ### D-004 Use B ### D-005 Use C ' && git diff --cached -U0 -- .jig/decisions.md | grep '^-[^-]' | wc -l | grep -qx ' *0'"
+msg="merge-log records, a log in use: the output commits unedited, and a second run has nothing to merge"
+git commit -qm "TOOL: merge the decision records" >/dev/null 2>&1; rc=$?
+expect_pass sh -c "test $rc = 0 && $UP --merge-log 2>&1 | grep -q 'nothing to merge'"
+
+msg="merge-log records: ended, a missing superseder and a numbered file with no status are refused, naming each, writing nothing"
+MB="$T/ml-bad"; pcnew "$MB" && mlrecs
+printf '# 0004. Old\n\n- **Date:** 2026-01-04\n- **Status:** ended (no longer needed)\n' > docs/decisions/0004-old.md
+printf '# 0005. Gone\n\n- **Date:** 2026-01-05\n- **Status:** superseded by 0009\n' > docs/decisions/0005-gone.md
+printf '# 0006. Bare\n\nNo status here.\n' > docs/decisions/0006-bare.md
+printf '# 0007. Spec\n\n- **Date:** 2026-01-07\n- **Status:** accepted\n\nBuilt per .jig/specs/x.md.\n' > docs/decisions/0007-spec.md
+git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
+out=$($UP --apply --merge-log 2>&1); rc=$?
+expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'docs/decisions/0004-old.md: status \`ended\`' && echo \"\$0\" | grep -q 'docs/decisions/0005-gone.md: superseded by 9, which is no record here' && echo \"\$0\" | grep -q 'docs/decisions/0006-bare.md: no status' && test ! -e .jig/decisions.md && test -z \"\$(git status --porcelain)\"" "$out"
+msg="merge-log records: a record naming a spec is listed as a line the hook would refuse"
+expect_pass sh -c "echo \"\$0\" | grep -q 'D-00[0-9] (docs/decisions/0007-spec.md): .*names .jig/specs/, which the hook refuses'" "$out"
+msg="merge-log records: migrations with a status jig doesn't read, and a book's chapters in draft, are no record folders: init writes the seed log"
+MF="$T/ml-not-records"; pcnew "$MF" && mkdir -p docs/migrations docs/book
+for n in 1 2; do printf '# 000%s. Step\n\nStatus: applied\n\n## Steps\n\nx\n' $n > docs/migrations/000$n-step.md; done
+for c in 01-intro:draft 02-setup:published 03-usage:draft; do printf -- '---\ntitle: T\nstatus: %s\n---\n\n# T\n\nText.\n' "${c#*:}" > "docs/book/${c%%:*}.md"; done
+git add -A && git commit -qm init && $J init >/dev/null 2>&1
+expect_pass sh -c "test -f .jig/decisions.md && ! $UP 2>&1 | grep -q 'a folder of decision records'"
+
+msg="merge-log records: on trunk, a reserve counter over a kept index counts the log, and append_files names the log"
+MK="$T/ml-board-kept"; pcnew "$MK" && mlrecs && printf '\nHow we write them: one file each.\n' >> docs/decisions/README.md
+git add -A && git commit -qm init && $J init >/dev/null 2>&1
+board "b['append_files'] = ['docs/decisions/README.md']; b['reserve'] = {'record': {'next': 4, 'pattern': r'\[(\d+)\]', 'files': ['docs/decisions/README.md']}}"
+git add -A && git -c core.hooksPath=/dev/null commit -qm board
+$UP --apply --merge-log >/dev/null 2>&1
+expect_pass sh -c "test -f docs/decisions/README.md && grep -q 'one file each' docs/decisions/README.md && python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['append_files'] == ['.jig/decisions.md'] and b['reserve']['record']['files'] == ['.jig/decisions.md'], b\""
+
+msg="merge-log records: merged on a branch, trunk's run rewrites the board that names the gone index, not nothing to merge"
+MG="$T/ml-board-branch"; pcnew "$MG" && mlrecs && git add -A && git commit -qm init && $J init >/dev/null 2>&1
+board "b['reserve'] = {'record': {'next': 4, 'pattern': r'\[(\d+)\]', 'files': ['docs/decisions/README.md']}}"
+git add -A && git -c core.hooksPath=/dev/null commit -qm board
+git checkout -qb recs && $UP --apply --merge-log >/dev/null 2>&1 && git -c core.hooksPath=/dev/null commit -qm "merge the records"
+git checkout -q main && git -c core.hooksPath=/dev/null merge -q --no-ff recs -m "merge recs"
+out=$($UP --merge-log 2>&1)
+$UP --apply --merge-log >/dev/null 2>&1
+expect_pass sh -c "echo \"\$0\" | grep -q 'reserve.record: files' && ! echo \"\$0\" | grep -q 'nothing to merge' && python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['reserve']['record']['files'] == ['.jig/decisions.md'], b\"" "$out"
+
+msg="merge-log records: the hook's allowance needs a record removed, not a guide chapter: an entry naming one without Touches is refused"
+MH="$T/ml-hook"; pcnew "$MH" && mkdir -p docs/guide && printf '# Intro\n\nHello.\n' > docs/guide/01-intro.md && printf '# Setup\n\nx\n' > docs/guide/02-setup.md
+git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
+git rm -q docs/guide/01-intro.md && ulog "### D-001 Intro
+Accepted (owner, 2026-10-30).
+
+Record 0001 before this log." && git add -A
+expect_refuse git commit -qm "D-001: intro"
+undo
+
+msg="merge-log records: a relation's record numbers become ids inside entries; one naming no record, and a code file's citation, are listed and left"
+MX="$T/ml-relate"; pcnew "$MX" && mkdir -p docs/decisions src
+printf '# 0001. Use A\n\n- **Date:** 2026-01-01\n- **Status:** in force, amended by 0002\n\nA.\n' > docs/decisions/0001-a.md
+printf '# 0002. Tune A\n\n- **Date:** 2026-01-02\n- **Status:** accepted\n\nAmends 0001 and 0009.\n' > docs/decisions/0002-b.md
+printf 'print("wrote record 2")  # record 0001\n' > src/t.py
+git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
+out=$($UP --apply --merge-log 2>&1)
+expect_pass sh -c "grep -qx 'Status: in force, amended by D-002' .jig/decisions.md && grep -qx 'Amends D-001 and 0009.' .jig/decisions.md && echo \"\$0\" | grep -q '\`0009\` in a relation: no record has that number' && echo \"\$0\" | grep -q '^  src/t.py:1: not a document, change by hand' && grep -qxF 'print(\"wrote record 2\")  # record 0001' src/t.py" "$out"
+msg="merge-log records: that output commits unedited"
+expect_pass git commit -qm "TOOL: merge the decision records"
+cd "$MR"
 }
 
 # ---------------------------------------------------------------- a heading is a page's address
@@ -6905,12 +7149,14 @@ expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -qF 'fold-in line \`- [x
 sed -i.bak 's/___/agrees/' .jig/handoffs/*.md && rm .jig/handoffs/*.bak && git add -A
 msg="cheaper rounds: the same note answered agrees commits"
 expect_pass git commit -qm "note p1"
-cd "$CR" && (cd .git/jig/worktrees/p2 && foldin && git add -A && git commit -qm "note p2")
+cd "$CR" && (cd .git/jig/worktrees/p2 && sed -i.bak '/ vs /d' .jig/handoffs/*.md && rm .jig/handoffs/*.bak && foldin && git add -A && git commit -qm "note p2, its pair line deleted")
 gated p1; gate_ok p1 && $J merge p1 >/dev/null 2>&1
 p2tip=$(git rev-parse p2)
 msg="cheaper rounds: a pair found at the gate says to answer it in the note and commit, sync only for a merge that needs a hand"
 out=$($J gate p2 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-p2 2>/dev/null
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'add each to the fold-in of .jig/handoffs/p2-.*, ticked and answered agrees' && echo \"\$0\" | grep -q 'jig sync. only when the merge itself needs a hand'" "$out"
+msg="cheaper rounds: a generated pair line deleted is named as left out of the note, and the merged job's as new on trunk"
+expect_pass sh -c "echo \"\$0\" | grep -A1 -x 'left out of the note, though jig listed them at the handoff:' | grep -qxF '  - [ ] D-?p2 vs .jig/decisions.md § D-001 (docs/a.md): ___' && echo \"\$0\" | grep -A1 -x \"new on main since the job's base:\" | grep -qxF '  - [ ] D-?p2 vs .jig/decisions.md § D-002 (docs/a.md): ___' && ! echo \"\$0\" | grep -q 'moved since'" "$out"
 pair=$(echo "$out" | grep ' vs ' | sed -e 's/^ *//' -e 's/^- \[ \]/- [x]/' -e 's/___$/agrees/')
 (cd .git/jig/worktrees/p2 && python3 -c "import sys,glob; f=glob.glob('.jig/handoffs/p2-*.md')[0]; s=open(f).read(); open(f,'w').write(s.replace('## Fold-in\n', '## Fold-in\n'+sys.argv[1]+'\n', 1))" "$pair" \
   && git add -A && git commit -qm "p2: answer the pair")
@@ -7418,6 +7664,8 @@ ur_reset
 out=$($UP 2>&1)
 msg="update roles: lines inside a pararepo's generated header are not read; the retired line after it is"
 expect_pass sh -c "! echo \"\$0\" | grep -qE '^  (4|5): |AGENTS.md:(4|5):' && echo \"\$0\" | grep -q '^  8: .- Bug reported'" "$out"
+msg="update roles: a pararepo gets no metarepo block line"
+expect_pass sh -c "! echo \"\$0\" | grep -q 'metarepo block'" "$out"
 ur_reset
 { cat "$P/AGENTS.md"; echo '- Bug reported → /jig:bug before editing. Prefer the fix that makes the odd path look like the healthy ones over one that patches the symptom.'; } > AGENTS.md
 echo '{}' > .jig/meta.json && ur_commit meta && cp AGENTS.md "$T/M.before"
@@ -7425,6 +7673,32 @@ out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
 n=$(wc -l < "$T/M.before" | tr -d ' ')
 msg="update roles: in a metarepo the retired line is listed as a job's, and --apply leaves AGENTS.md unchanged"
 expect_pass sh -c "echo \"\$0\" | grep -q \"^  AGENTS.md:$n: jig.s retired line: .* in a job (M4\" && cmp -s AGENTS.md \"\$1\"" "$out" "$T/M.before"
+
+# A metarepo's block (prefix E-), with and without the repo's own line beside it, the report's.
+l31='- Commit on a branch: main takes only reviewed merges, and only `jig release` tags.'
+ur_reset; out=$($UP 2>&1)
+msg="update roles: a plain repo gets no metarepo block line"
+expect_pass sh -c "! echo \"\$0\" | grep -q 'metarepo block'" "$out"
+$J init --meta --prefix E- >/dev/null && ur_commit mblock
+out=$($UP 2>&1)
+msg="update roles: no line of a metarepo's block is listed, jig release included"
+expect_pass sh -c "! echo \"\$0\" | sed -n '/^Repo files to review/,\$p' | grep -q AGENTS.md" "$out"
+echo "$l31" >> AGENTS.md && ur_commit l31
+out=$($UP 2>&1); n=$(wc -l < AGENTS.md | tr -d ' ')
+msg="update roles: the repo's own line beside the block is the only AGENTS.md line listed"
+expect_pass sh -c "test \"\$(echo \"\$0\" | sed -n '/^Repo files to review/,\$p' | grep -c AGENTS.md)\" = 1 && echo \"\$0\" | grep -q \"^  AGENTS.md:$n: runs a step in the repo.s own words\"" "$out"
+ur_reset; { cat "$P/AGENTS.md"; echo "$l31"; } > AGENTS.md; echo '{"decision_prefix": "E-"}' > .jig/meta.json && ur_commit noblock && cp AGENTS.md "$T/nb.before"
+out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+msg="update roles: a metarepo with no block lists AGENTS.md: jig's block, init --meta in a job once this jig is on trunk (M4), restated lines the owner's; --apply leaves it as it was"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  AGENTS.md: has no metarepo block.*jig init --meta. in a job.s worktree.*(M4).*owner.s to remove' && echo \"\$0\" | grep -q 'once this update.s .\.jig/jig\.py. is on trunk' && cmp -s AGENTS.md \"\$1\"" "$out" "$T/nb.before"
+ur_reset; $J init --meta --prefix E- >/dev/null && sed -i.bak 's/^- Only `jig release` tags\.$/- Only `jig meta-release` tags./' AGENTS.md && rm AGENTS.md.bak && ur_commit stale
+out=$($UP 2>&1)
+msg="update roles: a metarepo block in an older wording is listed the same way"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  AGENTS.md: has no metarepo block, or one older'" "$out"
+ur_reset; $J init --meta --prefix E- >/dev/null && grep -v '^- Rulebook ' AGENTS.md > AGENTS.tmp && mv AGENTS.tmp AGENTS.md && ur_commit norulebook
+out=$($UP 2>&1)
+msg="update roles: the block's citation of .jig/RULES.md loads no rulebook, so a metarepo without the Rulebook line is told to add it"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  AGENTS.md: names no .\.jig/RULES\.md.: add under ## Workflow'" "$out"
 
 # Fixture G: procedures in the repo's own words.
 ur_reset
