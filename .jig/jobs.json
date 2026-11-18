@@ -10,28 +10,5 @@
       "tests/smoke.sh"
     ],
     "reserved": {}
-  },
-  "check-queue": {
-    "spec": ".jig/specs/check-queue.md",
-    "state": "gated",
-    "after": [],
-    "owns": [
-      "plugin/templates/github/jig-check.yml",
-      "plugin/skills/check/SKILL.md"
-    ],
-    "shares": [
-      "plugin/templates/jig/jig.py",
-      "plugin/templates/jig/RULES.md",
-      "tests/smoke.sh",
-      "AGENTS.md",
-      ".jig/config.json",
-      "plugin/skills/work/SKILL.md",
-      "plugin/skills/review/SKILL.md",
-      "plugin/skills/hubnode/SKILL.md",
-      ".github/workflows/jig-check.yml",
-      "plugin/skills/release/SKILL.md"
-    ],
-    "reserved": {},
-    "check": "batch"
   }
 }

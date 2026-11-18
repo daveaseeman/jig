@@ -107,12 +107,15 @@ Those commit nothing: you read the result, copy what it wrote onto trunk and com
 **review** runs as a subagent (the Agent tool) where there is one: always a fresh context,
 given the inputs `/jig:review` names and nothing of this conversation. Where there is none,
 a raised session with no history. **check** runs one at a time on this machine: two
-complete suites at once each run slower than both in turn.
+complete suites at once each run slower than both in turn. `jig queue --full` enforces it, and
+every role's test and check runs go through `jig queue` too (`.jig/RULES.md`, The queue).
 
 ## Reconfiguring
 
 Fixed, whatever the config says: the owner's word before a merge, a push and a publish; a
-fresh session for every review; a complete check before a release. Everything else (a role's
+fresh session for every review; a complete check before a release. The one exception is
+`queue.overflow`: the owner's standing yes, quoted as its reason, for the check role to push
+and delete `jig-check/*` branches, and no other. Everything else (a role's
 tier or effort) you may propose to change, with a reason (`/jig:decision-cards`), and apply only on the owner's yes:
 a `roles` entry in `.jig/config.json`, with that reason, on trunk. On a no, keep the defaults.
 The commit hook refuses an entry without a reason, and any that weakens a fixed rule.
@@ -149,8 +152,9 @@ and add `AGENTS.md`'s pointer line naming its trigger ("Before a release, read `
 ## Opening a job (assign)
 
 Before opening more than one job, say in one line that each job's commands and checks run on
-this machine, with the last complete check's time from `jig status`, and that jobs run in the
-cloud only if the owner asks and the repo has a remote.
+this machine through `jig queue`, with the last complete check's time from `jig status`, and
+that the complete check overflows to GitHub Actions only with `queue.overflow` set (on the
+owner's yes, with `.github/workflows/jig-check.yml` from jig's template in the same commit).
 
 1. Read the spec. In a pararepo, refuse a job whose spec cites a proposal `jig sync`'s
    report calls not released: it would build on a decision the metarepo hasn't made. This

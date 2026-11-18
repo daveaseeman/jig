@@ -614,7 +614,7 @@ else stops with the files named, and a person resolves it.
 2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it sets
    up a **detached scratch checkout of the commit the note names**, with trunk merged in the
    way `jig sync` merges it, and prints the complete check to run there
-   (`.jig/scripts/check.sh --full`), the check role's tier and effort, and the `jig checked`
+   (`jig queue --full -- ./.jig/scripts/check.sh --full`), the check role's tier and effort, and the `jig checked`
    that records it. It never runs the check: whoever runs it runs the same command. Never the
    job's live worktree, which the subnode may still be building in.
    The scratch checkout lives until the job is marked gated or merged: `jig mark <job> gated`
@@ -685,6 +685,8 @@ order.
 
 The hubnode's own steps, which are no role's: assign, gate, merge, release, push, publish. jig itself
 (no model) refuses a step out of order, and removes a merged job's clean worktree and branch.
+One push is the check role's: with `queue.overflow` set (The queue), it pushes and deletes
+`jig-check/*` branches for an overflowed complete check, and no other branch.
 
 Tier 1 is the best model the tool has; a higher number is a lesser model. Effort 0 is the
 tool's highest; each number up is one level lower. The defaults leave effort 0 free, so a
@@ -707,7 +709,10 @@ job's work session); `⇢` starts a new one.
 | Redocument | spec ⇢ Jobs ⇢ Batch ⇢ Job | `/jig:redocument` | the spec is the remap; the last job is the cleanup |
 
 **Fixed, whatever the config says:** the owner's word before merge, push and publish; a fresh
-session for every review; a complete check before a release. Everything else the hubnode may
+session for every review; a complete check before a release. The one exception is the owner's
+word given once: `queue.overflow`, with the owner's words as its reason, stands for every push of
+a `jig-check/*` branch, and for nothing wider. The commit hook refuses it without a reason, and
+refuses any other key that weakens a fixed rule. Everything else the hubnode may
 propose to reconfigure, with a reason, and apply only on the owner's yes; on a no it continues
 with the defaults.
 
@@ -803,7 +808,39 @@ check role's numbers, the seconds and the date, in `.git/jig/checked.log` (never
 shared by every worktree). It warns when the numbers differ from the check role's. `jig
 status` prints the last one's seconds and date: what a complete check costs here.
 
-A single job keeps its own gate check: `check.sh --full` once in the gate's checkout, `jig
+`jig checked --ci <run url> --tier N --effort N --seconds S` records a complete check that ran
+on GitHub Actions (The queue). jig reads the run with `gh run view` and refuses unless it is
+this repo's `origin`'s, is the `jig check` workflow on `jig-check/<HEAD's short sha>`, ran HEAD,
+completed and succeeded, or when `gh` is missing or can't read it; the record carries the
+run's URL as a sixth field. `jig status` and the gate's mark read it as they read a local one.
+
+### The queue
+
+Every test or check run a role starts goes through `jig queue -- <command…>`: it waits for one
+of the machine's slots, runs the command holding it, and returns the command's exit code. jig
+holds the slot; it never chooses what runs. The slots are OS file locks in `.git/jig/queue/`,
+shared by every worktree, so a run that dies frees its slot with nothing to clean up. jig holds
+them, not the command, so a process the command leaves behind never keeps a slot. A run
+that finds none free prints `waiting for a slot: N running, M waiting` and waits. `jig queue`
+with no command prints the slots, who holds them, who waits, and whether a complete check runs.
+
+`queue` in `.jig/config.json` sets it: `width` is the cores one run uses (default 1, `"all"`
+for every core), and the slots are the core count over the width, at least 1; `slots` sets
+the number outright. `max_load`, a load average per core, stops handing out slots while the
+machine's 1-minute load is above it; unset, only the queue counts. The Stop hook's quick check
+doesn't queue: it has a time limit, and waiting would spend it.
+
+The complete check runs as `jig queue --full -- check.sh --full`: it also takes the single
+full lock, so two complete checks never run at once. With `queue.overflow: {"to": "github",
+"reason": "<the owner's words>"}` set on trunk, a complete check that finds every slot held, or
+another complete check running, doesn't wait: it exits 3 and prints the route. A wait for
+the load alone is still a wait. The check role
+pushes HEAD as `jig-check/<sha>`, where `.github/workflows/jig-check.yml` (copied from jig's
+template in the same commit as the key) runs setup and the complete check; records the run
+with `jig checked --ci` once it passes; and deletes the branch. Without the key it waits.
+
+A single job keeps its own gate check: `jig queue --full -- ./.jig/scripts/check.sh --full`
+once in the gate's checkout, `jig
 checked` there, then `jig mark <job> gated`, which refuses without that record.
 
 A batch of jobs gated together owes one complete check instead: each is marked `jig mark <job>
@@ -1432,6 +1469,10 @@ jig decision <id>           a decision entry and its supersedes chain
 jig sync                    merge trunk in, append rule applied; on a pararepo's trunk, the metarepo
 jig reviewed [--change] [--tier N --effort N] [--ran text] [--blocking N]   record that HEAD has had its review-work (or review-change), at what, and its blocking findings
 jig checked --tier N --effort N --seconds S   record that the complete check passed on HEAD
+jig checked --ci <run url> --tier N --effort N --seconds S   ... a GitHub Actions run of HEAD, once gh shows it passed
+jig queue -- <command…>     run a test or check holding one of the machine's slots; waits when none is free
+jig queue --full -- <command…>   the complete check: also the single full lock; exit 3 and the CI route on overflow
+jig queue                   the slots, who holds them, who waits, and whether a complete check runs
 jig checked --trace [command]   on trunk: the merges since the last complete check, and the bisect that finds the breaking one
 jig roles                   each role's model tier and effort in effect
 jig flows                   each workflow's steps, who does each, and its session links

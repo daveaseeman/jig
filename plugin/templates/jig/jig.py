@@ -19,6 +19,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 import urllib.parse
 from datetime import date
 from pathlib import Path
@@ -61,6 +62,7 @@ BOARD_OPTIONAL = (
     "roles",               # overrides ROLES' tiers and efforts, each with a reason
     "deep_subsystems",     # {"docs/<system>/<subsystem>/<folder>": rationale}: owner-approved deeper pages
     "boards",              # ["docs/<board>/<board>.md", "docs/<system>/<board>/<board>.md"]: the pages that are boards, never inferred from a path
+    "queue",               # {"width": N | "all", "slots": N, "max_load": X, "overflow": {"to": "github", "reason": ...}}: jig queue
     "findings",            # {"<kind>:<path>": "approved" | "deferred: <where>" | "exception: <reason>"}: the owner's answer to each finding
 )
 # Who does each step. Every session is a node: the hubnode (the owner's) or a subnode, which
@@ -536,7 +538,7 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
     if CONFIG in paths and (raw := in_index(CONFIG, staged)):
         try:
             new_cfg = json.loads(raw)
-            out += role_settings(new_cfg)[1]
+            out += role_settings(new_cfg)[1] + queue_problems(new_cfg)
             # The old key isn't read: a commit carrying it keeps a setting that looks in effect
             # and isn't. `jig update --apply` removes it.
             if "workflow" in new_cfg:
@@ -1080,7 +1082,7 @@ def cmd_status(root: Path, args) -> int:
     recs = checked_records()
     if recs:
         print(f"last complete check: {recs[-1]['seconds']}s on {recs[-1]['date']} "
-              f"({recs[-1]['commit'][:12]})")
+              f"({recs[-1]['commit'][:12]})" + (f" on CI: {recs[-1]['url']}" if recs[-1]["url"] else ""))
     return 0
 
 
@@ -1508,9 +1510,10 @@ def checked_records() -> list[dict]:
     out = []
     for line in (log.read_text().splitlines() if log.exists() else []):
         f = line.split("\t")
-        if len(f) == 5 and all(x.isdigit() for x in f[1:4]):
+        # A sixth field is the CI run's URL: a run on GitHub Actions jig read through gh.
+        if len(f) in (5, 6) and all(x.isdigit() for x in f[1:4]):
             out.append({"commit": f[0], "tier": int(f[1]), "effort": int(f[2]),
-                        "seconds": int(f[3]), "date": f[4]})
+                        "seconds": int(f[3]), "date": f[4], "url": f[5] if len(f) == 6 else ""})
     return out
 
 
@@ -1557,6 +1560,45 @@ def check_levels_review(root: Path) -> list[tuple[str, str]]:
              "full suite, slow or end-to-end tests: what the gate's check step runs)" + named)]
 
 
+def ci_run_passed(url: str, head: str) -> str:
+    """URL, once gh says its run finished and passed on HEAD. jig never records a run it
+    didn't read: a URL handed to it is a claim, and the run's own result is the evidence."""
+    m = re.search(r"github\.com/([^/\s]+/[^/\s]+)/actions/runs/(\d+)", url)
+    if not m:
+        die(f"--ci takes a GitHub Actions run's URL (https://github.com/<owner>/<repo>/actions/runs/<id>), not {url!r}")
+    origin = re.search(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?/?$", git("remote", "get-url", "origin"))
+    if not origin:
+        die("this repo has no GitHub origin: a CI run is recorded only from the repo it ran on")
+    if origin.group(1).casefold() != m.group(1).casefold():
+        die(f"run {m.group(2)} is {m.group(1)}'s, not this repo's origin, {origin.group(1)}")
+    if not shutil.which("gh"):
+        die("gh is not installed or not on PATH: jig checked --ci reads the run through gh, "
+            "and records nothing it can't read")
+    p = subprocess.run(["gh", "run", "view", m.group(2), "--repo", m.group(1),
+                        "--json", "headSha,conclusion,status,url,workflowName,headBranch"],
+                       capture_output=True, text=True)
+    try:
+        run = json.loads(p.stdout) if p.returncode == 0 else None
+    except ValueError:
+        run = None
+    if not isinstance(run, dict):
+        die(f"gh could not read run {m.group(2)}: {(p.stderr or p.stdout).strip() or f'exit {p.returncode}'}")
+    if run.get("headSha") != head:
+        die(f"run {m.group(2)} ran {str(run.get('headSha'))[:12]}, not HEAD {head[:12]}: "
+            "record it in a checkout of the commit it ran")
+    # Any green run on HEAD isn't the complete check: a lint workflow passes on the same
+    # commit, even one that also runs on the check branch.
+    branch = f"{CHECK_BRANCH}/{git('rev-parse', '--short=12', 'HEAD')}"
+    if run.get("workflowName") != CHECK_WORKFLOW or run.get("headBranch") != branch:
+        die(f"run {m.group(2)} is {run.get('workflowName')!r} on {run.get('headBranch')!r}: the complete "
+            f"check is the {CHECK_WORKFLOW!r} workflow on {branch}")
+    if run.get("status") != "completed":
+        die(f"run {m.group(2)} is {run.get('status')}, not completed: record it once it passes")
+    if run.get("conclusion") != "success":
+        die(f"run {m.group(2)} concluded {run.get('conclusion')}, not success: nothing to record")
+    return run.get("url") or url
+
+
 def cmd_checked(root: Path, args) -> int:
     """Record that the complete check passed on HEAD; with --trace, how to find the merge that
     broke trunk since its last recorded one. jig records and prints; it never runs a check."""
@@ -1588,20 +1630,257 @@ def cmd_checked(root: Path, args) -> int:
         print("  git bisect reset")
         return 0
     if args.tier is None or args.effort is None or args.seconds is None:
-        die("usage: jig checked --tier N --effort N --seconds S, or jig checked --trace [command]", 2)
+        die("usage: jig checked --tier N --effort N --seconds S [--ci <run url>], or jig checked --trace [command]", 2)
     head = git("rev-parse", "HEAD")
     if not head:
         die("no commit to record")
+    url = ci_run_passed(args.ci, head) if args.ci else ""
     log = checked_log()
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("a") as f:
-        f.write(f"{head}\t{args.tier}\t{args.effort}\t{args.seconds}\t{date.today().isoformat()}\n")
-    print(f"checked {head[:12]}: tier {args.tier}, effort {args.effort}, {args.seconds}s")
+        f.write(f"{head}\t{args.tier}\t{args.effort}\t{args.seconds}\t{date.today().isoformat()}"
+                + (f"\t{url}" if url else "") + "\n")
+    print(f"checked {head[:12]}: tier {args.tier}, effort {args.effort}, {args.seconds}s"
+          + (f", on CI: {url}" if url else ""))
     step = role_settings(Board.load(root).data)[0]["check"]
     if (args.tier, args.effort) != (step["tier"], step["effort"]):
         print(f"warning: recorded tier {args.tier}, effort {args.effort}; the check step is "
               f"tier {step['tier']}, effort {step['effort']}", file=sys.stderr)
     return 0
+
+
+# ------------------------------------------------------------------- the queue
+
+# The queue's config keys. `overflow` is the one key that amends a fixed rule: with it, the
+# check role pushes and deletes jig-check/* branches on the owner's standing yes.
+QUEUE_KEYS = ("width", "slots", "max_load", "overflow")
+CHECK_BRANCH = "jig-check"
+CHECK_WORKFLOW = "jig check"         # the `name:` in templates/github/jig-check.yml
+# `jig queue --full` exits with this when the complete check overflows to CI: neither a pass
+# (0) nor the command's own failure (1), and not a usage error (2).
+OVERFLOW_EXIT = 3
+
+
+def queue_problems(config: dict) -> list[str]:
+    """Every way the config's `queue` breaks the rules. The overflow key is the owner's standing
+    yes for a push, so like a `roles` entry it carries the owner's words as its reason."""
+    q = config.get("queue")
+    if q is None:
+        return []
+    if not isinstance(q, dict):
+        return ['queue: must be {"width": N or "all", "slots": N, "max_load": X, "overflow": {...}}']
+    bad = []
+    for k, v in q.items():
+        if k not in QUEUE_KEYS:
+            bad.append(f"queue.{k}: no such key; the keys are {', '.join(QUEUE_KEYS)}")
+        elif k == "width" and v != "all" and not (type(v) is int and v >= 1):
+            bad.append(f'queue.width: {v!r} is not a whole number from 1 up, or "all"')
+        elif k == "slots" and not (type(v) is int and v >= 1):
+            bad.append(f"queue.slots: {v!r} is not a whole number from 1 up")
+        elif k == "max_load" and not (type(v) in (int, float) and v >= 0):
+            bad.append(f"queue.max_load: {v!r} is not a load per core from 0 up")
+        elif k == "overflow":
+            if not isinstance(v, dict) or v.get("to") != "github":
+                bad.append('queue.overflow: must be {"to": "github", "reason": "<the owner\'s words>"}')
+            elif not (isinstance(v.get("reason"), str) and v["reason"].strip()):
+                bad.append("queue.overflow: no reason: quote the owner's yes to pushing "
+                           f"{CHECK_BRANCH}/* branches without asking each time")
+            elif set(v) - {"to", "reason"}:
+                bad.append(f"queue.overflow.{sorted(set(v) - {'to', 'reason'})[0]}: only to and reason are set; "
+                           f"the standing yes covers {CHECK_BRANCH}/* branches and nothing wider")
+    return bad
+
+
+def queue_slots(q: dict) -> tuple[int, str]:
+    """The number of slots, and how it was reached: the cores over the cores one run uses."""
+    cores = os.cpu_count() or 1
+    if "slots" in q:
+        return q["slots"], "queue.slots"
+    width = cores if q.get("width", 1) == "all" else q.get("width", 1)
+    return max(1, cores // width), f"{cores} cores / width {q.get('width', 1)}"
+
+
+def queue_dir() -> Path:
+    """Shared by every worktree of the repo, like checked.log: the machine's runs, not a branch's."""
+    return Path(git("rev-parse", "--path-format=absolute", "--git-common-dir")) / "jig" / "queue"
+
+
+def try_lock(path: Path):
+    """An open file holding PATH's lock, or None if another process holds it. The OS frees the
+    lock when its holder dies, however it dies, so a killed run leaves nothing to clean up."""
+    import fcntl
+    f = path.open("a+")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return f
+    except BlockingIOError:
+        f.close()
+        return None
+
+
+def stamp(f, cmd: list[str], full: bool) -> None:
+    f.seek(0)
+    f.truncate()
+    f.write(json.dumps({"cmd": shlex.join(cmd), "where": os.getcwd(), "pid": os.getpid(),
+                        "since": int(time.time()), "full": full}))
+    f.flush()
+
+
+def held(path: Path) -> dict | None:
+    """What holds PATH's lock, or None when nothing does."""
+    probe = try_lock(path)
+    if probe is not None:
+        probe.close()
+        return None
+    try:
+        return json.loads(path.read_text() or "{}")
+    except (OSError, ValueError):
+        return {}
+
+
+def queue_state(qdir: Path, slots: int) -> tuple[list[dict], list[dict], dict | None]:
+    """(the runs holding a slot, the runs waiting, the complete check holding the full lock)."""
+    running = [h for i in range(slots) if (h := held(qdir / f"slot-{i}.lock")) is not None]
+    waiting = []
+    for w in sorted(qdir.glob("wait-*.lock")):
+        h = held(w)
+        if h is None:
+            w.unlink(missing_ok=True)      # its waiter died before removing it
+        else:
+            waiting.append(h)
+    return running, waiting, held(qdir / "full.lock")
+
+
+def over_load(q: dict) -> bool:
+    """Read only when the repo set a threshold: a browser or a build spikes the load, and the
+    right number differs per machine, so queue depth alone is the default."""
+    if "max_load" not in q:
+        return False
+    return os.getloadavg()[0] / (os.cpu_count() or 1) > q["max_load"]
+
+
+def run_line(h: dict) -> str:
+    age = int(time.time()) - int(h.get("since") or time.time())
+    return f"{h.get('cmd', '?')}  in {h.get('where', '?')}  for {age}s" + ("  [complete check]" if h.get("full") else "")
+
+
+def overflow_route(q: dict, root: Path) -> None:
+    short = git("rev-parse", "--short=12", "HEAD")
+    branch = f"{CHECK_BRANCH}/{short}"
+    remote = "origin" if "origin" in git("remote").split() else (git("remote").split() or ["<remote>"])[0]
+    step = role_settings(Board.load(root).data)[0]["check"]
+    print(f"the queue is full or a complete check is running: this complete check overflows to "
+          f"GitHub Actions, on the owner's standing yes (queue.overflow: "
+          f"\"{q['overflow']['reason']}\"). The check role:")
+    print(f"  git push {remote} HEAD:refs/heads/{branch}")
+    print(f"  gh run list --branch {branch} --workflow jig-check.yml      (the run's id and URL: setup.sh, then check.sh --full)")
+    print(f"  gh run watch <id> --exit-status")
+    print(f"  python3 {DIR}/jig.py checked --ci <run url> --tier {step['tier']} --effort {step['effort']} --seconds <s>"
+          "      (s: the run's own duration)")
+    print(f"  git push {remote} --delete {branch}")
+
+
+def cmd_queue(root: Path, args) -> int:
+    """Run a command holding one of the machine's slots, and return its exit code; with no
+    command, print who holds and who waits. jig holds the slot; it never chooses what runs."""
+    q = Board.load(root).data.get("queue") or {}
+    if bad := queue_problems({"queue": q}):
+        die("; ".join(bad))
+    slots, how = queue_slots(q)
+    qdir = queue_dir()
+    qdir.mkdir(parents=True, exist_ok=True)
+    cmd = args.command[1:] if args.command[:1] == ["--"] else args.command
+    if not cmd:
+        if args.full:
+            die("usage: jig queue --full -- <command…>", 2)
+        running, waiting, full = queue_state(qdir, slots)
+        print(f"slots: {slots} ({how})" + (f", no new slot above load {q['max_load']} per core" if "max_load" in q else ""))
+        print(f"running: {len(running)}")
+        for h in running:
+            print(f"  {run_line(h)}")
+        print(f"waiting: {len(waiting)}")
+        for h in waiting:
+            print(f"  {run_line(h)}")
+        print(f"complete check: {'running' if full is not None else 'none'}")
+        return 0
+
+    locks = []      # held for the command's length: closing them, or dying, frees them
+    wait_file = None
+    said = False
+    misses = 0
+    try:
+        while True:
+            if args.full and not any(l.name.endswith("full.lock") for l in locks):
+                f = try_lock(qdir / "full.lock")
+                if f is not None:
+                    locks.append(f)
+            have_full = not args.full or bool(locks)
+            slot = None
+            if have_full:
+                for i in range(slots):
+                    if (slot := try_lock(qdir / f"slot-{i}.lock")) is not None:
+                        break
+            # The machine is full only when every slot or the full lock is held. A wait for
+            # the load alone is a wait: a busy browser is no reason to push a check.
+            full_queue = slot is None
+            if slot is not None and over_load(q):
+                slot.close()
+                slot = None
+            if slot is not None:
+                locks.append(slot)
+                break
+            if full_queue and args.full and "overflow" in q:
+                # A run that just ended frees its slot a moment before the next takes it:
+                # look once more before sending a check off the machine.
+                misses += 1
+                if misses >= 2:
+                    for l in locks:
+                        l.close()
+                    overflow_route(q, root)
+                    return OVERFLOW_EXIT
+                time.sleep(0.2)
+                continue
+            if wait_file is None:
+                wait_file = try_lock(qdir / f"wait-{os.getpid()}-{int(time.time() * 1000)}.lock")
+                if wait_file is not None:
+                    stamp(wait_file, cmd, args.full)
+            if not said:
+                running, waiting, _ = queue_state(qdir, slots)
+                print(f"waiting for a slot: {len(running)} running, {len(waiting)} waiting", file=sys.stderr, flush=True)
+                said = True
+            time.sleep(0.5)
+        if wait_file is not None:
+            Path(wait_file.name).unlink(missing_ok=True)
+            wait_file.close()
+            wait_file = None
+        for l in locks:
+            stamp(l, cmd, args.full)
+        try:
+            # The command never inherits the locks: a process it leaves behind would hold the
+            # slot long after the run. The trade is that a jig killed outright frees it early.
+            proc = subprocess.Popen(cmd)
+        except OSError as e:
+            die(f"cannot run {cmd[0]}: {e.strerror}", 127)
+        # A stop sent to jig reaches the command too, so the slot is never freed under a run
+        # that is still going.
+        import signal
+        def forward(sig, _frame):
+            proc.send_signal(sig)
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            signal.signal(sig, forward)
+        while True:
+            try:
+                rc = proc.wait()
+                # A command killed by a signal exits as a shell reports it: 128 + the signal.
+                return 128 - rc if rc < 0 else rc
+            except KeyboardInterrupt:
+                continue        # the terminal sent it to the command as well; wait for its exit
+    finally:
+        if wait_file is not None:
+            Path(wait_file.name).unlink(missing_ok=True)
+            wait_file.close()
+        for l in locks:
+            l.close()
 
 
 def cmd_merge(root: Path, args) -> int:
@@ -2936,7 +3215,9 @@ def cmd_gate(root: Path, args) -> int:
     check = f"./{DIR}/scripts/check.sh"
     # A subshell: a shell left inside the checkout would sit in a deleted folder once it's removed.
     # The complete level: the gate is the check step's, the one place it runs per job.
-    print(f"  (cd {scratch} && {'' if os.access(where / check, os.X_OK) else 'bash '}{check} --full)")
+    # Through the queue: two complete checks at once each run slower than both in turn.
+    print(f"  (cd {scratch} && python3 {DIR}/jig.py queue --full -- "
+          f"{'' if os.access(where / check, os.X_OK) else 'bash '}{check} --full)")
     step = role_settings(board.data)[0]["check"]
     print(f"\nThe check step runs it: tier {step['tier']}, effort {step['effort']}. When it passes, "
           f"record it there, with the seconds it took:")
@@ -6546,7 +6827,7 @@ def cmd_release(root: Path, args) -> int:
                 f"{len(owed)} merge{'s' if len(owed) > 1 else ''} since the last complete check on "
                 f"{trunk} owe{'' if len(owed) > 1 else 's'} the batch's check ("
                 + ", ".join(f"{c[:12]} {s}" for c, s in owed)
-                + f"): run `{DIR}/scripts/check.sh --full` on {trunk}, then `jig checked`")
+                + f"): run `jig queue --full -- ./{DIR}/scripts/check.sh --full` on {trunk}, then `jig checked`")
     # Released, a D-?<slug> would be frozen under its version and never get its number.
     log_now = (root / LOG).read_text() if (root / LOG).exists() else ""
     problems += [f"{LOG}:{e['line']} {e['id']} isn't numbered: a merge numbers it (`jig merge "
@@ -13380,7 +13661,11 @@ def main(argv: list[str] | None = None) -> int:
     ck.add_argument("--tier", type=int)
     ck.add_argument("--effort", type=int)
     ck.add_argument("--seconds", type=int)
+    ck.add_argument("--ci", metavar="URL", help="a GitHub Actions run of HEAD that passed: recorded only once gh confirms it")
     ck.add_argument("--trace", nargs="?", const="", metavar="COMMAND", help="on trunk: the merges since the last complete check, and the bisect that finds the one breaking COMMAND")
+    qu = sub.add_parser("queue", help="run a command holding one of the machine's slots; with none, who holds and who waits")
+    qu.add_argument("--full", action="store_true", help="the complete check: also the single full lock, or the CI route when the repo set queue.overflow")
+    qu.add_argument("command", nargs=argparse.REMAINDER, help="-- <command…>")
     mg = sub.add_parser("merge", help="hubnode: merge a job and delete its entry in that commit")
     mg.add_argument("name", nargs="?")
     mg.add_argument("--number", action="store_true", help="in a merge in progress, its conflicts resolved: number the D-?<slug> ids it brings in")
@@ -13490,7 +13775,7 @@ def main(argv: list[str] | None = None) -> int:
     load_genres(root)
     fn = {
         "init": cmd_init, "install-hooks": cmd_install_hooks, "status": cmd_status,
-        "open": cmd_open, "reserve": cmd_reserve, "consolidate": cmd_consolidate, "share": cmd_share, "mark": cmd_mark, "merge": cmd_merge, "rules": cmd_rules, "check": cmd_rules, "checked": cmd_checked, "decision": cmd_decision,
+        "open": cmd_open, "reserve": cmd_reserve, "consolidate": cmd_consolidate, "share": cmd_share, "mark": cmd_mark, "merge": cmd_merge, "rules": cmd_rules, "check": cmd_rules, "checked": cmd_checked, "queue": cmd_queue, "decision": cmd_decision,
         "job": cmd_job, "sync": cmd_sync, "reviewed": cmd_reviewed,
         "handoff": cmd_handoff, "gate": cmd_gate, "hook": cmd_hook,
         "workflow": cmd_workflow, "roles": cmd_roles, "flows": cmd_flows, "next": cmd_next,
