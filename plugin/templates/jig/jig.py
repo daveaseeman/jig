@@ -9168,9 +9168,12 @@ def cmd_staging(root: Path, args) -> int:
         if group := group_of(root, Board.load(root, working_tree=True), spec):
             die(group_refusal(group, f"{spec}, which carries `{mark}`,"), 1)
 
-    def landed(rel: str) -> bool:
+    def landed(rel: str, carrier: bool = False) -> bool:
+        """The mark is in REL. A spec carrying a request holds it as a whole `Source:` line, as rig
+        reads a carrier; a doc or spec update may hold it anywhere: a comment, a sentence, a list."""
         f = inside(rel)
-        return f.exists() and carries(f.read_text(errors="replace"), mark)
+        text = f.read_text(errors="replace") if f.exists() else None
+        return text is not None and (carries(text, mark) if carrier else mark in text)
 
     if kind == "roadmap":
         # The roadmap carries no provenance lines, so the owner reads it as the plan; the
@@ -9184,9 +9187,9 @@ def cmd_staging(root: Path, args) -> int:
     if kind == "feature-request" and change == "update" and bare_path(dest):
         # The header names the spec the request changes; another spec carrying the mark would
         # resolve it while the named one is never amended.
-        if not landed(dest) and (note := note_carrying(root, mark)):
+        if not landed(dest, carrier=True) and (note := note_carrying(root, mark)):
             return done(f"carried by {note}")
-        if not landed(dest):
+        if not landed(dest, carrier=True):
             die(f"a request resolves into a spec: amend {dest}, the spec it names, from it, "
                 f"carrying `{mark}`, then resolve again", 1)
         unanswered(dest)
@@ -13695,6 +13698,9 @@ def rig_state(root: Path, board: "Board") -> dict:
                       else "open" if i["kind"] == "next-step"
                       else (call if call in ("fixing", "concluded") else "new") if i["kind"] == "feedback"
                       else call if call in ("ready", "open") else "unjudged")
+        # What carried it decides it: a judgment stored before it was carried never replays.
+        if i["state"] in ("taken", "built", "noted"):
+            i["judged"] = None
     by_name = {}
     for i in items:
         if i["kind"] != "next-step":
@@ -13862,7 +13868,9 @@ def rig_text(state: dict) -> str:
     out.append("\nFinished:")
     out += [f"  {f['spec']}" + (f"  kept: {f['kept']}" if f["kept"] else f"  done by {f['note']}" if f["note"]
                                 else "  its job has merged") for f in state["finished"]]
-    out += [f"  staged  {i['path']}  built: {i['built']} carries it; `jig rig --close` resolves it"
+    out += [f"  staged  {i['path']}  built: {i['built']} carries it; "
+            + (f"waits on {', '.join(i['deps'])} before `jig rig --close` resolves it" if i["deps"]
+               else "`jig rig --close` resolves it")
             for i in items if i["state"] == "built"]
     if not state["finished"] and not any(i["state"] == "built" for i in items):
         out.append("  nothing to close")

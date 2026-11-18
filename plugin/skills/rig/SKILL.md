@@ -48,8 +48,8 @@ Draw it from that last output, in this order, the same every run. Where the host
 inline visual, it may; the sections and their contents stay these.
 
 1. The count line: how many things wait on the owner's answers (every question: the open
-   staged files, the open next step, each group with an overlap and each dependency cycle, a
-   ring once), and how many can start now.
+   staged files, each `noted` file and `concluded` feedback report, the open next step, each
+   group with an overlap and each dependency cycle, a ring once), and how many can start now.
 2. **Can start now:** each `group`, its items in the order given, each with what it comes
    after, and each overlapping pair the group's `overlaps` names.
 3. **Waiting on:** each item and what it waits for: a job, a spec or a staged file. A taken
@@ -70,9 +70,9 @@ host's tool where it has one, unless one is still working (that one stays, and y
 Draw both as the sixth part:
 
 6. **Finished:** each spec `jig rig --close` closed or kept, each staged file it resolved,
-   and each session archived or still working. A staged decisions file a merged job carried is
-   never resolved here: it shows under Waiting on you as `(noted: <note>)`, for the step
-   `/jig:hubnode`'s Merging gives it.
+   and each session archived or still working. A `noted` file (a carried file `resolve` would
+   write, a decisions file most often) is never resolved here: it shows under Waiting on you as
+   "noted: <note> carried it; the hubnode's step", and § 4 takes that step.
 
 ## 3. The decisions
 
@@ -105,6 +105,11 @@ Nothing is ever dropped for it.
 
 ## 4. Act on the answers
 
+- **A noted file** (no question, your own step, as `/jig:hubnode`'s Merging gives it): read the
+  job that note names and the log. A decisions file whose entries that job logged: `jig staging
+  drop <file>`, saying so; none logged: `jig staging resolve <file>`; some: put it to the owner.
+  Any other noted file: resolve or drop it by hand, saying why.
+
 - **An open file's answers:** append them to the staged file under `## Owner's answers`, dated,
   in the owner's words. The file changed, so the next run judges it again.
 - **Write a spec:** resolve the staged file as `/jig:stage` says (a request or story is
@@ -133,7 +138,8 @@ show the new picture, so the owner sees items move from open to ready to running
 ## `/jig:rig auto`
 
 The same run, its feedback step and Finished included, without asking for what needs no
-answer: write a spec from every ready staged file in no group with an overlap, then run `jig rig --json` again (judging what comes back null, as in step 1) and open and
+answer. It takes no `noted` file's step: whether a job logged only some entries is the owner's
+to hear, so those stay listed for an interactive run. Then: write a spec from every ready staged file in no group with an overlap, then run `jig rig --json` again (judging what comes back null, as in step 1) and open and
 start every spec whose `opens` is `now` in that output. A group with an overlap needs the
 owner's answer, and an item that comes `after` another waits for that job, so neither starts. Answer
 no open question, break no cycle and take no roadmap step: those are proposed, as blocks, for

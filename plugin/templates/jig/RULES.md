@@ -798,8 +798,8 @@ job, named or by its spec's name, or on an item not ready, waits on it, and a de
 cycle waits on the owner. An item that could start but overlaps any waiting spec, one that
 waits included, is to answer first, since `jig open` refuses it. The order is
 fixed (kind, dependency, path), so the same state prints the same bytes. Its count of what
-waits on the owner's answers counts every question: each open or unjudged staged file, the
-open next step, each group with an overlap (once, however many pairs it holds: one job for its
+waits on the owner's answers counts every question: each open or unjudged staged file, each
+`noted` file and `concluded` feedback report, the open next step, each group with an overlap (once, however many pairs it holds: one job for its
 items, or keep some apart) and each dependency cycle, a ring once; `--json` prints it as
 data, each group with, per member, the Touches it shares with the rest and whether all of them
 are append files (`append_only`): a member that meets its group only in the log is the one most
@@ -810,7 +810,8 @@ mark, is **taken**: it waits on that spec or job, in no group, and counts nowher
 flight carries: a waiting spec, an open job's spec, or one whose only notes are partial. One a
 finished spec still in the tree or a landed, non-partial note's header carries (a whole
 `Source:` line), which `resolve` would land writing nothing, is **built**: rig lists it under Finished, and `jig rig --close` resolves it.
-A carried file `resolve` would write (a decisions file) is never built: it is **noted**, with
+A carried file `resolve` would write is never built (a decisions file always: the owner,
+2026-11-18; any other kind that `resolve` would write too): it is **noted**, with
 what carried it, takes no judgment (`--store-put` refuses it, as it does a taken or built item),
 opens nothing, and counts as the hubnode's step (Staging). Only what the tree holds now counts: nothing is read from
 history. In the jig repo a

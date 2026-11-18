@@ -97,14 +97,14 @@ known (the close), and fill `resolve`'s one gap.
 4. **`resolve` fills its gap for requests.** A story, request or feedback file resolves when a
    landed note's header carries its mark, as it does for a spec. A decisions file is never
    resolved by matching its entries against the log (the owner, 2026-11-18): when a landed note
-   carries it, it is an ordinary staged item `noted: <note>`, counted for the owner, and the
-   hubnode reads the note's job and the log, then `jig staging drop`s it when the job logged its
+   carries it, it is `noted` with the note: it takes no judgment, opens nothing, counts as the
+   hubnode's step, and the hubnode reads the note's job and the log, then `jig staging drop`s it when the job logged its
    entries, `jig staging resolve`s it when it didn't, and judges with the owner when only some
    are there. Hand `resolve` of a decisions file adds its entries under its existing checks.
 5. **`jig rig --close`** (trunk, clean tree, after its own commit when it closed anything) runs
    `resolve` on each `built` file for which `resolve` would write nothing, printing resolve's own
-   line. A carried file that isn't `built` (a decisions file) stays, an ordinary staged item for
-   the hubnode, `noted` with the note that carried it.
+   line. A carried file that isn't `built` (one `resolve` would write, a decisions file most often)
+   stays, `noted` with the note that carried it: the hubnode's step, not a judged item.
 
 Original symptoms: round 2 B1 (stopped merge) — nothing is owed, the close in the index lands with
 the commit, and `--close` resolves afterwards. Round 2 B2 — a partial note's spec is in flight, so
@@ -146,8 +146,8 @@ prints nothing about staging.
 - [ ] The correction fires: a job whose spec carries a staged request and a staged decisions file,
   and whose branch writes the decisions entry, merges clean. `git show HEAD -- .jig/handoffs/`
   shows both `Source: … (staged as …)` lines on the note's header; both staged files still exist;
-  `jig rig --json` lists the request as `built` and the decisions file as an ordinary item,
-  `noted` with the note, counted. `jig rig --close` prints `resolved <request>: carried by
+  `jig rig --json` lists the request as `built` and the decisions file as `noted` with the note,
+  taking no judgment and counted as the hubnode's step. `jig rig --close` prints `resolved <request>: carried by
   <note>`, leaves the decisions file staged, and the log holds the entry once.
 - [ ] Same job merged through conflicts (`jig merge`, resolve, `jig merge --number`, `git commit`)
   and through a stop at derive.sh: no output names a drop, a carried request is `built` after the

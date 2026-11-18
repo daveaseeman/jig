@@ -215,7 +215,8 @@ staging: `/jig:rig`'s `jig rig --close` resolves the requests, stories and repor
 built. A staged decisions file it carried (or any carried file resolve would write) stays,
 `noted` with the job's note: read that job's
 diff and the log. If the job logged its entries, `jig staging drop <file>`, saying so; if it
-didn't, `jig staging resolve <file>`; if only some, judge with the owner. A conflicted merge
+didn't, `jig staging resolve <file>`; if only some, judge with the owner. Any other noted file:
+resolve or drop it by hand, saying why. A conflicted merge
 closes at `jig merge --number`. Then it prints `close the
 sessions that worked on <job>`: archive every session you started for that job (work, review,
 check, bug), with the host's tool where it has one, unless one is still working; that one stays,

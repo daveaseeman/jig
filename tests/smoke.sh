@@ -8194,7 +8194,7 @@ expect_pass sh -c "echo \"\$0\" | grep -A1 \"^removed JC's\" | grep -qx 'close t
 msg="close: the merge deletes nothing in staging and names no drop; the note's header keeps both marks"
 expect_pass sh -c "test -f .jig/staging/d1.md && test -f .jig/staging/rq.md && ! echo \"\$0\" | grep -qi 'drop' \
   && git show HEAD:$note | sed '/^## /,\$d' | grep -qx 'Source: chat d1.md (staged as d1.md)' && git show HEAD:$note | sed '/^## /,\$d' | grep -q '^Source: chat rq.md (staged as rq.md)'" "$out"
-msg="close: the carried request is built, listed under Finished; the carried decisions file is noted, an ordinary item, counted"
+msg="close: the carried request is built, listed under Finished; the carried decisions file is noted, the hubnode's step, counted"
 expect_pass sh -c "$J rig --json | python3 -c \"import json,sys; d=json.load(sys.stdin); i={x['path']: x for x in d['items']}; r, c = i['.jig/staging/rq.md'], i['.jig/staging/d1.md']; assert r['state'] == 'built' and c['state'] == 'noted' and c['noted'] == '$note' and c['group'] is None and d['waiting_on_you'] >= 1, (r, c)\" \
   && $J rig | sed -n '/^Finished:/,\$p' | grep -q 'staged  .jig/staging/rq.md  built: $note carries it' && $J rig | sed -n '/^Waiting on you:/,/^\$/p' | grep -q 'd1.md  noted: $note carried it; the hubnode.s step'"
 msg="close: a noted file takes no judgment: --store-put refuses it, and it never opens"
@@ -8351,6 +8351,12 @@ stage tt.md this feature-request new .jig/specs/tt.md
 msg="close: taken and built read a mark one way: a line with text after the mark carries nothing in flight either"
 expect_pass cfin "x = i['.jig/staging/tt.md']; assert x['state'] == 'unjudged' and x['waits_on'] == [], x"
 rm .jig/staging/tt.md
+mkdir -p docs && printf '# A\n\ntext\n\n<!-- Source: chat ua.md (staged as ua.md) -->\n' > docs/ua.md
+printf '# B\n\ntext. Source: chat ub.md (staged as ub.md).\n' > docs/ub.md && printf '# C\n\ntext\n\n- Source: chat uc.md (staged as uc.md)\n' > docs/uc.md
+git add -A && git commit -qm "docs with provenance" >/dev/null
+for n in ua ub uc; do stage $n.md this doc update docs/$n.md; done
+msg="close: a doc update lands with its mark anywhere in the page, as before this job: a comment, a sentence, a list item"
+expect_pass sh -c "for n in ua ub uc; do $J staging resolve \$n.md >/dev/null || exit 1; done; test -z \"\$(ls .jig/staging | grep '^u[abc].md')\""
 msg="close: the merge and --close share one rule"
 expect_pass test "$(grep -c 'finished_specs(' .jig/jig.py)" -ge 3
 }
