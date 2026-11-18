@@ -9170,7 +9170,7 @@ def cmd_staging(root: Path, args) -> int:
 
     def landed(rel: str) -> bool:
         f = inside(rel)
-        return f.exists() and mark in f.read_text(errors="replace")
+        return f.exists() and carries(f.read_text(errors="replace"), mark)
 
     if kind == "roadmap":
         # The roadmap carries no provenance lines, so the owner reads it as the plan; the
@@ -9192,7 +9192,7 @@ def cmd_staging(root: Path, args) -> int:
         unanswered(dest)
         return done(f"carried by {dest}")
     if kind in ("user-story", "feature-request", "feedback"):
-        specs = [s for s in (root / DIR / "specs").glob("*.md") if mark in s.read_text()]
+        specs = [s for s in (root / DIR / "specs").glob("*.md") if carries(s.read_text(), mark)]
         # Its spec has closed: the note that kept the spec's marks says what built it.
         if not specs and (note := note_carrying(root, mark)):
             return done(f"carried by {note}")
@@ -9763,7 +9763,7 @@ def close_specs(finished: list[dict], snap: Snapshot) -> list[str]:
 def carries(text: str, mark: str) -> bool:
     """TEXT holds MARK as a whole `Source: … (staged as …)` line, a request's quote after it or
     not: the mark, not a substring of some longer one."""
-    return any(l == mark or l.startswith(mark + ":") for l in MARK_LINE.findall(text))
+    return any(l == mark or l.startswith(mark + ":") for l in (x.rstrip() for x in MARK_LINE.findall(text)))
 
 
 def note_carrying(root: Path, mark: str, trunk: str = "") -> str:
@@ -13609,7 +13609,8 @@ def rig_items(root: Path, board: "Board") -> list[dict]:
         elif built:
             item["built"] = built
         elif carrier:
-            # Built, but resolve would write it: the owner's, naming what built it.
+            # A merged job carried it, but resolve would write it (a decisions file): the
+            # hubnode's step, naming what carried it. It takes no judgment and opens nothing.
             item["noted"] = carrier
         items.append(item)
     covering = [(f"{i['kind']} {i['path']}", i["touches"]) for i in items]
@@ -13690,7 +13691,7 @@ def rig_state(root: Path, board: "Board") -> dict:
         i["judged"] = held["judgment"] if isinstance(held, dict) and held.get("key") == i["key"] else None
         call = (i["judged"] or {}).get("call")
         i["state"] = ("ready" if i["kind"] == "spec" else "taken" if "covered" in i
-                      else "built" if "built" in i
+                      else "built" if "built" in i else "noted" if "noted" in i
                       else "open" if i["kind"] == "next-step"
                       else (call if call in ("fixing", "concluded") else "new") if i["kind"] == "feedback"
                       else call if call in ("ready", "open") else "unjudged")
@@ -13786,7 +13787,7 @@ def rig_state(root: Path, board: "Board") -> dict:
         jobs.append({"name": name, "step": step, "who": who, "session": session, "why": why})
     # Every block that asks the owner something counts once: a ring is one question, not one per
     # member, and a group with overlaps is one question, "one job, or keep some apart", not one per pair.
-    asks = [i for i in items if i["state"] in ("open", "unjudged", "concluded")]
+    asks = [i for i in items if i["state"] in ("open", "unjudged", "concluded", "noted")]
     pairs = sorted({tuple(p) for p in overlaps})
     by_path = {i["path"]: i for i in items}
     appends = append_globs(board)
@@ -13824,8 +13825,7 @@ def rig_text(state: dict) -> str:
         for p in paths:
             i = next(x for x in items if x["path"] == p)
             after = [d for d in i["deps"] if d in paths]
-            out.append(f"    {i['kind']:<7} {p}" + (f"  (after {', '.join(after)})" if after else "")
-                       + (f"  (noted: {i['noted']})" if i.get("noted") else ""))
+            out.append(f"    {i['kind']:<7} {p}" + (f"  (after {', '.join(after)})" if after else ""))
         for a, b in group["overlaps"]:
             out.append(f"    {a} and {b} overlap: one job, or kept apart")
     if not state["groups"]:
@@ -13834,15 +13834,16 @@ def rig_text(state: dict) -> str:
     waits = [i for i in items if i["waits_on"]]
     out += [f"  {i['kind']:<7} {i['path']}  waits on {', '.join(i['waits_on'])}" for i in waits] or ["  nothing"]
     out.append("\nWaiting on you:")
-    asks = [i for i in items if i["state"] in ("open", "unjudged", "concluded")]
+    asks = [i for i in items if i["state"] in ("open", "unjudged", "concluded", "noted")]
     for i in asks:
-        if i["state"] == "concluded":
+        if i["state"] == "noted":
+            out.append(f"  staged  {i['path']}  noted: {i['noted']} carried it; the hubnode's step (/jig:hubnode, Merging)")
+        elif i["state"] == "concluded":
             out.append(f"  feedback {i['path']}  /jig:fix concluded: {(i['judged'] or {}).get('about', '')}")
         elif i["kind"] == "next-step":
             out.append(f"  next    {i['id']} ({i['from']}): {i['what']}")
         else:
-            out.append(f"  {i['kind']:<7} {i['path']}  {'not judged yet' if i['state'] == 'unjudged' else 'open'}"
-                       + (f"  (noted: {i['noted']})" if i.get("noted") else ""))
+            out.append(f"  {i['kind']:<7} {i['path']}  {'not judged yet' if i['state'] == 'unjudged' else 'open'}")
     # A waiting spec outside the group that one of its items overlaps is one of the items asked about.
     asked = [(g, len(set(group["paths"]) | {x for p in group["overlaps"] for x in p}))
              for g, group in enumerate(state["groups"], 1) if group["overlaps"]]
@@ -13937,6 +13938,8 @@ def cmd_rig(root: Path, args) -> int:
         # A staged file's call is what places it: one stored without it would replay as unjudged.
         call = judgment.get("call", "ready" if item["kind"] not in ("staged", "feedback") else None) \
             if isinstance(judgment, dict) else None
+        if item["state"] in ("taken", "built", "noted"):
+            die(f"{path} is {item['state']}: what carried it decides it, so it takes no judgment", 2)
         if item["kind"] == "feedback" and call not in ("fixing", "concluded"):
             die('--store-put on a feedback report reads a JSON object whose "call" is "fixing" (/jig:fix '
                 'is working on it) or "concluded" (it ended with the report still staged)', 2)

@@ -8195,8 +8195,10 @@ msg="close: the merge deletes nothing in staging and names no drop; the note's h
 expect_pass sh -c "test -f .jig/staging/d1.md && test -f .jig/staging/rq.md && ! echo \"\$0\" | grep -qi 'drop' \
   && git show HEAD:$note | sed '/^## /,\$d' | grep -qx 'Source: chat d1.md (staged as d1.md)' && git show HEAD:$note | sed '/^## /,\$d' | grep -q '^Source: chat rq.md (staged as rq.md)'" "$out"
 msg="close: the carried request is built, listed under Finished; the carried decisions file is noted, an ordinary item, counted"
-expect_pass sh -c "$J rig --json | python3 -c \"import json,sys; d=json.load(sys.stdin); i={x['path']: x for x in d['items']}; r, c = i['.jig/staging/rq.md'], i['.jig/staging/d1.md']; assert r['state'] == 'built' and c['state'] == 'unjudged' and c['noted'] == '$note' and 'built' not in c and d['waiting_on_you'] >= 1, (r, c)\" \
-  && $J rig | sed -n '/^Finished:/,\$p' | grep -q 'staged  .jig/staging/rq.md  built: $note carries it' && $J rig | sed -n '/^Waiting on you:/,/^\$/p' | grep -q 'd1.md  not judged yet  (noted: $note)'"
+expect_pass sh -c "$J rig --json | python3 -c \"import json,sys; d=json.load(sys.stdin); i={x['path']: x for x in d['items']}; r, c = i['.jig/staging/rq.md'], i['.jig/staging/d1.md']; assert r['state'] == 'built' and c['state'] == 'noted' and c['noted'] == '$note' and c['group'] is None and d['waiting_on_you'] >= 1, (r, c)\" \
+  && $J rig | sed -n '/^Finished:/,\$p' | grep -q 'staged  .jig/staging/rq.md  built: $note carries it' && $J rig | sed -n '/^Waiting on you:/,/^\$/p' | grep -q 'd1.md  noted: $note carried it; the hubnode.s step'"
+msg="close: a noted file takes no judgment: --store-put refuses it, and it never opens"
+expect_pass sh -c "! printf '{\"call\": \"ready\"}' | $J rig --store-put .jig/staging/d1.md 2>/dev/null && $J rig --json | python3 -c \"import json,sys; d=json.load(sys.stdin); i={x['path']: x for x in d['items']}; assert i['.jig/staging/d1.md']['state'] == 'noted' and i['.jig/staging/d1.md']['opens'] is None, i['.jig/staging/d1.md']\""
 msg="close: jig rig --close resolves the request, leaves the decisions file staged, and the log holds the entry once"
 out=$($J rig --close 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -qx 'resolved rq.md: carried by $note' && ! echo \"\$0\" | grep -q d1.md \
@@ -8294,7 +8296,7 @@ cjob DQ dq && gated DQ && $J merge DQ >/dev/null 2>&1
 msg="close: a decisions file a merged job carried is noted for the hubnode, and --close leaves it, the log untouched"
 before=$(shasum < .jig/decisions.md); out=$($J rig --close 2>&1)
 expect_pass sh -c "! echo \"\$0\" | grep -q dd.md && test -f .jig/staging/dd.md && test \"\$(shasum < .jig/decisions.md)\" = '$before' \
-  && $J rig --json | python3 -c \"import json,sys; i={x['path']: x for x in json.load(sys.stdin)['items']}; x=i['.jig/staging/dd.md']; assert x['state'] == 'unjudged' and x['noted'].startswith('.jig/handoffs/DQ-'), x\"" "$out"
+  && $J rig --json | python3 -c \"import json,sys; i={x['path']: x for x in json.load(sys.stdin)['items']}; x=i['.jig/staging/dd.md']; assert x['state'] == 'noted' and x['noted'].startswith('.jig/handoffs/DQ-'), x\"" "$out"
 rm .jig/staging/dd.md
 
 # The third review's repros: a spec removed by hand, a revert, an old mark, a released spec. Nothing deletes.
@@ -8347,7 +8349,7 @@ expect_pass sh -c "$J rig --close | grep -q '^resolved ra1.md: carried by .jig/h
 cspec tt '' 'Source: chat tt.md (staged as tt.md), and a note after it' && git add -A && git commit -qm "spec tt" >/dev/null
 stage tt.md this feature-request new .jig/specs/tt.md
 msg="close: taken and built read a mark one way: a line with text after the mark carries nothing in flight either"
-expect_pass cfin "x = i['.jig/staging/tt.md']; assert x['state'] == 'unjudged' and 'covered' not in x, x"
+expect_pass cfin "x = i['.jig/staging/tt.md']; assert x['state'] == 'unjudged' and x['waits_on'] == [], x"
 rm .jig/staging/tt.md
 msg="close: the merge and --close share one rule"
 expect_pass test "$(grep -c 'finished_specs(' .jig/jig.py)" -ge 3

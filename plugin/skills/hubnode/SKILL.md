@@ -212,7 +212,8 @@ tell that job to sync before its next handoff. A merge that stops on conflicts: 
 A clean merge also removes the job's spec and its `Bug-for:` specs in the merge commit, each
 spec's `Scope:` and staged marks kept on its note; it prints each. It deletes nothing in
 staging: `/jig:rig`'s `jig rig --close` resolves the requests, stories and reports the job
-built. A staged decisions file it carried stays, `noted` with the job's note: read that job's
+built. A staged decisions file it carried (or any carried file resolve would write) stays,
+`noted` with the job's note: read that job's
 diff and the log. If the job logged its entries, `jig staging drop <file>`, saying so; if it
 didn't, `jig staging resolve <file>`; if only some, judge with the owner. A conflicted merge
 closes at `jig merge --number`. Then it prints `close the

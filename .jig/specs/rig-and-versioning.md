@@ -345,10 +345,12 @@ From the merge (Where they meet):
   not under Running, and `feedback` no longer counts it.
 - [ ] Smoke `rig`: `--store-put` with `"call": "fixing"` on a staged file that isn't feedback
   is refused, and on a feedback item it is stored.
-- [ ] Smoke `close` (as `bug-rav-staged-drops` corrects it): a staged request and decisions file
-  carried by the merged job's spec stay after the merge, `built`, their marks on the note's
-  header, and `jig rig --close` prints resolve's lines for them. A staged file carried by a spec
-  whose only note is `Partial: yes` stays, `taken`.
+- [ ] Smoke `close` (as `bug-rav-staged-drops` corrects it, with the owner's ruling on decisions
+  files): a staged request and decisions file carried by the merged job's spec stay after the
+  merge, their marks on the note's header. The request is `built` and `jig rig --close` prints
+  resolve's line for it; the decisions file is `noted`, takes no judgment, counts for the owner,
+  and `--close` leaves it. A staged file carried by a spec whose only note is `Partial: yes`
+  stays, `taken`.
 - [ ] `plugin/skills/rig/SKILL.md` gives the run's order as Where they meet says: feedback in
   § 1, the picture, then `--close` and Finished, then the decisions.
 

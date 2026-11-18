@@ -128,8 +128,10 @@ prints nothing about staging.
 - `jig.py`: `close_specs` (no drops; copies `Source: … (staged as …)` lines to the note header);
   remove `pending_drops`, `closed_carriers`, `owed_drops`, `drop_built` and their callers' lines in
   `cmd_merge`, `close_merged`, `rig_close`; `rig_items` (carriers as Correction 3, state `built`);
-  `rig_text` (Finished lists `built` files); `cmd_staging` resolve (note headers as carriers, the
-  decisions "already in the log" landing); `rig_close` (resolves `built` files that write nothing).
+  `rig_text` (Finished lists `built` files; Waiting on you lists `noted` ones); `cmd_staging`
+  resolve (note headers as carriers, found by `carries` as rig finds them); `rig_close` (resolves
+  `built` files that write nothing). A decisions file has no landing of its own: the owner's later
+  word makes it the hubnode's (Decisions).
 - RULES.md, Staging: a staged file leaves only by `resolve` or `drop`; a closed spec's marks go on
   its note; `jig rig --close` resolves what closed specs built. Remove the "a merge or `jig rig
   --close` drops a staged file a closed spec carries" text the job added.
@@ -178,6 +180,9 @@ prints nothing about staging.
 - `plugin/skills/rig/SKILL.md`: Finished
 - `plugin/skills/hubnode/SKILL.md`: Merging
 - `plugin/skills/spec/SKILL.md`: Consolidate
+- `plugin/templates/jig/jig.py` also: `carries`, `built_by`, `quiet_resolve`, `note_carrying`,
+  `rig_state` (the `noted` state), `cmd_rig` (`--store-put` refusing a carried item)
+- `plugin/skills/rig/SKILL.md`: § 1, § 2 part 4, § 3
 - `tests/smoke.sh`: `close`, `rig_batch`, `staging`
 - `.jig/specs/rig-and-versioning.md`: the bullets, Decisions and Done-when lines Design names
 
@@ -195,6 +200,8 @@ prints nothing about staging.
 - Leave carried files to the hubnode: rig names "its spec closed: drop it?" as a decision block —
   rejected because the tree can answer it (`resolve`'s checks) and the owner asked for fewer
   questions per run, not more — [seen] (rig-and-versioning, bug-rig-batch-one-job's Source).
+  Overridden for decisions files by the owner's later word ("Ya just make it the hubnodes job"):
+  the tree couldn't answer those in five review rounds, so they are the hubnode's step.
 - Resolve a decisions file into the log when its spec is written — rejected because an accepted
   entry under `## Unreleased` would claim work not yet on trunk, and the job writes its entries
   with the pages — [assumed].
@@ -205,7 +212,7 @@ prints nothing about staging.
 - The owner, 2026-11-18: "Only via resolve". That is option (a): no drops; the close copies the
   spec's `Source: … (staged as …)` lines onto its note; `resolve` lands a carried file from the
   note, writing nothing; `jig rig --close` runs those resolves. Rejected: (b) the auto-drop on a narrowed history rule, and (c) a hand step per
-  carried file.
+  carried file; (c) holds for decisions files after the owner's later word below.
 - Interpreted: `taken` covers a spec in flight (waiting, open job's, partial note); `built` covers
   a finished spec still in the tree or a closed spec's note. A released spec with no note carries
   nothing (F2).

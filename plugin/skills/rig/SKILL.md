@@ -16,7 +16,8 @@ make, store them, and draw what it printed. Never reorder, regroup or reword its
 `jig rig --json`. Each item has a `kind` (`spec`, `staged`, `feedback`, `next-step`), a
 `state`, what it `waits_on`, its `group`, and `judged`: the judgment stored for it, or null
 when there is none or its item or the board changed since. A `taken` staged file is carried by
-a spec already: it gets no judgment and no question.
+a spec already: it gets no judgment and no question. Nor does a `built` or `noted` one: what
+carried it decides it, and `--store-put` refuses all three.
 
 First, in the jig repo, each `feedback` item whose `state` is `new`: start `/jig:fix` on it (one
 fix for every new report, grouped as that skill says), without waiting for it, and store
@@ -53,7 +54,8 @@ inline visual, it may; the sections and their contents stay these.
    after, and each overlapping pair the group's `overlaps` names.
 3. **Waiting on:** each item and what it waits for: a job, a spec or a staged file. A taken
    staged file waits on the spec or job that carries it.
-4. **Waiting on you:** the open staged files (a `noted` decisions file with its note), each `concluded` feedback report with what
+4. **Waiting on you:** the open staged files, each `noted` file with the note that carried it
+   (the hubnode's step), each `concluded` feedback report with what
    `/jig:fix` found, the next step whose `state` is `open`, each
    group with an overlap (one line: one job for its items, or keep some apart) and each
    dependency cycle (`cycles`).
@@ -92,7 +94,9 @@ in this order:
    `after` gets no other block: it builds after another item in its group, and once that
    opens as a job, it waits on that job.
 6. Each dependency cycle named under Waiting on: which item goes first?
-7. Each `concluded` feedback report: drop it (`jig staging drop`), or keep it staged for more
+7. No block for a `noted` file: it is the hubnode's step (`/jig:hubnode`, Merging), done here
+   in § 4 as that step says, and drawn under Waiting on you until it is.
+8. Each `concluded` feedback report: drop it (`jig staging drop`), or keep it staged for more
    of what its `about` says is missing. A changed report is new again, and rig starts
    `/jig:fix` on it.
 

@@ -810,8 +810,9 @@ mark, is **taken**: it waits on that spec or job, in no group, and counts nowher
 flight carries: a waiting spec, an open job's spec, or one whose only notes are partial. One a
 finished spec still in the tree or a landed, non-partial note's header carries (a whole
 `Source:` line), which `resolve` would land writing nothing, is **built**: rig lists it under Finished, and `jig rig --close` resolves it.
-A decisions file is never built: one a closed spec's note or a finished spec carries is an
-ordinary item, counted, `noted` with what carried it, for the hubnode (Staging). Only what the tree holds now counts: nothing is read from
+A carried file `resolve` would write (a decisions file) is never built: it is **noted**, with
+what carried it, takes no judgment (`--store-put` refuses it, as it does a taken or built item),
+opens nothing, and counts as the hubnode's step (Staging). Only what the tree holds now counts: nothing is read from
 history. In the jig repo a
 staged feedback report not taken is a **feedback** item, in no group and counted only as
 `feedback`: the hubnode starts `/jig:fix` on it and stores the call `fixing` (keyed on the
@@ -1188,7 +1189,8 @@ spec carrying a file closes, its note's header keeps the file's mark, and `resol
 story, request or report from there (`carried by <note>`). A decisions file is never resolved
 by matching its entries against the log: one a merged job carried stays, `noted` with the note,
 and the hubnode reads that job and the log, then drops it when the job logged its entries,
-resolves it when it didn't, and judges with the owner when only some are there. `resolve` of a
+resolves it when it didn't, and judges with the owner when only some are there. Any other
+carried file `resolve` would write is noted the same way. `resolve` of a
 decisions file adds its entries under its own checks. `jig rig --close` resolves only what rig
 marks built; a file resolve refuses there is left, named.
 A story, request or report whose spec is in an unanswered group of overlapping waiting specs
