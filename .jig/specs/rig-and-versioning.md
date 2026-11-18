@@ -195,8 +195,8 @@ all three:
    because it isn't in `jig repos`, doesn't cite this metarepo, has a future `defer_until`
    (compared exactly as `sync_meta` does), already pins this release, or cites nothing the
    release broke.
-3. **Selector.** Interpreted from "The breaking line should be enough for paras to move their
-   pin": a pararepo is selected when this release broke something it cites. It reads the
+3. **Selector.** The owner, 2026-11-18: "Only what it broke". A pararepo is selected when this
+   release broke something it cites. It reads the
    pararepo's trunk with `meta_citations`' files and exclusions, comparing the previous tag with
    the new one:
    - (a) a citation that resolves at the previous tag and dangles at the new one;
@@ -552,11 +552,13 @@ From bug-versioning-pin-trigger:
 - Request to every pararepo on every release ("why not update them on every version move of the
   meta?") — rejected because a pararepo the release didn't break has nothing to do, and the
   owner's later word ties the move to the Breaking line — [seen] (the Source line).
-- Select by `changes_report`'s "used in" — rejected because a word grep matches nearly every
-  pararepo on every term — [assumed] (the report's 37-40 hits, not rerun here).
+- Select by `changes_report`'s "used in" — rejected because the owner rules that only what a
+  release broke selects, and a word grep finds what it touched — [seen] (the owner, 2026-11-18:
+  "Only what it broke"); that it matches nearly every pararepo on every term stays [assumed]
+  (the report's 37-40 hits, not rerun here).
 - Select on any changed id or reworded term, as the report does — rejected because those don't
-  break a citation, and the pararepo's own sync reports them — [assumed] (that the owner meant
-  "broke", not "changed").
+  break a citation, and the pararepo's own sync reports them — [seen] (the owner, 2026-11-18:
+  "Only what it broke").
 - Deliver through the inbox — rejected because a message is read and done with, and nothing
   tracks that the pin moved — [seen] (RULES.md Inbox).
 - Commit the pin bump in the pararepo — rejected because the pin is the pararepo's buffer, and
@@ -629,10 +631,13 @@ From the merge:
 From bug-versioning-pin-trigger:
 - Interpreted, open to the owner at review: the flag names and their aliases; `--patch` as the
   default in every kind; `--milestone` refusing before 1.0.0; the header swap through `jig update`
-  with the narrow R3 allowance; the selector's "broke", not "changed"; a pin-bump that doesn't
+  with the narrow R3 allowance; a pin-bump that doesn't
   block the pararepo's release; and the kind name `pin-bump`, one file per metarepo.
 
 From the merge with versioning:
+- The owner, 2026-11-18, on whether a pin-bump fires on what a release broke or on anything it
+  changed: "Only what it broke". The selector is (a) a citation that resolved at the previous tag
+  and dangles at the new one, and (b) a removed or superseded decision id it cites.
 - The hubnode, 2026-11-18: the registry sentence sits at the end of `## Versioning`'s main
   body, before `### Before 1.0.0`, not inside it: a repo at 1.0.0 or later skips that
   subsection, and the sentence applies to every repo; the spec's "ends with" means the block's
