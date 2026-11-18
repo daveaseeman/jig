@@ -798,6 +798,7 @@ def cmd_init(root: Path, args) -> int:
             f"it. Run `jig update` (then --apply), commit, then run this same `jig init` again", 2)
     (root / DIR).mkdir(exist_ok=True)
     ensure_staging(root)
+    ensure_inbox(root)
     path = root / CONFIG
     if path.exists():
         print(f"{CONFIG} already exists")
@@ -6568,8 +6569,9 @@ REPO_KINDS = ("repo", "meta", "para")
 
 
 def load_repos() -> dict:
-    """{name: {"path": ..., "kind": repo|meta|para}}. An entry that is a bare path is the
-    first format, read as a plain repo."""
+    """{name: {"path": ..., "kind": repo|meta|para, ...}}. An entry that is a bare path is the
+    first format, read as a plain repo. Every other key an entry holds (its `aliases`, its
+    `rigger` folder) is kept, so a save never drops what another command wrote."""
     f = repos_file()
     try:
         raw = json.loads(f.read_text()) if f.exists() else {}
@@ -6581,8 +6583,37 @@ def load_repos() -> dict:
     for n, e in raw.items():
         e = e if isinstance(e, dict) else {"path": e}
         if isinstance(e.get("path"), str):
-            out[n] = {"path": e["path"], "kind": e.get("kind", "repo")}
+            out[n] = {**e, "kind": e.get("kind", "repo")}
     return out
+
+
+def repo_names(e: dict) -> set[str]:
+    """What an entry answers to besides its listed name: the aliases the owner gave it."""
+    return {a for a in e.get("aliases", []) if isinstance(a, str) and a}
+
+
+def name_key(n: str) -> str:
+    """A name as a person reads it: `NorthStar`, `north-star` and `north_star` are one."""
+    return re.sub(r"[\W_]", "", n.casefold())
+
+
+def near_miss(name: str) -> str | None:
+    """The listed name or alias a typed name only matches once punctuation is dropped: never
+    taken for it, since two near-identical names have sent work to the wrong repo, but named
+    in the refusal."""
+    if not name or repo_path(name):
+        return None
+    for n, e in sorted(load_repos().items()):
+        for label in sorted({n} | repo_names(e)):
+            if name_key(label) == name_key(name):
+                return label
+    return None
+
+
+def unknown_repo(name: str) -> str:
+    near = near_miss(name)
+    return (f"{name!r} isn't in {repos_file()}" + (f": did you mean {near}? A name that matches "
+            "only without its punctuation is refused" if near else " (`jig repos` lists them)"))
 
 
 def save_repos(repos: dict) -> None:
@@ -6608,31 +6639,37 @@ def repo_path(name: str) -> Path | None:
     if name in repos:
         return Path(repos[name]["path"])
     for e in repos.values():
-        if name in repo_identity(Path(e["path"])):
+        if name in repo_names(e) | repo_identity(Path(e["path"])):
             return Path(e["path"])
-    # A human types the name, so `App` finds `app`, as a staged header's target does.
+    # A human types the name, so `App` finds `app`, as a staged header's target does: one rule
+    # for every place a repo is typed (a staged target, an inbox message's `to`, a rigger).
     for n, e in repos.items():
-        if name_in(name, {n} | repo_identity(Path(e["path"]))):
+        if name_in(name, {n} | repo_names(e) | repo_identity(Path(e["path"]))):
             return Path(e["path"])
     return None
 
 
+def labels(repos: dict) -> list[tuple[str, str]]:
+    """(label, entry name) for every name and alias in the list."""
+    return sorted({(lb, n) for n, e in repos.items() for lb in {n} | repo_names(e)})
+
+
 def near_duplicates(repos: dict) -> list[tuple[str, str]]:
-    """Pairs of names a person reads as one (`NorthStar`, `north-star`): a file staged for one
-    can land in the other."""
-    def key(n: str) -> str:
-        return re.sub(r"[\W_]", "", n.casefold())
-    names = sorted(repos)
-    return [(a, b) for i, a in enumerate(names) for b in names[i + 1:] if key(a) == key(b)]
+    """Pairs of names a person reads as one (`NorthStar`, `north-star`), aliases included,
+    from two entries: a file staged for one can land in the other."""
+    ls = labels(repos)
+    return [(a, b) for i, (a, x) in enumerate(ls) for b, y in ls[i + 1:]
+            if x != y and name_key(a) == name_key(b)]
 
 
 def warn_near_duplicates(repos: dict, only: str | None = None) -> None:
+    owner = dict(labels(repos))
     for a, b in near_duplicates(repos):
-        if only and only not in (a, b):
+        if only and only not in (a, b, owner[a], owner[b]):
             continue
         print(f"warning: {a} and {b} differ only in case or punctuation, and are two repos:\n"
-              f"  {a:<24} {repos[a]['path']}\n  {b:<24} {repos[b]['path']}\n"
-              f"  rename one (`jig repos rename {b} <new>`) if both are meant")
+              f"  {a:<24} {repos[owner[a]]['path']}\n  {b:<24} {repos[owner[b]]['path']}\n"
+              f"  rename one (`jig repos rename {owner[b]} <new>`) if both are meant")
 
 
 def cmd_repos(root: Path, args) -> int:
@@ -6651,12 +6688,14 @@ def cmd_repos(root: Path, args) -> int:
             name = args.name or (sorted(repo_identity(path)) or [path.name])[0]
         else:
             die("usage: jig repos add repo|meta|para [--name N] [--path P]", 2)
+        kept: dict = {}
         for old in [n for n, e in repos.items() if Path(e["path"]).resolve() == path and n != name]:
-            del repos[old]                          # one entry per checkout; re-adding replaces
+            kept.update(repos.pop(old))             # one entry per checkout; re-adding replaces
         # add <name> <path> re-points a name on purpose; add repo|meta|para must not take one
         if kind_form and name in repos and Path(repos[name]["path"]).resolve() != path:
             die(f"{name} already names {repos[name]['path']}: pick another --name, or rename that one", 2)
-        repos[name] = {"path": str(path), "kind": kind}
+        # its aliases and rigger folder stay with the checkout
+        repos[name] = {**kept, **(repos.get(name) or {}), "path": str(path), "kind": kind}
         save_repos(repos)
         print(f"{name} ({kind}) → {path}")
         warn_near_duplicates(repos, name)
@@ -6684,15 +6723,54 @@ def cmd_repos(root: Path, args) -> int:
         print(f"{old} is now {new} → {repos[new]['path']}")
         warn_near_duplicates(repos, new)
         return 0
+    if args.action == "alias":
+        return repos_alias(repos, args)
     for name, e in sorted(repos.items()):
         missing = "" if Path(e["path"]).is_dir() else "   (missing)"
         print(f"  {name:<24} {e['kind']:<5} {e['path']}{missing}{'   ← here' if name in mine else ''}")
+        if repo_names(e):
+            print(f"  {'':<24} aliases: {', '.join(sorted(repo_names(e)))}")
+        if e.get("rigger"):
+            print(f"  {'':<24} rigger: {e['rigger']}")
     if not repos:
         print(f"no repos in {repos_file()}: jig repos add repo|meta|para")
     warn_near_duplicates(repos)
     # The same lookup staging and forwarding use, so an alias for the jig repo counts too.
     if repo_path("jig") is None:
         print(f"tool reports wait in {feedback_dir()} while the jig repo isn't registered")
+    return 0
+
+
+def repos_alias(repos: dict, args) -> int:
+    """`repos alias <repo> <alias>`: a shorthand beside the listed name, which a rename would
+    replace. One alias names one repo, so one equal to any other name or alias is refused."""
+    target, alias = args.kind, args.path
+    if not target or not alias:
+        die("usage: jig repos alias <repo> <alias> [--remove]", 2)
+    name = next((n for n, e in repos.items() if name_in(target, {n} | repo_names(e))), None)
+    if name is None:
+        die(f"no repo named {unknown_repo(target)}", 2)
+    have = sorted(repo_names(repos[name]))
+    if args.remove:
+        if alias not in have:
+            die(f"{name} has no alias {alias}" + (f" (it has {', '.join(have)})" if have else ""), 2)
+        have.remove(alias)
+        print(f"{name}: alias {alias} removed")
+    else:
+        taken = [(lb, n) for lb, n in labels(repos) if lb.casefold() == alias.casefold()]
+        if taken and taken[0][1] != name:
+            lb, n = taken[0]
+            die(f"{alias} already names {n}" + (f" (its alias {lb})" if lb != n else ""), 2)
+        if taken:
+            die(f"{alias} already names {name}", 2)
+        have.append(alias)
+        print(f"{name}: alias {alias}")
+    if have:
+        repos[name]["aliases"] = sorted(have)
+    else:
+        repos[name].pop("aliases", None)
+    save_repos(repos)
+    warn_near_duplicates(repos, name)
     return 0
 
 
@@ -8164,7 +8242,8 @@ def staged_refusal(what: str) -> list[str]:
 def this_repo_names(root: Path) -> set[str]:
     names = {"this", Board.load(root, working_tree=True).data.get("name") or main_root().name}
     # and any alias you gave this checkout in repos.json
-    names |= {n for n, e in load_repos().items() if Path(e["path"]).resolve() == main_root().resolve()}
+    names |= {lb for n, e in load_repos().items() if Path(e["path"]).resolve() == main_root().resolve()
+              for lb in {n} | repo_names(e)}
     meta = root / META
     if meta.exists():
         names.add(json.loads(meta.read_text() or "{}").get("name", ""))
@@ -8300,7 +8379,7 @@ def cmd_staging_check(args) -> int:
         target = head.get("target", "")
         there = repo_path(target) if target and target != "this" else None
         if target and target != "this" and not there:
-            problems.append(f"target {target!r} isn't in {repos_file()} (`jig repos` lists them)")
+            problems.append(f"target {unknown_repo(target)}")
         # A warning only: the owner may keep both names on purpose.
         for a, b in near_duplicates(load_repos()):
             if name_in(target, {a, b}):
@@ -9415,6 +9494,94 @@ def ensure_staging(root: Path) -> None:
         ignore.write_text(f"# Staged files are never committed: see Staging in {DIR}/RULES.md.\n*\n!.gitignore\n")
 
 
+# -------------------------------------------------------------------- inbox
+
+# One-way messages to this repo's hubnode, each a file its sender wrote. Untracked, as
+# staging is: a message is read and done with, never landed, and what the hubnode records
+# from it (a decision entry, a spec) is its durable home.
+INBOX = f"{DIR}/inbox"
+INBOX_KEYS = ("inbox", "to", "from", "sent")
+
+
+def ensure_inbox(root: Path) -> None:
+    """.jig/inbox/ always exists, so a sender has one folder to be granted; it holds only its
+    .gitignore when empty, and read messages in read/."""
+    ignore = root / INBOX / ".gitignore"
+    if not ignore.exists():
+        ignore.parent.mkdir(parents=True, exist_ok=True)
+        ignore.write_text(f"# Messages are never committed: see Inbox in {DIR}/RULES.md.\n*\n!.gitignore\n")
+
+
+def inbox_messages(root: Path) -> list[Path]:
+    d = root / INBOX
+    files = [f for f in d.iterdir() if f.is_file() and f.suffix == ".md"] if d.is_dir() else []
+    # Oldest first by when it was sent: a later message may answer on top of an earlier one.
+    return sorted(files, key=lambda f: (read_inbox(f)[0].get("sent", ""), f.name))
+
+
+def read_inbox(path: Path) -> tuple[dict, list[str]]:
+    text = path.read_text(errors="replace").replace("\r\n", "\n")
+    m = re.match(r"---\n(.*?)\n---\n?", text, re.S)
+    if not m:
+        return {}, ["no header"]
+    head = {}
+    for line in m.group(1).splitlines():
+        k, sep, v = line.partition(":")
+        if sep:
+            head[k.strip()] = v.strip()
+    bad = [f"no {k}" for k in INBOX_KEYS if not head.get(k)]
+    if head.get("inbox") and head["inbox"] != "true":
+        bad.append("inbox is not true")
+    return head, bad
+
+
+def cmd_inbox_check(args) -> int:
+    """Headers only, from the plugin's copy outside any repo, as `staging check` is: the
+    sender writes into the target and can't run the target's jig."""
+    if not args.file:
+        die("which files? jig inbox check <file>…", 2)
+    bad = False
+    for f in (Path(x).expanduser() for x in args.file):
+        if not f.is_file():
+            print(f"{f}: no such file")
+            bad = True
+            continue
+        head, problems = read_inbox(f)
+        to = head.get("to", "")
+        if to and not repo_path(to):
+            problems.append(f"to {unknown_repo(to)}")
+        print(f"{f.name}: {'ok' if not problems else ''}".rstrip())
+        for p in problems:
+            print(f"    {p}")
+        bad |= bool(problems)
+    return 1 if bad else 0
+
+
+def cmd_inbox(root: Path, args) -> int:
+    """Print each unread message, oldest first, and move it to read/. The trunk checkout's
+    only: the inbox is the hubnode's, and a subnode reading it would mark a ruling read
+    before the hubnode saw it."""
+    if not is_main_worktree(root):
+        die(f"refused: {INBOX} is the hubnode's; run `jig inbox` in the trunk checkout, {main_root()}", 2)
+    msgs = inbox_messages(root)
+    if not msgs:
+        print(f"no unread messages in {INBOX}/")
+        return 0
+    read = root / INBOX / "read"
+    read.mkdir(exist_ok=True)
+    for f in msgs:
+        print(f"===== {INBOX}/{f.name} (moved to {INBOX}/read/)")
+        print(f.read_text(errors="replace").rstrip("\n") + "\n")
+        dest, n = read / f.name, 1
+        while dest.exists():                # a name reused later never overwrites what was read
+            n += 1
+            dest = read / f"{f.stem}-{n}{f.suffix}"
+        f.rename(dest)
+    print(f"{len(msgs)} message{'s' if len(msgs) != 1 else ''} read: quoted owner words with "
+          "their date are the owner's ruling; check the state each answers before acting on it")
+    return 0
+
+
 def add_derive(root: Path, here: Path) -> None:
     dest = root / DERIVE
     if dest.exists():
@@ -9592,6 +9759,10 @@ STEPS: list = [
      lambda root, after: f"{STAGING}/.gitignore" not in after
      and not (root / STAGING / ".gitignore").exists(),
      lambda root, here: (ensure_staging(root), git("add", "-f", "--", f"{STAGING}/.gitignore"))),
+    (f"add {INBOX}/ (its .gitignore), where a rigger's messages to the hubnode arrive",
+     lambda root, after: f"{INBOX}/.gitignore" not in after
+     and not (root / INBOX / ".gitignore").exists(),
+     lambda root, here: (ensure_inbox(root), git("add", "-f", "--", f"{INBOX}/.gitignore"))),
     (f"add {SETUP} from the template, TODOs to fill: it runs in every new worktree and after "
      "every merge", lambda root, after: SETUP not in after and not (root / SETUP).exists()
      and (Path(__file__).resolve().parent / "scripts" / "setup.sh").exists(), add_setup),
@@ -12368,10 +12539,14 @@ def main(argv: list[str] | None = None) -> int:
     st = sub.add_parser("staging", help="list staged files, resolve or drop one, or check headers")
     st.add_argument("action", nargs="?", choices=["resolve", "drop", "check"])
     st.add_argument("file", nargs="*")
+    ib = sub.add_parser("inbox", help="hubnode: print unread messages and mark them read, or check headers")
+    ib.add_argument("action", nargs="?", choices=["check"])
+    ib.add_argument("file", nargs="*")
     rp = sub.add_parser("repos", help="list, or add to, where your repos live (user config)")
-    rp.add_argument("action", nargs="?", choices=["add", "rename"])
-    rp.add_argument("kind", nargs="?", help="add: repo, meta or para; rename: the new name")
-    rp.add_argument("path", nargs="?", help="add: the checkout (default: this one)")
+    rp.add_argument("action", nargs="?", choices=["add", "rename", "alias"])
+    rp.add_argument("kind", nargs="?", help="add: repo, meta or para; rename: the new name; alias: the repo")
+    rp.add_argument("path", nargs="?", help="add: the checkout (default: this one); alias: the alias")
+    rp.add_argument("--remove", action="store_true", help="alias: drop it")
     rp.add_argument("--name", help="add: the name to call it by (default: its own)")
     up = sub.add_parser("update", help="bring this repo to the current jig layout (dry run)")
     up.add_argument("--apply", action="store_true", help="make the changes the dry run lists")
@@ -12392,6 +12567,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_repos(Path.cwd(), args)   # user config only: works outside any repo
     if args.cmd == "staging" and args.action == "check":
         return cmd_staging_check(args)       # headers only: runs outside any repo
+    if args.cmd == "inbox" and args.action == "check":
+        return cmd_inbox_check(args)         # headers only: runs outside any repo
     if args.cmd == "staging":
         if len(args.file) > 1:
             die(f"one file at a time: jig staging {args.action} <file>", 2)
@@ -12407,7 +12584,7 @@ def main(argv: list[str] | None = None) -> int:
         "workflow": cmd_workflow, "roles": cmd_roles, "flows": cmd_flows, "next": cmd_next,
         "survey": cmd_survey, "reading-list": cmd_reading_list, "update": cmd_update, "repos": cmd_repos, "staging": cmd_staging,
         "release": cmd_release, "propose": cmd_propose, "roadmap": cmd_roadmap,
-        "rig": cmd_rig,
+        "rig": cmd_rig, "inbox": cmd_inbox,
     }[args.cmd]
     return fn(root, args)
 

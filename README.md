@@ -222,6 +222,8 @@ Day to day:
 /jig:stage               # send a file from this chat to a repo, or resolve what's staged
 jig roadmap --write      # print the roadmap's state and rewrite ROADMAP.md
 /jig:repos add repo      # register this folder so other chats can stage files to it
+/jig:relay <repo> <text> # in another chat: this is that repo's hubnode talking; a reply is owed
+/jig:send                # show the reply for you to edit and send, then drop it in the repo's .jig/inbox/
 /jig:release             # build and tag a version, the way this repo ships
 /jig:hubnode             # your session: owns trunk, the board and merges, and assigns each step
 /jig:subnode             # a session that takes one role on one job
@@ -230,9 +232,10 @@ jig next                 # each job's next step, who takes it, continue or new s
 
 Every rule the hooks enforce is written in `.jig/RULES.md` after init.
 
-`/jig:init`, `/jig:adopt`, `/jig:update`, `/jig:redocument`, `/jig:release`, `/jig:repos` and
-`/jig:feedback` don't show in the slash list, and an agent can't start them on its own: each
-changes the repo, tags a release, writes your repo list or files a report on jig, so only you do. Type them in full at the start of a message.
+`/jig:init`, `/jig:adopt`, `/jig:update`, `/jig:redocument`, `/jig:release`, `/jig:repos`,
+`/jig:relay`, `/jig:send` and `/jig:feedback` don't show in the slash list, and an agent can't
+start them on its own: each changes the repo, tags a release, writes your repo list, speaks to a
+hubnode or files a report on jig, so only you do. Type them in full at the start of a message.
 
 ## 📦 Installation
 
@@ -247,8 +250,9 @@ To try it for one session without installing, clone this repo and run
 You need git, Python 3.10 or newer, and Claude Code. The repo half needs only git and Python.
 
 **On trust.** Claude Code warns about every plugin with hooks, because hooks run shell commands
-as you. jig's two (a format step after an edit and a check when the agent stops) run your repo's
-own `.jig/scripts/format.sh` and `.jig/scripts/check.sh`, and only in a repo that opted in with
+as you. jig's (a format step after an edit, a check when the agent stops, and an inbox read
+with your prompt in the trunk checkout) run your repo's own `.jig/scripts/format.sh`,
+`.jig/scripts/check.sh` and `.jig/jig.py inbox`, and only in a repo that opted in with
 `jig install-hooks`, which writes a marker inside `.git/`. Git never clones `.git/`, so a repo you
 fetched can't turn itself on. The whole hook config is `plugin/hooks/hooks.json`, and it's short
 enough to read in a minute.

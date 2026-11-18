@@ -28,7 +28,9 @@ out as `/jig:decision-cards` says.
    say nothing. A plan: one line, "the repo is behind the plugin's layout: run /jig:update".
    Refused or blocked: one line with its first reason.
 4. `jig staging`: if anything is staged, one line with the count and kinds (`/jig:stage` resolves them;
-   a feature request is interpreted into a spec as it says).
+   a feature request is interpreted into a spec as it says). Then `jig inbox`, where the host
+   has no hook that ran it with the owner's prompt: each message is a reply to this repo's
+   hubnode, and the quoted owner words in it, with their date, rule (`.jig/RULES.md`, Inbox).
 5. In a pararepo (`.jig/para.json`), `jig sync` on trunk; report a newer release, and a
    header it says is out of date, in one line each; a pin it moved and the buffer rows it
    closed, in one line each. A proposal it says carries no Open row goes to the owner: withdraw
