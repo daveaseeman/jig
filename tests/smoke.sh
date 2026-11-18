@@ -6786,6 +6786,51 @@ out=$($UP --apply --merge-log 2>&1); rc=$?
 expect_pass sh -c "test $rc = 2 && echo \"\$0\" | grep -q 'docs/decisions/0004-old.md: status \`ended\`' && echo \"\$0\" | grep -q 'docs/decisions/0005-gone.md: superseded by 9, which is no record here' && echo \"\$0\" | grep -q 'docs/decisions/0006-bare.md: no status' && test ! -e .jig/decisions.md && test -z \"\$(git status --porcelain)\"" "$out"
 msg="merge-log records: a record naming a spec is listed as a line the hook would refuse"
 expect_pass sh -c "echo \"\$0\" | grep -q 'D-00[0-9] (docs/decisions/0007-spec.md): .*names .jig/specs/, which the hook refuses'" "$out"
+msg="merge-log records: migrations with a status jig doesn't read, and a book's chapters in draft, are no record folders: init writes the seed log"
+MF="$T/ml-not-records"; pcnew "$MF" && mkdir -p docs/migrations docs/book
+for n in 1 2; do printf '# 000%s. Step\n\nStatus: applied\n\n## Steps\n\nx\n' $n > docs/migrations/000$n-step.md; done
+for c in 01-intro:draft 02-setup:published 03-usage:draft; do printf -- '---\ntitle: T\nstatus: %s\n---\n\n# T\n\nText.\n' "${c#*:}" > "docs/book/${c%%:*}.md"; done
+git add -A && git commit -qm init && $J init >/dev/null 2>&1
+expect_pass sh -c "test -f .jig/decisions.md && ! $UP 2>&1 | grep -q 'a folder of decision records'"
+
+msg="merge-log records: on trunk, a reserve counter over a kept index counts the log, and append_files names the log"
+MK="$T/ml-board-kept"; pcnew "$MK" && mlrecs && printf '\nHow we write them: one file each.\n' >> docs/decisions/README.md
+git add -A && git commit -qm init && $J init >/dev/null 2>&1
+board "b['append_files'] = ['docs/decisions/README.md']; b['reserve'] = {'record': {'next': 4, 'pattern': r'\[(\d+)\]', 'files': ['docs/decisions/README.md']}}"
+git add -A && git -c core.hooksPath=/dev/null commit -qm board
+$UP --apply --merge-log >/dev/null 2>&1
+expect_pass sh -c "test -f docs/decisions/README.md && grep -q 'one file each' docs/decisions/README.md && python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['append_files'] == ['.jig/decisions.md'] and b['reserve']['record']['files'] == ['.jig/decisions.md'], b\""
+
+msg="merge-log records: merged on a branch, trunk's run rewrites the board that names the gone index, not nothing to merge"
+MG="$T/ml-board-branch"; pcnew "$MG" && mlrecs && git add -A && git commit -qm init && $J init >/dev/null 2>&1
+board "b['reserve'] = {'record': {'next': 4, 'pattern': r'\[(\d+)\]', 'files': ['docs/decisions/README.md']}}"
+git add -A && git -c core.hooksPath=/dev/null commit -qm board
+git checkout -qb recs && $UP --apply --merge-log >/dev/null 2>&1 && git -c core.hooksPath=/dev/null commit -qm "merge the records"
+git checkout -q main && git -c core.hooksPath=/dev/null merge -q --no-ff recs -m "merge recs"
+out=$($UP --merge-log 2>&1)
+$UP --apply --merge-log >/dev/null 2>&1
+expect_pass sh -c "echo \"\$0\" | grep -q 'reserve.record: files' && ! echo \"\$0\" | grep -q 'nothing to merge' && python3 -c \"import json; b = json.load(open('.jig/config.json')); assert b['reserve']['record']['files'] == ['.jig/decisions.md'], b\"" "$out"
+
+msg="merge-log records: the hook's allowance needs a record removed, not a guide chapter: an entry naming one without Touches is refused"
+MH="$T/ml-hook"; pcnew "$MH" && mkdir -p docs/guide && printf '# Intro\n\nHello.\n' > docs/guide/01-intro.md && printf '# Setup\n\nx\n' > docs/guide/02-setup.md
+git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
+git rm -q docs/guide/01-intro.md && ulog "### D-001 Intro
+Accepted (owner, 2026-10-30).
+
+Record 0001 before this log." && git add -A
+expect_refuse git commit -qm "D-001: intro"
+undo
+
+msg="merge-log records: a relation's record numbers become ids inside entries; one naming no record, and a code file's citation, are listed and left"
+MX="$T/ml-relate"; pcnew "$MX" && mkdir -p docs/decisions src
+printf '# 0001. Use A\n\n- **Date:** 2026-01-01\n- **Status:** in force, amended by 0002\n\nA.\n' > docs/decisions/0001-a.md
+printf '# 0002. Tune A\n\n- **Date:** 2026-01-02\n- **Status:** accepted\n\nAmends 0001 and 0009.\n' > docs/decisions/0002-b.md
+printf 'print("wrote record 2")  # record 0001\n' > src/t.py
+git add -A && git commit -qm init && $J init >/dev/null 2>&1 && git add -A && git commit -qm board
+out=$($UP --apply --merge-log 2>&1)
+expect_pass sh -c "grep -qx 'Status: in force, amended by D-002' .jig/decisions.md && grep -qx 'Amends D-001 and 0009.' .jig/decisions.md && echo \"\$0\" | grep -q '\`0009\` in a relation: no record has that number' && echo \"\$0\" | grep -q '^  src/t.py:1: not a document, change by hand' && grep -qxF 'print(\"wrote record 2\")  # record 0001' src/t.py" "$out"
+msg="merge-log records: that output commits unedited"
+expect_pass git commit -qm "TOOL: merge the decision records"
 cd "$MR"
 }
 

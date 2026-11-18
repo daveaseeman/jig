@@ -6060,10 +6060,17 @@ def records_converted(old: str, new: str, prefix: str, trunk: str, staged: bool)
     marked = {e["id"]: int(m.group(1)) for e in added if (m := RECORD_MARK.search(e["block"]))}
     if not marked:
         return set()
-    gone = git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", "--diff-filter=D",
-               since_trunk(trunk), *(["--cached"] if staged else [])).splitlines()
-    nums = {n for f in gone if (n := record_number(os.path.basename(f))) is not None}
-    return {i for i, n in marked.items() if n in nums}
+    was = since_trunk(trunk)
+    gone = set(git("-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", "--diff-filter=D",
+                   was, *(["--cached"] if staged else [])).splitlines())
+    # A record there: in a folder of records where the branch left trunk, not any numbered file.
+    names = git("-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", was).splitlines()
+    folders = record_folders(Path.cwd(), [f for f in names if os.path.dirname(f) in {os.path.dirname(g) for g in gone}],
+                             lambda f: at_rev(was, f))
+    removed = Counter(n for info in folders.values() for n, f in info["records"] if f in gone)
+    # Each removed record converts once: a second entry naming the same one is no conversion.
+    claims = Counter(marked.values())
+    return {i for i, n in marked.items() if removed[n] and claims[n] <= removed[n]}
 
 
 def touched_term(path: str, term: str, repo: str, cache: Path | None, staged: bool) -> str:
@@ -11098,6 +11105,29 @@ RECORD_CITE = re.compile(r"(?i)(?<![\w-])(?:record|adr)(?:\s+|-)#?(\d+)(?![\w-])
 RECORD_LINK = re.compile(r"\[(?P<label>[^\]]*)\]\((?P<target>[^)\s]+)\)")
 RECORD_PATH = re.compile(r"(?<![\w./-])(?P<target>[\w./-]*\.md)(?:#[\w-]*)?")
 RECORD_MARK = re.compile(r"^Record (\d+) before this log\.$", re.M)
+# A record naming another by bare number, as a relation: `amended by 0033`, `Amends 0001 and 0002`.
+# Inside a converted entry the number reads as the log's own id, so it is mapped or listed.
+RECORD_ONE = r"(?:record\s+|adr[- ]?)?#?\d+"
+RECORD_RELATE = re.compile(rf"(?i)\b(?:amended\s+by|amends|supersedes|supercedes|superseded\s+by|superceded\s+by"
+                           rf"|replaces|replaced\s+by)\s+({RECORD_ONE}(?:\s*(?:,\s*(?:and\s+)?|and\s+|&\s*){RECORD_ONE})*)")
+
+
+def relate_records(line: str, nums: dict) -> tuple[str, list[str]]:
+    """LINE of a converted entry with each record a relation names by number as its new id, and
+    each number it couldn't map: no record here, or one left out."""
+    left: list[str] = []
+
+    def one(m: re.Match) -> str:
+        n = int(re.search(r"\d+", m.group(0)).group(0))
+        if nums.get(n):
+            return nums[n]
+        left.append(f"`{m.group(0)}` in a relation: " + ("that record is left out of the log, or its number is "
+                    "in two folders" if n in nums else "no record has that number"))
+        return m.group(0)
+
+    def rel(m: re.Match) -> str:
+        return m.group(0)[:m.start(1) - m.start()] + re.sub(rf"(?i){RECORD_ONE}", one, m.group(1))
+    return RECORD_RELATE.sub(rel, line), left
 
 
 def record_number(name: str) -> int | None:
@@ -11160,7 +11190,12 @@ def record_folders(root: Path, files: list[str], read=None) -> dict[str, dict]:
     out = {}
     for d, fs in sorted(by.items()):
         numbered = [(n, f) for f in fs if (n := record_number(os.path.basename(f))) is not None]
-        if len([f for _, f in numbered if parse_record(read(f))["status"]]) >= 2:
+        kinds = [RECORD_KINDS[m.group(1).lower()] for _, f in numbered
+                 if (m := RECORD_STATUS.match(re.sub(r"^[*_\s]+", "", parse_record(read(f))["status"])))]
+        # Two statuses jig reads, one of them decided: a migration's `applied` is no decision,
+        # and a book's chapters in `draft` decide nothing. Inside a folder that is one, an
+        # unknown word is refused at the merge, not a reason to pass the folder by.
+        if len(kinds) >= 2 and any(k in ("accepted", "superseded", "left") for k in kinds):
             out[d] = {"records": sorted(numbered), "other": sorted(set(fs) - {f for _, f in numbered})}
     return out
 
@@ -11385,6 +11420,8 @@ def record_plan(root: Path, log: str, prefix: str) -> dict:
         lines = [*body, "", *text]
         out, prev = [], ""
         for l in lines:
+            l, why = relate_records(l, nums)
+            plan["left"] += [(LOG, r["id"], w) for w in why]
             l, why = cite_records(r["path"], l, paths, nums)
             plan["left"] += [(LOG, r["id"], w) for w in why]
             if not (l.strip() == "" and prev.strip() == ""):
@@ -11443,6 +11480,10 @@ def record_plan(root: Path, log: str, prefix: str) -> dict:
         for n, line in enumerate(lines):
             new, why = cite_records(f, line, paths, nums)
             if new == line and not why:
+                continue
+            if not f.endswith(".md"):
+                # A string in code is behaviour, not a citation: a test may print a record number.
+                plan["left"].append((f, n + 1, "not a document, change by hand"))
                 continue
             if n in frozen or f == LOG:
                 if new != line:
@@ -11769,8 +11810,25 @@ def stale_board_names(root: Path) -> set[str]:
     named = set(data.get("append_files", [])) | {f for v in (data.get("reserve") or {}).values()
                                                  if isinstance(v, dict) for f in v.get("files") or []}
     old = {f for f in named if f == CHANGELOG or Path(f).name.lower() == "decisions.md" or f in entry}
-    return {f for f in old if f != LOG and not ((root / f).is_file() and holds_old_log(
+    out = {f for f in old if f != LOG and not ((root / f).is_file() and holds_old_log(
         (root / f).read_text(errors="replace"), f, old_prefix(root)))}
+    # A folder of records merged on a branch: the board still names a record that is gone, or
+    # the folder's index, which links to no record now that the folder holds none.
+    live = record_folders(root, tracked(root))
+    for f in named - old:
+        d, name = os.path.dirname(f), os.path.basename(f)
+        if not d or d in live:
+            continue
+        if record_number(name) is not None and not (root / f).exists():
+            out.add(f)
+        elif name.lower() in RECORD_INDEXES and any(
+                record_number(os.path.basename(g)) is not None for g in git(
+                    "log", "--diff-filter=D", "--format=", "--name-only", "--", f"{d}/", cwd=str(root)).splitlines()
+                if os.path.dirname(g) == d) and not (
+                (root / f).is_file() and any(record_number(os.path.basename(m.group("target").split("#")[0])) is not None
+                                             for m in RECORD_LINK.finditer((root / f).read_text(errors="replace")))):
+            out.add(f)
+    return out
 
 
 def cmd_merge_log(root: Path, apply: bool) -> int:
@@ -11866,7 +11924,9 @@ def cmd_merge_log(root: Path, apply: bool) -> int:
     if entry is not None and files_in:
         print(f"  {META} entry_files: {entry} → {kept_entry}")
     # What a kept file holds is no log any more: lines are appended to the log now.
-    data, said = board_rewrite(root, {f for f, _ in files_in} | set(rp["remove"]), prefix)
+    # The index counts as merged whether it went or kept its prose: its rows are the log's now.
+    indexes = {f for f in rp["keep"] if os.path.basename(f).lower() in RECORD_INDEXES}
+    data, said = board_rewrite(root, {f for f, _ in files_in} | set(rp["remove"]) | indexes, prefix)
     for line in said:
         print(f"  {line}" + ("" if on_trunk_now else f" (on {trunk}, after the merge)"))
     refs = names_of(root, [f for f, _ in files_in])
@@ -11890,6 +11950,7 @@ def cmd_merge_log(root: Path, apply: bool) -> int:
         for line in rp["hook"]:
             print(f"  {line}")
     if problems:
+        sys.stdout.flush()
         print("refused: the merged log wouldn't pass M2; fix these first:", file=sys.stderr)
         for p in problems:
             print(f"  {p}", file=sys.stderr)
