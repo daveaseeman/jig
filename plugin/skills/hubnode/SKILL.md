@@ -209,6 +209,15 @@ tell that job to sync before its next handoff. A merge that stops on conflicts: 
 `git add` them, then `jig merge --number` (it also runs `setup.sh` and `derive.sh`), then
 `git commit`.
 
+A clean merge also removes the job's spec and its `Bug-for:` specs in the merge commit, each
+spec's `Scope:` kept on its note, and drops each staged file a removed spec carries; it prints
+each. A conflicted one closes nothing: the next `/jig:rig` does. Then it prints `close the
+sessions that worked on <job>`: archive every session you started for that job (work, review,
+check, bug), with the host's tool where it has one, unless one is still working; that one stays,
+and you say why. A session that served no job (a batch check, a consolidate, a feedback
+group's bug or spec) is archived once its report is read and acted on. Name each archived
+session in the report to the owner.
+
 After it, run `jig sync` in every open job's worktree that is clean, and say which jobs must
 sync themselves. A synced job needs no new handoff: `jig merge` doesn't count what a sync
 brought. A job that needs another number gets it from `jig reserve <job> <counter>`, never a

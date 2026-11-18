@@ -49,6 +49,15 @@ inline visual, it may; the sections and their contents stay these.
 5. **Running:** each open job with its step, who takes it, and whether it continues a session
    or starts one, as `jig rig` printed it from `jig next`.
 
+Then close what merges left, which needs no answer: `jig rig --close` removes every spec in
+`finished` in one commit on trunk, each one's scopes kept on its note, and drops the staged
+files they carry; archive the sessions you started for jobs no longer on the board, with the
+host's tool where it has one, unless one is still working (that one stays, and you say why).
+Draw both as the sixth part:
+
+6. **Finished:** each spec `jig rig --close` closed or kept, and each session archived or
+   still working.
+
 ## 3. The decisions
 
 Load `/jig:decision-cards` and put every decision in one batch, drawn as it says. The blocks,
@@ -92,7 +101,7 @@ show the new picture, so the owner sees items move from open to ready to running
 
 ## `/jig:rig auto`
 
-The same run, without asking for what needs no answer: write a spec from every ready staged
+The same run, Finished included, without asking for what needs no answer: write a spec from every ready staged
 file, then run `jig rig --json` again (judging what comes back null, as in step 1) and open and
 start every spec whose `opens` is `now` in that output. An overlapping pair needs the owner's
 answer, and an item that comes `after` another waits for that job, so neither starts. Answer

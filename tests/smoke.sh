@@ -8067,6 +8067,90 @@ $J rig >/dev/null; $J rig --json >/dev/null
 expect_pass test "$(cat .jig/roadmap.md .jig/staging/s2.md | shasum) $(shasum < .jig/staging/s1.md)" = "$before $s1hash"
 }
 
+# ---------------------------------------------------------------- merged jobs leave nothing behind
+sec_close() {
+CL="$T/close"; pcnew "$CL" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
+cspec() {  # cspec <name> [scope] [extra line]: a spec on trunk, taking a scope when given one
+  mkdir -p .jig/specs && printf '# %s\n\nSource: chat %s\n%s%s\n\n## Intent\nx\n' "$1" "$1" "${2:+Scope: $2
+}" "${3:-}" > ".jig/specs/$1.md"; }
+cjob() {  # cjob <job> <spec> [--partial] [extra command in the worktree]: open, build, review, hand off
+  $J open "$1" --spec ".jig/specs/$2.md" --owns "$1/**" >/dev/null && git add -A && git commit -qm "open $1" \
+    && ( cd ".git/jig/worktrees/$1" && mkdir -p "$1" && printf 'x\n' > "$1/x.txt" && { [ -z "${4:-}" ] || eval "$4"; } \
+         && git add -A && git commit -qm "$1: x" && $J reviewed >/dev/null && $J handoff ${3:-} >/dev/null 2>&1 \
+         && pcfold && git add -A && git commit -qm "note $1" ); }
+cstate() { $J roadmap | grep -E "^  $1 " | awk '{print $2}'; }
+cfin() { $J rig --json | python3 -c "import json,sys; d=json.load(sys.stdin); f=[x['spec'] for x in d['finished']]; i={x['path']: x for x in d['items']}; $1"; }
+printf '# Roadmap\n\n## a\nScopes:\n- `x`: the x\n- `y`: the y\n- `z`: the z\n' > .jig/roadmap.md
+cspec sc a/x 'Source: chat d1.md (staged as d1.md)' && cspec s2 && cspec sp '' 'Source: chat d2.md (staged as d2.md)'
+cspec w '' 'Build after `sc` merges.'
+$J roadmap --write >/dev/null && git add -A && git commit -qm "specs and roadmap"
+stage d1.md this decisions new .jig/decisions.md && stage d2.md this decisions new .jig/decisions.md
+cjob JC sc "" "printf '# sc bug\n\nBug-for: JC\n' > .jig/specs/sc-bug.md"
+cjob K1 s2 && cjob K2 s2 && cjob P sp --partial
+
+msg="close: before the merge, a spec built after the job's waits on it"
+expect_pass cfin "assert i['.jig/specs/w.md']['waits_on'] == ['job JC'], i['.jig/specs/w.md']"
+gated JC; out=$($J merge JC 2>&1); rc=$?
+note=$(git ls-files .jig/handoffs | grep '/JC-')
+msg="close: a merge removes the job's spec and its Bug-for spec in the merge commit, naming both"
+expect_pass sh -c "test $rc = 0 && git diff --name-status HEAD^1 HEAD | grep -qx 'D	.jig/specs/sc.md' && ! git cat-file -e HEAD:.jig/specs/sc-bug.md 2>/dev/null \
+  && echo \"\$0\" | grep -qx 'closed .jig/specs/sc.md' && echo \"\$0\" | grep -qx 'closed .jig/specs/sc-bug.md'" "$out"
+msg="close: the note keeps the spec's scope, on a Scope: line after its Spec: line"
+expect_pass sh -c "git show HEAD:$note | grep -A1 '^Spec: .jig/specs/sc.md' | grep -qx 'Scope: a/x'"
+msg="close: the close-sessions line follows the removal line"
+expect_pass sh -c "echo \"\$0\" | grep -A1 \"^removed JC's\" | grep -qx 'close the sessions that worked on JC'" "$out"
+msg="close: a staged file the closed spec carries is dropped, named, and gone from jig rig"
+expect_pass sh -c "test ! -e .jig/staging/d1.md && echo \"\$0\" | grep -qx 'dropped d1.md: built by .jig/specs/sc.md' && ! $J rig --json | grep -q d1.md" "$out"
+msg="close: the scope stays done, ROADMAP.md is fresh, and its link points at the note"
+expect_pass sh -c "test '$(cstate a/x)' = done && ! $J roadmap | grep -q stale && grep -qF '[sc]($note) ✓' ROADMAP.md"
+msg="close: a waiting spec built after the merged spec is offered as it was"
+expect_pass cfin "x = i['.jig/specs/w.md']; assert x['state'] == 'ready' and x['waits_on'] == [] and x['opens'] == 'now', x"
+
+gated K1; $J merge K1 >/dev/null 2>&1; gated P; out=$($J merge P 2>&1)
+msg="close: a spec a second open job still names stays after the first job's merge"
+expect_pass test -f .jig/specs/s2.md
+msg="close: a spec whose only note is Partial: yes stays, and so does the staged file it carries"
+expect_pass sh -c "test -f .jig/specs/sp.md && test -f .jig/staging/d2.md && ! echo \"\$0\" | grep -q '^closed'" "$out"
+
+msg="close: after the merge, a job opened again under the name isn't let through by the old Bug-for spec"
+$J open JC --owns 'jc2/**' >/dev/null && git add -A && git commit -qm "open JC again"
+out=$(cd .git/jig/worktrees/JC && mkdir jc2 && for n in 1 2 3; do printf "$n\n" >> jc2/x.txt && git add -A && git commit -qm "$n" \
+  && if [ $n = 1 ]; then $J reviewed --tier 2 --effort 2 --blocking 1; else $J reviewed --change --tier 2 --effort 2 --blocking 1; fi >/dev/null; done \
+  && printf '4\n' >> jc2/x.txt && git commit -qam 4 && $J reviewed --change --tier 2 --effort 2 --blocking 0 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'Bug-for: JC'" "$out"
+
+msg="close: the hook refuses a trunk roadmap edit dropping a scope only a note takes, naming the note"
+sed -i.bak '/`x`/d' .jig/roadmap.md && rm .jig/roadmap.md.bak && git add -A
+out=$(git commit -qm "drop x" 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"drops a/x, which $note still takes: re-point the Scope: line in $note\"" "$out"
+msg="close: re-pointing the note's Scope: line in that commit is accepted"
+sed -i.bak 's|^Scope: a/x$|Scope: a/y|' "$note" && rm "$note.bak" && $J roadmap --write >/dev/null && git add -A
+expect_pass git commit -qm "drop x, the note on y"
+
+cspec so a/z 'Source: chat d3.md (staged as d3.md)' && git add -A && git commit -qm so && stage d3.md this decisions new .jig/decisions.md
+printf 'so\n' > so.txt && git add -A && git commit -qm "work so" && $J reviewed >/dev/null && $J handoff --spec .jig/specs/so.md >/dev/null 2>&1 \
+  && pcfold && git add -A && git commit -qm "note so" && $J roadmap --write >/dev/null && git add -A && git commit -qm view
+msg="close: a solo spec its landed note completes is finished; a partial note's spec and an open job's are not"
+expect_pass cfin "assert f == ['.jig/specs/so.md'], f"
+msg="close: jig rig names the finished spec under Finished"
+expect_pass sh -c "$J rig | sed -n '/^Finished:/,\$p' | grep -q '  .jig/specs/so.md  done by .jig/handoffs/main-'"
+msg="close: --close in a job's worktree is refused, writing nothing"
+out=$(cd .git/jig/worktrees/K2 && $J rig --close 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && test -z \"\$(git status --porcelain)\" && test -z \"\$(git -C .git/jig/worktrees/K2 status --porcelain)\" && test -f .jig/specs/so.md" "$out"
+msg="close: --close on a dirty tree is refused, writing nothing"
+printf 'dirty\n' >> so.txt; out=$($J rig --close 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && test \"\$(git status --porcelain)\" = ' M so.txt' && test -f .jig/specs/so.md" "$out"
+git checkout -q -- so.txt
+before=$($J roadmap | grep '^  '); head=$(git rev-parse HEAD)
+msg="close: --close removes the finished spec in one commit, drops what it carries, and leaves the scope states as they were"
+out=$($J rig --close 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && test \$(git rev-list --count $head..HEAD) = 1 && git log -1 --format=%s | grep -qx 'close finished specs: so' \
+  && git diff --name-status HEAD^ HEAD | grep -qx 'D	.jig/specs/so.md' && test ! -e .jig/staging/d3.md && echo \"\$0\" | grep -qx 'dropped d3.md: built by .jig/specs/so.md' \
+  && test \"\$($J roadmap | grep '^  ')\" = \"\$1\" && ! $J roadmap | grep -q stale && test -z \"\$(git status --porcelain)\"" "$out" "$before"
+msg="close: the merge and --close share one rule"
+expect_pass test "$(grep -c 'finished_specs(' .jig/jig.py)" -ge 3
+}
+
 sec_claims() {
 # A spec that changes a claim starts from every tracked place naming it (RULES.md: Every copy).
 CL="$T/claims"; pcnew "$CL" && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
@@ -8458,7 +8542,7 @@ msg="queue config: the overflow key with the owner's words commits"
 expect_pass setq '{"width": "all", "overflow": {"to": "github", "reason": "the owner: keep the standing yes"}}'
 }
 
-UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders rig claims inbox rigger queue"
+UNITS="rules merge_derived update board_split worktree_setup metarepo,staging pararepo release r6_takes,r6_ints merge_after_sync repos workflow init_old_board ledger_rows hardware update_per_file pararepo_commands entry_globs report_fixes sync_buffer buffer_answered pointers removals feedback slash_names homes structure meta_docs agents_lines page_contract roadmap boundary decisions supersede touches,touches_terms sweep staging_batches merge_log findings glossary headings check_levels role_line consolidate cheaper_rounds next svg update_roles holders rig close claims inbox rigger queue"
 
 if [ "${1:-}" = --list ]; then echo $UNITS | tr ' ,' '\n\n'; exit 0; fi
 if [ "${1:-}" = --unit ]; then        # --unit <run folder> <unit>: one unit, its output to a file

@@ -2000,8 +2000,13 @@ def cmd_merge(root: Path, args) -> int:
             git("add", "--", ROADMAP, check=True)
             if built & {i["id"] for i in parse_up_next(text)}:
                 print(f"removed from {ROADMAP}, built: {', '.join(sorted(built))}")
-    # States change when work lands, so the view is rewritten in the merge commit itself.
     snap = Snapshot(where="index")
+    # A merged job leaves nothing in flight: its spec and bug specs leave in the merge commit,
+    # their scopes kept on the note. A conflicted merge closes nothing; `jig rig --close` does later.
+    named = {m.group(1) for n in notes
+             if (m := re.search(r"^Spec: (\S+)", git("show", f"{branch}:{n}"), re.M))}
+    closed = [] if p.returncode else close_specs(finished_specs(snap, board, name, named), snap)
+    # States change when work lands, so the view is rewritten in the merge commit itself.
     phases = None if p.returncode else roadmap_state(snap)
     if phases is not None:
         (main_root() / ROADMAP_VIEW).write_text(roadmap_view(snap, phases))
@@ -2019,6 +2024,8 @@ def cmd_merge(root: Path, args) -> int:
         return 1
     for line in numbered:
         print(f"numbered {line}")
+    for line in closed:
+        print(line)
     # git runs post-merge only for a merge it commits itself, not this one.
     # This commit isn't a merge, so a metarepo's M4 would refuse derived files in it, and derive
     # doesn't run. A hand merge brought the job's sources in without it, so they may be stale.
@@ -2042,6 +2049,8 @@ def cmd_merge(root: Path, args) -> int:
         return 1
     print(f"merged {name}; its entry is gone from {JOBS} in the same commit. Sync the clean jobs.")
     clean_up_job(name, branch)
+    # Sessions are the host's, so jig only says it: the hubnode archives them with its tool.
+    print(f"close the sessions that worked on {name}")
     for l in later:
         print(l)
     return 0
@@ -9578,14 +9587,20 @@ def spec_scopes(text: str) -> list[str]:
     return [s.strip().strip("`") for s in m.group(1).split(",") if s.strip()] if m else []
 
 
+def takes_scopes(path: str) -> bool:
+    """A spec, or a handoff note, which keeps the scopes of a spec that has closed."""
+    return is_spec(path) or path.startswith(HANDOFFS) and path.endswith(".md")
+
+
 def is_spec(path: str) -> bool:
     # _template.md is the shape a spec starts from, not a task: its placeholder takes nothing.
     return path.startswith(SPECS) and path.endswith(".md") and not Path(path).name.startswith("_")
 
 
-def complete_specs(snap: Snapshot) -> set[str]:
-    """Specs with a landed handoff that isn't partial: its work is in this tree's history."""
-    done: set[str] = set()
+def completing_notes(snap: Snapshot) -> dict[str, str]:
+    """Each spec with a landed handoff that isn't partial, to the newest such note: its work is
+    in this tree's history. A note may name its spec by file name alone."""
+    done: dict[str, tuple[str, str]] = {}
     for n in snap.ls(HANDOFFS):
         body = snap.show(n)
         spec = re.search(r"^Spec: (\S+)", body, re.M)
@@ -9593,9 +9608,80 @@ def complete_specs(snap: Snapshot) -> set[str]:
         if not spec or not commit or re.search(r"^Partial: yes", body, re.M):
             continue
         s = os.path.normpath(spec.group(1))
-        if s not in done and snap.landed(commit.group(1)):
-            done.add(s)
-    return done
+        date = re.search(r"^Date: (\S+)", body, re.M)
+        key = (date.group(1) if date else "", n)
+        if (s not in done or key > done[s]) and snap.landed(commit.group(1)):
+            done[s] = key
+    return {s: k[1] for s, k in done.items()}
+
+
+def complete_specs(snap: Snapshot) -> set[str]:
+    return set(completing_notes(snap))
+
+
+def note_for(spec: str, notes: dict[str, str]) -> str:
+    return notes.get(spec) or notes.get(Path(spec).name) or ""
+
+
+def finished_specs(snap: Snapshot, board: "Board", job: str = "", named: set[str] | None = None) -> list[dict]:
+    """The specs whose work is done and that nothing still holds: complete and named by no open
+    job, or a `Bug-for:` spec whose job has left the board (a bug spec reaches trunk only with
+    its job's merge). Each with its completing note ("" for a bug spec). With JOB, only that
+    job's: the specs its notes name (NAMED) and its `Bug-for:` specs. A spec a cached metarepo
+    pointer names is kept, with why: removing it would leave that pointer dangling."""
+    notes = completing_notes(snap)
+    held = {os.path.normpath(j["spec"]) for j in board.jobs.values() if is_spec(j.get("spec", ""))}
+    named = {os.path.normpath(x) for x in named or ()}
+    root = main_root()
+    pointed = {p for _, p, _, _ in pointers(root)} if (root / CACHE).is_dir() else set()
+    out = []
+    for f in snap.ls(SPECS):
+        if not is_spec(f):
+            continue
+        bug = re.search(r"^Bug-for:[ \t]*(\S+)[ \t]*$", snap.show(f), re.M)
+        if bug:
+            if bug.group(1) in board.jobs or job and bug.group(1) != job:
+                continue
+            note = ""
+        else:
+            note = note_for(f, notes)
+            if not note or f in held or Path(f).name in {Path(h).name for h in held}:
+                continue
+            if job and f not in named and Path(f).name not in named:
+                continue
+        out.append({"spec": f, "note": note,
+                    "kept": "a cached metarepo pointer names it" if f in pointed else ""})
+    return out
+
+
+def close_specs(finished: list[dict], snap: Snapshot) -> list[str]:
+    """Remove each finished spec, its scopes kept on its note's `Scope:` line, read now so a
+    scope re-pointed after the handoff is carried right; and drop each staged file whose mark
+    it carries, which its job built (resolving a decisions file would add its entries again).
+    Stages the changes in the trunk checkout; returns what it did, a line each."""
+    root, out = main_root(), []
+    staged = [(f, provenance(read_staged(f)[0], f)) for f in staged_files(root)]
+    for x in finished:
+        f, note = x["spec"], x["note"]
+        if x["kept"]:
+            out.append(f"kept {f}: {x['kept']}")
+            continue
+        text = snap.show(f)
+        scope = re.search(r"^Scope:[ \t]*.*$", text, re.M)
+        if note and scope:
+            body = read_raw(root / note)
+            if not re.search(r"^Scope:", body, re.M):
+                body = re.sub(r"^(Spec: .*\n)", lambda m: m.group(1) + scope.group(0) + "\n", body, 1, re.M)
+                write_raw(root / note, body)
+                git("add", "--", note, check=True, cwd=str(root))
+        # -f: mid-merge the spec is staged from the job, as a new file.
+        git("rm", "-q", "-f", "--", f, check=True, cwd=str(root))
+        out.append(f"closed {f}")
+        for sf, mark in staged:
+            if sf.exists() and mark in text:
+                sf.unlink()
+                out.append(f"dropped {sf.name}: built by {f}")
+    return out
 
 
 def roadmap_state(snap: Snapshot) -> list[dict] | None:
@@ -9606,16 +9692,25 @@ def roadmap_state(snap: Snapshot) -> list[dict] | None:
         return None
     phases = parse_roadmap(text)
     takes: dict[str, list[str]] = {}
-    for f in snap.ls(SPECS):
-        if is_spec(f):
-            for s in spec_scopes(snap.show(f)):
-                takes.setdefault(s, []).append(f)
-    done = complete_specs(snap)
+    tree = [f for f in snap.ls(SPECS) if is_spec(f)]
+    for f in tree:
+        for s in spec_scopes(snap.show(f)):
+            takes.setdefault(s, []).append(f)
+    notes = completing_notes(snap)
     # A note may name its spec by file name alone; the spec's path or its name both count.
-    finished = lambda f: f in done or Path(f).name in done
+    finished = lambda f: bool(note_for(f, notes))
+    # A closed spec's scopes live on its note's `Scope:` line; a spec still in the tree wins.
+    names = {Path(f).name for f in tree}
+    closed: dict[str, str] = {}
+    for spec, note in sorted(notes.items()):
+        if spec not in tree and Path(spec).name not in names:
+            for s in spec_scopes(snap.show(note)):
+                takes.setdefault(s, []).append(spec)
+                closed[spec] = note
     current = None
     for p in phases:
-        p["scopes"] = [{"id": sid, "what": what, "specs": [(f, finished(f)) for f in takes.get(sid, [])]}
+        p["scopes"] = [{"id": sid, "what": what, "specs": [(f, finished(f)) for f in takes.get(sid, [])],
+                        "notes": {f: closed[f] for f in takes.get(sid, []) if f in closed}}
                        for sid, what in p["scopes"]]
         for s in p["scopes"]:
             s["state"] = ("open" if not s["specs"] else
@@ -9676,7 +9771,8 @@ def render_roadmap(phases: list[dict], up_next: list[dict] | None = None,
 def scope_cell(s: dict) -> str:
     name = s["id"].split("/", 1)[1]
     cell = f"**{name}**" + (f": {s['what']}" if s["what"] else "")
-    cell += "".join(f"<br>[{Path(f).stem}]({f}){' ✓' if ok else ''}" for f, ok in s["specs"])
+    # A closed spec is gone from the tree: its link is the note that completed it.
+    cell += "".join(f"<br>[{Path(f).stem}]({s['notes'].get(f, f)}){' ✓' if ok else ''}" for f, ok in s["specs"])
     return cell.replace("|", "\\|")
 
 
@@ -10048,14 +10144,14 @@ def roadmap_rules(board: "Board", branch: str, staged: bool, paths: list[str],
         out += [f"{ROADMAP} {x}" for x in problems]
     if on_trunk and ROADMAP in guarded:
         dropped = roadmap_scopes(old) - known
-        for f in git("-c", "core.quotePath=false", "ls-files", "--", SPECS).splitlines():
-            if is_spec(f) and (gone := [s for s in spec_scopes(in_index(f, staged)) if s in dropped]):
+        for f in git("-c", "core.quotePath=false", "ls-files", "--", SPECS, HANDOFFS).splitlines():
+            if takes_scopes(f) and (gone := [s for s in spec_scopes(in_index(f, staged)) if s in dropped]):
                 named.add(f)
                 out.append(f"{ROADMAP} drops {', '.join(gone)}, which {f} still takes: re-point "
-                           "its Scope: line in this commit")
+                           f"the Scope: line in {f} in this commit")
     for f in paths:
-        if is_spec(f) and f not in named and (bad := [s for s in spec_scopes(in_index(f, staged))
-                                                      if s not in known]):
+        if takes_scopes(f) and f not in named and (bad := [s for s in spec_scopes(in_index(f, staged))
+                                                           if s not in known]):
             out.append(f"{f} takes {', '.join(bad)}, which {ROADMAP} on {trunk} doesn't have: "
                        "a scope is <phase>/<scope> from it")
     return out
@@ -13532,7 +13628,9 @@ def rig_state(root: Path, board: "Board") -> dict:
             "groups": [{"paths": [i["path"] for i in g],
                         "overlaps": sorted(p for p in overlaps if set(p) & {i["path"] for i in g})}
                        for g in ordered],
-            "waiting_on_you": len(asks) + len(pairs) + len(cycles), "can_start": sum(i["opens"] == "now" for i in start), "jobs": jobs}
+            "waiting_on_you": len(asks) + len(pairs) + len(cycles), "can_start": sum(i["opens"] == "now" for i in start), "jobs": jobs,
+            # Closing needs no answer, so finished specs count in neither number.
+            "finished": finished_specs(Snapshot(board.trunk), board)}
 
 
 def rig_text(state: dict) -> str:
@@ -13568,13 +13666,46 @@ def rig_text(state: dict) -> str:
     out.append("\nRunning:")
     out += [f"  {j['name']}: {j['step']} — {j['who']}, {j['session']}" + (f" ({j['why']})" if j["why"] else "")
             for j in state["jobs"]] or ["  no open jobs"]
+    out.append("\nFinished:")
+    out += [f"  {f['spec']}" + (f"  kept: {f['kept']}" if f["kept"] else f"  done by {f['note']}" if f["note"]
+                                else "  its job has merged") for f in state["finished"]] or ["  nothing to close"]
     return "\n".join(out)
+
+
+def rig_close(root: Path, board: "Board") -> int:
+    """Close what merges left: every finished spec, in one commit on trunk. A merge closes its
+    own job's; this catches a conflicted merge's and those from before merges closed any."""
+    trunk = board.trunk
+    if git("branch", "--show-current") != trunk or not is_main_worktree(root):
+        die(f"close finished specs in the {trunk} checkout: specs leave {trunk} there")
+    if git("status", "--porcelain", "--untracked-files=no"):
+        die("commit or stash first: the close commit carries the closed specs, nothing else")
+    os.chdir(root)
+    snap = Snapshot(where="index")
+    lines = close_specs(finished_specs(Snapshot(trunk), board), snap)
+    closed = [Path(l.split(" ", 1)[1]).stem for l in lines if l.startswith("closed ")]
+    for l in lines:
+        print(l)
+    if not closed:
+        print("nothing to close")
+        return 0
+    phases = roadmap_state(snap)
+    if phases is not None:
+        (root / ROADMAP_VIEW).write_text(roadmap_view(snap, phases))
+        git("add", "--", ROADMAP_VIEW, check=True)
+    if subprocess.run(["git", "commit", "-q", "-m", f"close finished specs: {', '.join(closed)}"]).returncode:
+        print("the close isn't committed: fix what the hook refused, then `git commit`", file=sys.stderr)
+        return 1
+    print(f"committed the close of {len(closed)} spec{'s' if len(closed) != 1 else ''}")
+    return 0
 
 
 def cmd_rig(root: Path, args) -> int:
     """The repo's picture: what can start, what waits on what, what waits on the owner, and the
     running jobs. It reads and never writes the roadmap or staging; its one file is the store."""
     board = Board.load(root)
+    if args.close:
+        return rig_close(root, board)
     if args.fresh:
         rig_store().unlink(missing_ok=True)
     if args.store_get or args.store_put:
@@ -13753,6 +13884,7 @@ def main(argv: list[str] | None = None) -> int:
     rg.add_argument("--fresh", action="store_true", help="forget every stored judgment first")
     rg.add_argument("--store-get", metavar="PATH", help="print an item's stored judgment, if it still holds")
     rg.add_argument("--store-put", metavar="PATH", help="store an item's judgment, a JSON object on stdin")
+    rg.add_argument("--close", action="store_true", help="hubnode, on trunk: remove the finished specs, their scopes kept on their notes, in one commit")
     hk = sub.add_parser("hook")
     hk.add_argument("name")
     hk.add_argument("rest", nargs="*")
