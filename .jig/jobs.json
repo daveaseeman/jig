@@ -13,7 +13,7 @@
   },
   "bug-process-in-pages": {
     "spec": ".jig/specs/bug-process-in-pages.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [
       "bug-meta-agents-block"
     ],
@@ -37,7 +37,8 @@
       "plugin/skills/adopt/SKILL.md",
       "plugin/skills/update/SKILL.md"
     ],
-    "reserved": {}
+    "reserved": {},
+    "check": "batch"
   },
   "check-queue": {
     "spec": ".jig/specs/check-queue.md",
