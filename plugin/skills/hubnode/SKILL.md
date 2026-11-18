@@ -47,9 +47,12 @@ out as `/jig:decision-cards` says.
    reach this repo only as a proposal.
 6. `jig roles`, and read `${CLAUDE_PLUGIN_ROOT}/tiers.json`. Say what you run on:
    `running <model>`, from your own system prompt, and your effort from the host's readout of
-   this session where it has one (the Claude app shows each session's), else `unknown`. If
-   that is below tier 2, effort 1, say so in one line — the owner chose your session, and
-   jig can't change it.
+   this session where it has one (the Claude app shows each session's), else `unknown`. Map
+   them to numbers with `tiers.json` and run `jig roles --from <tier>,<effort>`: under each
+   role it says how you start it, and it says when you rank below the hubnode floor; then say
+   so in one line — the owner chose your session, and jig can't change it. A model
+   `tiers.json` doesn't name: say so, `tiers.json` is stale, and start nothing above tier 3's
+   model until the owner answers.
    If `jig roles` isn't a command, the repo's `.jig/` is older than the plugin: say "run
    /jig:update first" and stop.
 7. Work in this order: open the jobs asked for, gate the handoffs waiting, then each job's
@@ -83,17 +86,21 @@ record a review you dispatched, once, with the configured numbers and its blocki
 (`jig reviewed --tier N --effort N --ran "..." --blocking N`, `--change` for a
 review-change), as `/jig:review` says. A self-read the host
 contradicts is never a mismatch; only a model that differs is. A mismatch stops a raised
-session: tell the owner, don't brief it. A subagent, or a session started at or below your
-settings, gets its brief in the same prompt, so that prompt also says: "if your own model
+session: tell the owner, don't brief it. A subagent, or a session `jig roles --from` says to
+start with its settings, gets its brief in the same prompt, so that prompt also says: "if your own model
 differs from this line, reply with only your `running` line and stop". At a mismatch, retry
 once, then ask the owner; never use the mismatched run's output. A model it can't read, it
 reports as `unknown`: no retry, record it as `unknown` (`--ran "unknown at <effort>"`) and
 tell the owner once.
 
-The tool clamps a new session to your model and effort, silently. A role at or below yours
-starts with its settings and the brief. One above yours starts with a holding prompt that
-only asks for the `running` line and to wait; raise it with `set_session_model` and
-`set_session_effort`, ask for the line again, and send the brief once it reads back right.
+The tool clamps a new session's model to yours and its effort to yours, each on its own and
+silently. So the two settings are compared apart, and a better model never excuses a lower
+effort: a tier-1 hubnode at low still raises a tier-2 role at medium. Follow `jig roles
+--from`'s line under the role. "start with its settings" starts it with the brief. "start,
+then raise …" starts it with a holding prompt that only asks for the `running` line and to
+wait; raise what the line names with `set_session_model` and `set_session_effort`, ask for
+the line again, and send the brief once the session's line names the role's model and the
+host's readout shows the role's effort.
 When the host refuses to start a session on this turn, offer it to the owner instead (a
 proposal card, or the brief to paste), and never run the step in this session.
 

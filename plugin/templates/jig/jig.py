@@ -84,7 +84,8 @@ ROLES = {
     "check":  {"session": "new session", "tier": 3, "effort": 4, "steps": ["check", "trace", "survey"]},
 }
 # The hubnode's steps are no role's: it runs at the owner's settings, which should be at least
-# HUBNODE_FLOOR. The hubnode skill says so when it reads lower; jig can't see a session's model.
+# HUBNODE_FLOOR, ranked tier first, then effort. `jig roles --from` says so when the hubnode's
+# own settings, which it maps from the tiers map, rank lower; jig can't see a session's model.
 HUBNODE_STEPS = ["assign", "gate", "merge", "release", "push", "publish"]
 HUBNODE_FLOOR = {"tier": 2, "effort": 1}
 # A workflow is its steps with the link before each: "→" goes to a session that already
@@ -386,9 +387,47 @@ def flow_lines() -> str:
     return "\n".join(out)
 
 
+def setting_pair(text: str) -> dict:
+    """`--from TIER,EFFORT`: a session's own settings, as numbers from the tool's tiers map."""
+    try:
+        tier, effort = (int(x) for x in text.split(","))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not TIER,EFFORT, two whole numbers")
+    if tier < 1 or effort < 0:
+        raise argparse.ArgumentTypeError(f"{text!r}: tier counts from 1, effort from 0")
+    return {"tier": tier, "effort": effort}
+
+
+def ranks_below(a: dict, b: dict) -> bool:
+    """A below B: tier first, then effort, so a better tier at any effort ranks above a worse
+    one. Lower numbers are better for both."""
+    return (a["tier"], a["effort"]) > (b["tier"], b["effort"])
+
+
+def start_from(role: dict, own: dict) -> str:
+    """How a session at OWN starts a ROLE session. The tool clamps a new session's model and
+    its effort to the starter's one at a time, so each is compared apart: a better model never
+    excuses a lower effort."""
+    raise_ = [k for k in ("tier", "effort") if role[k] < own[k]]
+    if not raise_:
+        return "start with its settings"
+    return "start, then raise " + " and ".join("model" if k == "tier" else k for k in raise_)
+
+
 def cmd_roles(root: Path, args) -> int:
-    """Print each role's tier and effort in effect; refuse an override that breaks a rule."""
-    print(role_lines(settings_or_refuse(root)))
+    """Print each role's tier and effort in effect; refuse an override that breaks a rule.
+    With --from, the starting session's own settings: how to start each role from them."""
+    roles = settings_or_refuse(root)
+    own = getattr(args, "from_", None)
+    if own is None:
+        print(role_lines(roles))
+        return 0
+    for k, v in roles.items():
+        print(f"{k}: tier {v['tier']}, effort {v['effort']}")
+        print(f"  {start_from(v, own)}")
+    if ranks_below(own, HUBNODE_FLOOR):
+        print(f"tier {own['tier']}, effort {own['effort']} is below the hubnode floor "
+              f"(tier {HUBNODE_FLOOR['tier']}, effort {HUBNODE_FLOOR['effort']})")
     return 0
 
 
@@ -614,7 +653,11 @@ def check_rules(root: Path, board: Board, *, staged: bool) -> list[str]:
                              takes=job is not None or bool(board.open_jobs()))
 
     if job is None:
-        if branch and branch != trunk and board.open_jobs():
+        # A metarepo's propose/ branch is on no job by design: `jig propose` makes it from the
+        # pararepo, which can't open a metarepo job, and the metarepo takes it in by a merge
+        # whose own checks judge ownership.
+        proposal = meta is not None and branch.startswith("propose/")
+        if branch and branch != trunk and board.open_jobs() and not proposal:
             out.append(
                 f"R2 branch {branch} is on no job. Ask the hubnode to open one, "
                 f"or work on {trunk}"
@@ -13693,7 +13736,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="review-change: what changed since the job's last recorded review")
     rv.add_argument("--recheck", action="store_true", help=argparse.SUPPRESS)
     rv.add_argument("--blocking", type=int, help="how many blocking findings it left")
-    sub.add_parser("roles", help="each role's model tier and effort in effect")
+    rl = sub.add_parser("roles", help="each role's model tier and effort in effect")
+    rl.add_argument("--from", dest="from_", type=setting_pair, metavar="TIER,EFFORT",
+                    help="the starting session's own tier and effort: how to start each role")
     sub.add_parser("flows", help="each workflow's steps, who does each, and its session links")
     sub.add_parser("workflow", help="the old name: prints roles, then flows")
     nx = sub.add_parser("next", help="a job's next step, who does it, and in which session")
