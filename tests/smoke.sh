@@ -1095,6 +1095,33 @@ msg="merge: a page on trunk the merge didn't change keeps its placeholder"
 expect_pass grep -q 'D-?retry-cap' pages/d.md
 msg="decision: jig decision D-007 names the entry that supersedes it"
 out=$($J decision D-007 2>&1); expect_pass sh -c "echo \"\$0\" | grep -q 'D-007 is superseded by D-021'" "$out"
+# AGENTS.md's metarepo block: jig's words for the rules every task meets, written at setup,
+# refreshed only in a job (M4), and no line of it read as the repo's procedure.
+MB="$T/mab"; mkdir -p "$MB" && cd "$MB" && git init -q -b main && git config user.email t@t && git config user.name t
+cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && git add -A && git commit -qm init && $J init >/dev/null
+msg="meta block: a plain jig init writes no metarepo block"
+expect_pass sh -c "! grep -q 'jig:meta' AGENTS.md"
+out=$($J init --meta --name mab --prefix E- 2>&1)
+blk=$(sed -n '/^<!-- jig:meta — /,/^<!-- jig:meta end -->/p' AGENTS.md)
+msg="meta block: init --meta writes one block under AGENTS.md's title, at most 5 lines between its markers"
+expect_pass sh -c "test \"\$(grep -c '^<!-- jig:meta — ' AGENTS.md)\" = 1 && sed -n 3p AGENTS.md | grep -q '^<!-- jig:meta — .*jig init --meta' && test \$(echo \"\$0\" | wc -l) -le 7" "$blk"
+msg="meta block: it states M1, M4, M6 with the E- prefix, M3, that only jig release tags, and names .jig/RULES.md"
+expect_pass sh -c "echo \"\$0\" | grep -q 'docs only.*(M1).*never copied' && echo \"\$0\" | grep -q 'reviewed merges.*branch (M4)' && echo \"\$0\" | grep -q 'E-012: .*(M6)' && echo \"\$0\" | grep -q 'entry_files.*## Unreleased.*decisions.md. (M3)' && echo \"\$0\" | grep -qx -- '- Only .jig release. tags.' && echo \"\$0\" | grep -q '.jig/RULES.md.*Metarepo and pararepos'" "$blk"
+msg="meta block: the console names AGENTS.md among the files to commit"
+expect_pass sh -c "echo \"\$0\" | tail -1 | grep -q 'Commit these on main, AGENTS.md among them'" "$out"
+# trunk gets an older wording, as a repo set up by an earlier jig has
+sed -i.bak 's/^- Only `jig release` tags\.$/- Only `jig meta-release` tags./' AGENTS.md && rm AGENTS.md.bak && git add -A && git commit -qm meta-init
+out=$($J init --meta 2>&1)
+msg="meta block: on trunk with meta.json there, init --meta leaves AGENTS.md alone and names a job's worktree (M4)"
+expect_pass sh -c "test -z \"\$(git status --porcelain)\" && echo \"\$0\" | grep -qi 'run .jig init --meta. in a job.s worktree' && echo \"\$0\" | grep -q '(M4)'" "$out"
+$J open blk --owns AGENTS.md >/dev/null && git add -A && git commit -qm "TOOL: open blk"
+cd .git/jig/worktrees/blk && out=$($J init --meta 2>&1)
+msg="meta block: in a job's worktree init --meta rewrites the old block and says to commit it on the job's branch"
+expect_pass sh -c "grep -qx -- '- Only .jig release. tags.' AGENTS.md && ! grep -q meta-release AGENTS.md && test \"\$(grep -c '^<!-- jig:meta — ' AGENTS.md)\" = 1 && echo \"\$0\" | tail -1 | grep -q \"job's branch\"" "$out"
+git add -A && git commit -qm "TOOL: AGENTS.md block" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 && pcfold \
+  && git add -A && git commit -qm "TOOL: note blk" && cd "$MB" && gated blk && $J merge blk --subject "TOOL: blk" >/dev/null 2>&1
+msg="meta block: after the job merges, update's dry run lists no AGENTS.md line"
+out=$($UP 2>&1); expect_pass sh -c "grep -qx -- '- Only .jig release. tags.' AGENTS.md && ! echo \"\$0\" | grep -q '^  AGENTS.md'" "$out"
 cd "$M"
 }
 
@@ -1279,6 +1306,8 @@ $J init --para docs --location mrclone --contract 'api/**' >/dev/null
 expect_pass sh -c "grep -q '\"pin\": \"v0.1.0\"' .jig/para.json && ! grep -q location .jig/para.json && grep -q '\"docs\"' '$T/repos.json' && grep -q 'jig:meta' AGENTS.md && test -f .jig/meta-cache/.jig/decisions.md && grep -qx '.jig/meta-cache/' .gitignore && grep -qx 'mrclone/' .gitignore"
 msg="para: the generated header is at most 6 lines"
 expect_pass test "$(sed -n '/jig:meta —/,/jig:meta end/p' AGENTS.md | wc -l | tr -d ' ')" -le 6
+msg="para: init --para writes no metarepo block"
+expect_pass sh -c "! grep -q 'jig init --meta' AGENTS.md"
 git add -A && git commit -qm "para-init"
 
 msg="release: a pararepo says so"
@@ -7342,6 +7371,8 @@ ur_reset
 out=$($UP 2>&1)
 msg="update roles: lines inside a pararepo's generated header are not read; the retired line after it is"
 expect_pass sh -c "! echo \"\$0\" | grep -qE '^  (4|5): |AGENTS.md:(4|5):' && echo \"\$0\" | grep -q '^  8: .- Bug reported'" "$out"
+msg="update roles: a pararepo gets no metarepo block line"
+expect_pass sh -c "! echo \"\$0\" | grep -q 'metarepo block'" "$out"
 ur_reset
 { cat "$P/AGENTS.md"; echo '- Bug reported → /jig:bug before editing. Prefer the fix that makes the odd path look like the healthy ones over one that patches the symptom.'; } > AGENTS.md
 echo '{}' > .jig/meta.json && ur_commit meta && cp AGENTS.md "$T/M.before"
@@ -7349,6 +7380,28 @@ out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
 n=$(wc -l < "$T/M.before" | tr -d ' ')
 msg="update roles: in a metarepo the retired line is listed as a job's, and --apply leaves AGENTS.md unchanged"
 expect_pass sh -c "echo \"\$0\" | grep -q \"^  AGENTS.md:$n: jig.s retired line: .* in a job (M4\" && cmp -s AGENTS.md \"\$1\"" "$out" "$T/M.before"
+
+# A metarepo's block (prefix E-), with and without the repo's own line beside it, the report's.
+l31='- Commit on a branch: main takes only reviewed merges, and only `jig release` tags.'
+ur_reset; out=$($UP 2>&1)
+msg="update roles: a plain repo gets no metarepo block line"
+expect_pass sh -c "! echo \"\$0\" | grep -q 'metarepo block'" "$out"
+$J init --meta --prefix E- >/dev/null && ur_commit mblock
+out=$($UP 2>&1)
+msg="update roles: no line of a metarepo's block is listed, jig release included"
+expect_pass sh -c "! echo \"\$0\" | sed -n '/^Repo files to review/,\$p' | grep -q AGENTS.md" "$out"
+echo "$l31" >> AGENTS.md && ur_commit l31
+out=$($UP 2>&1); n=$(wc -l < AGENTS.md | tr -d ' ')
+msg="update roles: the repo's own line beside the block is the only AGENTS.md line listed"
+expect_pass sh -c "test \"\$(echo \"\$0\" | sed -n '/^Repo files to review/,\$p' | grep -c AGENTS.md)\" = 1 && echo \"\$0\" | grep -q \"^  AGENTS.md:$n: runs a step in the repo.s own words\"" "$out"
+ur_reset; { cat "$P/AGENTS.md"; echo "$l31"; } > AGENTS.md; echo '{"decision_prefix": "E-"}' > .jig/meta.json && ur_commit noblock && cp AGENTS.md "$T/nb.before"
+out=$($UP 2>&1); $UP --apply >/dev/null 2>&1
+msg="update roles: a metarepo with no block lists AGENTS.md: jig's block, init --meta in a job once this jig is on trunk (M4), restated lines the owner's; --apply leaves it as it was"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  AGENTS.md: has no metarepo block.*jig init --meta. in a job.s worktree.*(M4).*owner.s to remove' && echo \"\$0\" | grep -q 'once this update.s .\.jig/jig\.py. is on trunk' && cmp -s AGENTS.md \"\$1\"" "$out" "$T/nb.before"
+ur_reset; $J init --meta --prefix E- >/dev/null && sed -i.bak 's/^- Only `jig release` tags\.$/- Only `jig meta-release` tags./' AGENTS.md && rm AGENTS.md.bak && ur_commit stale
+out=$($UP 2>&1)
+msg="update roles: a metarepo block in an older wording is listed the same way"
+expect_pass sh -c "echo \"\$0\" | grep -q '^  AGENTS.md: has no metarepo block, or one older'" "$out"
 
 # Fixture G: procedures in the repo's own words.
 ur_reset

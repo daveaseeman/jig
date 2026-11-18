@@ -5193,8 +5193,25 @@ def cmd_meta_init(root: Path, args) -> int:
         gloss.write_text(gloss.read_text().rstrip("\n") + "\n\n" + "\n".join(new))
         print(f"added a ## heading per genre to {GLOSSARY}")
     release_script(root, meta=True)
-    print(f"Commit these on {Board.trunk_name(root)}. From then on {Board.trunk_name(root)} "
-          "takes only reviewed merges, and only `jig release` tags.")
+    trunk = Board.trunk_name(root)
+    agents = root / "AGENTS.md"
+    # Once meta.json is on trunk, M4 refuses an AGENTS.md commit there: a refresh is a job's.
+    if git("show", f"{trunk}:{META}", cwd=str(root)) and on_trunk(
+            trunk, git("branch", "--show-current", cwd=str(root))):
+        print(f"AGENTS.md not written: {trunk} takes only reviewed merges (M4). Run `jig init "
+              "--meta` in a job's worktree to write its metarepo block, and commit AGENTS.md on "
+              "the job's branch.")
+        return 0
+    before = agents.read_text() if agents.exists() else "# AGENTS.md\n"
+    after = with_header(before, meta_header(meta, trunk))
+    if after != before or not agents.exists():
+        agents.write_text(after)
+        print("wrote AGENTS.md's metarepo block")
+    if git("show", f"{trunk}:{META}", cwd=str(root)):
+        print("Commit AGENTS.md on this job's branch.")
+    else:
+        print(f"Commit these on {trunk}, AGENTS.md among them. From then on {trunk} "
+              "takes only reviewed merges, and only `jig release` tags.")
     return 0
 
 
@@ -6541,6 +6558,28 @@ def para_header(para: dict) -> str:
         f"- Contract paths: {paths}. A change there needs a metarepo proposal "
         "(`jig propose`) or `meta: none — <reason>` in its spec.",
         "- The metarepo is written only by branch, via `jig propose`; nothing of it is copied here.",
+        HEADER_END,
+    ])
+
+
+# A metarepo's rules every task meets, always loaded as a pararepo's header is. jig's words,
+# so they follow jig's rules as they change and are no repo's procedure.
+META_HEADER_BEGIN = (f"<!-- jig:meta — generated from {META} by `jig init --meta`; rerun that in "
+                     "a job's worktree, not by hand -->")
+
+
+def meta_header(meta: dict, trunk: str) -> str:
+    """The block names entry_files rather than listing them, so editing the list leaves it current."""
+    prefix = meta.get("decision_prefix") or META_DEFAULTS["decision_prefix"]
+    return "\n".join([
+        META_HEADER_BEGIN,
+        f"- This is a metarepo (`{DIR}/RULES.md`, Metarepo and pararepos): docs only, no code (M1); "
+        "a claim another repo owns is pointed to (`<repo>/<path> § <section>`), never copied.",
+        f"- `{trunk}` takes only reviewed merges, so work on a branch (M4). A commit subject starts "
+        f"with the ids it touches (`{prefix}012: …`, `GLOSSARY: …`) (M6).",
+        f"- A change to an entry file (`{META}`'s `entry_files`) adds a change line under "
+        f"`## Unreleased` in `{LOG}` (M3).",
+        "- Only `jig release` tags.",
         HEADER_END,
     ])
 
@@ -10010,7 +10049,25 @@ def files_to_review(root: Path, plan: dict, template: Path | None = None,
         out.append((f, f"{what}: merged into {LOG} on a yes — `jig update --merge-log` shows the "
                        f"log it would write, `jig update --apply --merge-log` writes it and removes "
                        f"the old files"))
-    return out + agents_lines(root, template, arriving)
+    return out + meta_block_lines(root) + agents_lines(root, template, arriving)
+
+
+def meta_block_lines(root: Path) -> list[tuple[str, str]]:
+    """A metarepo's AGENTS.md without the block this jig writes, missing or an older wording.
+    Listed only: AGENTS.md changes in a job there (M4), and update's layout work waits for jobs."""
+    if not (root / META).exists():
+        return []
+    try:
+        meta = {**META_DEFAULTS, **json.loads((root / META).read_text())}
+    except ValueError:
+        return []
+    agents = root / "AGENTS.md"
+    if meta_header(meta, Board.trunk_name(root)) in (agents.read_text(errors="replace") if agents.exists() else ""):
+        return []
+    return [("AGENTS.md", "has no metarepo block, or one older than this jig's. The block is jig's: "
+             f"once this update's `{DIR}/jig.py` is on trunk, run `jig init --meta` in a job's "
+             "worktree and commit AGENTS.md on its branch (M4). The repo's own lines it restates "
+             "are the owner's to remove")]
 
 
 # AGENTS.md blocks jig cut from its template, by heading. A cut adds its heading here in the
@@ -10073,8 +10130,8 @@ def retired_blocks(lines: list[str]) -> list[tuple[int, int]]:
 
 
 def outside_header(lines: list[str]) -> list[int]:
-    """The indexes of LINES outside a pararepo's generated header: that block is jig's,
-    rewritten from para.json, so its words are no repo's procedure."""
+    """The indexes of LINES outside a pararepo's or a metarepo's generated block: that block is
+    jig's, rewritten from para.json or meta.json, so its words are no repo's procedure."""
     out, inside = [], False
     for i, line in enumerate(lines):
         if line.startswith("<!-- jig:meta — "):
