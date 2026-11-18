@@ -528,17 +528,18 @@ It is answered once for every id on it: **agrees**, **narrows: <how>** (one is a
 other allows), or **conflicts: <resolution>**. On a line of several ids, narrows and conflicts
 name at least one of them (`narrows: D-041, <how>`). jig picks the pairs and never judges one;
 the gate refuses a line unanswered, reshaped, answered with another word, or answered conflicts
-or narrows with nothing after it. A checklist line with ` vs ` in it is a pair line: one that
+or narrows with nothing after it. A checklist line `- [ ] <id> vs …` is a pair line: one that
 drops or changes any part of jig's shape is refused, naming it. A line with no checkbox is the
 job's own. A peer log jig couldn't read gets a line too, answered by reading it or saying why
 not. The commit hook refuses a note whose pair line is reshaped or has none of the three
 answers, naming the line, so a blank is found when the note is committed, not at the gate.
 The gate finds the pairs again on its merge of trunk, and refuses one the note doesn't answer,
 naming its cause: a pair jig listed at the handoff and the note left out, or one new on trunk
-since the job's base, where a job merged since ruled on the same page. The job adds each pair
-it names to the note's fold-in, ticked and answered, and commits the note alone: no sync, no
-new review and no new handoff, since the note is bookkeeping the merge doesn't count as a
-change. It syncs only when the gate's merge itself needed a hand.
+since the job's base, where a job merged since ruled on the same page. A pair with another
+repo's log names no cause: jig reads that log as it stands now, not as it stood at the base.
+The job adds each pair it names to the note's fold-in, ticked and answered, and commits the
+note alone: no sync, no new review and no new handoff, since the note is bookkeeping the merge
+doesn't count as a change. It syncs only when the gate's merge itself needed a hand.
 
 ## Sync
 

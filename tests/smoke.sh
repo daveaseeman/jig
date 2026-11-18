@@ -5718,6 +5718,18 @@ done
 msg="touches survey: a metarepo names the page two pararepos rule on and it doesn't, not one it rules on too"
 out=$($J survey 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -qx '  docs/features/x: pa, pb rule on it, and no entry here does' && ! echo \"\$0\" | grep -q 'docs/features/y:'" "$out"
+# Another repo's log is read as it stands now: a pair it gained after the handoff claims no cause.
+$J open m --branch b-m >/dev/null && git add -A && git -c core.hooksPath=/dev/null commit -qm "TOOL: open m"
+(cd .git/jig/worktrees/b-m && ulog '### D-?m m rules x
+Accepted (owner, 2026-11-03).
+Touches: docs/features/x.md
+
+When x runs, m holds.' && git add -A && git commit -qm "D-?m: m rules x" && $J reviewed >/dev/null && $J handoff >/dev/null 2>&1 \
+  && pcfold && git add -A && git commit -qm "TOOL: note m")
+(cd "$T/pa" && printf '\n### D-002 pa again on x\nAccepted (owner, 2026-11-04).\nTouches: house/docs/features/x.md\n\nWhen x runs, pa yields.\n' >> .jig/decisions.md && git commit -qam "D-002")
+msg="touches gate: a pair a pararepo's log gained after the handoff is named with no cause, not as left out of the note"
+out=$($J gate m 2>&1); rc=$?; git worktree remove --force .git/jig/worktrees/gate-m 2>/dev/null
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -A1 -x \"in another repo's log, read as it stands now:\" | grep -qxF '  - [ ] D-?m vs pa/.jig/decisions.md § D-002 (docs/features/x.md): ___' && ! echo \"\$0\" | grep -q 'left out' && ! echo \"\$0\" | grep -q 'new on main'" "$out"
 msg="touches M2: a metarepo entry naming a pararepo's page is refused"
 expect_refuse m2 '### D-002 z rules
 Accepted (owner, 2026-11-02).

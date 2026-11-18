@@ -2906,8 +2906,8 @@ def cmd_gate(root: Path, args) -> int:
     # Pairs are found at handoff against the trunk of then; a job merged since may rule on the
     # same page, and the merge here is where the two first meet.
     base = git("merge-base", trunk, commit)
-    left, new = gate_pairs(where, trunk, sec.group(1) if sec else "", base, commit)
-    if left or new:
+    left, new, other = gate_pairs(where, trunk, sec.group(1) if sec else "", base, commit)
+    if left or new or other:
         gone = remove_checkout(where)
         # The merge itself went through, so answering is all the job owes: no sync, no new
         # review, no new handoff. The note is bookkeeping a merge doesn't count as a change.
@@ -2919,7 +2919,8 @@ def cmd_gate(root: Path, args) -> int:
         # Each list names the cause jig found: a pair it listed at the handoff asks about an
         # entry the job already read; one new on trunk asks about one it has never seen.
         for head, lines in (("left out of the note, though jig listed them at the handoff:", left),
-                            (f"new on {trunk} since the job's base:", new)):
+                            (f"new on {trunk} since the job's base:", new),
+                            ("in another repo's log, read as it stands now:", other)):
             if lines:
                 print(head, file=sys.stderr)
                 for l in lines:
@@ -6014,26 +6015,33 @@ def pair_problem(line: str) -> str:
     return "answer agrees, narrows: <how>, or conflicts: <resolution>"
 
 
-def gate_pairs(where: Path, trunk: str, fold: str, base: str, commit: str) -> tuple[list[str], list[str]]:
+def gate_pairs(where: Path, trunk: str, fold: str, base: str,
+               commit: str) -> tuple[list[str], list[str], list[str]]:
     """The pairs the job's entries make with trunk as the gate merged it, that the note's
-    fold-in doesn't answer, each line holding only the ids left uncovered. Split by cause: those
-    jig also finds at the note's commit against its base on trunk were listed at the handoff and
-    left out of the note; the rest are new on trunk since the base."""
+    fold-in doesn't answer, each line holding only the ids left uncovered. Split by cause where
+    jig can know it: a pair with this repo's log that jig also finds at the note's commit against
+    its base was listed at the handoff and left out of the note; the rest are new on trunk since
+    the base. Another repo's log is read as it stands now, not as it stood at the base, so a pair
+    with it gets no cause."""
     have = {k for l in fold.splitlines() for k in pair_keys(l)}
     then = {k for l in pair_lines(where, base, f"{base}...{commit}") for k in pair_keys(l)}
-    left, new = [], []
+    left, new, other = [], [], []
     for l in pair_lines(where, trunk, f"{trunk}...HEAD"):
         m = PAIR_LINE.match(l)
         if not m:
             continue
         e, label, ptr = m.group(1), m.group(2), m.group(4)
         open_ids = [i for i in m.group(3).split(", ") if (e, label, i) not in have]
+        if label != LOG:
+            if open_ids:
+                other.append(pair_line(e, label, open_ids, ptr))
+            continue
         was = [i for i in open_ids if (e, label, i) in then]
         if was:
             left.append(pair_line(e, label, was, ptr))
         if now := [i for i in open_ids if i not in was]:
             new.append(pair_line(e, label, now, ptr))
-    return left, new
+    return left, new, other
 
 
 def migrating_log(trunk: str, staged: bool) -> bool:
