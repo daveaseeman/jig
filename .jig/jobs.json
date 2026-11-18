@@ -10,16 +10,5 @@
       "tests/smoke.sh"
     ],
     "reserved": {}
-  },
-  "bug-gate-tests-queue-line": {
-    "spec": ".jig/specs/bug-gate-tests-queue-line.md",
-    "state": "gated",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "tests/smoke.sh"
-    ],
-    "reserved": {},
-    "check": "batch"
   }
 }
