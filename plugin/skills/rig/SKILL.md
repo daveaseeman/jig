@@ -53,7 +53,7 @@ inline visual, it may; the sections and their contents stay these.
    after, and each overlapping pair the group's `overlaps` names.
 3. **Waiting on:** each item and what it waits for: a job, a spec or a staged file. A taken
    staged file waits on the spec or job that carries it.
-4. **Waiting on you:** the open staged files, each `concluded` feedback report with what
+4. **Waiting on you:** the open staged files (a `noted` decisions file with its note), each `concluded` feedback report with what
    `/jig:fix` found, the next step whose `state` is `open`, each
    group with an overlap (one line: one job for its items, or keep some apart) and each
    dependency cycle (`cycles`).
@@ -68,8 +68,9 @@ host's tool where it has one, unless one is still working (that one stays, and y
 Draw both as the sixth part:
 
 6. **Finished:** each spec `jig rig --close` closed or kept, each staged file it resolved,
-   and each session archived or still working. A staged file whose spec closed but that
-   `resolve` would write is an ordinary item, naming its note: it is the owner's.
+   and each session archived or still working. A staged decisions file a merged job carried is
+   never resolved here: it shows under Waiting on you as `(noted: <note>)`, for the step
+   `/jig:hubnode`'s Merging gives it.
 
 ## 3. The decisions
 

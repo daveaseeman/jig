@@ -131,9 +131,9 @@ all three:
   closing consolidate"; bug-merged-job-cleanup's Finished part didn't cover it. As
   `bug-rav-staged-drops` corrects it (the owner, 2026-11-18: "Only via resolve"): nothing is
   dropped. `close_specs` copies the spec's `Source: … (staged as …)` lines onto its note's
-  header, and the file is `built`; `jig rig --close` resolves it where `resolve` writes nothing
-  (`carried by <note>`, or a decisions file `its entries are in <log>`, by title). No carried
-  file comes back as ready once its spec is gone. A spec kept by a partial note keeps its files
+  header. A story, request or report is then `built`, and `jig rig --close` resolves it
+  (`carried by <note>`). A decisions file is `noted`, for the hubnode to drop or resolve by
+  reading the job and the log (the owner, 2026-11-18: "Ya just make it the hubnodes job"). A spec kept by a partial note keeps its files
   taken.
 - **The run's order** (rig skill). § 1: start `/jig:fix` on new feedback and store `fixing`,
   judge every other unjudged item, then `jig rig --json` again. § 2: draw parts 1–5 (Running
@@ -610,6 +610,8 @@ From the merge:
   leaves only by `resolve` or `drop`; the close keeps the spec's marks on its note; carriers are
   present state (`taken` in flight, `built` finished); `jig rig --close` runs the resolves that
   write nothing. This replaces the drop this spec first interpreted.
+- The owner, 2026-11-18: "Ya just make it the hubnodes job": a carried decisions file is never
+  matched against the log; it stays `noted`, and the hubnode drops or resolves it.
 - Interpreted (review of part 2): a feedback report's judgment is keyed on the report alone,
   not the board, so a `fixing` report outlives a job opened; a report `/jig:fix` ends with still
   staged is stored `concluded` and waits on the owner, to drop or keep.

@@ -9267,16 +9267,6 @@ def cmd_staging(root: Path, args) -> int:
         if problems:
             die("\n  ".join([f"{path.name} isn't ready for the log:", *problems]), 1)
         text = log.read_text() if log.exists() else LOG_SEED
-        # A job that built it wrote its entries, renumbered at the merge: when a finished spec or
-        # a closed spec's note carries this file, entries the log holds word for word but the id
-        # are those. Without such a carrier a match proves nothing, and the checks below stand.
-        if built_by(root, Board.load(root, working_tree=True), mark):
-            there, missing = logged_entries(body, text, prefix)
-            if there and not missing:
-                return done(f"its entries are in {dest}")
-            if there:
-                die(f"{', '.join(there)} already in {dest} as its job wrote them, {', '.join(missing)} "
-                    "not: judge it, then drop it or stage the rest as `change: update`", 1)
         have = {decision_id(e["id"]) for e in log_entries(text, prefix)}
         dupes = [e["id"] for e in entries if decision_id(e["id"]) in have]
         if dupes:
@@ -9798,35 +9788,14 @@ def built_by(root: Path, board: "Board", mark: str, finished: list[dict] | None 
     return note_carrying(root, mark, board.trunk)
 
 
-def entry_text(e: dict) -> str:
-    """An entry as a job writes it, less its id, which the merge renumbers."""
-    return "\n".join([e["title"].strip(), *e["block"].split("\n")[1:]]).strip()
-
-
-def logged_entries(body: str, log: str, prefix: str) -> tuple[list[str], list[str]]:
-    """A staged decisions file's entries the log already holds word for word but the id, and those
-    it doesn't."""
-    have = {entry_text(e) for e in log_entries(log, prefix)}
-    entries = log_entries(body, prefix)
-    return ([e["id"] for e in entries if entry_text(e) in have],
-            [e["id"] for e in entries if entry_text(e) not in have])
-
-
 def quiet_resolve(root: Path, f: Path, carrier: str) -> bool:
     """Whether `resolve` lands a staged file CARRIER built writing nothing: a story, request or
-    report, or a decisions file whose every entry the log holds as its job wrote it."""
-    head, body, problems = read_staged(f)
+    report, which its spec carried. A decisions file never is: whether its job logged its entries
+    is the hubnode's to read (the owner, 2026-11-18), so it stays, noted, for the hubnode."""
+    head, _, problems = read_staged(f)
     if not carrier or problems or not addressed_here(head.get("target", ""), root):
         return False
-    kind = head.get("kind")
-    if kind in ("user-story", "feature-request", "feedback"):
-        return True
-    if kind == "decisions" and head.get("change") == "new" and head.get("destination") == LOG \
-            and (root / LOG).exists():
-        there, missing = logged_entries(body, (root / LOG).read_text(errors="replace"),
-                                        log_prefix(Board.trunk_name(root)))
-        return bool(there) and not missing
-    return False
+    return head.get("kind") in ("user-story", "feature-request", "feedback")
 
 
 def roadmap_state(snap: Snapshot) -> list[dict] | None:

@@ -8,8 +8,9 @@ A staged file leaves `.jig/staging/` one way: `jig staging resolve`, which looks
 holds now and refuses when it can't tell, or `jig staging drop` by hand. A merge and
 `jig rig --close` delete nothing in staging. What a closed spec carried stays findable in the
 tree: the close copies its `Source: … (staged as …)` lines onto its note, as it copies `Scope:`.
-`resolve` lands a carried file whose spec has closed, and a decisions file whose entries a job
-already wrote, without writing anything; `jig rig --close` runs exactly those resolves. A file
+`resolve` lands a carried story, request or report whose spec has closed, without writing
+anything; `jig rig --close` runs exactly those resolves. A carried decisions file stays, noted,
+for the hubnode to drop or resolve by reading the job and the log. A file
 nothing in the tree carries is an ordinary staged item again, judged like any other.
 
 ## 1. Why
@@ -93,14 +94,17 @@ known (the close), and fill `resolve`'s one gap.
    when a finished spec still in the tree (pending its close, or kept) or a landed note's header
    carries it: rig lists it under Finished, "`jig rig --close` resolves it". Otherwise it is an
    ordinary staged item. Nothing reads history to decide. (This is F2's rule.)
-4. **`resolve` fills its gap.** A story, request or feedback file resolves when a landed note's
-   header carries its mark, as it does for a spec. A `change: new` decisions file whose every
-   entry the log already holds (same title, any id) resolves "its entries are in <log>", writing
-   nothing; when only some are there, it refuses naming them (judge: drop, or stage as update).
+4. **`resolve` fills its gap for requests.** A story, request or feedback file resolves when a
+   landed note's header carries its mark, as it does for a spec. A decisions file is never
+   resolved by matching its entries against the log (the owner, 2026-11-18): when a landed note
+   carries it, it is an ordinary staged item `noted: <note>`, counted for the owner, and the
+   hubnode reads the note's job and the log, then `jig staging drop`s it when the job logged its
+   entries, `jig staging resolve`s it when it didn't, and judges with the owner when only some
+   are there. Hand `resolve` of a decisions file adds its entries under its existing checks.
 5. **`jig rig --close`** (trunk, clean tree, after its own commit when it closed anything) runs
    `resolve` on each `built` file for which `resolve` would write nothing, printing resolve's own
-   line. A `built` file resolve would write to (a decisions file whose job didn't log its entries)
-   stays, listed as an ordinary staged item for the owner, with its `covered` saying which note.
+   line. A carried file that isn't `built` (a decisions file) stays, an ordinary staged item for
+   the hubnode, `noted` with the note that carried it.
 
 Original symptoms: round 2 B1 (stopped merge) — nothing is owed, the close in the index lands with
 the commit, and `--close` resolves afterwards. Round 2 B2 — a partial note's spec is in flight, so
@@ -140,16 +144,17 @@ prints nothing about staging.
 - [ ] The correction fires: a job whose spec carries a staged request and a staged decisions file,
   and whose branch writes the decisions entry, merges clean. `git show HEAD -- .jig/handoffs/`
   shows both `Source: … (staged as …)` lines on the note's header; both staged files still exist;
-  `jig rig --json` lists both as `built`. `jig rig --close` prints `resolved <request>: carried by
-  <note>` and `resolved <decisions>: its entries are in .jig/decisions.md`, the log holds the entry
-  once, and `.jig/staging/` is empty.
+  `jig rig --json` lists the request as `built` and the decisions file as an ordinary item,
+  `noted` with the note, counted. `jig rig --close` prints `resolved <request>: carried by
+  <note>`, leaves the decisions file staged, and the log holds the entry once.
 - [ ] Same job merged through conflicts (`jig merge`, resolve, `jig merge --number`, `git commit`)
-  and through a stop at derive.sh: no output names a drop, both files are `built` after the commit,
-  and `--close` resolves them as above.
+  and through a stop at derive.sh: no output names a drop, a carried request is `built` after the
+  commit, and `--close` resolves it as above.
 - [ ] A partial note: the spec stays, both files are `taken` waiting on it, and `--close` leaves
   them.
-- [ ] A `change: new` decisions file with one of two entries already in the log: `resolve` refuses,
-  naming the one entry, and writes nothing.
+- [ ] A decisions file a merged job carried is `noted`, counted, and left by `--close`, the log
+  untouched; a staged decisions file nothing carries whose title matches a logged entry is an
+  ordinary item `--close` leaves.
 - [ ] `grep -nE 'pending_drops|closed_carriers|owed_drops|drop_built|built by' plugin/templates/jig/jig.py`
   finds nothing; `grep -n unlink` in the merge and rig paths finds none for staging.
 - [ ] `check` passes; smoke `rig`, `rig_batch`, `close`, `staging` and `roadmap` pass through
@@ -199,16 +204,15 @@ prints nothing about staging.
 ## Decisions
 - The owner, 2026-11-18: "Only via resolve". That is option (a): no drops; the close copies the
   spec's `Source: … (staged as …)` lines onto its note; `resolve` lands a carried file from the
-  note, and a decisions file whose entries the log holds, writing nothing; `jig rig --close` runs
-  those resolves. Rejected: (b) the auto-drop on a narrowed history rule, and (c) a hand step per
+  note, writing nothing; `jig rig --close` runs those resolves. Rejected: (b) the auto-drop on a narrowed history rule, and (c) a hand step per
   carried file.
 - Interpreted: `taken` covers a spec in flight (waiting, open job's, partial note); `built` covers
   a finished spec still in the tree or a closed spec's note. A released spec with no note carries
   nothing (F2).
-- Interpreted (review of 205589b): a decisions entry is "in the log" when the log holds it word
-  for word but its id, which the merge renumbers, and only when a finished spec or a closed
-  spec's note carries the file; without such a carrier, resolve's own duplicate check stands. A
-  partial match refuses rather than guessing which entries are new.
+- The owner, 2026-11-18, on how a merged job's decisions file leaves staging: "Ya just make it
+  the hubnodes job". A decisions file is never resolved by matching its entries against the log:
+  it stays `noted`, and the hubnode drops or resolves it. Rejected: matching by title, then word
+  for word but the id (five review rounds: renumbered bodies, settled statuses, title collisions).
 - Interpreted (review of 205589b): `built` needs a finished spec still in the tree or a landed,
   non-partial note's header carrying the file's mark as a whole `Source:` line; `jig rig --close`
   resolves only what rig marks `built`, and a file resolve refuses is left, named, while the

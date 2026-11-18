@@ -8194,12 +8194,15 @@ expect_pass sh -c "echo \"\$0\" | grep -A1 \"^removed JC's\" | grep -qx 'close t
 msg="close: the merge deletes nothing in staging and names no drop; the note's header keeps both marks"
 expect_pass sh -c "test -f .jig/staging/d1.md && test -f .jig/staging/rq.md && ! echo \"\$0\" | grep -qi 'drop' \
   && git show HEAD:$note | sed '/^## /,\$d' | grep -qx 'Source: chat d1.md (staged as d1.md)' && git show HEAD:$note | sed '/^## /,\$d' | grep -q '^Source: chat rq.md (staged as rq.md)'" "$out"
-msg="close: both carried files are built, listed under Finished"
-expect_pass sh -c "$J rig --json | python3 -c \"import json,sys; i={x['path']: x for x in json.load(sys.stdin)['items']}; assert i['.jig/staging/d1.md']['state'] == i['.jig/staging/rq.md']['state'] == 'built', i\" && $J rig | sed -n '/^Finished:/,\$p' | grep -q 'staged  .jig/staging/rq.md  built: $note carries it'"
-msg="close: jig rig --close resolves both, writing nothing; the log holds the entry once"
+msg="close: the carried request is built, listed under Finished; the carried decisions file is noted, an ordinary item, counted"
+expect_pass sh -c "$J rig --json | python3 -c \"import json,sys; d=json.load(sys.stdin); i={x['path']: x for x in d['items']}; r, c = i['.jig/staging/rq.md'], i['.jig/staging/d1.md']; assert r['state'] == 'built' and c['state'] == 'unjudged' and c['noted'] == '$note' and 'built' not in c and d['waiting_on_you'] >= 1, (r, c)\" \
+  && $J rig | sed -n '/^Finished:/,\$p' | grep -q 'staged  .jig/staging/rq.md  built: $note carries it' && $J rig | sed -n '/^Waiting on you:/,/^\$/p' | grep -q 'd1.md  not judged yet  (noted: $note)'"
+msg="close: jig rig --close resolves the request, leaves the decisions file staged, and the log holds the entry once"
 out=$($J rig --close 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -qx 'resolved rq.md: carried by $note' && echo \"\$0\" | grep -qx 'resolved d1.md: its entries are in .jig/decisions.md' \
-  && test \$(grep -c 'Use d1' .jig/decisions.md) = 1 && test ! -e .jig/staging/d1.md && test ! -e .jig/staging/rq.md && test -z \"\$(git status --porcelain)\"" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -qx 'resolved rq.md: carried by $note' && ! echo \"\$0\" | grep -q d1.md \
+  && test \$(grep -c 'Use d1' .jig/decisions.md) = 1 && test -f .jig/staging/d1.md && test ! -e .jig/staging/rq.md && test -z \"\$(git status --porcelain)\"" "$out"
+# The hubnode's step for it: the job logged its entry, so it is dropped by hand.
+$J staging drop d1.md >/dev/null
 msg="close: the scope stays done, ROADMAP.md is fresh, and its link points at the note"
 expect_pass sh -c "test '$(cstate a/x)' = done && ! $J roadmap | grep -q stale && grep -qF '[sc]($note) ✓' ROADMAP.md"
 msg="close: a waiting spec built after the merged spec is offered as it was"
@@ -8285,12 +8288,13 @@ printf '#!/bin/sh\nexit 0\n' > .jig/scripts/derive.sh && git add -A && git commi
 msg="close: once the last spec carrying it closes, it is built, and jig rig --close resolves it"
 out=$($J merge H2 2>&1)
 expect_pass sh -c "! echo \"\$0\" | grep -qi drop && test -f .jig/staging/d4.md && $J rig --close | grep -q '^resolved d4.md: carried by .jig/handoffs/H[12]-' && test ! -e .jig/staging/d4.md" "$out"
-msg="close: a decisions file a closed spec carried, with one of two entries in the log, is refused by resolve, naming it, writing nothing"
 cspec dq '' 'Source: chat dd.md (staged as dd.md)' && git add -A && git commit -qm "spec dq" >/dev/null
 stage dd.md this decisions new .jig/decisions.md '### D-?d1 Use d1\nAccepted (owner, 2026-11-18).\nTouches: none — smoke\n\n### D-?d9 Use d9\nAccepted (owner, 2026-11-18).\nTouches: none — smoke\n'
 cjob DQ dq && gated DQ && $J merge DQ >/dev/null 2>&1
-before=$(shasum < .jig/decisions.md); out=$($J staging resolve dd.md 2>&1); rc=$?
-expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'D-?d1 already in .jig/decisions.md as its job wrote them, D-?d9 not' && test \"\$(shasum < .jig/decisions.md)\" = '$before' && test -f .jig/staging/dd.md" "$out"
+msg="close: a decisions file a merged job carried is noted for the hubnode, and --close leaves it, the log untouched"
+before=$(shasum < .jig/decisions.md); out=$($J rig --close 2>&1)
+expect_pass sh -c "! echo \"\$0\" | grep -q dd.md && test -f .jig/staging/dd.md && test \"\$(shasum < .jig/decisions.md)\" = '$before' \
+  && $J rig --json | python3 -c \"import json,sys; i={x['path']: x for x in json.load(sys.stdin)['items']}; x=i['.jig/staging/dd.md']; assert x['state'] == 'unjudged' and x['noted'].startswith('.jig/handoffs/DQ-'), x\"" "$out"
 rm .jig/staging/dd.md
 
 # The third review's repros: a spec removed by hand, a revert, an old mark, a released spec. Nothing deletes.
