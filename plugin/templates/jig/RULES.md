@@ -570,7 +570,7 @@ else stops with the files named, and a person resolves it.
 2. **The hubnode gates.** `jig gate <job>` refuses on R8 and on a missing note. Then it sets
    up a **detached scratch checkout of the commit the note names**, with trunk merged in the
    way `jig sync` merges it, and prints the complete check to run there
-   (`.jig/scripts/check.sh --full`), the check role's tier and effort, and the `jig checked`
+   (`jig queue --full -- ./.jig/scripts/check.sh --full`), the check role's tier and effort, and the `jig checked`
    that records it. It never runs the check: whoever runs it runs the same command. Never the
    job's live worktree, which the subnode may still be building in.
    The scratch checkout lives until the job is marked gated or merged: `jig mark <job> gated`
@@ -765,8 +765,9 @@ shared by every worktree). It warns when the numbers differ from the check role'
 status` prints the last one's seconds and date: what a complete check costs here.
 
 `jig checked --ci <run url> --tier N --effort N --seconds S` records a complete check that ran
-on GitHub Actions (The queue). jig reads the run with `gh run view` and refuses unless it ran
-HEAD, completed and succeeded, or when `gh` is missing or can't read it; the record carries the
+on GitHub Actions (The queue). jig reads the run with `gh run view` and refuses unless it is
+this repo's `origin`'s, is the `jig check` workflow or ran on a `jig-check/*` branch, ran HEAD,
+completed and succeeded, or when `gh` is missing or can't read it; the record carries the
 run's URL as a sixth field. `jig status` and the gate's mark read it as they read a local one.
 
 ### The queue
@@ -787,12 +788,14 @@ doesn't queue: it has a time limit, and waiting would spend it.
 The complete check runs as `jig queue --full -- check.sh --full`: it also takes the single
 full lock, so two complete checks never run at once. With `queue.overflow: {"to": "github",
 "reason": "<the owner's words>"}` set on trunk, a complete check that finds every slot held, or
-another complete check running, doesn't wait: it exits 3 and prints the route. The check role
+another complete check running, doesn't wait: it exits 3 and prints the route. A wait for
+the load alone is still a wait. The check role
 pushes HEAD as `jig-check/<sha>`, where `.github/workflows/jig-check.yml` (copied from jig's
 template in the same commit as the key) runs setup and the complete check; records the run
 with `jig checked --ci` once it passes; and deletes the branch. Without the key it waits.
 
-A single job keeps its own gate check: `check.sh --full` once in the gate's checkout, `jig
+A single job keeps its own gate check: `jig queue --full -- ./.jig/scripts/check.sh --full`
+once in the gate's checkout, `jig
 checked` there, then `jig mark <job> gated`, which refuses without that record.
 
 A batch of jobs gated together owes one complete check instead: each is marked `jig mark <job>

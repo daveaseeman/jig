@@ -51,9 +51,11 @@ the owner's standing yes for `jig-check/*` pushes (`.jig/RULES.md`, The queue). 
 the route; take it, in the same checkout:
 
 1. `git push <remote> HEAD:refs/heads/jig-check/<sha>`, as printed.
-2. Watch the run of `jig-check.yml` on that branch (`gh run watch`) to its end.
-3. If it passed: `jig checked --ci <run url> --tier <N> --effort <N> --seconds <the run's
-   seconds>`. jig reads the run through `gh` and refuses unless it ran HEAD and succeeded.
+2. Find the run as printed (`gh run list --branch jig-check/<sha> --workflow jig-check.yml`)
+   and watch it to its end (`gh run watch <id> --exit-status`).
+3. If it passed: `jig checked --ci <run url> --tier <N> --effort <N> --seconds <the run's own
+   duration>`. jig reads the run through `gh` and refuses unless it is origin's `jig check`
+   run on HEAD and succeeded.
 4. `git push <remote> --delete jig-check/<sha>`, passed or not.
 
 Report the run's URL, its result and the record. A failed run is reported like a failed local

@@ -1564,17 +1564,27 @@ def ci_run_passed(url: str, head: str) -> str:
     m = re.search(r"github\.com/([^/\s]+/[^/\s]+)/actions/runs/(\d+)", url)
     if not m:
         die(f"--ci takes a GitHub Actions run's URL (https://github.com/<owner>/<repo>/actions/runs/<id>), not {url!r}")
+    origin = re.search(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?/?$", git("remote", "get-url", "origin"))
+    if not origin:
+        die("this repo has no GitHub origin: a CI run is recorded only from the repo it ran on")
+    if origin.group(1).casefold() != m.group(1).casefold():
+        die(f"run {m.group(2)} is {m.group(1)}'s, not this repo's origin, {origin.group(1)}")
     if not shutil.which("gh"):
         die("gh is not installed or not on PATH: jig checked --ci reads the run through gh, "
             "and records nothing it can't read")
     p = subprocess.run(["gh", "run", "view", m.group(2), "--repo", m.group(1),
-                        "--json", "headSha,conclusion,status,url"], capture_output=True, text=True)
+                        "--json", "headSha,conclusion,status,url,workflowName,headBranch"],
+                       capture_output=True, text=True)
     try:
         run = json.loads(p.stdout) if p.returncode == 0 else None
     except ValueError:
         run = None
     if not isinstance(run, dict):
         die(f"gh could not read run {m.group(2)}: {(p.stderr or p.stdout).strip() or f'exit {p.returncode}'}")
+    # Any green run on HEAD isn't the complete check: a lint workflow passes on the same commit.
+    if run.get("workflowName") != CHECK_WORKFLOW and not str(run.get("headBranch")).startswith(f"{CHECK_BRANCH}/"):
+        die(f"run {m.group(2)} is {run.get('workflowName')!r} on {run.get('headBranch')!r}: the complete "
+            f"check is the {CHECK_WORKFLOW!r} workflow on a {CHECK_BRANCH}/<sha> branch")
     if run.get("headSha") != head:
         die(f"run {m.group(2)} ran {str(run.get('headSha'))[:12]}, not HEAD {head[:12]}: "
             "record it in a checkout of the commit it ran")
@@ -1641,6 +1651,7 @@ def cmd_checked(root: Path, args) -> int:
 # check role pushes and deletes jig-check/* branches on the owner's standing yes.
 QUEUE_KEYS = ("width", "slots", "max_load", "overflow")
 CHECK_BRANCH = "jig-check"
+CHECK_WORKFLOW = "jig check"         # the `name:` in templates/github/jig-check.yml
 # `jig queue --full` exits with this when the complete check overflows to CI: neither a pass
 # (0) nor the command's own failure (1), and not a usage error (2).
 OVERFLOW_EXIT = 3
@@ -1758,8 +1769,10 @@ def overflow_route(q: dict, root: Path) -> None:
           f"GitHub Actions, on the owner's standing yes (queue.overflow: "
           f"\"{q['overflow']['reason']}\"). The check role:")
     print(f"  git push {remote} HEAD:refs/heads/{branch}")
-    print(f"  gh run watch      (the run of .github/workflows/jig-check.yml on {branch}: setup.sh, then check.sh --full)")
-    print(f"  python3 {DIR}/jig.py checked --ci <run url> --tier {step['tier']} --effort {step['effort']} --seconds <the run's seconds>")
+    print(f"  gh run list --branch {branch} --workflow jig-check.yml      (the run's id and URL: setup.sh, then check.sh --full)")
+    print(f"  gh run watch <id> --exit-status")
+    print(f"  python3 {DIR}/jig.py checked --ci <run url> --tier {step['tier']} --effort {step['effort']} --seconds <s>"
+          "      (s: the run's own duration)")
     print(f"  git push {remote} --delete {branch}")
 
 
@@ -1790,6 +1803,7 @@ def cmd_queue(root: Path, args) -> int:
     locks = []      # held for the command's length: closing them, or dying, frees them
     wait_file = None
     said = False
+    misses = 0
     try:
         while True:
             if args.full and not any(l.name.endswith("full.lock") for l in locks):
@@ -1798,18 +1812,30 @@ def cmd_queue(root: Path, args) -> int:
                     locks.append(f)
             have_full = not args.full or bool(locks)
             slot = None
-            if have_full and not over_load(q):
+            if have_full:
                 for i in range(slots):
                     if (slot := try_lock(qdir / f"slot-{i}.lock")) is not None:
                         break
+            # The machine is full only when every slot or the full lock is held. A wait for
+            # the load alone is a wait: a busy browser is no reason to push a check.
+            full_queue = slot is None
+            if slot is not None and over_load(q):
+                slot.close()
+                slot = None
             if slot is not None:
                 locks.append(slot)
                 break
-            if args.full and "overflow" in q:
-                for l in locks:
-                    l.close()
-                overflow_route(q, root)
-                return OVERFLOW_EXIT
+            if full_queue and args.full and "overflow" in q:
+                # A run that just ended frees its slot a moment before the next takes it:
+                # look once more before sending a check off the machine.
+                misses += 1
+                if misses >= 2:
+                    for l in locks:
+                        l.close()
+                    overflow_route(q, root)
+                    return OVERFLOW_EXIT
+                time.sleep(0.2)
+                continue
             if wait_file is None:
                 wait_file = try_lock(qdir / f"wait-{os.getpid()}-{int(time.time() * 1000)}.lock")
                 if wait_file is not None:
@@ -1826,7 +1852,9 @@ def cmd_queue(root: Path, args) -> int:
         for l in locks:
             stamp(l, cmd, args.full)
         try:
-            proc = subprocess.Popen(cmd)
+            # The command holds the locks too, so a jig killed outright (SIGKILL, which it
+            # can't forward) never frees a slot under a command that is still running.
+            proc = subprocess.Popen(cmd, pass_fds=[l.fileno() for l in locks])
         except OSError as e:
             die(f"cannot run {cmd[0]}: {e.strerror}", 127)
         # A stop sent to jig reaches the command too, so the slot is never freed under a run
@@ -1838,7 +1866,9 @@ def cmd_queue(root: Path, args) -> int:
             signal.signal(sig, forward)
         while True:
             try:
-                return proc.wait()
+                rc = proc.wait()
+                # A command killed by a signal exits as a shell reports it: 128 + the signal.
+                return 128 - rc if rc < 0 else rc
             except KeyboardInterrupt:
                 continue        # the terminal sent it to the command as well; wait for its exit
     finally:
@@ -3180,7 +3210,9 @@ def cmd_gate(root: Path, args) -> int:
     check = f"./{DIR}/scripts/check.sh"
     # A subshell: a shell left inside the checkout would sit in a deleted folder once it's removed.
     # The complete level: the gate is the check step's, the one place it runs per job.
-    print(f"  (cd {scratch} && {'' if os.access(where / check, os.X_OK) else 'bash '}{check} --full)")
+    # Through the queue: two complete checks at once each run slower than both in turn.
+    print(f"  (cd {scratch} && python3 {DIR}/jig.py queue --full -- "
+          f"{'' if os.access(where / check, os.X_OK) else 'bash '}{check} --full)")
     step = role_settings(board.data)[0]["check"]
     print(f"\nThe check step runs it: tier {step['tier']}, effort {step['effort']}. When it passes, "
           f"record it there, with the seconds it took:")
@@ -6711,7 +6743,7 @@ def cmd_release(root: Path, args) -> int:
                 f"{len(owed)} merge{'s' if len(owed) > 1 else ''} since the last complete check on "
                 f"{trunk} owe{'' if len(owed) > 1 else 's'} the batch's check ("
                 + ", ".join(f"{c[:12]} {s}" for c, s in owed)
-                + f"): run `{DIR}/scripts/check.sh --full` on {trunk}, then `jig checked`")
+                + f"): run `jig queue --full -- ./{DIR}/scripts/check.sh --full` on {trunk}, then `jig checked`")
     # Released, a D-?<slug> would be frozen under its version and never get its number.
     log_now = (root / LOG).read_text() if (root / LOG).exists() else ""
     problems += [f"{LOG}:{e['line']} {e['id']} isn't numbered: a merge numbers it (`jig merge "

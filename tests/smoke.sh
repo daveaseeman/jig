@@ -7321,9 +7321,9 @@ s=.git/jig/worktrees/gate-K
 msg="mark: gated with no gate checkout at all is refused, naming jig gate and jig checked"
 out=$($J mark K gated 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'no gate checkout for K: .jig gate K.*jig checked' && grep -q '\"state\": \"claimed\"' .jig/jobs.json" "$out"
-msg="gate: prints check.sh --full in the scratch checkout, the check step's tier and effort, jig checked and jig mark gated"
+msg="gate: prints check.sh --full through jig queue --full in the scratch checkout, the check step's tier and effort, jig checked and jig mark gated"
 out=$($J gate K 2>&1)
-expect_pass sh -c "echo \"\$0\" | grep -qF '(cd $s && ./.jig/scripts/check.sh --full)' && echo \"\$0\" | grep -q 'check step runs it: tier 3, effort 4' && echo \"\$0\" | grep -qF 'checked --tier 3 --effort 4 --seconds <s>' && echo \"\$0\" | grep -q 'jig mark K gated'" "$out"
+expect_pass sh -c "echo \"\$0\" | grep -qF '(cd $s && python3 .jig/jig.py queue --full -- ./.jig/scripts/check.sh --full)' && echo \"\$0\" | grep -q 'check step runs it: tier 3, effort 4' && echo \"\$0\" | grep -qF 'checked --tier 3 --effort 4 --seconds <s>' && echo \"\$0\" | grep -q 'jig mark K gated'" "$out"
 msg="gate: a repo override of the check role shows its numbers"
 setroles '{"check": {"tier": 2, "effort": 3, "reason": "r"}}'
 out=$($J gate K 2>&1); git checkout -q -- .jig/config.json
@@ -7450,12 +7450,22 @@ mkdir -p "$T/ghbin" "$T/nogh"
 printf '#!/bin/sh\nprintf "%%s" "$GH_RUN"\nexit ${GH_RC:-0}\n' > "$T/ghbin/gh" && chmod +x "$T/ghbin/gh"
 ln -s "$(command -v git)" "$T/nogh/git"; ln -s "$(command -v python3)" "$T/nogh/python3"
 h=$(git rev-parse HEAD); u="https://github.com/o/r/actions/runs/42"
-ghrun() { printf '{"headSha": "%s", "status": "%s", "conclusion": "%s", "url": "%s"}' "$1" "$2" "$3" "$u"; }
+ghrun() { printf '{"headSha": "%s", "status": "%s", "conclusion": "%s", "url": "%s", "workflowName": "%s", "headBranch": "%s"}' "$1" "$2" "$3" "$u" "${4:-jig check}" "${5:-jig-check/${1:0:12}}"; }
 cilines() { wc -l < .git/jig/checked.log | tr -d ' '; }
 n0=$(cilines)
+msg="checked --ci: a repo with no GitHub origin is refused"
+out=$(GH_RUN=$(ghrun $h completed success) PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'no GitHub origin' && test $(cilines) = $n0" "$out"
+git remote add origin https://github.com/o/r.git
 msg="checked --ci: a run whose headSha isn't HEAD is refused, naming both, and nothing is recorded"
 out=$(GH_RUN=$(ghrun 0123456789abcdef0123456789abcdef01234567 completed success) PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'ran 0123456789ab, not HEAD ${h:0:12}' && test $(cilines) = $n0" "$out"
+msg="checked --ci: a run of another repo than origin is refused, naming both"
+out=$(GH_RUN=$(ghrun $h completed success) PATH="$T/ghbin:$PATH" $J checked --ci https://github.com/x/y/actions/runs/42 --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"run 42 is x/y's, not this repo's origin, o/r\" && test $(cilines) = $n0" "$out"
+msg="checked --ci: a green run of another workflow on another branch is refused, naming the jig check workflow"
+out=$(GH_RUN=$(ghrun $h completed success lint main) PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q \"is 'lint' on 'main': the complete check is the 'jig check' workflow\" && test $(cilines) = $n0" "$out"
 msg="checked --ci: a run still in progress is refused"
 out=$(GH_RUN=$(ghrun $h in_progress "") PATH="$T/ghbin:$PATH" $J checked --ci $u --tier 3 --effort 4 --seconds 9 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'is in_progress, not completed' && test $(cilines) = $n0" "$out"
@@ -8255,6 +8265,16 @@ msg="queue: after the kill, no run holds a slot"
 expect_pass sh -c "$J queue | grep -qx 'running: 0' && $J queue | grep -qx 'waiting: 0'"
 msg="queue: the command's exit code passes through"
 expect_pass sh -c "$J queue -- false; test \$? = 1 && $J queue -- sh -c 'exit 7'; test \$? = 7 && $J queue -- true"
+msg="queue: a command killed by a signal exits 128 + the signal, as a shell reports it"
+expect_pass sh -c "$J queue -- sh -c 'kill -TERM \$\$'; test \$? = 143"
+msg="queue: jig killed outright (SIGKILL) leaves the slot held by the command still running"
+$J queue -- sh -c 'echo $$ > child.pid; exec sleep 30' & p1=$!
+holding 1
+kill -9 $p1; wait $p1 2>/dev/null
+expect_pass sh -c "$J queue | grep -qx 'running: 1'"
+msg="queue: once that command ends, the slot is free"
+kill $(cat child.pid)
+expect_pass sh -c "for i in \$(seq 50); do $J queue | grep -qx 'running: 0' && exit 0; sleep 0.2; done; exit 1"
 msg="queue: no command after --full is a usage error"
 expect_pass sh -c "$J queue --full >/dev/null 2>&1; test \$? = 2"
 
@@ -8310,6 +8330,11 @@ expect_pass sh -c "$(declare -f loadrun); loadrun; test \$? = 9"
 msg="queue: with max_load 0, a run waits even with every slot free"
 $J queue -- touch loaded > "$T/ql.out" 2>&1 & p1=$!
 expect_pass sh -c "for i in \$(seq 50); do grep -q 'waiting for a slot' '$T/ql.out' && break; sleep 0.2; done; grep -q 'waiting for a slot: 0 running, 1 waiting' '$T/ql.out' && test ! -e loaded"
+kill $p1; wait $p1 2>/dev/null
+setq '{"slots": 4, "max_load": 0, "overflow": {"to": "github", "reason": "the owner: keep the standing yes"}}'
+msg="queue --full: with the overflow key, free slots and only the load over, it waits and never exits 3"
+$J queue --full -- touch loadfull > "$T/qlf.out" 2>&1 & p1=$!
+expect_pass sh -c "for i in \$(seq 50); do grep -q 'waiting for a slot' '$T/qlf.out' && break; sleep 0.2; done; grep -q 'waiting for a slot: 0 running, 1 waiting' '$T/qlf.out' && kill -0 $p1 && ! grep -q jig-check '$T/qlf.out' && test ! -e loadfull"
 kill $p1; wait $p1 2>/dev/null
 
 msg="queue config: an overflow key with no reason is refused by the commit hook"
