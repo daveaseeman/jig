@@ -11,16 +11,5 @@
     ],
     "reserved": {},
     "check": "batch"
-  },
-  "bug-m5-release-level": {
-    "spec": ".jig/specs/bug-m5-release-level.md",
-    "state": "gated",
-    "after": [],
-    "owns": [],
-    "shares": [
-      "tests/smoke.sh"
-    ],
-    "reserved": {},
-    "check": "batch"
   }
 }
