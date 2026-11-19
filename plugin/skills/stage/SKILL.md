@@ -152,7 +152,7 @@ before `resolve`. The user says; don't judge alone. For each file, with the user
   .jig/para.json`, `change: update`. It lands as a job: run `/jig:spec` from it, carrying its
   mark, for the rewrites it lists and the pin commit, whose body is the request. `resolve`
   refuses until trunk's `para.json` pins its release or a later one; once the job has merged and
-  the pin holds it, `jig rig --close` resolves it. A later release of the metarepo rewrites it in place, covering the gap from the pin.
+  the pin holds it, `jig rig --close` resolves it. A later release of the metarepo rewrites it in place, covering the gap from the pin, when something in that gap breaks what this repo cites; when nothing does, it leaves the file as it is.
 - **feedback**: work through it with `/jig:fix` in the jig repo. Elsewhere, `resolve` forwards it
   there.
 - **another repo's**: `resolve` forwards it into that repo's `.jig/staging/`; it is resolved

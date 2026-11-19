@@ -8233,8 +8233,9 @@ def stage_pin_bumps(root: Path, meta: dict, prev: str, tag: str) -> list[str]:
     pin to TAG. Broke means a citation that resolved at PREV and dangles at TAG, or a decision id
     TAG removed or superseded, cited as `<meta>/<path> § <id>` (or bare where the pararepo's own
     prefix differs). A request still open from here (its release above the pin) is rewritten
-    whatever this release broke; an answered one (the pin holds it) only when this release
-    breaks something; a same-named file that isn't this metarepo's request is never touched. A
+    when something from the pin to TAG breaks what it cites, and left as it is otherwise (a
+    Breaking line alone breaks nothing it cites); an answered one (the pin holds it) only when
+    this release breaks something; a same-named file that isn't this metarepo's request is never touched. A
     pararepo on an older jig layout is skipped. A line per pararepo. Writes nothing but that file."""
     name = meta.get("name") or root.name
     out: list[str] = []
@@ -8331,7 +8332,7 @@ def stage_pin_bumps(root: Path, meta: dict, prev: str, tag: str) -> list[str]:
         breaking = breaking_lines(root, since, tag)
         # Only what it broke (the owner, 2026-11-18): a gap from the pin that breaks nothing it
         # cites asks for nothing, so an open request is left as it stands.
-        if not rewrites and not ids and not breaking:
+        if not rewrites and not ids:
             out.append(f"{para_name}: skipped, nothing from {since} to {tag} breaks what it cites"
                        + (f"; {STAGING}/{dest.name} left as it is" if dest.exists() else ""))
             continue
