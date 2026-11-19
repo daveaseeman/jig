@@ -23,5 +23,12 @@
       "dist/jig-*.plugin"
     ]
   },
-  "reference_files": ""
+  "reference_files": "",
+  "queue": {
+    "width": "all",
+    "overflow": {
+      "to": "github",
+      "reason": "The owner, 2026-11-17: \"Keep the standing yes\" (standing yes for jig-check/* pushes)"
+    }
+  }
 }
