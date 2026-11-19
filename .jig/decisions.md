@@ -13,6 +13,9 @@ A breaking change is one that a reader taking the release must act on, and it is
 - `queue.overflow: {"to": "github", "reason": "<the owner's words>"}` is the owner's standing yes for the check role to push and delete `jig-check/*` branches, the one exception to "the owner's word before a push". With it, a complete check that finds the machine full exits 3 and prints the route to GitHub Actions; copy `plugin/templates/github/jig-check.yml` to `.github/workflows/` in the same commit. `jig checked --ci <run url>` records such a run only after `gh` shows it passed on HEAD.
 
 ### Fixed
+- In a metarepo, a commit on a `propose/` branch passes R2 while jobs are open, as it does when none are: a proposal is on no job by design. A `propose/` branch in any other repo is refused as before, and R1 still keeps the trunk checkout off it.
+- `jig roles --from TIER,EFFORT` takes the starting session's own settings and says under each role whether to start it with its settings or start it and then raise its model, its effort or both, compared one at a time as the tool clamps them; it also says when those settings rank below the hubnode floor. Settings rank by tier first, then effort. The hubnode runs it at the start of a session and follows it when starting a role.
+- `tiers.json` names the tier-1 model in use today.
 - A metarepo gets a generated block of its rules in its always-loaded agent instructions, as a pararepo gets its header: `jig init --meta` writes it, and `jig update` lists it when it is missing or older. A metarepo set up before this writes it in a job, with `jig init --meta` in the job's worktree, and removes the lines it wrote by hand for those rules, which update lists as the repo's procedure.
 
 ### Changed

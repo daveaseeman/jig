@@ -79,7 +79,8 @@ Checked before every commit by a git hook, and by `jig rules`. A delete changes 
 a rename changes both of its paths: R3–R5, P1, P2 and P4 count each.
 
 - **R1** The trunk checkout stays on trunk. Work in `.git/jig/worktrees/<branch>`.
-- **R2** A job is built in its own worktree.
+- **R2** A job is built in its own worktree. Off trunk, a branch on no job is refused while
+  jobs are open, except a `propose/` branch in a metarepo (Metarepo and pararepos, rule 1).
 - **R3** A job changes only its `owns`, its `shares`, `common`, or files new to the repo, and
   adds to `.jig/decisions.md` (Decision log), whatever its lists say. There it changes lines in
   place only under `## Open`, and a line it added itself, and removes an entry only in adding
@@ -682,7 +683,7 @@ order.
 
 | Node | Settings | What it does | Roles it may load |
 |---|---|---|---|
-| hubnode | the owner's session; tier 2, effort 1 or better | talks, decides, assigns, gates, merges, releases, pushes, publishes | spec (only for specs drafted from the conversation) |
+| hubnode | the owner's session; tier 2, effort 1 or better, ranked as below | talks, decides, assigns, gates, merges, releases, pushes, publishes | spec (only for specs drafted from the conversation) |
 | subnode | the role's | takes one role on one job, works only in its worktree, reports back, never touches trunk | any of the five |
 
 **Roles.**
@@ -749,6 +750,15 @@ A review with no blocking findings ends the fixing: the job hands off, as `jig n
 Should-fix and optional findings get one round per part; what is left after it gets DEFERRED
 rows. A finding that needs behavior the spec never names is a spec change before it is built
 (an `Interpreted:` line the hubnode accepts, or the owner's answer), or an Up next item.
+
+**Ranking settings.** A setting ranks by tier first, then effort: a better tier at any effort
+ranks above a worse tier at any effort, and within one tier the higher effort ranks above.
+Starting a session is compared one setting at a time, since the tool clamps a new session's
+model and its effort apart: `jig roles --from TIER,EFFORT` takes the starting session's own
+settings and says, under each role, whether to start it with its settings or start it and then
+raise its model, its effort, or both, and whether those settings rank below the hubnode floor.
+The tier-first ranking is for the hubnode floor only: starting a session and `jig gate`'s
+review-line warning (below) compare tier and effort apart.
 
 **Settings in effect.** `jig roles` prints each role's tier and effort. A repo overrides them
 in `config.json`, each entry with its reason:
@@ -1302,7 +1312,9 @@ A set of repos can share one **metarepo**: docs only — definitions, decisions,
 contracts the pararepos share (What the metarepo holds). Each **pararepo** (code, firmware,
 hardware) cites it at a released tag. The metarepo points; nothing copies it. Three rules do the work:
 
-1. A pararepo writes the metarepo only by branch, via `jig propose`.
+1. A pararepo writes the metarepo only by branch, via `jig propose`. That `propose/` branch is
+   on no job by design, so R2 lets it commit while the metarepo has jobs open; R1 still keeps
+   the trunk checkout off it.
 2. The metarepo holds no code and no copied pararepo content (What the metarepo holds).
 3. Only `jig release` tags, so a pin never names something that failed validation.
 
@@ -1584,6 +1596,7 @@ jig queue --full -- <command…>   the complete check: also the single full lock
 jig queue                   the slots, who holds them, who waits, and whether a complete check runs
 jig checked --trace [command]   on trunk: the merges since the last complete check, and the bisect that finds the breaking one
 jig roles                   each role's model tier and effort in effect
+jig roles --from T,E        and how a session at tier T, effort E starts each one
 jig flows                   each workflow's steps, who does each, and its session links
 jig next [<job>]            a job's next step, the node or role that does it, and continue or new session
 jig workflow                the older command: the roles under the old step names, then the flows

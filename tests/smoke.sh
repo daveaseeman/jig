@@ -1386,6 +1386,31 @@ $J propose .jig/specs/x.md fmt >/dev/null
 expect_pass sh -c "git -C mrclone rev-parse -q --verify refs/heads/propose/pr-fmt && grep -q 'meta: docs proposal propose/pr-fmt' .jig/specs/x.md && test \"\$(git -C mrclone rev-parse main)\" = '$mainbefore' && test \"\$(git -C mrclone branch --show-current)\" = main"
 git add -A && git commit -qm "specs: proposal"
 
+# R2 on a metarepo's proposal branch, in a clone of its own so mrclone keeps its state: the
+# proposal is on no job by design, so it commits while the metarepo has a job open.
+MP="$T/mrprop"; git clone -q "$MR" "$MP" && git -C "$MP" config user.email t@t && git -C "$MP" config user.name t
+(cd "$MP" && $J install-hooks >/dev/null && git fetch -q "$PR/mrclone" propose/pr-fmt:propose/pr-fmt \
+  && $J open other-job --owns docs/other.md >/dev/null 2>&1 && git add -A && git commit -qm "TOOL: open other-job" \
+  && git -c core.hooksPath=/dev/null worktree add -q "$T/mrprop-fmt" propose/pr-fmt \
+  && git -c core.hooksPath=/dev/null worktree add -q -b scratch "$T/mrprop-scratch" main)
+msg="R2: with a metarepo job open, a propose/ branch passes jig check and commits, with no R2"
+out=$(cd "$T/mrprop-fmt" && mkdir -p docs && printf 'f\n' > docs/fmt.md && git add docs/fmt.md && $J check 2>&1 && git commit -qm "TOOL: fmt" 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx ok && ! echo \"\$0\" | grep -q R2" "$out"
+msg="R2: with the same job open, a plain branch in the metarepo is still on no job"
+out=$(cd "$T/mrprop-scratch" && mkdir -p docs && printf 's\n' > docs/s.md && git add docs/s.md && git commit -qm "TOOL: s" 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'R2 branch scratch is on no job'" "$out"
+msg="R2: the metarepo's trunk checkout on propose/pr-fmt is still refused, naming R1"
+out=$(cd "$MP" && git -c core.hooksPath=/dev/null checkout -q -b propose/pr-two && $J check 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '^R1 '" "$out"
+git -C "$MP" -c core.hooksPath=/dev/null checkout -q main
+msg="R2: a propose/ branch in a repo that isn't a metarepo is on no job, as any other branch"
+NM="$T/nometa"; mkdir -p "$NM" && git -C "$NM" init -q -b main && git -C "$NM" config user.email t@t && git -C "$NM" config user.name t
+out=$(cd "$NM" && cp -r "$P/jig" .jig && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board \
+  && $J open other-job --owns docs/other.md >/dev/null 2>&1 && git add -A && git commit -qm "TOOL: open other-job" \
+  && git -c core.hooksPath=/dev/null worktree add -q -b propose/x "$T/nometa-x" main >/dev/null \
+  && cd "$T/nometa-x" && mkdir -p docs && printf 'x\n' > docs/x.md && git add docs/x.md && git commit -qm "docs: x" 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'R2 branch propose/x is on no job'" "$out"
+
 msg="para P4: a contract change waits while a file for the metarepo is staged"
 stage meta-note.md docs decisions new .jig/decisions.md '### D-?x x\nProposed (2026-10-29).\nTouches: docs/shared.md\n'
 printf 'z=3\n' >> api/a.py && printf -- '- meta: none — still internal\n' >> .jig/specs/x.md && git add api/a.py .jig/specs/x.md
@@ -2058,6 +2083,18 @@ WF="$T/wf"; mkdir -p "$WF" && cd "$WF" && git init -q -b main && git config user
 cp -r "$P/jig" .jig && chmod +x .jig/scripts/*.sh && git add -A && git commit -qm init && $J init >/dev/null && git add -A && git commit -qm board
 msg="roles: prints jig's defaults, one role per line, in order"
 expect_pass sh -c "$J roles | grep -qx 'work: tier 2, effort 3' && $J roles | grep -qx 'review: tier 2, effort 2' && test \"\$($J roles | cut -d: -f1 | tr '\n' ' ')\" = 'spec bug work review check '"
+# fr <from> <role> <advice>: under the role's line, how a session at <from> starts it.
+fr() { $J roles --from "$1" | grep -A1 -x "$2: tier [0-9]*, effort [0-9]*" | sed -n 2p | grep -qx "  $3"; }
+msg="roles --from 1,4: a better tier at low starts tier-2 roles and raises effort; check as is; no floor line"
+expect_pass sh -c "$(declare -f fr); J='$J'; $J roles --from 1,4 | grep -qx 'work: tier 2, effort 3' && fr 1,4 work 'start, then raise effort' && fr 1,4 spec 'start, then raise effort' && fr 1,4 review 'start, then raise effort' && fr 1,4 bug 'start, then raise effort' && fr 1,4 check 'start with its settings' && ! $J roles --from 1,4 | grep -q floor"
+msg="roles --from 2,4: the same raises, and below the hubnode floor"
+expect_pass sh -c "$(declare -f fr); J='$J'; fr 2,4 work 'start, then raise effort' && fr 2,4 check 'start with its settings' && $J roles --from 2,4 | grep -qx 'tier 2, effort 4 is below the hubnode floor (tier 2, effort 1)'"
+msg="roles --from: tier first, then effort: 3,0 is below the floor, 2,1 is not"
+expect_pass sh -c "$J roles --from 3,0 | grep -q 'below the hubnode floor' && ! $J roles --from 2,1 | grep -q floor"
+msg="roles --from 3,4 raises model and effort for work; 2,3 starts work as is and raises review's effort"
+expect_pass sh -c "$(declare -f fr); J='$J'; fr 3,4 work 'start, then raise model and effort' && fr 2,3 work 'start with its settings' && fr 2,3 review 'start, then raise effort'"
+msg="roles --from x and 0,1 are refused with the usage line; plain roles prints only the role lines"
+expect_pass sh -c "! $J roles --from x >/dev/null 2>&1 && $J roles --from x 2>&1 | grep -q '^usage: jig roles' && ! $J roles --from 0,1 >/dev/null 2>&1 && $J roles --from 0,1 2>&1 | grep -q '^usage: jig roles' && test \"\$($J roles | wc -l | tr -d ' ')\" = 5"
 msg="flows: each workflow's steps with the role or node of each, and its session links"
 expect_pass sh -c "$J flows | grep -qx 'Job: spec (spec) ⇢ work (work) ⇢ review-work (review) → handoff (work) → gate (hubnode) ⇢ check (check) → merge (hubnode)' && $J flows | grep -qx 'Fix: work (work) ⇢ review-change (review) → handoff (work)' && $J flows | grep -qx 'Bug: bug (bug) → spec (spec) ⇢ Job'"
 msg="workflow: the old command prints the old step names (execute as work, recheck as review), then the flows"
