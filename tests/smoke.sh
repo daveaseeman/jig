@@ -1894,7 +1894,7 @@ $J open F --reserve decision=4 >/dev/null && git add -A && git commit -qm "TOOL:
 printf '# u\n' > .jig/specs/u.md && git add -A && git commit -qm "TOOL: spec u"
 ( cd "$MJ/.git/jig/worktrees/F" && $J sync >/dev/null 2>&1 )
 msg="M5: review, then a note, then a sync of trunk: jig merge is accepted, and so is the release"
-gated F; expect_pass sh -c "$J merge F >/dev/null 2>&1 && ! grep -q '\"F\"' .jig/jobs.json && $J release >/dev/null 2>&1 && git tag | grep -qx v0.2.0"
+gated F; expect_pass sh -c "$J merge F >/dev/null 2>&1 && ! grep -q '\"F\"' .jig/jobs.json && $J release --feature >/dev/null 2>&1 && git tag | grep -qx v0.2.0"
 
 cd "$R" && mkdir -p .jig/staging
 msg="staging: a decisions destination with prose after the path refuses, naming the header field"
