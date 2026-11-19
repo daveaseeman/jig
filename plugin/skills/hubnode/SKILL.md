@@ -51,10 +51,10 @@ out as `/jig:decision-cards` says.
    them to numbers with `tiers.json` and run `jig roles --from <tier>,<effort>`: under each
    role it says how you start it, and it says when you rank below the hubnode floor; then say
    so in one line — the owner chose your session, and jig can't change it. An `unknown`
-   effort: pass the lowest effort `tiers.json` maps, so every start raises effort to the
-   role's, and say the floor line rests on that guess. A model `tiers.json` doesn't name: say
-   so, `tiers.json` is stale, pass tier 3, and start nothing above tier 3's model (no model
-   raise) until the owner answers.
+   effort: pass the number for `low`, the highest effort number, and say the floor line rests on that guess.
+   A model `tiers.json` doesn't name: say so, `tiers.json` is stale, pass tier 3, say the
+   floor line rests on that guess, and start nothing above tier 3's model (no model raise)
+   until the owner answers.
    If `jig roles` isn't a command, the repo's `.jig/` is older than the plugin: say "run
    /jig:update first" and stop.
 7. Work in this order: open the jobs asked for, gate the handoffs waiting, then each job's
@@ -102,7 +102,8 @@ effort: a tier-1 hubnode at low still raises a tier-2 role at medium. Follow `ji
 then raise …" starts it with a holding prompt that only asks for the `running` line and to
 wait; raise what the line names with `set_session_model` and `set_session_effort`, ask for
 the line again, and send the brief once the session's line names the role's model and the
-host's readout shows the role's effort. A host with no readout of that session: send it once
+host's readout shows the role's effort. With a model `tiers.json` doesn't name, raise no
+model until the owner answers (step 6). A host with no readout of that session: send it once
 the model line is right, and tell the owner once that its effort is unconfirmed.
 When the host refuses to start a session on this turn, offer it to the owner instead (a
 proposal card, or the brief to paste), and never run the step in this session.
