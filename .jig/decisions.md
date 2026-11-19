@@ -1,7 +1,7 @@
 # Decisions and changes
 
-This log follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/) plus decision entries, and versions follow Semantic Versioning (https://semver.org/).
-A breaking change is one that a reader taking the release must act on, and it is released as a major version.
+This log follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/) plus decision entries, and versions are MILESTONE.FEATURE.PATCH, set by how much the product changed (`.jig/RULES.md`, Versioning).
+A breaking change is one that a reader taking the release must act on: a `**Breaking:**` line says what to change, and it doesn't set the version's level.
 
 ## Open
 
