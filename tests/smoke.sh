@@ -2295,6 +2295,63 @@ out=$($J reviewed --change --tier 2 --effort 2 --blocking 1 2>&1)
 expect_pass sh -c "echo \"\$0\" | grep -q 'Strike 3, under the bug role.s spec: the work session fixes them, then review-change' && ! echo \"\$0\" | grep -q 'Bug runs next'" "$out"
 nx "strike 3 with the bug spec committed is fix, as reviewed says" "" "k6: fix — work, continue the work session (Fix, strike 3; 1 blocking finding)"
 cd "$NX"
+# A bug spec lifts the limit for its own part only: part 2 of k7 reaches strike 3 under part 1's spec.
+$J open k7 --owns 'k7/**' >/dev/null && git add -A && git commit -qm "open k7"
+cd .git/jig/worktrees/k7 && mkdir k7 && printf 'x\n' > k7/x.txt && git add -A && git commit -qm x
+strike() { $J reviewed $1 --tier 2 --effort 2 --blocking 1 >/dev/null && printf 'y\n' >> k7/x.txt && git commit -qam fix; }
+strike "" && strike --change && strike --change
+mkdir -p .jig/specs && printf '# k7 bug\n\nBug-for: k7\n' > .jig/specs/k7-bug.md && git add -A && git commit -qm "k7: bug spec"
+strike --change && $J reviewed --change --tier 2 --effort 2 --blocking 0 >/dev/null \
+  && $J handoff --partial >/dev/null && foldin && git add -A && git commit -qm "note k7 part 1"
+printf 'z\n' > k7/z.txt && git add -A && git commit -qm part2 && strike "" && strike --change
+msg="reviewed: part 2's third blocking review says Bug runs next, though part 1 committed a bug spec"
+out=$($J reviewed --change --tier 2 --effort 2 --blocking 1 2>&1)
+expect_pass sh -c "echo \"\$0\" | grep -q 'Strike 3 of 3: Bug runs next'" "$out"
+printf 'y\n' >> k7/x.txt && git commit -qam fix-p2
+nx "a bug spec from an earlier part lifts nothing: part 2's third strike is bug" "" "k7: bug — bug, new session (Bug; a job's third blocking review: 3 strikes, and the next review is refused)"
+msg="reviewed: part 2's fourth review is refused, naming Bug-for"
+out=$($J reviewed --change --tier 2 --effort 2 --blocking 0 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'Bug-for: k7'" "$out"
+printf -- '- [x] a box ticked\n' >> .jig/specs/k7-bug.md && git commit -qam "k7: part 1's bug spec edited in part 2"
+msg="reviewed: part 1's bug spec edited in part 2 lifts nothing, and the refusal asks for a new path"
+out=$($J reviewed --change --tier 2 --effort 2 --blocking 0 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '.jig/specs/k7-bug.md named the job before this part began.*write this part.s spec at a new path'" "$out"
+git mv .jig/specs/k7-bug.md .jig/specs/k7-bug-1.md && git commit -qm "k7: part 1's bug spec moved"
+msg="reviewed: part 1's bug spec moved in part 2 lifts nothing"
+expect_refuse $J reviewed --change --tier 2 --effort 2 --blocking 0
+printf '# k7 bug, part 2\n\nBug-for: k7\n' > .jig/specs/k7-bug-2.md && git add -A && git commit -qm "k7: part 2's bug spec"
+msg="reviewed: part 2's own bug spec, at a new path, lifts part 2's limit"
+expect_pass $J reviewed --change --tier 2 --effort 2 --blocking 0
+cd "$NX"
+# A draft that gets its Bug-for: line in a later commit of the part counts; the line removed later doesn't.
+$J open k9 --owns 'k9/**' >/dev/null && git add -A && git commit -qm "open k9"
+cd .git/jig/worktrees/k9 && mkdir k9 && printf 'x\n' > k9/x.txt && git add -A && git commit -qm x
+strike() { $J reviewed $1 --tier 2 --effort 2 --blocking 1 >/dev/null && printf 'y\n' >> k9/x.txt && git commit -qam fix; }
+strike "" && strike --change && strike --change
+mkdir -p .jig/specs && printf '# k9 bug, a draft\n' > .jig/specs/k9-bug.md && git add -A && git commit -qm "k9: bug draft"
+msg="next: a bug draft with no Bug-for: line is still bug"
+expect_pass sh -c "$J next | grep -q '^k9: bug — '"
+printf '\nBug-for: k9\n' >> .jig/specs/k9-bug.md && git commit -qam "k9: the draft names its job"
+msg="next: the draft given its Bug-for: line in a later commit lifts the limit: review-change"
+expect_pass sh -c "$J next | grep -q '^k9: review-change — '"
+printf '# k9 bug, a draft\n' > .jig/specs/k9-bug.md && git commit -qam "k9: line removed"
+msg="next and reviewed: the line removed later in the part counts for nothing"
+expect_pass sh -c "$J next | grep -q '^k9: bug — ' && ! $J reviewed --change --tier 2 --effort 2 --blocking 0 >/dev/null 2>&1"
+cd "$NX"
+# A gated job whose branch moved past its note: jig merge would refuse it, so jig next takes the ordinary steps.
+$J open k8 --owns 'k8/**' >/dev/null && git add -A && git commit -qm "open k8"
+(cd .git/jig/worktrees/k8 && mkdir k8 && printf 'x\n' > k8/x.txt && git add -A && git commit -qm x && $J reviewed >/dev/null \
+  && $J handoff >/dev/null && foldin && git add -A && git commit -qm "note k8")
+gated k8
+nx "a gated job with nothing since its note is still the merge" k8 "k8: merge — hubnode, continue the hubnode (Job; on the owner's word)"
+noted=$(git rev-parse --short=12 k8~1)
+(cd .git/jig/worktrees/k8 && printf 'y\n' >> k8/x.txt && git commit -qam more)
+nx "a gated job changed since its note is the review-change, not the merge" k8 "k8: review-change — review, new session (Job; gated at $noted, changed since: mark it back; review-change, handoff, gate again)"
+# One reader of the line: outside bug_for and bug_specs_at, jig.py names Bug-for only quoted in
+# backticks, as its messages and docstrings do, so any other reader a sync brings in fails here.
+onereader() { awk '/^[A-Za-z_@]/{d = ($1 == "def") ? $2 : ""} /Bug-for/ && d !~ /^bug_(for|specs_at)\(/ && !/`Bug-for/{print FILENAME ":" NR ": " $0; bad=1} END{exit bad}' "$1"; }
+msg="next: jig.py reads the Bug-for: line only in bug_for and bug_specs_at"
+expect_pass onereader .jig/jig.py
 }
 
 # ---------------------------------------------------------------- init beside an old board
@@ -8116,9 +8173,23 @@ c8() { rstate "assert '.jig/specs/bugx.md' not in i, i.keys()" && ! $J consolida
 expect_pass c8
 git rm -qf .jig/specs/bugx.md .jig/specs/wp.md && git commit -qm "drop bug spec" >/dev/null
 
+msg="rig: a spec quoting Bug-for: in fenced code, or naming no one job, is a waiting spec, in jig rig and jig consolidate"
+rspec bugq 'v/x.txt' "$(printf '```\nBug-for: j\n```')" && rspec bugs 'v/x.txt' 'Bug-for: x y' && rspec bugt 'v/x.txt' 'Bug-for: <job>' \
+  && rspec vp 'v/x.txt' && git add -A && git commit -qm "quoted bug lines" >/dev/null
+c9() { out=$($J consolidate) && rstate "assert all(f'.jig/specs/{n}.md' in i for n in ('bugq', 'bugs', 'bugt')), i.keys()" \
+  && echo "$out" | grep -q bugq && echo "$out" | grep -q bugs && echo "$out" | grep -q bugt; }
+expect_pass c9
+git rm -qf .jig/specs/bugq.md .jig/specs/bugs.md .jig/specs/bugt.md .jig/specs/vp.md && git commit -qm "drop quoted" >/dev/null
+
 msg="rig: a run writes neither the roadmap nor staging"
 $J rig >/dev/null; $J rig --json >/dev/null
 expect_pass test "$(cat .jig/roadmap.md .jig/staging/s2.md | shasum) $(shasum < .jig/staging/s1.md)" = "$before $s1hash"
+
+msg="rig: a spec quoting Bug-for: X in fenced code, or Bug-for: <job>, isn't finished for a job X off the board, and --close leaves both"
+rspec fq 'u/x.txt' "$(printf '```\nBug-for: X\n```')" && rspec ft 'u/y.txt' 'Bug-for: <job>' && git add -A && git commit -qm "quoted bug lines" >/dev/null
+c10() { rstate "f = [x['spec'] for x in d['finished']]; assert '.jig/specs/fq.md' not in f and '.jig/specs/ft.md' not in f, f" \
+  && $J rig --close >/dev/null 2>&1 && test -f .jig/specs/fq.md && test -f .jig/specs/ft.md; }
+expect_pass c10
 }
 
 # ---------------------------------------------------------------- versions measure the product
@@ -8549,6 +8620,7 @@ msg="close: after the conflicted merge's commit, its request is built, and jig r
 expect_pass sh -c "$J rig --json | grep -q '\"built\": \".jig/handoffs/CF-' && $J rig --close | grep -q '^resolved d5.md: carried by .jig/handoffs/CF-' && test ! -e .jig/staging/d5.md && test -z \"\$(git status --porcelain)\""
 msg="close: jig open refuses a name whose earlier job's Bug-for spec is still on trunk, naming jig rig --close"
 printf '# old bug\n\nBug-for: OB\n' > .jig/specs/ob-bug.md && git add -A && git commit -qm "an old bug spec" >/dev/null
+printf 'later\n' > later.txt && git add -A && git commit -qm "a later trunk commit above it" >/dev/null
 out=$($J open OB --owns 'ob/**' 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'ob-bug.md on main is the bug spec of an earlier job OB: .jig rig --close.' && ! grep -q '\"OB\"' .jig/jobs.json" "$out"
 msg="close: after jig rig --close, the name opens"
@@ -8636,6 +8708,11 @@ git add -A && git commit -qm "docs with provenance" >/dev/null
 for n in ua ub uc; do stage $n.md this doc update docs/$n.md; done
 msg="close: a doc update lands with its mark anywhere in the page, as before this job: a comment, a sentence, a list item"
 expect_pass sh -c "for n in ua ub uc; do $J staging resolve \$n.md >/dev/null || exit 1; done; test -z \"\$(ls .jig/staging | grep '^u[abc].md')\""
+cspec fqq '' "$(printf '```\nBug-for: FQ\n```')" && cspec fqs && git add -A && git commit -qm "a spec quoting FQ's line" >/dev/null
+cjob FQ fqs "" "printf '# fq bug\n\nBug-for: FQ\n' > .jig/specs/fq-bug.md"
+msg="close: merging FQ closes its own Bug-for spec and leaves a spec quoting the line in a fence"
+gated FQ; out=$($J merge FQ 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'closed .jig/specs/fq-bug.md' && ! git cat-file -e HEAD:.jig/specs/fq-bug.md 2>/dev/null && git cat-file -e HEAD:.jig/specs/fqq.md" "$out"
 msg="close: the merge and --close share one rule"
 expect_pass test "$(grep -c 'finished_specs(' .jig/jig.py)" -ge 3
 }
