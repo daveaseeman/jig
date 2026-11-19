@@ -3,7 +3,8 @@ name: fix
 description: In the jig repo, start the Feedback workflow on the reports other repos staged - group them by root cause, investigate each group with the bug role against jig's own code, and turn each into a spec, a drop with its reason shown, or a note of what's missing. Use on "fix the feedback", or when jig staging lists feedback.
 ---
 
-An entry point: the hubnode runs it to start Feedback. The order of its steps is `jig flows`'
+An entry point: the hubnode runs it to start Feedback, by hand or from `/jig:rig`, which in the
+jig repo starts it on each staged report no fix is already working on. The order of its steps is `jig flows`'
 (Feedback), not this page's; what each step needs from the reports is below. The grouping and
 the closing consolidate are the spec role's, each group's investigation and its spec the bug
 role's, and the jobs that follow are Job's. The roles' settings are `jig roles`'s; the
@@ -42,7 +43,9 @@ investigation. Elsewhere, stop and say where to run it. If `jig staging` refuses
   - **a workaround for one repo** (`/jig:bug` step 4): `jig staging drop <file>`, saying why and what that repo
     should do instead.
   - **already fixed**: `jig staging drop <file>`, naming the commit that fixed it.
-  - **can't reproduce**: leave it staged, and say what's missing to reproduce it.
+  - **can't reproduce**: leave it staged, and say what's missing to reproduce it. Store that
+    as its end: `jig rig --store-put <path>` with `{"call": "concluded", "about": "<what's
+    missing>"}`, so `/jig:rig` stops listing it as running and puts it to the owner.
 - **Showing** each decision as you make it: the group, the reports in it, the decision and its
   one-line reason. Don't wait for the owner between reports. A drop records nothing, so its
   reason lives only in what you show: the owner overrules it from there.

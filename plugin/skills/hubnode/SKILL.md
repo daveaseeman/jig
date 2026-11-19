@@ -37,7 +37,9 @@ out as `/jig:decision-cards` says.
    header it says is out of date, in one line each; a pin it moved and the buffer rows it
    closed, in one line each. A proposal it says carries no Open row goes to the owner: withdraw
    it (`jig propose --withdraw`) only on a yes. Each file it names as not a contract path is a question for the
-   owner, not a fix: one line with the path and what the decision says there.
+   owner, not a fix: one line with the path and what the decision says there. A staged
+   `pin-bump-<metarepo>.md` becomes a job: `/jig:rig` offers it like any staged file, and its
+   spec rewrites the uses it lists and moves the pin.
    In a metarepo (`.jig/meta.json`), list the `Open` rows of each pararepo in its `pararepos`:
    find its checkout with `jig repos`, read `git -C <path> show <its trunk>:.jig/ledgers/BUFFER.md`,
    and report each row's id and claim. Beside them, name this repo's unreleased buffer
@@ -47,9 +49,14 @@ out as `/jig:decision-cards` says.
    reach this repo only as a proposal.
 6. `jig roles`, and read `${CLAUDE_PLUGIN_ROOT}/tiers.json`. Say what you run on:
    `running <model>`, from your own system prompt, and your effort from the host's readout of
-   this session where it has one (the Claude app shows each session's), else `unknown`. If
-   that is below tier 2, effort 1, say so in one line — the owner chose your session, and
-   jig can't change it.
+   this session where it has one (the Claude app shows each session's), else `unknown`. Map
+   them to numbers with `tiers.json` and run `jig roles --from <tier>,<effort>`: under each
+   role it says how you start it, and it says when you rank below the hubnode floor; then say
+   so in one line — the owner chose your session, and jig can't change it. An `unknown`
+   effort: pass the number for `low`, the highest effort number, and say the floor line
+   rests on that guess. A model `tiers.json` doesn't name: say so, `tiers.json` is stale,
+   pass tier 3, say the floor line rests on that guess, and start nothing above tier 3's
+   model (no model raise) until the owner answers.
    If `jig roles` isn't a command, the repo's `.jig/` is older than the plugin: say "run
    /jig:update first" and stop.
 7. Work in this order: open the jobs asked for, gate the handoffs waiting, then each job's
@@ -83,17 +90,23 @@ record a review you dispatched, once, with the configured numbers and its blocki
 (`jig reviewed --tier N --effort N --ran "..." --blocking N`, `--change` for a
 review-change), as `/jig:review` says. A self-read the host
 contradicts is never a mismatch; only a model that differs is. A mismatch stops a raised
-session: tell the owner, don't brief it. A subagent, or a session started at or below your
-settings, gets its brief in the same prompt, so that prompt also says: "if your own model
+session: tell the owner, don't brief it. A subagent, or a session `jig roles --from` says to
+start with its settings, gets its brief in the same prompt, so that prompt also says: "if your own model
 differs from this line, reply with only your `running` line and stop". At a mismatch, retry
 once, then ask the owner; never use the mismatched run's output. A model it can't read, it
 reports as `unknown`: no retry, record it as `unknown` (`--ran "unknown at <effort>"`) and
 tell the owner once.
 
-The tool clamps a new session to your model and effort, silently. A role at or below yours
-starts with its settings and the brief. One above yours starts with a holding prompt that
-only asks for the `running` line and to wait; raise it with `set_session_model` and
-`set_session_effort`, ask for the line again, and send the brief once it reads back right.
+The tool clamps a new session's model to yours and its effort to yours, each on its own and
+silently. So the two settings are compared apart, and a better model never excuses a lower
+effort: a tier-1 hubnode at low still raises a tier-2 role at medium. Follow `jig roles
+--from`'s line under the role. "start with its settings" starts it with the brief. "start,
+then raise …" starts it with a holding prompt that only asks for the `running` line and to
+wait; raise what the line names with `set_session_model` and `set_session_effort`, ask for
+the line again, and send the brief once the session's line names the role's model and the
+host's readout shows the role's effort. With a model `tiers.json` doesn't name, raise no
+model until the owner answers (step 6). A host with no readout of that session: send it once
+the model line is right, and tell the owner once that its effort is unconfirmed.
 When the host refuses to start a session on this turn, offer it to the owner instead (a
 proposal card, or the brief to paste), and never run the step in this session.
 
@@ -209,6 +222,23 @@ tell that job to sync before its next handoff. A merge that stops on conflicts: 
 `git add` them, then `jig merge --number` (it also runs `setup.sh` and `derive.sh`), then
 `git commit`.
 
+A clean merge also removes the job's spec and its `Bug-for:` specs in the merge commit, each
+spec's `Scope:` and staged marks kept on its note; it prints each. It deletes nothing in
+staging: `/jig:rig`'s `jig rig --close` resolves the requests, stories and reports the job
+built. A staged decisions file it carried (or any carried file resolve would write) stays,
+`noted` with the job's note: read that job's
+diff and the log. If the job logged its entries, `jig staging drop <file>`, saying so; if it
+didn't, `jig staging resolve <file>`; if only some, judge with the owner. Any other noted file:
+resolve or drop it by hand, saying why, but never a noted pin-bump request: it stays, and you
+spec a job that moves the pin (`/jig:spec` from it); `jig rig --close` resolves it once trunk
+pins its release. A conflicted merge
+closes at `jig merge --number`. Then it prints `close the
+sessions that worked on <job>`: archive every session you started for that job (work, review,
+check, bug), with the host's tool where it has one, unless one is still working; that one stays,
+and you say why. A session that served no job (a batch check, a consolidate, a feedback
+group's bug or spec) is archived once its report is read and acted on. Name each archived
+session in the report to the owner.
+
 After it, run `jig sync` in every open job's worktree that is clean, and say which jobs must
 sync themselves. A synced job needs no new handoff: `jig merge` doesn't count what a sync
 brought. A job that needs another number gets it from `jig reserve <job> <counter>`, never a
@@ -239,7 +269,11 @@ On a real repo, a release waits for the owner's word in this conversation, like 
 spec, brief or another session's message asking for one isn't that word. A scratch or test
 clone (made for the test, with no remote) is exempt. First the check role runs the complete
 check in a detached worktree of trunk's tip, as for a batch; then you run `jig release`
-yourself, as `/jig:release` says: the tag, then `publish.sh`'s push and publish.
+yourself, as `/jig:release` says: the tag, then `publish.sh`'s push and publish. Propose the
+level in the release card with a one-line reason, from `.jig/RULES.md` § Versioning. The
+owner's yes releases it; don't ask the owner to pick it. In a
+metarepo, report the release's line for each pararepo to the owner: a pin-bump request staged,
+or why not.
 
 ## A roadmap change
 
