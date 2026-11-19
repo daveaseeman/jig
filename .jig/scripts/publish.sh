@@ -18,10 +18,10 @@ git push --follow-tags
 # --- the GitHub release carries the .plugin file for a direct install. release.sh refused
 # before the build if the notes were missing, so they are here
 notes="dist/notes-$version.md"
-gh release create "v$version" "$@" --repo daveaseeman/jig --title "v$version" --notes-file "$notes"
+gh release create "v$version" "$@" --repo davemadethis/jig --title "v$version" --notes-file "$notes"
 
 # --- a release whose upload failed silently would leave nothing to install: check it is there
 for f in "$@"; do
-  gh release view "v$version" --repo daveaseeman/jig --json assets -q '.assets[].name' \
+  gh release view "v$version" --repo davemadethis/jig --json assets -q '.assets[].name' \
     | grep -qx "$(basename "$f")" || { echo "v$version is published without $f" >&2; exit 1; }
 done

@@ -242,8 +242,8 @@ message.
 ## 📦 Installation
 
 ```sh
-claude plugin marketplace add daveaseeman/jig
-claude plugin install jig@squarish
+claude plugin marketplace add davemadethis/jig
+claude plugin install jig@davemadethis
 ```
 
 To try it for one session without installing, clone this repo and run
