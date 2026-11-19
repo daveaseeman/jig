@@ -2347,6 +2347,11 @@ nx "a gated job with nothing since its note is still the merge" k8 "k8: merge â€
 noted=$(git rev-parse --short=12 k8~1)
 (cd .git/jig/worktrees/k8 && printf 'y\n' >> k8/x.txt && git commit -qam more)
 nx "a gated job changed since its note is the review-change, not the merge" k8 "k8: review-change â€” review, new session (Job; gated at $noted, changed since: mark it back; review-change, handoff, gate again)"
+# One reader of the line: a second pattern, written the old way and brought in by a sync, fails here.
+onepattern() { n=$(grep -cE '\^Bug-for|Bug-for:\[' "$1") && test "$n" = 1 \
+  && awk '/^def /{d=$2} /\^Bug-for|Bug-for:\[/{print d}' "$1" | grep -q '^bug_for('; }
+msg="next: jig.py reads the Bug-for: line with one pattern, in bug_for"
+expect_pass onepattern .jig/jig.py
 }
 
 # ---------------------------------------------------------------- init beside an old board
@@ -8179,6 +8184,12 @@ git rm -qf .jig/specs/bugq.md .jig/specs/bugs.md .jig/specs/bugt.md .jig/specs/v
 msg="rig: a run writes neither the roadmap nor staging"
 $J rig >/dev/null; $J rig --json >/dev/null
 expect_pass test "$(cat .jig/roadmap.md .jig/staging/s2.md | shasum) $(shasum < .jig/staging/s1.md)" = "$before $s1hash"
+
+msg="rig: a spec quoting Bug-for: X in fenced code, or Bug-for: <job>, isn't finished for a job X off the board, and --close leaves both"
+rspec fq 'u/x.txt' "$(printf '```\nBug-for: X\n```')" && rspec ft 'u/y.txt' 'Bug-for: <job>' && git add -A && git commit -qm "quoted bug lines" >/dev/null
+c10() { rstate "f = [x['spec'] for x in d['finished']]; assert '.jig/specs/fq.md' not in f and '.jig/specs/ft.md' not in f, f" \
+  && $J rig --close >/dev/null 2>&1 && test -f .jig/specs/fq.md && test -f .jig/specs/ft.md; }
+expect_pass c10
 }
 
 # ---------------------------------------------------------------- versions measure the product
@@ -8609,6 +8620,7 @@ msg="close: after the conflicted merge's commit, its request is built, and jig r
 expect_pass sh -c "$J rig --json | grep -q '\"built\": \".jig/handoffs/CF-' && $J rig --close | grep -q '^resolved d5.md: carried by .jig/handoffs/CF-' && test ! -e .jig/staging/d5.md && test -z \"\$(git status --porcelain)\""
 msg="close: jig open refuses a name whose earlier job's Bug-for spec is still on trunk, naming jig rig --close"
 printf '# old bug\n\nBug-for: OB\n' > .jig/specs/ob-bug.md && git add -A && git commit -qm "an old bug spec" >/dev/null
+printf 'later\n' > later.txt && git add -A && git commit -qm "a later trunk commit above it" >/dev/null
 out=$($J open OB --owns 'ob/**' 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'ob-bug.md on main is the bug spec of an earlier job OB: .jig rig --close.' && ! grep -q '\"OB\"' .jig/jobs.json" "$out"
 msg="close: after jig rig --close, the name opens"
@@ -8696,6 +8708,11 @@ git add -A && git commit -qm "docs with provenance" >/dev/null
 for n in ua ub uc; do stage $n.md this doc update docs/$n.md; done
 msg="close: a doc update lands with its mark anywhere in the page, as before this job: a comment, a sentence, a list item"
 expect_pass sh -c "for n in ua ub uc; do $J staging resolve \$n.md >/dev/null || exit 1; done; test -z \"\$(ls .jig/staging | grep '^u[abc].md')\""
+cspec fqq '' "$(printf '```\nBug-for: FQ\n```')" && cspec fqs && git add -A && git commit -qm "a spec quoting FQ's line" >/dev/null
+cjob FQ fqs "" "printf '# fq bug\n\nBug-for: FQ\n' > .jig/specs/fq-bug.md"
+msg="close: merging FQ closes its own Bug-for spec and leaves a spec quoting the line in a fence"
+gated FQ; out=$($J merge FQ 2>&1); rc=$?
+expect_pass sh -c "test $rc = 0 && echo \"\$0\" | grep -qx 'closed .jig/specs/fq-bug.md' && ! git cat-file -e HEAD:.jig/specs/fq-bug.md 2>/dev/null && git cat-file -e HEAD:.jig/specs/fqq.md" "$out"
 msg="close: the merge and --close share one rule"
 expect_pass test "$(grep -c 'finished_specs(' .jig/jig.py)" -ge 3
 }

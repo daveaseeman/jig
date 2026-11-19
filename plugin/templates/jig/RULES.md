@@ -664,7 +664,7 @@ else stops with the files named, and a person resolves it.
    the commit. A merge writes nothing in `.jig/staging/`. `jig rig --close` closes the rest
    (Workflow).
    `jig open` refuses a name whose earlier job's `Bug-for:` spec is still on trunk, which would
-   lift the new job's strike limit, naming `jig rig --close`. The job's sessions end at its merge: the merge
+   be read as the new job's own (closed by its merge), naming `jig rig --close`. The job's sessions end at its merge: the merge
    prints `close the sessions that worked on <job>`, and the hubnode closes them.
    A hand `git merge` on trunk runs `setup.sh` but not `derive.sh`: run it and commit what it
    wrote, or the derived files stay stale until the next `jig merge`. In a metarepo, don't run

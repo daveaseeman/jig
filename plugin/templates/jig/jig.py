@@ -1162,10 +1162,10 @@ def cmd_open(root: Path, args) -> int:
         die(f"open a job from {board.trunk} (the hubnode's checkout)")
     if args.name in board.jobs:
         die(f"job {args.name} already exists")
-    # A merged job's bug spec answers `jig reviewed` by the job's name: left on trunk, it would
-    # let a new job under that name past its third blocking review.
-    if old := bug_spec_for(args.name, [board.trunk]):
-        die(f"{old} on {board.trunk} is the bug spec of an earlier job {args.name}: `jig rig --close` "
+    # A merged job's bug spec names the job: left on trunk, it would be read as a new job's of
+    # that name, listed in its refusal and closed by its merge as its own.
+    if old := sorted(bug_specs_at(board.trunk, args.name)):
+        die(f"{old[0]} on {board.trunk} is the bug spec of an earlier job {args.name}: `jig rig --close` "
             "removes it, then open the job")
     if file_safe(args.name).startswith("gate-"):
         die(f"a job name can't start with gate-: worktrees/{file_safe(args.name)} is where "
@@ -10026,9 +10026,9 @@ def finished_specs(snap: Snapshot, board: "Board", job: str = "", named: set[str
     for f in snap.ls(SPECS):
         if not is_spec(f):
             continue
-        bug = re.search(r"^Bug-for:[ \t]*(\S+)[ \t]*$", snap.show(f), re.M)
+        bug = bug_for(snap.show(f))
         if bug:
-            if bug.group(1) in board.jobs or job and bug.group(1) != job:
+            if bug in board.jobs or job and bug != job:
                 continue
             note = ""
         else:
