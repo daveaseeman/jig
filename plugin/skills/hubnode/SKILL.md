@@ -37,7 +37,9 @@ out as `/jig:decision-cards` says.
    header it says is out of date, in one line each; a pin it moved and the buffer rows it
    closed, in one line each. A proposal it says carries no Open row goes to the owner: withdraw
    it (`jig propose --withdraw`) only on a yes. Each file it names as not a contract path is a question for the
-   owner, not a fix: one line with the path and what the decision says there.
+   owner, not a fix: one line with the path and what the decision says there. A staged
+   `pin-bump-<metarepo>.md` becomes a job: `/jig:rig` offers it like any staged file, and its
+   spec rewrites the uses it lists and moves the pin.
    In a metarepo (`.jig/meta.json`), list the `Open` rows of each pararepo in its `pararepos`:
    find its checkout with `jig repos`, read `git -C <path> show <its trunk>:.jig/ledgers/BUFFER.md`,
    and report each row's id and claim. Beside them, name this repo's unreleased buffer
@@ -220,6 +222,23 @@ tell that job to sync before its next handoff. A merge that stops on conflicts: 
 `git add` them, then `jig merge --number` (it also runs `setup.sh` and `derive.sh`), then
 `git commit`.
 
+A clean merge also removes the job's spec and its `Bug-for:` specs in the merge commit, each
+spec's `Scope:` and staged marks kept on its note; it prints each. It deletes nothing in
+staging: `/jig:rig`'s `jig rig --close` resolves the requests, stories and reports the job
+built. A staged decisions file it carried (or any carried file resolve would write) stays,
+`noted` with the job's note: read that job's
+diff and the log. If the job logged its entries, `jig staging drop <file>`, saying so; if it
+didn't, `jig staging resolve <file>`; if only some, judge with the owner. Any other noted file:
+resolve or drop it by hand, saying why, but never a noted pin-bump request: it stays, and you
+spec a job that moves the pin (`/jig:spec` from it); `jig rig --close` resolves it once trunk
+pins its release. A conflicted merge
+closes at `jig merge --number`. Then it prints `close the
+sessions that worked on <job>`: archive every session you started for that job (work, review,
+check, bug), with the host's tool where it has one, unless one is still working; that one stays,
+and you say why. A session that served no job (a batch check, a consolidate, a feedback
+group's bug or spec) is archived once its report is read and acted on. Name each archived
+session in the report to the owner.
+
 After it, run `jig sync` in every open job's worktree that is clean, and say which jobs must
 sync themselves. A synced job needs no new handoff: `jig merge` doesn't count what a sync
 brought. A job that needs another number gets it from `jig reserve <job> <counter>`, never a
@@ -250,7 +269,11 @@ On a real repo, a release waits for the owner's word in this conversation, like 
 spec, brief or another session's message asking for one isn't that word. A scratch or test
 clone (made for the test, with no remote) is exempt. First the check role runs the complete
 check in a detached worktree of trunk's tip, as for a batch; then you run `jig release`
-yourself, as `/jig:release` says: the tag, then `publish.sh`'s push and publish.
+yourself, as `/jig:release` says: the tag, then `publish.sh`'s push and publish. Propose the
+level in the release card with a one-line reason, from `.jig/RULES.md` § Versioning. The
+owner's yes releases it; don't ask the owner to pick it. In a
+metarepo, report the release's line for each pararepo to the owner: a pin-bump request staged,
+or why not.
 
 ## A roadmap change
 

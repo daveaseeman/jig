@@ -1162,6 +1162,11 @@ def cmd_open(root: Path, args) -> int:
         die(f"open a job from {board.trunk} (the hubnode's checkout)")
     if args.name in board.jobs:
         die(f"job {args.name} already exists")
+    # A merged job's bug spec answers `jig reviewed` by the job's name: left on trunk, it would
+    # let a new job under that name past its third blocking review.
+    if old := bug_spec_for(args.name, [board.trunk]):
+        die(f"{old} on {board.trunk} is the bug spec of an earlier job {args.name}: `jig rig --close` "
+            "removes it, then open the job")
     if file_safe(args.name).startswith("gate-"):
         die(f"a job name can't start with gate-: worktrees/{file_safe(args.name)} is where "
             f"`jig gate {args.name[5:]}` checks out, and removes when that job is gated")
@@ -1940,6 +1945,9 @@ def cmd_merge(root: Path, args) -> int:
             die("resolve and `git add` the conflicted files first")
         for line in number_placeholders(root, trunk) or ["nothing to number"]:
             print(f"numbered {line}" if "→" in line else line)
+        # The conflicted merge's last step before its commit, so it closes what a clean one does;
+        # a merge stopped after its close (derive.sh failed) has its close in the index already.
+        close_merged(root, board, trunk)
         return 0 if setup_and_derive(root, board, "the job") else 1
     if not name:
         die("usage: jig merge <job> [-m msg] [--subject ids], or jig merge --number", 2)
@@ -2043,8 +2051,12 @@ def cmd_merge(root: Path, args) -> int:
             git("add", "--", ROADMAP, check=True)
             if built & {i["id"] for i in parse_up_next(text)}:
                 print(f"removed from {ROADMAP}, built: {', '.join(sorted(built))}")
-    # States change when work lands, so the view is rewritten in the merge commit itself.
     snap = Snapshot(where="index")
+    # A merged job leaves nothing in flight: its spec and bug specs leave in the merge commit,
+    # their scopes kept on the note. A conflicted merge closes at `jig merge --number` instead.
+    closed = [] if p.returncode else close_specs(
+        finished_specs(snap, board, name, job_specs(branch, name, trunk)), snap)
+    # States change when work lands, so the view is rewritten in the merge commit itself.
     phases = None if p.returncode else roadmap_state(snap)
     if phases is not None:
         (main_root() / ROADMAP_VIEW).write_text(roadmap_view(snap, phases))
@@ -2062,6 +2074,8 @@ def cmd_merge(root: Path, args) -> int:
         return 1
     for line in numbered:
         print(f"numbered {line}")
+    for line in closed:
+        print(line)
     # git runs post-merge only for a merge it commits itself, not this one.
     # This commit isn't a merge, so a metarepo's M4 would refuse derived files in it, and derive
     # doesn't run. A hand merge brought the job's sources in without it, so they may be stale.
@@ -2085,9 +2099,36 @@ def cmd_merge(root: Path, args) -> int:
         return 1
     print(f"merged {name}; its entry is gone from {JOBS} in the same commit. Sync the clean jobs.")
     clean_up_job(name, branch)
+    # Sessions are the host's, so jig only says it: the hubnode closes them with its tool.
+    print(f"close the sessions that worked on {name}")
     for l in later:
         print(l)
     return 0
+
+
+def job_specs(rev: str, name: str, trunk: str) -> set[str]:
+    """The specs this run of job NAME handed off, by its notes on REV that TRUNK doesn't have: a
+    job opened again under an earlier one's name inherits that one's notes, and its specs."""
+    return {m.group(1) for n in handoff_notes(rev, name) if not git("cat-file", "-t", f"{trunk}:{n}")
+            if (m := re.search(r"^Spec: (\S+)", git("show", f"{rev}:{n}"), re.M))}
+
+
+def close_merged(root: Path, board: "Board", trunk: str) -> None:
+    """In a merge being finished by hand, close what its job leaves, as a clean merge does:
+    the job is named by the merge's subject, and its notes are on MERGE_HEAD."""
+    first = Path(git("rev-parse", "--path-format=absolute", "--git-path", "MERGE_MSG")).read_text().split("\n", 1)[0]
+    m = re.search(r"(?:^|: )merge (\S+)$", first)
+    if not m:
+        return
+    snap = Snapshot(where="index")
+    lines = close_specs(finished_specs(snap, board, m.group(1), job_specs("MERGE_HEAD", m.group(1), trunk)), snap)
+    for line in lines:
+        print(line)
+    if lines and git("show", f":{ROADMAP}"):
+        phases = roadmap_state(snap)
+        if phases is not None:
+            (main_root() / ROADMAP_VIEW).write_text(roadmap_view(snap, phases))
+            git("add", "--", ROADMAP_VIEW, check=True)
 
 
 def clean_up_job(name: str, branch: str) -> None:
@@ -5666,13 +5707,22 @@ def cmd_meta_init(root: Path, args) -> int:
 # removed by the commit adding the entry that supersedes it, and git keeps its text. A release's
 # change lines are what that version told its readers, so they are frozen.
 LOG = f"{DIR}/decisions.md"
-LOG_SEED = (
-    "# Decisions and changes\n\n"
+# The log header's two lines on versions. The old pair made every Breaking line a major
+# release, so the version counted dependents' bookkeeping rather than how much the product
+# changed; `jig update` swaps it for the new pair where it stands word for word.
+OLD_LOG_HEAD = (
     "This log follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/) plus decision entries, "
     "and versions follow Semantic Versioning (https://semver.org/).\n"
     "A breaking change is one that a reader taking the release must act on, and it is released "
-    "as a major version.\n\n"
-    "## Open\n\n## Unreleased\n")
+    "as a major version.\n")
+LOG_HEAD = (
+    "This log follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/) plus decision entries, "
+    "and versions are MILESTONE.FEATURE.PATCH, set by how much the product changed "
+    "(`.jig/RULES.md`, Versioning).\n"
+    "A breaking change is one that a reader taking the release must act on: a `**Breaking:**` line "
+    "says what to change, and it doesn't set the version's level.\n")
+LOG_SEED = "# Decisions and changes\n\n" + LOG_HEAD + "\n## Open\n\n## Unreleased\n"
+OLD_LOG_SEED = "# Decisions and changes\n\n" + OLD_LOG_HEAD + "\n## Open\n\n## Unreleased\n"
 LOG_STATUSES = ("Accepted", "Open", "Proposed")
 CHANGE_GROUPS = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
 RELEASE_HEADING = re.compile(r"^## (v\d+\.\d+(?:\.\d+)?) - (\d{4}-\d{2}-\d{2})( \[YANKED\])?[ \t]*$")
@@ -5946,7 +5996,9 @@ def frozen_problems(old: str, new: str, trunk: str, only: set[str] | None = None
 def outside_open_deleted(old: str, new: str) -> bool:
     """Whether NEW drops or rewrites a line of OLD outside ## Open: elsewhere the log only grows,
     but for an entry NEW supersedes, which it removes, and an entry's Touches line, which may
-    change."""
+    change. The swap of the old versioning header for the new one, word for word, is no rewrite."""
+    if OLD_LOG_HEAD in old and OLD_LOG_HEAD not in new and LOG_HEAD in new:
+        old = old.replace(OLD_LOG_HEAD, LOG_HEAD, 1)
     old, bare = removed_entries(old, new)
     if bare:
         return True
@@ -6815,16 +6867,20 @@ def next_version(last: str, args, meta: dict | None) -> str:
         if last and version_key(args.version) <= version_key(last):
             die(f"--version {args.version} is not after {last}", 2)
         return args.version
+    # The level is how much the product changed (RULES.md, Versioning). Leaving 0.y.z is the
+    # owner's call, so a milestone counts from 1.0.0 and never makes it.
+    if args.milestone and (not last or version_key(last)[0] == 0):
+        die(f"--milestone counts milestones from 1.0.0, and the latest release is {last or 'none'}: "
+            "1.0.0 is the owner's call, `--version 1.0.0`", 2)
     if not last:
-        # --minor or --major says which part the first version counts from; a patch doesn't.
-        if not (meta or args.minor or args.major):
-            die("no v* tag yet: name the first version with --version X.Y.Z, or --minor for 0.1.0", 2)
-        last = "v0.0.0"
+        # A metarepo starts at 0.1.0; any other repo names its first version.
+        if not (meta or args.feature):
+            die("no v* tag yet: name the first version with --version X.Y.Z, or --feature for 0.1.0", 2)
+        return "0.1.0"
     x, y, z = (version_key(last) + (0, 0, 0))[:3]
-    if args.major:
+    if args.milestone:
         return f"{x + 1}.0.0"
-    # A metarepo's changes are additions unless they rename or reverse, so minor is its default.
-    if args.minor or (meta and not args.patch):
+    if args.feature:
         return f"{x}.{y + 1}.0"
     return f"{x}.{y}.{z + 1}"
 
@@ -6860,9 +6916,13 @@ def cmd_release(root: Path, args) -> int:
     problems, loc = (meta_problems(root, meta, trunk) if meta else []), None
     if para:
         problems, loc = para_problems(root, para, trunk)
-    left = release_waits_for()
+    left = [f for f in release_waits_for() if not (para and pin_bump(f))]
+    bumps = [f for f in release_waits_for() if para and pin_bump(f)]
+    for f in bumps:
+        print(f"staged {f.name}: {para['meta']} {read_staged(f)[0].get('release')} waits to be taken "
+              f"in a job; it doesn't hold this release")
     if not args.force:
-        problems += staged_refusal("the release")
+        problems += staged_refusal("the release", pin_bumps_wait=not para)
         # A batch's jobs merged on a check owed by one complete run on the trunk they made.
         owed = batch_merges(trunk)
         if owed:
@@ -6964,6 +7024,10 @@ def cmd_release(root: Path, args) -> int:
         git("reset", "-q")
     git("tag", "-a", tag, "-m", tag, commit, check=True)
     print(f"released {tag} at {commit[:12]}.")
+    if meta:
+        # After the tag: a request that can't be written doesn't undo the release.
+        for line in stage_pin_bumps(root, meta, last, tag):
+            print(line)
     if proposed:
         print(f"proposed {', '.join(listed_rows(proposed[0].read_text()))} to {para['meta']} as "
               f"{proposed[1]} ({proposed[0].relative_to(root)}): write the change there; "
@@ -7668,8 +7732,14 @@ def para_rules(root: Path, board: "Board", para: dict, staged: bool) -> list[str
         if branch and branch != trunk:
             specs |= {p for p in git("diff", "--name-only", f"{trunk}...HEAD", "--",
                                      f"{DIR}/specs/").splitlines() if p.endswith(".md")}
+        # A merge commit closes the job's spec (Handoff, gate, merge): its answer is read from
+        # the job's side, where the spec still is.
+        merging = git("rev-parse", "-q", "--verify", "MERGE_HEAD")
+        if merging:
+            specs |= {p for p in git("diff", "--name-only", f"{trunk}...{merging}", "--",
+                                     f"{DIR}/specs/").splitlines() if p.endswith(".md")}
         ids = {r[0] for r in rows if r[-1] == "Open"}
-        texts = [in_index(s, staged) for s in specs]
+        texts = [in_index(s, staged) or (at_rev(merging, s) if merging else "") for s in specs]
         # The job's own spec, from trunk's board and trunk's copy: whoever controls trunk put
         # the answer there, so a branch can't forge it. A spec that is one line is its own text.
         job = job_of_change(board, branch)
@@ -8174,12 +8244,167 @@ def sync_answered(root: Path, ids: str, release: str | None, reason: str | None)
     return 0
 
 
+BULLET = re.compile(r"^[-*+][ \t]+")
+
+
+def breaking_lines(loc: Path, pin: str, latest: str) -> list[str]:
+    """Each `**Breaking:**` line released after PIN up to LATEST, oldest release first, with its
+    release: what a reader taking them must act on, which the version's level doesn't say."""
+    text = git("show", f"{latest}:{LOG}", cwd=str(loc))
+    out = []
+    for version, (_, _, lines) in sorted(release_sections(text).items(), key=lambda v: version_key(v[0])):
+        if version_key(pin) < version_key(version) <= version_key(latest):
+            out += [f"  {version}: {BULLET.sub('', l.strip())}" for l in lines if "**Breaking:**" in l]
+    return out
+
+
 def newer_release(root: Path, loc: Path, name: str, pin: str, latest: str) -> list[str]:
-    major = version_key(latest)[0] > version_key(pin)[0]
-    return [f"{name} {latest} is out; this repo pins {pin}{' (a major release)' if major else ''}.\n",
+    breaking = breaking_lines(loc, pin, latest)
+    return [f"{name} {latest} is out; this repo pins {pin}.",
+            *(["Breaking, to act on:", *breaking] if breaking else []), "",
             *changes_report(root, loc, pin, latest),
             f"\nTo take it: set \"pin\" to \"{latest}\" in {PARA}, run `jig init --para {name}`, and commit "
             f"those alone as `meta: {name} {pin} → {latest}` with this report as the body."]
+
+
+PIN_BUMP_KIND = "pin-bump"
+
+
+def stage_pin_bumps(root: Path, meta: dict, prev: str, tag: str) -> list[str]:
+    """A metarepo release asks each pararepo whose citations it broke to move its pin: a staged
+    request in that pararepo, carrying the releases' Breaking lines and what to rewrite, from its
+    pin to TAG. Broke means a citation that resolved at PREV and dangles at TAG, or a decision id
+    TAG removed or superseded, cited as `<meta>/<path> § <id>` (or bare where the pararepo's own
+    prefix differs). A request still open from here (its release above the pin) is rewritten
+    when something from the pin to TAG breaks what it cites, and left as it is otherwise (a
+    Breaking line alone breaks nothing it cites); an answered one (the pin holds it) only when
+    this release breaks something; a same-named file that isn't this metarepo's request is never touched. A
+    pararepo on an older jig layout is skipped. A line per pararepo. Writes nothing but that file."""
+    name = meta.get("name") or root.name
+    out: list[str] = []
+    if not prev:
+        return out
+    prefix = decision_prefix_at(root, tag)
+    now_log = git("show", f"{tag}:{LOG}")
+    key = lambda line: line.split(", which ")[0]
+
+    def broken(there: Path, para: dict, trunk: str, since: str) -> tuple[list[str], list[str]]:
+        """What the releases after SINCE up to TAG broke there: its citations that resolve at
+        SINCE and dangle at TAG, each with the new home a move gives it, and the decision ids
+        SINCE had and TAG doesn't, each with the files citing it."""
+        moved = {}
+        for l in git("-c", "core.quotePath=false", "diff", "-M", "--name-status", since, tag).splitlines():
+            parts = l.split("\t")
+            if parts[0].startswith("R") and len(parts) == 3:
+                moved[parts[1]] = parts[2]
+        # A row citation's loss is the id list's; this list is the paths and headings.
+        was = {key(l) for l in meta_citations(there, para, decision_ids(root, since), root, (trunk, since))}
+        rewrites, rows = [], {}
+        for l in meta_citations(there, para, decision_ids(root, tag), root, (trunk, tag)):
+            if key(l) in was or " bare: " in l:
+                continue
+            # A citation of a row the release took away: the ids' list, with where it is cited.
+            if " has no row for" in l and (m := re.match(r"(.+?:\d+) cites .*? § (\S+), which ", l)):
+                rows.setdefault(m.group(2), []).append(m.group(1))
+                continue
+            cited = re.search(rf"cites {re.escape(name)}/(\S+?)(?:[ ,]|$)", l)
+            if cited and cited.group(1) in moved and ": now " not in l:
+                l += f": now `{name}/{moved[cited.group(1)]}`"
+            rewrites.append(l)
+        gone = sorted({e["id"] for e in log_entries(git("show", f"{since}:{LOG}"), prefix)}
+                      - {e["id"] for e in log_entries(now_log, prefix)})
+        own = log_prefix_of(git("show", f"{trunk}:{LOG}", cwd=str(there)))
+        ids = []
+        for i in sorted(set(gone) | set(rows)):
+            files = list(rows.get(i, []))
+            # A bare id is this metarepo's only where the pararepo numbers its own decisions with
+            # another prefix; with the same one, only a qualified citation (above) is its.
+            if own != prefix and i in gone:
+                cited = {f.split(":", 1)[0] for f in files}
+                files += [g for f in git("grep", "-l", "-w", "-F", i, trunk, "--", ".", f":!{HANDOFFS}",
+                                         cwd=str(there)).splitlines()
+                          if (g := f.split(":", 1)[1]) not in cited]
+            if files:
+                by = holds_now(i, now_log, prefix, tag, str(root))
+                ids.append(f"{i}{f' (now {by})' if by else ' (removed)'}: cited in "
+                           + ", ".join(files))
+        return rewrites, ids
+
+    for para_name in meta.get("pararepos", []):
+        where = repo_path(para_name)
+        if not where:
+            out.append(f"{para_name}: skipped, it isn't in `jig repos`")
+            continue
+        there = Path(where)
+        if old := old_board(there):
+            out.append(f"{para_name}: skipped, it is on an older jig layout ({old}): `jig update` there")
+            continue
+        try:
+            trunk = json.loads((there / CONFIG).read_text()).get("trunk") or "main"
+            para = json.loads(git("show", f"{trunk}:{PARA}", cwd=str(there)) or "{}")
+        except (OSError, ValueError):
+            para = {}
+        if para.get("meta") != name:
+            out.append(f"{para_name}: skipped, its {PARA} doesn't cite {name}")
+            continue
+        until = para.get("defer_until")
+        if until and date.today().isoformat() < until:
+            out.append(f"{para_name}: skipped, it defers {name} until {until}")
+            continue
+        pin = para.get("pin") or ""
+        if pin and version_key(pin) >= version_key(tag):
+            out.append(f"{para_name}: skipped, it already pins {pin}")
+            continue
+        dest = there / STAGING / f"pin-bump-{name}.md"
+        h = read_staged(dest)[0] if dest.exists() else {}
+        # Ours is this metarepo's request; open is ours with a release above the pin. An answered
+        # one (the pin holds it) is rewritten only when this release breaks something, as a new
+        # request would be; a file of that name that isn't ours is never touched.
+        ours = h.get("kind") == PIN_BUMP_KIND and h.get("from") == name
+        open_ = ours and bool(h.get("release")) and (not pin or version_key(h["release"]) > version_key(pin))
+        if not open_ and not any(broken(there, para, trunk, prev)):
+            out.append(f"{para_name}: skipped, it cites nothing {tag} broke")
+            continue
+        if dest.exists() and not ours:
+            out.append(f"{para_name}: not staged, {STAGING}/{dest.name} there isn't {name}'s pin bump: "
+                       "left as it is")
+            continue
+        # The request covers the whole gap from the pin, so one file serves every release since.
+        since = pin if pin and git("rev-parse", "-q", "--verify", f"{pin}^{{commit}}") else prev
+        rewrites, ids = broken(there, para, trunk, since)
+        breaking = breaking_lines(root, since, tag)
+        # Only what it broke (the owner, 2026-11-18): a gap from the pin that breaks nothing it
+        # cites asks for nothing, so an open request is left as it stands.
+        if not rewrites and not ids:
+            out.append(f"{para_name}: skipped, nothing from {since} to {tag} breaks what it cites"
+                       + (f"; {STAGING}/{dest.name} left as it is" if dest.exists() else ""))
+            continue
+        body = [f"# {name}: move the pin from {pin} to {tag}", "",
+                f"{name} {tag} broke what this repo cites. Take it in a job: rewrite the uses below, "
+                f"set \"pin\" to \"{tag}\" in {PARA}, run `jig init --para {name}`, and commit the pin "
+                f"as `meta: {name} {pin} → {tag}` with this request as the body.", ""]
+        if breaking:
+            body += ["## Breaking", "", *[f"-{l[1:]}" for l in breaking], ""]
+        if rewrites:
+            body += ["## Rewrites", "", *[f"- {l}" for l in rewrites], ""]
+        if ids:
+            body += ["## Removed or superseded", "", *[f"- {l}" for l in ids], ""]
+        head = {"staged": "true", "target": para_name, "kind": PIN_BUMP_KIND, "change": "update",
+                "destination": PARA, "source": f"{name} release {tag} / {date.today().isoformat()}",
+                "from": name, "pin": pin, "release": tag, "status": "staged"}
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text("---\n" + "".join(f"{k}: {v}\n" for k, v in head.items()) + "---\n" + "\n".join(body))
+        except OSError as e:
+            out.append(f"{para_name}: not staged, {e}")
+            continue
+        plural = lambda n, what: f"{n} {what}{'s' if n != 1 else ''}"
+        sup = sum(" (now " in i for i in ids)
+        counts = ([plural(len(rewrites), "rewrite")] if rewrites else []) \
+            + ([plural(sup, "superseded id")] if sup else []) \
+            + ([plural(len(ids) - sup, "removed id")] if len(ids) > sup else [])
+        out.append(f"{para_name}: staged {STAGING}/{dest.name} ({', '.join(counts) or 'nothing to rewrite'})")
+    return out
 
 
 def merged_registers(loc: Path, old: str, new: str) -> list[str]:
@@ -8242,10 +8467,10 @@ def changes_report(root: Path, loc: Path, old: str, new: str) -> list[str]:
     return out
 
 
-def head_texts(paths: list[str]) -> list[tuple[str, str]]:
-    """PATHS' text at HEAD, read in one git call; binary files (a NUL byte) left out."""
-    raw = subprocess.run(["git", "cat-file", "--batch"], capture_output=True,
-                         input="".join(f"HEAD:{p}\n" for p in paths).encode()).stdout
+def head_texts(paths: list[str], rev: str = "HEAD", cwd: str | None = None) -> list[tuple[str, str]]:
+    """PATHS' text at REV (HEAD), read in one git call; binary files (a NUL byte) left out."""
+    raw = subprocess.run(["git", "cat-file", "--batch"], capture_output=True, cwd=cwd,
+                         input="".join(f"{rev}:{p}\n" for p in paths).encode()).stdout
     out, at = [], 0
     for p in paths:
         head_end = raw.index(b"\n", at)
@@ -8261,19 +8486,38 @@ def head_texts(paths: list[str]) -> list[tuple[str, str]]:
     return out
 
 
-def meta_citations(root: Path, para: dict, ids: str, loc: Path | None = None) -> list[str]:
+def meta_citations(root: Path, para: dict, ids: str, loc: Path | None = None,
+                   at: tuple[str, str] | None = None) -> list[str]:
     """This repo's citations of the metarepo checked against the cache: the mirror of
     stale_pointers. A citation is `<meta>/<path> § <section>`; a section that is a decision id
     (IDS, the metarepo's prefix) names a row, any other a heading. A bare path that names an
     entry file at the pin and nothing here is named too, since it can't be told from this repo's
     own. Handoffs and Closed BUFFER rows cite the pin they were written at, so they are left out.
-    Reported, never refused. Read at HEAD, as stale_pointers reads it."""
+    Reported, never refused. Read at HEAD against the cache, as stale_pointers reads it; with AT,
+    (this repo's revision, the metarepo's tag in LOC), read there instead: a metarepo's release
+    compares its pararepos' citations against two of its tags."""
     cache, name, pin = root / CACHE, para["meta"], para["pin"]
-    if not cache.is_dir():
-        return []
-    entries = [f.relative_to(cache).as_posix() for f in sorted(cache.rglob("*"))
-               if f.is_file() and f.name != "PIN" and f != cache / CHANGELOG]
-    sized = [l.split("\t", 1) for l in git("-c", "core.quotePath=false", "ls-tree", "-r", "-l", "HEAD").splitlines()]
+    if at:
+        rev, pin = at
+        mfiles = git("-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", pin, cwd=str(loc)).splitlines()
+        have = set(mfiles)
+        mdirs = {"/".join(f.split("/")[:k]) for f in mfiles for k in range(1, f.count("/") + 1)}
+        entries = [f for f in mfiles if f != CHANGELOG]
+
+        def meta_text(path: str) -> str | None:
+            return git("show", f"{pin}:{path}", cwd=str(loc)) if path in have else "" if path.rstrip("/") in mdirs else None
+    else:
+        if not cache.is_dir():
+            return []
+        rev = "HEAD"
+        entries = [f.relative_to(cache).as_posix() for f in sorted(cache.rglob("*"))
+                   if f.is_file() and f.name != "PIN" and f != cache / CHANGELOG]
+
+        def meta_text(path: str) -> str | None:
+            target = cache / path
+            return target.read_text(errors="replace") if target.is_file() else "" if target.is_dir() else None
+    sized = [l.split("\t", 1) for l in git("-c", "core.quotePath=false", "ls-tree", "-r", "-l", rev,
+                                           cwd=str(root)).splitlines()]
     here = [p for _, p in sized]
     tracked = set(here)
     # A citation lives in prose: a blob over a megabyte (an image, a firmware build) isn't read.
@@ -8286,10 +8530,11 @@ def meta_citations(root: Path, para: dict, ids: str, loc: Path | None = None) ->
     one = re.compile("|".join(map(re.escape, bare))) if bare else None
     rows = re.compile(rf"(?<!\w)({ids})(?!\w)")
     named = (f"{name.casefold()}/", f"{name.casefold()}:")
-    gloss = glossary_terms((cache / GLOSSARY).read_text(errors="replace")) if (cache / GLOSSARY).is_file() else []
+    gloss = glossary_terms(meta_text(GLOSSARY) or "")
     out = []
     for f, text in head_texts([p for p in small if not p.startswith(f"{DIR}/")
-                               or p.startswith((f"{DIR}/specs/", f"{DIR}/ledgers/", LOG, PROCESS))]):
+                               or p.startswith((f"{DIR}/specs/", f"{DIR}/ledgers/", LOG, PROCESS))],
+                              rev, str(root)):
         folded = text.casefold()
         if not any(t in folded for t in named) and not (one and one.search(text)):
             continue
@@ -8310,8 +8555,7 @@ def meta_citations(root: Path, para: dict, ids: str, loc: Path | None = None) ->
                 code = m.start() > 0 and line[m.start() - 1] == "`" and not m.group("shut")
                 rest = m.group("rest")
                 section = (rest.split("`")[0].strip() if code else rest) if rest else None
-                target = cache / path
-                body = target.read_text(errors="replace") if target.is_file() else "" if target.is_dir() else None
+                body = meta_text(path)
                 row = rows.match(plain(section)) if section and body else None
                 if row and (not code or row.group(1) == plain(section)):
                     # A decision is a log entry's heading, or a row in a register from before the log.
@@ -8840,7 +9084,7 @@ def buffer_proposal(root: Path, para: dict, loc: Path, slug: str) -> tuple[Path,
 # Where a chat drops a file meant for this repo, or another. Untracked: nothing in it is
 # authoritative, and it can reach a contract only through `jig staging resolve`.
 STAGING = f"{DIR}/staging"
-KINDS = ("spec", "doc", "decisions", "user-story", "feature-request", "feedback", "roadmap")
+KINDS = ("spec", "doc", "decisions", "user-story", "feature-request", "feedback", "roadmap", "pin-bump")
 HEADER_KEYS = ("staged", "target", "kind", "change", "destination", "source", "status")
 
 
@@ -8878,6 +9122,10 @@ def read_staged(path: Path) -> tuple[dict, str, list[str]]:
         bad.append("staged is not true")
     if head.get("kind") == "roadmap" and head.get("destination") and head["destination"] != ROADMAP:
         bad.append(f"destination {head['destination']!r}: a roadmap change lands in {ROADMAP} only")
+    if head.get("kind") == "pin-bump" and (head.get("destination") != PARA or head.get("change") != "update"):
+        bad.append(f"a pin bump is `change: update` to {PARA} only")
+    if head.get("kind") == "pin-bump" and not head.get("release"):
+        bad.append("no release: a pin bump names the release it moves the pin to")
     if head.get("kind") == "roadmap" and head.get("change") == "new":
         bad.append(f"change new: a roadmap change is `change: update` to {ROADMAP}")
     return head, m.group(2), bad
@@ -8910,10 +9158,14 @@ def release_waits_for() -> list[Path]:
                                         if addressed_here(read_staged(f)[0].get("target", ""), main_root())]
 
 
-def staged_refusal(what: str) -> list[str]:
+def pin_bump(f: Path) -> bool:
+    return read_staged(f)[0].get("kind") == "pin-bump"
+
+
+def staged_refusal(what: str, pin_bumps_wait: bool = True) -> list[str]:
     """Release waits while anything is staged. Reading it only refuses more, so a branch can't
-    weaken it."""
-    files = release_waits_for()
+    weaken it. A pararepo's staged pin bump doesn't hold its release: the pin is its buffer."""
+    files = [f for f in release_waits_for() if pin_bumps_wait or not pin_bump(f)]
     return [f"{what} waits while {len(files)} file{'s' if len(files) > 1 else ''} sit in "
             f"{STAGING} or {feedback_dir()}: {', '.join(f.name for f in files)}. Resolve or "
             f"drop each (`jig staging resolve` / `drop`), or force it"] if files else []
@@ -9164,10 +9416,23 @@ def cmd_staging(root: Path, args) -> int:
         if group := group_of(root, Board.load(root, working_tree=True), spec):
             die(group_refusal(group, f"{spec}, which carries `{mark}`,"), 1)
 
-    def landed(rel: str) -> bool:
+    def landed(rel: str, carrier: bool = False) -> bool:
+        """The mark is in REL. A spec carrying a request holds it as a whole `Source:` line, as rig
+        reads a carrier; a doc or spec update may hold it anywhere: a comment, a sentence, a list."""
         f = inside(rel)
-        return f.exists() and mark in f.read_text(errors="replace")
+        text = f.read_text(errors="replace") if f.exists() else None
+        return text is not None and (carries(text, mark) if carrier else mark in text)
 
+    if kind == "pin-bump":
+        # The pin is this repo's buffer: it moves in a reviewed job that rewrites the uses the
+        # request lists, never by resolving the request.
+        trunk = Board.load(root, working_tree=True).trunk
+        pin = json.loads(git("show", f"{trunk}:{PARA}") or "{}").get("pin") or ""
+        if not pin or version_key(pin) < version_key(head["release"]):
+            die(f"{path.name} waits for {trunk}'s {PARA} to pin {head['release']} (it pins "
+                f"{pin or 'nothing'}): land it as a job (`/jig:spec` from it), whose pin commit carries "
+                "the request as its body, with the uses it lists rewritten; then resolve again", 1)
+        return done(f"{trunk} pins {pin}")
     if kind == "roadmap":
         # The roadmap carries no provenance lines, so the owner reads it as the plan; the
         # commit that applied the change on trunk carries the mark in its message instead.
@@ -9180,13 +9445,18 @@ def cmd_staging(root: Path, args) -> int:
     if kind == "feature-request" and change == "update" and bare_path(dest):
         # The header names the spec the request changes; another spec carrying the mark would
         # resolve it while the named one is never amended.
-        if not landed(dest):
+        if not landed(dest, carrier=True) and (note := note_carrying(root, mark)):
+            return done(f"carried by {note}")
+        if not landed(dest, carrier=True):
             die(f"a request resolves into a spec: amend {dest}, the spec it names, from it, "
                 f"carrying `{mark}`, then resolve again", 1)
         unanswered(dest)
         return done(f"carried by {dest}")
     if kind in ("user-story", "feature-request", "feedback"):
-        specs = [s for s in (root / DIR / "specs").glob("*.md") if mark in s.read_text()]
+        specs = [s for s in (root / DIR / "specs").glob("*.md") if carries(s.read_text(), mark)]
+        # Its spec has closed: the note that kept the spec's marks says what built it.
+        if not specs and (note := note_carrying(root, mark)):
+            return done(f"carried by {note}")
         if not specs:
             how = "write a new spec" if change == "new" else "amend the spec it extends"
             what = {"user-story": "a story", "feature-request": "a request"}.get(kind, "a report")
@@ -9621,14 +9891,36 @@ def spec_scopes(text: str) -> list[str]:
     return [s.strip().strip("`") for s in m.group(1).split(",") if s.strip()] if m else []
 
 
+def takes_scopes(path: str) -> bool:
+    """A spec, or a handoff note, which keeps the scopes of a spec that has closed."""
+    return is_spec(path) or path.startswith(HANDOFFS) and path.endswith(".md")
+
+
+def scopes_in(path: str, text: str) -> list[str]:
+    return spec_scopes(note_head(text) if path.startswith(HANDOFFS) else text)
+
+
 def is_spec(path: str) -> bool:
     # _template.md is the shape a spec starts from, not a task: its placeholder takes nothing.
     return path.startswith(SPECS) and path.endswith(".md") and not Path(path).name.startswith("_")
 
 
-def complete_specs(snap: Snapshot) -> set[str]:
-    """Specs with a landed handoff that isn't partial: its work is in this tree's history."""
-    done: set[str] = set()
+def partial_specs(snap: Snapshot) -> set[str]:
+    """Specs a landed `Partial: yes` note names: work under way, whatever else names them."""
+    out = set()
+    for n in snap.ls(HANDOFFS):
+        body = snap.show(n)
+        spec = re.search(r"^Spec: (\S+)", body, re.M)
+        commit = re.search(r"^Commit: (\w+)", body, re.M)
+        if spec and commit and re.search(r"^Partial: yes", body, re.M) and snap.landed(commit.group(1)):
+            out.add(os.path.normpath(spec.group(1)))
+    return out
+
+
+def completing_notes(snap: Snapshot) -> dict[str, str]:
+    """Each spec with a landed handoff that isn't partial, to the newest such note: its work is
+    in this tree's history. A note may name its spec by file name alone."""
+    done: dict[str, tuple[str, str]] = {}
     for n in snap.ls(HANDOFFS):
         body = snap.show(n)
         spec = re.search(r"^Spec: (\S+)", body, re.M)
@@ -9636,9 +9928,142 @@ def complete_specs(snap: Snapshot) -> set[str]:
         if not spec or not commit or re.search(r"^Partial: yes", body, re.M):
             continue
         s = os.path.normpath(spec.group(1))
-        if s not in done and snap.landed(commit.group(1)):
-            done.add(s)
-    return done
+        date = re.search(r"^Date: (\S+)", body, re.M)
+        key = (date.group(1) if date else "", n)
+        if (s not in done or key > done[s]) and snap.landed(commit.group(1)):
+            done[s] = key
+    return {s: k[1] for s, k in done.items()}
+
+
+def complete_specs(snap: Snapshot) -> set[str]:
+    return set(completing_notes(snap))
+
+
+def note_for(spec: str, notes: dict[str, str]) -> str:
+    return notes.get(spec) or notes.get(Path(spec).name) or ""
+
+
+def finished_specs(snap: Snapshot, board: "Board", job: str = "", named: set[str] | None = None) -> list[dict]:
+    """The specs whose work is done and that nothing still holds: complete and named by no open
+    job, or a `Bug-for:` spec whose job has left the board (a bug spec reaches trunk only with
+    its job's merge). Each with its completing note ("" for a bug spec). With JOB, only that
+    job's: the specs its notes name (NAMED) and its `Bug-for:` specs. A spec a cached metarepo
+    pointer names is kept, with why: removing it would leave that pointer dangling."""
+    notes = completing_notes(snap)
+    held = {os.path.normpath(j["spec"]) for j in board.jobs.values() if is_spec(j.get("spec", ""))}
+    named = {os.path.normpath(x) for x in named or ()}
+    root = main_root()
+    pointed = {p for _, p, _, _ in pointers(root)} if (root / CACHE).is_dir() else set()
+    para = bool(snap.show(PARA))
+    out = []
+    for f in snap.ls(SPECS):
+        if not is_spec(f):
+            continue
+        bug = re.search(r"^Bug-for:[ \t]*(\S+)[ \t]*$", snap.show(f), re.M)
+        if bug:
+            if bug.group(1) in board.jobs or job and bug.group(1) != job:
+                continue
+            note = ""
+        else:
+            note = note_for(f, notes)
+            if not note or f in held or Path(f).name in {Path(h).name for h in held}:
+                continue
+            if job and f not in named and Path(f).name not in named:
+                continue
+        # In a pararepo `jig sync` follows a proposal through the spec naming it, and closes the
+        # buffer rows it carried from there: that spec stays while the link is in it.
+        text = snap.show(f)
+        follows = para and (any(m.group("branch") or m.group("pbranch") for m in PROPOSAL.finditer(text))
+                            or bool(WITHDRAWN.search(text)))
+        out.append({"spec": f, "note": note,
+                    "kept": "a cached metarepo pointer names it" if f in pointed else
+                    "it names a metarepo proposal or pointers branch `jig sync` follows" if follows else ""})
+    return out
+
+
+def note_head(text: str) -> str:
+    """A handoff note's header, above its first section: where its `Spec:` and `Scope:` lines
+    are. A line in its prose that happens to start `Scope:` is no scope."""
+    return text.split("\n## ", 1)[0]
+
+
+# A staged file's mark in a spec, as `provenance` writes it, with a request's quote after it.
+MARK_LINE = re.compile(r"^Source: .*\(staged as [^)\n]+\).*$", re.M)
+
+
+def close_specs(finished: list[dict], snap: Snapshot) -> list[str]:
+    """Remove each finished spec, its note keeping what outlives it, in the note's header after
+    its `Spec:` line: the spec's `Scope:`, read now so a scope re-pointed after the handoff is
+    carried right, and each staged file's mark it carried, which `resolve` then finds there.
+    Staging itself is untouched: a staged file leaves only by `resolve` or `drop`. Stages the
+    changes in the trunk checkout; returns what it did, a line each."""
+    root, out = main_root(), []
+    for x in finished:
+        f, note = x["spec"], x["note"]
+        if x["kept"]:
+            out.append(f"kept {f}: {x['kept']}")
+            continue
+        text = snap.show(f)
+        if note:
+            body = read_raw(root / note)
+            head = note_head(body)
+            scope = re.search(r"^Scope:[ \t]*.*$", text, re.M)
+            add = ([scope.group(0)] if scope and not re.search(r"^Scope:", head, re.M) else []) \
+                + [l for l in MARK_LINE.findall(text) if l not in head.splitlines()]
+            if add:
+                body = re.sub(r"^(Spec: .*\n)", lambda m: m.group(1) + "".join(f"{l}\n" for l in add),
+                              body, count=1, flags=re.M)
+                write_raw(root / note, body)
+                git("add", "--", note, check=True, cwd=str(root))
+        # -f: mid-merge the spec is staged from the job, as a new file.
+        git("rm", "-q", "-f", "--", f, check=True, cwd=str(root))
+        out.append(f"closed {f}")
+    return out
+
+
+def carries(text: str, mark: str) -> bool:
+    """TEXT holds MARK as a whole `Source: … (staged as …)` line, a request's quote after it or
+    not: the mark, not a substring of some longer one."""
+    return any(l == mark or l.startswith(mark + ":") for l in (x.rstrip() for x in MARK_LINE.findall(text)))
+
+
+def note_carrying(root: Path, mark: str, trunk: str = "") -> str:
+    """The landed, non-partial handoff note whose header carries MARK: a closed spec's record of
+    what its job built. A partial note's spec is still in flight, so its header counts for nothing."""
+    trunk = trunk or Board.trunk_name(root)
+    for n in sorted((root / HANDOFFS).glob("*.md")):
+        body = n.read_text(errors="replace")
+        commit = re.search(r"^Commit: (\w+)", body, re.M)
+        if (carries(note_head(body), mark) and commit and not re.search(r"^Partial: yes", body, re.M)
+                and is_ancestor(commit.group(1), trunk)):
+            return n.relative_to(root).as_posix()
+    return ""
+
+
+def built_by(root: Path, board: "Board", mark: str, finished: list[dict] | None = None) -> str:
+    """What built a staged file, by what the tree holds now: a finished spec still in it (its close
+    pending, or kept) carrying the mark, or a closed spec's note. "" for anything else."""
+    for x in finished if finished is not None else finished_specs(Snapshot(board.trunk), board):
+        if carries((root / x["spec"]).read_text(errors="replace") if (root / x["spec"]).is_file() else "", mark):
+            return x["spec"]
+    return note_carrying(root, mark, board.trunk)
+
+
+def quiet_resolve(root: Path, f: Path, carrier: str) -> bool:
+    """Whether `resolve` lands a staged file CARRIER built writing nothing: a story, request or
+    report, which its spec carried, or a pin-bump whose release trunk's pin holds. A decisions
+    file never is: whether its job logged its entries
+    is the hubnode's to read (the owner, 2026-11-18), so it stays, noted, for the hubnode."""
+    head, _, problems = read_staged(f)
+    if not carrier or problems or not addressed_here(head.get("target", ""), root):
+        return False
+    if head.get("kind") == "pin-bump":
+        # Its landing is the pin itself, read from trunk now, as resolve reads it: no content is
+        # matched. A job that didn't move the pin leaves it noted, the hubnode's step.
+        trunk = Board.trunk_name(root)
+        pin = json.loads(git("show", f"{trunk}:{PARA}", cwd=str(root)) or "{}").get("pin") or ""
+        return bool(pin) and bool(head.get("release")) and version_key(pin) >= version_key(head["release"])
+    return head.get("kind") in ("user-story", "feature-request", "feedback")
 
 
 def roadmap_state(snap: Snapshot) -> list[dict] | None:
@@ -9649,16 +10074,25 @@ def roadmap_state(snap: Snapshot) -> list[dict] | None:
         return None
     phases = parse_roadmap(text)
     takes: dict[str, list[str]] = {}
-    for f in snap.ls(SPECS):
-        if is_spec(f):
-            for s in spec_scopes(snap.show(f)):
-                takes.setdefault(s, []).append(f)
-    done = complete_specs(snap)
+    tree = [f for f in snap.ls(SPECS) if is_spec(f)]
+    for f in tree:
+        for s in spec_scopes(snap.show(f)):
+            takes.setdefault(s, []).append(f)
+    notes = completing_notes(snap)
     # A note may name its spec by file name alone; the spec's path or its name both count.
-    finished = lambda f: f in done or Path(f).name in done
+    finished = lambda f: bool(note_for(f, notes))
+    # A closed spec's scopes live on its note's `Scope:` line; a spec still in the tree wins.
+    names = {Path(f).name for f in tree}
+    closed: dict[str, str] = {}
+    for spec, note in sorted(notes.items()):
+        if spec not in tree and Path(spec).name not in names:
+            for s in spec_scopes(note_head(snap.show(note))):
+                takes.setdefault(s, []).append(spec)
+                closed[spec] = note
     current = None
     for p in phases:
-        p["scopes"] = [{"id": sid, "what": what, "specs": [(f, finished(f)) for f in takes.get(sid, [])]}
+        p["scopes"] = [{"id": sid, "what": what, "specs": [(f, finished(f)) for f in takes.get(sid, [])],
+                        "notes": {f: closed[f] for f in takes.get(sid, []) if f in closed}}
                        for sid, what in p["scopes"]]
         for s in p["scopes"]:
             s["state"] = ("open" if not s["specs"] else
@@ -9719,7 +10153,8 @@ def render_roadmap(phases: list[dict], up_next: list[dict] | None = None,
 def scope_cell(s: dict) -> str:
     name = s["id"].split("/", 1)[1]
     cell = f"**{name}**" + (f": {s['what']}" if s["what"] else "")
-    cell += "".join(f"<br>[{Path(f).stem}]({f}){' ✓' if ok else ''}" for f, ok in s["specs"])
+    # A closed spec is gone from the tree: its link is the note that completed it.
+    cell += "".join(f"<br>[{Path(f).stem}]({s['notes'].get(f, f)}){' ✓' if ok else ''}" for f, ok in s["specs"])
     return cell.replace("|", "\\|")
 
 
@@ -10091,14 +10526,14 @@ def roadmap_rules(board: "Board", branch: str, staged: bool, paths: list[str],
         out += [f"{ROADMAP} {x}" for x in problems]
     if on_trunk and ROADMAP in guarded:
         dropped = roadmap_scopes(old) - known
-        for f in git("-c", "core.quotePath=false", "ls-files", "--", SPECS).splitlines():
-            if is_spec(f) and (gone := [s for s in spec_scopes(in_index(f, staged)) if s in dropped]):
+        for f in git("-c", "core.quotePath=false", "ls-files", "--", SPECS, HANDOFFS).splitlines():
+            if takes_scopes(f) and (gone := [s for s in scopes_in(f, in_index(f, staged)) if s in dropped]):
                 named.add(f)
                 out.append(f"{ROADMAP} drops {', '.join(gone)}, which {f} still takes: re-point "
-                           "its Scope: line in this commit")
+                           f"the Scope: line in {f} in this commit")
     for f in paths:
-        if is_spec(f) and f not in named and (bad := [s for s in spec_scopes(in_index(f, staged))
-                                                      if s not in known]):
+        if takes_scopes(f) and f not in named and (bad := [s for s in scopes_in(f, in_index(f, staged))
+                                                           if s not in known]):
             out.append(f"{f} takes {', '.join(bad)}, which {ROADMAP} on {trunk} doesn't have: "
                        "a scope is <phase>/<scope> from it")
     return out
@@ -10471,6 +10906,21 @@ def handoff_rows(root: Path, files: list[str]) -> tuple[list[tuple[str, list[str
     return rows, folders
 
 
+def log_head(root: Path) -> str:
+    """The log's header, above its first section: where the versioning lines are."""
+    return read_raw(root / LOG).split("\n## ", 1)[0] if (root / LOG).is_file() else ""
+
+
+def swap_log_head(root: Path, here: Path) -> None:
+    # A metarepo's trunk takes its log only by merge (M4): there the swap is listed for a job.
+    if (root / META).exists():
+        return
+    text = read_raw(root / LOG)
+    if OLD_LOG_HEAD in log_head(root):
+        write_raw(root / LOG, text.replace(OLD_LOG_HEAD, LOG_HEAD, 1))
+        git("add", "--", LOG, check=True)
+
+
 STEPS: list = [
     (f"add {STAGING}/ (its .gitignore), where chats drop files for this repo",
      lambda root, after: f"{STAGING}/.gitignore" not in after
@@ -10498,6 +10948,16 @@ STEPS: list = [
     (f"widen {META}'s tag_pattern to accept vX.Y.Z: every repo now releases with three parts",
      lambda root, after: meta_pattern_old(root), widen_meta_pattern),
     (ledger_step, lambda root, after: REVIEW_LEDGER in after, fold_ledger),
+    (lambda root: ((f"swap {LOG}'s two versioning header lines for the new ones: a Breaking line no "
+                    "longer sets the version's level (`.jig/RULES.md`, Versioning)")
+                   + (f"; in a metarepo a job's (M4): open one sharing {LOG} and make that swap there, "
+                      "word for word, since trunk takes it only by merge" if (root / META).exists() else ""))
+     if OLD_LOG_HEAD in log_head(root) else
+     (f"{LOG}'s header still names Semantic Versioning, in words of its own: edit it by hand to "
+      "say what `.jig/RULES.md` § Versioning says" + (", in a job (M4)" if (root / META).exists() else "")
+      + "; nothing is rewritten"),
+     lambda root, after: (root / LOG).is_file() and "Semantic Versioning" in log_head(root),
+     swap_log_head),
     (f"add {LOG}, the decision log: no CHANGELOG.md or register here to merge into it",
      lambda root, after: LOG not in after and not (root / LOG).exists() and not log_sources(root),
      lambda root, here: ((root / LOG).write_text(LOG_SEED), git("add", "--", LOG))),
@@ -11949,7 +12409,7 @@ def old_log_files(root: Path) -> list[tuple[str, str]]:
 
 
 def log_is_seed(root: Path) -> bool:
-    return (root / LOG).is_file() and (root / LOG).read_text() == LOG_SEED
+    return (root / LOG).is_file() and (root / LOG).read_text() in (LOG_SEED, OLD_LOG_SEED)
 
 
 def log_sources(root: Path) -> list[tuple[str, str]]:
@@ -13353,7 +13813,7 @@ def update_blocked(why: list[str]) -> int:
 # ----------------------------------------------------------------------- rig
 
 # The order every list in `jig rig` keeps, so the same state prints the same bytes.
-RIG_KINDS = ("spec", "staged", "next-step")
+RIG_KINDS = ("spec", "staged", "feedback", "next-step")
 
 
 def rig_store() -> Path:
@@ -13369,9 +13829,11 @@ def rig_load_store() -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def rig_key(content: str, board: "Board") -> str:
-    """A judgment holds while its item and the board are as they were: either changing re-judges."""
-    jobs = json.dumps(board.jobs, sort_keys=True)
+def rig_key(content: str, board: "Board | None") -> str:
+    """A judgment holds while its item and the board are as they were: either changing re-judges.
+    With no board, only the item counts: a feedback report's `fixing` must outlive a job opened,
+    or rig would start a second fix on it."""
+    jobs = json.dumps(board.jobs, sort_keys=True) if board else ""
     return hashlib.sha256(f"{content}\0{jobs}".encode()).hexdigest()[:16]
 
 
@@ -13401,15 +13863,62 @@ def rig_items(root: Path, board: "Board") -> list[dict]:
         items.append({"kind": "spec", "id": Path(path).stem, "path": path, "content": text,
                       "touches": touches_spans(text), "after": built_after(text),
                       "kept": sorted(kept_separate(text)), "scopes": spec_scopes(text)})
+    # A staged file a spec in flight carries, by its exact mark as `resolve` finds it, is that
+    # spec's work: it waits on it, or on the job building it, and is never offered again. In
+    # flight is a waiting spec, an open job's, or one whose only notes are partial. Only what
+    # the tree holds now counts: nothing is read from history.
+    snap = Snapshot(board.trunk)
+    partial = partial_specs(snap) - complete_specs(snap)
+    carriers = [(f"spec {path}", text) for path, text in specs.items()]
+    carriers += [(f"spec {f.relative_to(root).as_posix()}", f.read_text(errors="replace"))
+                 for f in sorted((root / SPECS).glob("*.md"))
+                 if f.relative_to(root).as_posix() not in specs
+                 and (f.relative_to(root).as_posix() in partial or f.name in partial)]
+    for name, job in sorted(board.open_jobs().items()):
+        spec = job.get("spec", "")
+        f = root / spec_key(root, spec) if spec.endswith(".md") else None
+        carriers.append((f"job {name}", f.read_text(errors="replace") if f and f.is_file() else spec))
+    # Feedback is `/jig:fix`'s in the jig repo, so rig starts that there; elsewhere it is staged.
+    jig_here = addressed_here("jig", root)
+    finished = finished_specs(snap, board)
     for f in staged_files(main_root()):
         head, body, _ = read_staged(f)
-        items.append({"kind": "staged", "id": f.name, "path": f"{STAGING}/{f.name}",
-                      "content": f.read_text(errors="replace"), "header": head,
-                      "touches": touches_spans(body), "after": [Path(n).stem for n in after_names(head)],
-                      "kept": sorted(kept_separate(body)), "scopes": spec_scopes(body)})
+        mark = provenance(head, f)
+        # One test for taken and built: the mark as a whole `Source:` line, so a file never
+        # changes kind of carrier just because its spec closed.
+        by = sorted(w for w, text in carriers if carries(text, mark))
+        # Built: a finished spec still in the tree or a closed spec's note carries it, and
+        # `resolve` would land it writing nothing. `jig rig --close` resolves it.
+        carrier = "" if by else built_by(root, board, mark, finished)
+        built = carrier if quiet_resolve(root, f, carrier) else ""
+        kind = "feedback" if not by and not built and jig_here and head.get("kind") == "feedback" else "staged"
+        item = {"kind": kind, "id": f.name, "path": f"{STAGING}/{f.name}",
+                "content": f.read_text(errors="replace"), "header": head,
+                "touches": decisions_touches(body) if head.get("kind") == "decisions" else touches_spans(body),
+                "after": [] if kind == "feedback" else [Path(n).stem for n in after_names(head)],
+                "kept": sorted(kept_separate(body)), "scopes": spec_scopes(body)}
+        if by:
+            item["covered"] = by
+        elif built:
+            item["built"] = built
+        elif carrier:
+            # A merged job carried it, but resolve would write it (a decisions file): the
+            # hubnode's step, naming what carried it. It takes no judgment and opens nothing.
+            item["noted"] = carrier
+        items.append(item)
     covering = [(f"{i['kind']} {i['path']}", i["touches"]) for i in items]
     covering += [(f"job {n}", ts) for n, ts in job_touches(root, board).items()]
     return items + rig_next_step(board, [s for i in items for s in i["scopes"]], covering)
+
+
+def decisions_touches(body: str) -> list[str]:
+    """A staged decisions file's Touches: its entries' `Touches:` pointers, and the log they land
+    in, so it meets the spec written from it and its batch by the same rule. A pointer into
+    another repo is no job's here, and `Touches: none` names nothing."""
+    out: list[str] = []
+    for e in log_entries(body, log_prefix_of(body)):
+        out += [t for t in entry_touches(e["block"]) or [] if ":" not in t.partition(" § ")[0]]
+    return list(dict.fromkeys(out + [LOG]))
 
 
 def covered_by(page: str, covering: list[tuple[str, list[str]]]) -> list[str]:
@@ -13470,13 +13979,18 @@ def rig_state(root: Path, board: "Board") -> dict:
     items = rig_items(root, board)
     store = rig_load_store()
     for i in items:
-        i["key"] = rig_key(i.pop("content"), board)
+        i["key"] = rig_key(i.pop("content"), None if i["kind"] == "feedback" else board)
         held = store.get(i["path"])
         i["judged"] = held["judgment"] if isinstance(held, dict) and held.get("key") == i["key"] else None
         call = (i["judged"] or {}).get("call")
         i["state"] = ("ready" if i["kind"] == "spec" else "taken" if "covered" in i
+                      else "built" if "built" in i else "noted" if "noted" in i
                       else "open" if i["kind"] == "next-step"
+                      else (call if call in ("fixing", "concluded") else "new") if i["kind"] == "feedback"
                       else call if call in ("ready", "open") else "unjudged")
+        # What carried it decides it: a judgment stored before it was carried never replays.
+        if i["state"] in ("taken", "built", "noted"):
+            i["judged"] = None
     by_name = {}
     for i in items:
         if i["kind"] != "next-step":
@@ -13567,15 +14081,33 @@ def rig_state(root: Path, board: "Board") -> dict:
     for name in sorted(board.open_jobs()):
         step, who, session, why = next_step(root, board, name)
         jobs.append({"name": name, "step": step, "who": who, "session": session, "why": why})
-    # Every block that asks the owner something counts once: a ring is one question, not one per member.
-    asks = [i for i in items if i["state"] in ("open", "unjudged")]
+    # Every block that asks the owner something counts once: a ring is one question, not one per
+    # member, and a group with overlaps is one question, "one job, or keep some apart", not one per pair.
+    asks = [i for i in items if i["state"] in ("open", "unjudged", "concluded", "noted")]
     pairs = sorted({tuple(p) for p in overlaps})
+    by_path = {i["path"]: i for i in items}
+    appends = append_globs(board)
+    out_groups = []
+    for g in ordered:
+        inside = {i["path"] for i in g}
+        gp = sorted(p for p in pairs if set(p) & inside)
+        members = []
+        for i in g:
+            others = {q for p in gp if i["path"] in p for q in p if q != i["path"]}
+            shared = sorted({t for t in i["touches"] for o in others
+                             for u in by_path[o]["touches"] if touches_meet(t, u)})
+            # A member meeting the rest only in an append file (the log, say) is the one most
+            # likely kept apart: both can add to it without touching each other's lines.
+            members.append({"path": i["path"], "shares": shared,
+                            "append_only": bool(shared) and all(matches(t, appends) for t in shared)})
+        out_groups.append({"paths": [i["path"] for i in g], "overlaps": [list(p) for p in gp], "members": members})
+    asked = [g for g in out_groups if g["overlaps"]]
     return {"items": sorted(items, key=sort_key), "overlaps": [list(p) for p in pairs],
-            "cycles": [list(c) for c in sorted(cycles)],
-            "groups": [{"paths": [i["path"] for i in g],
-                        "overlaps": sorted(p for p in overlaps if set(p) & {i["path"] for i in g})}
-                       for g in ordered],
-            "waiting_on_you": len(asks) + len(pairs) + len(cycles), "can_start": sum(i["opens"] == "now" for i in start), "jobs": jobs}
+            "cycles": [list(c) for c in sorted(cycles)], "groups": out_groups,
+            "waiting_on_you": len(asks) + len(asked) + len(cycles), "can_start": sum(i["opens"] == "now" for i in start),
+            "feedback": sum(i["kind"] == "feedback" for i in items), "jobs": jobs,
+            # Closing needs no answer, so finished specs count in neither number.
+            "finished": finished_specs(Snapshot(board.trunk), board)}
 
 
 def rig_text(state: dict) -> str:
@@ -13598,26 +14130,93 @@ def rig_text(state: dict) -> str:
     waits = [i for i in items if i["waits_on"]]
     out += [f"  {i['kind']:<7} {i['path']}  waits on {', '.join(i['waits_on'])}" for i in waits] or ["  nothing"]
     out.append("\nWaiting on you:")
-    asks = [i for i in items if i["state"] in ("open", "unjudged")]
+    asks = [i for i in items if i["state"] in ("open", "unjudged", "concluded", "noted")]
     for i in asks:
-        if i["kind"] == "next-step":
+        if i["state"] == "noted":
+            out.append(f"  staged  {i['path']}  noted: {i['noted']} carried it; the hubnode's step (/jig:hubnode, Merging)")
+        elif i["state"] == "concluded":
+            out.append(f"  feedback {i['path']}  /jig:fix concluded: {(i['judged'] or {}).get('about', '')}")
+        elif i["kind"] == "next-step":
             out.append(f"  next    {i['id']} ({i['from']}): {i['what']}")
         else:
             out.append(f"  {i['kind']:<7} {i['path']}  {'not judged yet' if i['state'] == 'unjudged' else 'open'}")
-    out += [f"  overlap {a} and {b}: one job, or kept apart" for a, b in state["overlaps"]]
+    # A waiting spec outside the group that one of its items overlaps is one of the items asked about.
+    asked = [(g, len(set(group["paths"]) | {x for p in group["overlaps"] for x in p}))
+             for g, group in enumerate(state["groups"], 1) if group["overlaps"]]
+    out += [f"  group {g}: one job for {k} items, or keep some apart" for g, k in asked]
     out += [f"  cycle   {', '.join(c)}: which goes first" for c in state["cycles"]]
-    if not asks and not state["overlaps"] and not state["cycles"]:
+    if not asks and not asked and not state["cycles"]:
         out.append("  nothing")
     out.append("\nRunning:")
     out += [f"  {j['name']}: {j['step']} — {j['who']}, {j['session']}" + (f" ({j['why']})" if j["why"] else "")
             for j in state["jobs"]] or ["  no open jobs"]
+    for i in items:
+        if i["kind"] == "feedback" and i["state"] != "concluded":
+            j = i["judged"] or {}
+            out.append(f"  feedback {i['path']}: " + (f"/jig:fix, {j.get('about', '')}, {j.get('context', '')}"
+                                                    if i["state"] == "fixing" else "/jig:fix not started"))
+    out.append("\nFinished:")
+    out += [f"  {f['spec']}" + (f"  kept: {f['kept']}" if f["kept"] else f"  done by {f['note']}" if f["note"]
+                                else "  its job has merged") for f in state["finished"]]
+    out += [f"  staged  {i['path']}  built: {i['built']} carries it; "
+            + (f"waits on {', '.join(i['deps'])} before `jig rig --close` resolves it" if i["deps"]
+               else "`jig rig --close` resolves it")
+            for i in items if i["state"] == "built"]
+    if not state["finished"] and not any(i["state"] == "built" for i in items):
+        out.append("  nothing to close")
     return "\n".join(out)
+
+
+def rig_close(root: Path, board: "Board") -> int:
+    """Close what merges left: every finished spec, in one commit on trunk. A merge closes its
+    own job's; this catches a conflicted merge's and those from before merges closed any."""
+    trunk = board.trunk
+    if git("branch", "--show-current") != trunk or not is_main_worktree(root):
+        die(f"close finished specs in the {trunk} checkout: specs leave {trunk} there")
+    if git("status", "--porcelain", "--untracked-files=no"):
+        die("commit or stash first: the close commit carries the closed specs, nothing else")
+    os.chdir(root)
+    snap = Snapshot(where="index")
+    lines = close_specs(finished_specs(Snapshot(trunk), board), snap)
+    closed = [Path(l.split(" ", 1)[1]).stem for l in lines if l.startswith("closed ")]
+    for l in lines:
+        print(l)
+    if not closed:
+        print("nothing to close")
+        return close_resolves(root)
+    phases = roadmap_state(snap)
+    if phases is not None:
+        (root / ROADMAP_VIEW).write_text(roadmap_view(snap, phases))
+        git("add", "--", ROADMAP_VIEW, check=True)
+    if subprocess.run(["git", "commit", "-q", "-m", f"close finished specs: {', '.join(closed)}"]).returncode:
+        print("the close isn't committed: fix what the hook refused, then `git commit`", file=sys.stderr)
+        return 1
+    print(f"committed the close of {len(closed)} spec{'s' if len(closed) != 1 else ''}")
+    return close_resolves(root)
+
+
+def close_resolves(root: Path) -> int:
+    """After the close: `resolve` each staged file `jig rig` marks built, where it lands writing
+    nothing. Staging's one exit, so a file nothing built stays, and a file resolve refuses stays,
+    named, while the rest are tried."""
+    board = Board.load(root)
+    for i in rig_items(root, board):
+        if not i.get("built"):
+            continue
+        try:
+            cmd_staging(root, argparse.Namespace(action="resolve", file=i["id"]))
+        except SystemExit:
+            print(f"left {i['id']} staged: resolve refused it (above)")
+    return 0
 
 
 def cmd_rig(root: Path, args) -> int:
     """The repo's picture: what can start, what waits on what, what waits on the owner, and the
-    running jobs. It reads and never writes the roadmap or staging; its one file is the store."""
+    running jobs. It reads and never writes the roadmap; its one file is the store, and it writes
+    staging only to drop what `--close` closes."""
     board = Board.load(root)
+    if args.close:
+        return rig_close(root, board)
     if args.fresh:
         rig_store().unlink(missing_ok=True)
     if args.store_get or args.store_put:
@@ -13635,8 +14234,14 @@ def cmd_rig(root: Path, args) -> int:
         except ValueError as e:
             die(f"--store-put reads a JSON object on stdin: {e}", 2)
         # A staged file's call is what places it: one stored without it would replay as unjudged.
-        call = judgment.get("call", "ready" if item["kind"] != "staged" else None) if isinstance(judgment, dict) else None
-        if call not in ("ready", "open"):
+        call = judgment.get("call", "ready" if item["kind"] not in ("staged", "feedback") else None) \
+            if isinstance(judgment, dict) else None
+        if item["state"] in ("taken", "built", "noted"):
+            die(f"{path} is {item['state']}: what carried it decides it, so it takes no judgment", 2)
+        if item["kind"] == "feedback" and call not in ("fixing", "concluded"):
+            die('--store-put on a feedback report reads a JSON object whose "call" is "fixing" (/jig:fix '
+                'is working on it) or "concluded" (it ended with the report still staged)', 2)
+        if item["kind"] != "feedback" and call not in ("ready", "open"):
             die(f'--store-put reads a JSON object whose "call" is "ready" or "open"'
                 f'{" (a staged file needs one)" if item["kind"] == "staged" else ""}', 2)
         store = rig_load_store()
@@ -13760,9 +14365,11 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--levels", action="store_true", help="each page's level with its evidence, imports included")
     rl_ = sub.add_parser("release", help="run this repo's release protocol, then tag vX.Y.Z")
     bump = rl_.add_mutually_exclusive_group()
-    bump.add_argument("--major", action="store_true", help="in a metarepo: a rename or a reversed decision")
-    bump.add_argument("--minor", action="store_true")
-    bump.add_argument("--patch", action="store_true", help="the default, except in a metarepo")
+    bump.add_argument("--milestone", "--major", dest="milestone", action="store_true",
+                      help="X: identity, architecture or core experience changes shape (RULES.md, Versioning)")
+    bump.add_argument("--feature", "--minor", dest="feature", action="store_true",
+                      help="Y: a new capability, or a change in what the product offers")
+    bump.add_argument("--patch", action="store_true", help="Z, the default: nothing the product offers changes")
     bump.add_argument("--version", help="X.Y.Z: the first release, or a jump")
     rl_.add_argument("--force", action="store_true", help="release though files are staged")
     pp = sub.add_parser("propose", help="pararepo: open a proposal branch on the metarepo for a spec")
@@ -13798,6 +14405,7 @@ def main(argv: list[str] | None = None) -> int:
     rg.add_argument("--fresh", action="store_true", help="forget every stored judgment first")
     rg.add_argument("--store-get", metavar="PATH", help="print an item's stored judgment, if it still holds")
     rg.add_argument("--store-put", metavar="PATH", help="store an item's judgment, a JSON object on stdin")
+    rg.add_argument("--close", action="store_true", help="hubnode, on trunk: remove the finished specs, their scopes kept on their notes, in one commit")
     hk = sub.add_parser("hook")
     hk.add_argument("name")
     hk.add_argument("rest", nargs="*")

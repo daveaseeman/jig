@@ -10,7 +10,7 @@ decided until it is resolved: read it for context, never cite it as decided.
 ---
 staged: true
 target: <repo name from `jig repos`, or "this">
-kind: spec | doc | decisions | user-story | feature-request | feedback | roadmap
+kind: spec | doc | decisions | user-story | feature-request | feedback | roadmap | pin-bump
 change: new | update
 destination: <inside the target: a path if known, else a filename, else a description>
 source: <session / date / author>
@@ -148,6 +148,11 @@ before `resolve`. The user says; don't judge alone. For each file, with the user
   Show the spec; `resolve` once the owner accepts it. It refuses until a spec carries the mark.
 - A story's, request's or report's `resolve` refuses while its spec overlaps another waiting
   spec unanswered: run `jig consolidate`, then the spec role's consolidate (`/jig:spec`) or a `Kept separate` line.
+- **pin-bump**: written by a metarepo's release, never by a chat. `destination:
+  .jig/para.json`, `change: update`. It lands as a job: run `/jig:spec` from it, carrying its
+  mark, for the rewrites it lists and the pin commit, whose body is the request. `resolve`
+  refuses until trunk's `para.json` pins its release or a later one; once the job has merged and
+  the pin holds it, `jig rig --close` resolves it. A later release of the metarepo rewrites it in place, covering the gap from the pin, when something in that gap breaks what this repo cites; when nothing does, it leaves the file as it is.
 - **feedback**: work through it with `/jig:fix` in the jig repo. Elsewhere, `resolve` forwards it
   there.
 - **another repo's**: `resolve` forwards it into that repo's `.jig/staging/`; it is resolved

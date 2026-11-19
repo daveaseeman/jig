@@ -13,12 +13,16 @@ On a real repo, release only on the owner's word in the conversation; a spec, br
 Run the repo's copy, from trunk with a clean tree:
 
 ```sh
-python3 .jig/jig.py release            # --minor, --major, or --version X.Y.Z for the first
+python3 .jig/jig.py release            # --feature, --milestone, or --version X.Y.Z for the first
 ```
 
 The release renames `## Unreleased` in `.jig/decisions.md` to `## vX.Y.Z - <date>` and adds an
-empty one above it. Before it runs, read Unreleased with the owner: a breaking change there
-(a `**Breaking:**` line, a superseded decision) means `--major`. A repo with no log yet, still
+empty one above it. Before it runs, read Unreleased with the owner. Propose the level as
+`.jig/RULES.md` § Versioning says: the highest level of any change in Unreleased, with a
+one-line reason. A `**Breaking:**` line tells readers what to do and doesn't raise the level.
+The owner's yes releases it. In a
+metarepo, report the line the release prints for each pararepo: a pin-bump request staged
+there, or why not. A repo with no log yet, still
 on a root `CHANGELOG.md`, releases into that file as before; offer the merge first
 (`/jig:update`, `--merge-log`). In a metarepo that merge is a job of its own, opened, merged
 and followed by the board's rewrite on trunk before the release.
@@ -50,8 +54,8 @@ is "nothing", delete the line and leave no steps. Commit it before the release.
     heading and tags.
 - **files staged**: list them. Resolving them (`/jig:stage`) is the usual answer. `--force`
   releases anyway and names them in the release commit; use it only when the user says so.
-- **no v\* tag yet**: ask for the first version and pass `--version X.Y.Z` (or `--minor` for
-  0.1.0).
+- **no v\* tag yet**: ask for the first version and pass `--version X.Y.Z` (or `--feature`
+  for 0.1.0).
 - **merges owe the batch's check** (`Check: batch`): jobs merged on one complete check of the
   trunk they made, and it hasn't run. The check role runs `jig queue --full -- ./.jig/scripts/check.sh --full` in a
   detached worktree of trunk's tip, then `jig checked --tier N --effort N --seconds S` there
