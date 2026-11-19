@@ -7,6 +7,8 @@ A breaking change is one that a reader taking the release must act on, and it is
 
 ## Unreleased
 
+## v0.15.0 - 2026-11-19
+
 ### Added
 - `jig queue -- <command>` runs a test or check holding one of the machine's slots (OS file locks in `.git/jig/queue/`, freed when a run dies), and waits when none is free; `jig queue` lists who holds and who waits. `queue.width` (the cores one run uses, or `"all"`), `queue.slots` and `queue.max_load` in `.jig/config.json` set it. The work, review and check roles run their tests and checks through it. A repo whose suite uses every core sets `queue.width: "all"`.
 - `jig queue --full` is the complete check's: it also takes a single full lock, so two complete checks never run at once.
