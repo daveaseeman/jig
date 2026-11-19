@@ -52,9 +52,9 @@ out as `/jig:decision-cards` says.
    role it says how you start it, and it says when you rank below the hubnode floor; then say
    so in one line — the owner chose your session, and jig can't change it. An `unknown`
    effort: pass the number for `low`, the highest effort number, and say the floor line
-   rests on that guess. A model `tiers.json` doesn't name: say so, `tiers.json` is stale, pass tier 3, say the
-   floor line rests on that guess, and start nothing above tier 3's model (no model raise)
-   until the owner answers.
+   rests on that guess. A model `tiers.json` doesn't name: say so, `tiers.json` is stale,
+   pass tier 3, say the floor line rests on that guess, and start nothing above tier 3's
+   model (no model raise) until the owner answers.
    If `jig roles` isn't a command, the repo's `.jig/` is older than the plugin: say "run
    /jig:update first" and stop.
 7. Work in this order: open the jobs asked for, gate the handoffs waiting, then each job's
