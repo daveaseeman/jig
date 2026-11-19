@@ -56,15 +56,16 @@ after the sync. [seen]
   (a rev), `bug_spec_for` (a part). Two entry points serve them all: `bug_for(text)` and
   `bug_specs_at(rev, job)`. [seen]
 - The same shape already has a guard: smoke greps jig.py for `finished_specs(` callers (~8700).
-  A grep that allows one pattern for the line is the same kind of check. [seen]
+  A check that allows one reader of the line is the same kind of check. [seen]
 
 ## 4. Correction
 1. `finished_specs` reads `bug_for(snap.show(f))` in place of its regex.
 2. `cmd_open` asks `bug_specs_at(board.trunk, args.name)` (any spec on trunk naming the job),
    naming the first, sorted. RULES.md ~666's why becomes what is true: the earlier job's spec
    would be read as the new job's.
-3. Smoke `next` asserts jig.py holds one pattern for the line: `grep -cE '\^Bug-for|Bug-for:\['`
-   is 1, and that line is in `bug_for`. A reader a sync brings in written the old way fails it.
+3. Smoke `next` asserts jig.py reads the line only in `bug_for` and `bug_specs_at`: outside
+   them, every line naming `Bug-for` quotes it in backticks, as messages and docstrings do. A
+   reader a sync brings in, in any form (a regex, `startswith`, `in`), fails it.
 
 ## Done when
 - [ ] Smoke `rig`: with a job X off the board, a spec quoting `Bug-for: X` in a fenced block,
@@ -74,8 +75,8 @@ after the sync. [seen]
       `Bug-for: X` spec is still closed. FAILs at 2b42b3b.
 - [ ] Smoke `close`: `jig open OB` is refused naming the leftover spec and `jig rig --close`
       when a later commit sits on trunk above the one that added it. FAILs at 2b42b3b.
-- [ ] Smoke `next`: the one-pattern grep passes; with main's `finished_specs` line put back it
-      fails (shown once in the evidence, not kept).
+- [ ] Smoke `next`: the one-reader check passes; with main's `finished_specs` line put back, or
+      a `startswith` reader spliced in, it fails (shown once in the evidence, not kept).
 - [ ] `.jig/scripts/check.sh` exits 0; `bash tests/smoke.sh next rig close consolidate`
       passes; `claude plugin validate ./plugin` passes. The full suite runs at the check step.
 

@@ -2347,11 +2347,11 @@ nx "a gated job with nothing since its note is still the merge" k8 "k8: merge â€
 noted=$(git rev-parse --short=12 k8~1)
 (cd .git/jig/worktrees/k8 && printf 'y\n' >> k8/x.txt && git commit -qam more)
 nx "a gated job changed since its note is the review-change, not the merge" k8 "k8: review-change â€” review, new session (Job; gated at $noted, changed since: mark it back; review-change, handoff, gate again)"
-# One reader of the line: a second pattern, written the old way and brought in by a sync, fails here.
-onepattern() { n=$(grep -cE '\^Bug-for|Bug-for:\[' "$1") && test "$n" = 1 \
-  && awk '/^def /{d=$2} /\^Bug-for|Bug-for:\[/{print d}' "$1" | grep -q '^bug_for('; }
-msg="next: jig.py reads the Bug-for: line with one pattern, in bug_for"
-expect_pass onepattern .jig/jig.py
+# One reader of the line: outside bug_for and bug_specs_at, jig.py names Bug-for only quoted in
+# backticks, as its messages and docstrings do, so any other reader a sync brings in fails here.
+onereader() { awk '/^[A-Za-z_@]/{d = ($1 == "def") ? $2 : ""} /Bug-for/ && d !~ /^bug_(for|specs_at)\(/ && !/`Bug-for/{print FILENAME ":" NR ": " $0; bad=1} END{exit bad}' "$1"; }
+msg="next: jig.py reads the Bug-for: line only in bug_for and bug_specs_at"
+expect_pass onereader .jig/jig.py
 }
 
 # ---------------------------------------------------------------- init beside an old board
