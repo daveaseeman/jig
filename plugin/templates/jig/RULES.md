@@ -402,7 +402,7 @@ that name.
 
 Each kind of document has one home: rules in `AGENTS.md`, and the rules about documentation
 here; what the code is now and its invariants in `docs/`; a task in flight in
-`.jig/specs/`; decisions that outlive their spec, and what a release changed, in
+`.jig/specs/`, removed once its job merges, its scopes kept on its handoff note; decisions that outlive their spec, and what a release changed, in
 `.jig/decisions.md`; the phases, scopes and parked work ahead in `.jig/roadmap.md`; patches in the code in `.jig/ledgers/WORKAROUNDS.md`; review findings not taken
 in `.jig/ledgers/DEFERRED.md`; a procedure an agent runs in a skill, and the rest of how the
 repo is worked in `.jig/process.md`, never in `docs/`; what outsiders need in `README.md`;
@@ -653,6 +653,18 @@ else stops with the files named, and a person resolves it.
    After its commit, the merge removes the job's worktree when `git status` there is clean, then
    its branch (`git branch -d`); a worktree holding an uncommitted or untracked file is named,
    and nothing is removed. A merge finished by hand after conflicts removes nothing.
+   A merge also leaves nothing of the job in flight: in the merge commit it removes the job's
+   spec, once the notes this job filed complete it and no other open job names it, and each
+   `Bug-for: <job>` spec, and writes each removed spec's `Scope:` line on its completing note,
+   in the note's header after its `Spec:` line, which the roadmap then reads, and beside it each
+   `Source: … (staged as …)` line the spec carried, which `resolve` then reads (Staging). In a
+   pararepo a spec naming a metarepo proposal or pointers branch stays: `jig sync` follows the
+   branch through it. A conflicted merge closes at `jig merge --number`, its last step before
+   the commit. A merge writes nothing in `.jig/staging/`. `jig rig --close` closes the rest
+   (Workflow).
+   `jig open` refuses a name whose earlier job's `Bug-for:` spec is still on trunk, which would
+   lift the new job's strike limit, naming `jig rig --close`. The job's sessions end at its merge: the merge
+   prints `close the sessions that worked on <job>`, and the hubnode closes them.
    A hand `git merge` on trunk runs `setup.sh` but not `derive.sh`: run it and commit what it
    wrote, or the derived files stay stale until the next `jig merge`. In a metarepo, don't run
    `derive.sh` on trunk after a hand merge: M4 refuses the commit, and what it writes blocks the
@@ -702,7 +714,7 @@ job's work session); `⇢` starts a new one.
 | Fix | work ⇢ review-change → handoff | a review with blocking findings | three strikes: a job's third blocking review starts Bug |
 | Sync | work ⇢ review-change → handoff | a sync with a hand-resolved conflict | a clean sync needs nothing |
 | Bug | bug → spec ⇢ Job | a job's third blocking review, a feedback group, or the owner's `/jig:bug` | never on a session's own reading that something is broken |
-| Feedback | consolidate ⇢ bug + spec → consolidate ⇢ Job | staged feedback, in the jig repo | one bug + spec per group; overlaps answered before any job opens |
+| Feedback | consolidate ⇢ bug + spec → consolidate ⇢ Job | staged feedback, in the jig repo (`/jig:rig` starts it; `/jig:fix` by hand too) | one bug + spec per group; overlaps answered before any job opens |
 | Batch | gate → merge ⇢ check → trace | two or more gated jobs | one check on trunk; a failure is traced to its merge, then Fix on that job |
 | Release | check → release → push → publish | the owner's word | refused while a batch check is owed; push and publish only on the owner's word |
 | Survey | survey ⇢ spec ⇢ Jobs | `/jig:survey`, `/jig:adopt`, `/jig:update` | |
@@ -786,13 +798,43 @@ job, named or by its spec's name, or on an item not ready, waits on it, and a de
 cycle waits on the owner. An item that could start but overlaps any waiting spec, one that
 waits included, is to answer first, since `jig open` refuses it. The order is
 fixed (kind, dependency, path), so the same state prints the same bytes. Its count of what
-waits on the owner's answers counts every question: each open or unjudged staged file, the
-open next step, each overlapping pair and each dependency cycle, a ring once; `--json` prints it as
-data. A model's open/ready call, its questions and its recommendation are kept per item in
+waits on the owner's answers counts every question: each open or unjudged staged file, each
+`noted` file and `concluded` feedback report, the open next step, each group with an overlap (once, however many pairs it holds: one job for its
+items, or keep some apart) and each dependency cycle, a ring once; `--json` prints it as
+data, each group with, per member, the Touches it shares with the rest and whether all of them
+are append files (`append_only`): a member that meets its group only in the log is the one most
+likely kept apart. A staged decisions file's Touches are its entries' `Touches:` lines, less a
+pointer into another repo, plus `.jig/decisions.md`, so it meets the spec written from it by
+the same rule. A staged file a spec in the tree or an open job's spec carries, by its exact
+mark, is **taken**: it waits on that spec or job, in no group, and counts nowhere. A spec in
+flight carries: a waiting spec, an open job's spec, or one whose only notes are partial. One a
+finished spec still in the tree or a landed, non-partial note's header carries (a whole
+`Source:` line), which `resolve` would land writing nothing, is **built**: rig lists it under Finished, and `jig rig --close` resolves it.
+A carried file `resolve` would write is never built (a decisions file always: the owner,
+2026-11-18; any other kind that `resolve` would write too): it is **noted**, with
+what carried it, takes no judgment (`--store-put` refuses it, as it does a taken or built item),
+opens nothing, and counts as the hubnode's step (Staging). Only what the tree holds now counts: nothing is read from
+history. In the jig repo a
+staged feedback report not taken is a **feedback** item, in no group and counted only as
+`feedback`: the hubnode starts `/jig:fix` on it and stores the call `fixing` (keyed on the
+report alone, so opening a job doesn't start a second fix), which `--store-put` takes for a
+feedback item only. A report `/jig:fix` ends with still staged (nothing reproduced, a note of
+what's missing) is stored `concluded`, with what it found as `about`: it leaves Running and
+waits on the owner, to drop or keep. A model's open/ready call, its questions and its recommendation are kept per item in
 `.git/jig/rig.json` (never committed) with a key of the item's content and the board, and
 replayed while both are unchanged: `jig rig --store-put <path>` stores one (a JSON object on
 stdin), `--store-get <path>` prints one that still holds, and `--fresh` forgets them all. It
-never writes the roadmap or staging. It is called by name only: `jig next` is unchanged.
+never writes the roadmap, and touches staging only through `--close`'s resolves. It is called
+by name only: `jig next` is unchanged.
+It also lists the **finished** specs, which count in neither number: each complete spec (a
+landed handoff note that isn't partial names it) that no open job names, and each `Bug-for:`
+spec whose job has left the board, with the note that completed it. A spec a cached metarepo
+pointer names is kept, saying so, as is a pararepo's spec naming a metarepo proposal or
+pointers branch. `jig rig --close`, on trunk in the trunk checkout with a
+clean tree, removes them in one commit, `close finished specs: <names>`, each one's `Scope:`
+on its note as a merge writes it, and rewrites `ROADMAP.md`; then, closing anything or not,
+it runs `jig staging resolve` on each built staged file, printing resolve's line. Anywhere else
+it refuses and writes nothing.
 
 ### Two levels of check
 
@@ -885,7 +927,10 @@ The product is the repo, so there is one roadmap and no product level in it.
   moved.
 - **Specs take scopes** with a `Scope:` line under `Source:`, e.g. `Scope: alpha/screen,
   alpha/battery`. Many-to-many: a spec may take several scopes, a scope may be taken by several
-  specs, and a spec with no `Scope:` line takes none.
+  specs, and a spec with no `Scope:` line takes none. A spec removed once its job merged keeps
+  its scopes on its completing note's `Scope:` line, which counts as the spec's: the hook
+  refuses a trunk commit dropping a scope a note still takes, naming the note, until its line is
+  re-pointed in that commit, and the view links the spec's name to the note.
 - **A spec is complete** when a handoff note naming it (`Spec:`) is on trunk and the commit it
   names is in trunk's history, merged or handed off solo on trunk. `jig handoff --partial` is a
   chunk that doesn't finish its spec: its note records `Partial: yes` and completes nothing.
@@ -920,8 +965,7 @@ The product is the repo, so there is one roadmap and no product level in it.
 
 Every repo keeps one log, `.jig/decisions.md`, which `jig init` writes: what was decided and
 why, and what changed, grouped by release. Its format is Keep a Changelog's, plus decision
-entries; it opens with two lines saying so, that versions follow SemVer, and what breaking
-means here. Then three kinds of section, top to bottom:
+entries; it opens with two lines saying so, that versions are MILESTONE.FEATURE.PATCH (Versioning), and what breaking means here. Then three kinds of section, top to bottom:
 
 - `## Open`: open and proposed decisions. An entry's status changes here in place.
 - `## Unreleased`: accepted entries and change lines since the last release.
@@ -997,8 +1041,8 @@ act on. A spec's own Decisions stay with the task, and history stays in git.
 
 - Lead with what changes for that reader, in their words, not the code's. One change per line,
   in the imperative or the past tense, the same throughout a section.
-- Say what a reader must do when they must do it: a breaking change says what to change, and
-  is a major release.
+- Say what a reader must do when they must do it: a breaking change says what to change, in a
+  `**Breaking:**` line; it doesn't set the release's level (Versioning).
 - No commit hashes, file lists or internal names a reader can't act on; link a page by its
   heading instead.
 - Deprecate before removing: a removal names the release that deprecated it.
@@ -1126,7 +1170,7 @@ the change began, each claimed by one entry. One added later does.
 ## Staging
 
 `.jig/staging/` is where a chat drops a file meant for a repo: a spec, a doc, decision entries, a
-user story, a feature request, a roadmap change. It is never committed, and nothing in it is decided — read it
+user story, a feature request, a roadmap change, a metarepo's pin-bump request. It is never committed, and nothing in it is decided — read it
 for context, never cite it. Each file's header names its `target` (a repo name, or `this`), `kind`, `change`
 (`new` or `update`), `destination` inside the target, and `source`. A destination is a bare
 path, with no space and no `:`, `,` or `;`: a spec, doc or decisions file whose destination
@@ -1140,6 +1184,15 @@ decision entries are added to the log; an update, a story's or request's spec, o
 with other content wait until the work is done and the
 source is in it; a file for another repo moves into that repo's staging, found through
 `jig repos`. `jig staging drop <file>` deletes it and records nothing: it was never committed.
+Those are a staged file's only exits: a merge or a close deletes nothing in staging. When a
+spec carrying a file closes, its note's header keeps the file's mark, and `resolve` lands a
+story, request or report from there (`carried by <note>`). A decisions file is never resolved
+by matching its entries against the log: one a merged job carried stays, `noted` with the note,
+and the hubnode reads that job and the log, then drops it when the job logged its entries,
+resolves it when it didn't, and judges with the owner when only some are there. Any other
+carried file `resolve` would write is noted the same way. `resolve` of a
+decisions file adds its entries under its own checks. `jig rig --close` resolves only what rig
+marks built; a file resolve refuses there is left, named.
 A story, request or report whose spec is in an unanswered group of overlapping waiting specs
 (The board) isn't resolved until the group is answered.
 
@@ -1161,7 +1214,19 @@ other. The warning doesn't fail anything, since both may be meant.
 and who: `resolve` logs it as decided, so the owner confirms they accepted it, else it says
 Proposed. It doesn't fail the check, since an entry accepted in the chat is right as written.
 `jig rig` (Workflow) lists every staged file with its header, and leaves whether it is ready to
-become a spec or open on the owner's answers to the model that reads it.
+become a spec or open on the owner's answers to the model that reads it. A staged file whose
+mark a waiting spec or an open job's spec carries is taken: it waits on that spec or job and is
+never offered again. In the jig repo, a feedback report is `/jig:fix`'s, which rig starts.
+
+A pin-bump request (`kind: pin-bump`) is the one kind jig itself stages: a metarepo's release
+writes it in a pararepo (Metarepo and pararepos). Its destination is `.jig/para.json` and its
+change `update`, and `check` accepts no other. `resolve` refuses it until trunk's `para.json`
+pins its release or a later one, naming how it lands: a job (`/jig:spec` from it) whose pin
+commit carries the request as its body, with the uses it lists rewritten. Once that job has
+merged and trunk pins the release, the request is built, and `jig rig --close` resolves it; a
+job that merged without moving the pin leaves it noted, the hubnode's step. `drop` works as for
+any staged file. It doesn't hold the
+pararepo's own release, which names it.
 
 A feature request is `kind: feature-request`: the owner's own words for what the product
 should do ("I want it to do xyz"), with no required shape. A story names who wants what and
@@ -1264,7 +1329,7 @@ citations. `jig sync` and the release say when the pinned release has been yanke
 line. A question that binds the pararepos gets its entry under
 `## Open` when it is asked, so it can be cited before it is answered; it moves to `Proposed`,
 then is accepted (moved to `## Unreleased`) or removed. A reversed decision is a new entry that
-supersedes the old, released as a major. A pararepo's own entry that touches a contract cites
+supersedes the old. A pararepo's own entry that touches a contract cites
 its BUFFER row or proposal; once the metarepo accepts it, a new entry here supersedes it and
 points to the metarepo's id without restating it.
 
@@ -1328,13 +1393,35 @@ whose `.jig/decisions.md` has no heading for it, unless it was made before the l
 `CHANGELOG.md` that tag holds has the heading the release wrote then.
 Pre-push judges the commit pushed to the remote's trunk, which may not be the local trunk's;
 a chained `pre-push.local` hook gets the same pushed refs.
-In a metarepo the release needs no `release.sh` steps, and defaults to `--minor`: minor for additions and clarifications, major
-for a rename or a reversed decision. A pararepo pins a release, never `main`, and bumps it in
+In a metarepo the release needs no `release.sh` steps; its level is chosen as Versioning says. A pararepo pins a release, never `main`, and bumps it in
 a commit of its own, `meta: <name> v0.3.0 → v0.4.0`, with the report `jig sync` prints on its
 trunk as the body: each decision id and glossary term that changed, and each entry file the new
 release moved (`<old> (now <new>)`) or removed (`<old> (removed)`), with every file here that
 uses it, specs and ledgers included. A two-part pin (`v0.3`), from before releases had three parts, keeps
-working: it sorts below `v0.3.0`. `jig gate` refuses a job whose spec cites a proposal that isn't in
+working: it sorts below `v0.3.0`. `defer_until` in `para.json` is a date, `YYYY-MM-DD`: before
+it, the pararepo's `jig sync` reports nothing upstream and no metarepo release asks it to move.
+
+**A pin-bump request.** After its tag, a metarepo's `jig release` stages a request in each
+pararepo `meta.json`'s `pararepos` lists, found through `jig repos`, whose trunk `para.json`
+cites it, when the release broke something that pararepo cites: a citation that resolved at the
+previous tag and dangles at the new one, or a decision id the release removed or superseded,
+cited as `<metarepo>/<path> § <id>`, or as a bare whole word where the pararepo's own decisions
+use another prefix (with the same prefix, only the qualified citation counts: a bare id is the
+pararepo's own).
+A rewording, an Open entry accepted or a glossary term reworded doesn't select it: its own
+`jig sync` reports those. The request is `.jig/staging/pin-bump-<metarepo>.md`, `kind:
+pin-bump`, `destination: .jig/para.json`, with `from`, `pin` and `release` in its header and,
+from the pin to the new tag, the `**Breaking:**` lines, the citations to rewrite with each new
+home jig can name, and the removed or superseded ids with the files that cite them. A later
+release rewrites it in place, covering the whole gap from the pin, while it is open (its release
+above the pin) and something in that gap breaks what the pararepo cites; when nothing does, the
+release leaves it as it stands and prints a skip line. Once the pin holds it, it is answered, and a later release rewrites it only when
+that release breaks something. A file of that name that isn't this metarepo's request is left
+alone and named. A noted request (its job merged without moving the pin) is never dropped: the
+hubnode specs a job that moves the pin. The release prints a line per pararepo:
+staged, with counts, or skipped and why (not in `jig repos`, on an older jig layout, not citing
+it, a future `defer_until`, already pinning the release, or citing nothing it broke). A request that can't be
+written doesn't undo the tag. jig commits nothing in a pararepo: the pin is its buffer. `jig gate` refuses a job whose spec cites a proposal that isn't in
 the pinned release, and one whose `pointers` branch isn't on the metarepo it names (one merged
 into its trunk counts, released or not), or names another metarepo; a metarepo it can't reach
 refuses too.
@@ -1406,6 +1493,27 @@ Two rules for the metarepo's own pages:
   entries by `Touches:`, each marked `home`, `pointer` (a `§` reference or a link to the home)
   or `copy`. It finds names only; a copy in other words is the spec writer's to find.
 
+## Versioning
+
+jig repos use `MILESTONE.FEATURE.PATCH`. A version says how much the product changed: what it is, or what it offers the people who use it. "The product" is what the repo makes: the software in a regular repo or a pararepo, and the product definition in a metarepo.
+
+- **X — Milestone (`+1.0.0`).** The product's identity, architecture or core experience changes shape. *Code:* a rewrite of the core engine, a new platform, an overhaul of the interface. *Metarepo:* a product added, merged or retired; a principle reversed; a core model replaced.
+- **Y — Feature (`+0.1.0`).** A new capability, or a change in what the product offers or how it is used. *Code:* a new feature set, a redesigned workflow, a new integration. *Metarepo:* a decision accepted or superseded that changes what a product offers; a new product, feature or concept page; a glossary term for a new thing. Rule of thumb: it earns a highlight in the release notes.
+- **Z — Polish (`+0.0.1`).** Nothing the product offers changes. *Code:* fixes, small tweaks, copy, dependency bumps, performance, refactors. *Metarepo:* wording, pointers, file moves and renames with no change in meaning, a name's status, Open questions, struck project-scope entries, research marked Proposed. *Pararepo:* a pin bump on its own.
+
+**What others must do doesn't count.** A change a reader has to act on still gets a `**Breaking:**` line saying what to change, but it doesn't raise the level. A metarepo release sends each pararepo whose citations the release broke a pin-bump request with its rewrite list, whatever the level.
+
+**Choosing the level.** A release takes the highest level of any change in it. The hubnode proposes the level with a one-line reason, and the owner's word releases it.
+
+A repo published to a package registry, whose users expect SemVer, needs a rule of its own; jig has none yet.
+
+### Before 1.0.0
+
+*Only for a repo whose latest release is `0.y.z`. A repo at `1.0.0` or later skips this section.*
+
+Y and Z work as above, and X stays 0. Releasing `1.0.0` is the owner's call that the core is complete and the product is ready for general use. Before that, a change that would be a Milestone is a Y.
+
+
 ## Release
 
 `jig release` runs the repo's own protocol. On trunk, with a clean tree and nothing staged, it
@@ -1414,8 +1522,7 @@ bump, which only the repo knows how to do. It commits the tracked files the scri
 checks that each glob in `release.artifacts` matched a file, turns `## Unreleased` in
 `.jig/decisions.md` into `## vX.Y.Z - YYYY-MM-DD` with an empty one above it, and tags
 `vX.Y.Z`. A failure puts the tracked files back and tags nothing. The version is the last tag
-bumped by `--patch` (the default), `--minor` or `--major`; the first is `--version X.Y.Z`, or
-`--minor` (0.1.0) or `--major` (1.0.0).
+bumped by `--patch` (the default), `--feature` or `--milestone` (Versioning); the first is `--version X.Y.Z`, or `--feature` (0.1.0). Before 1.0.0, `--milestone` refuses: `--version 1.0.0` is the owner's call. `--minor` and `--major` still work, as `--feature` and `--milestone`.
 
 In a plain repo, until `release.sh` has steps and `config.json` names its artifacts, the release
 refuses and points to `/jig:release`, which asks what the repo builds and ships. A metarepo and
@@ -1425,7 +1532,8 @@ and must match), and jig's own checks run before the tag. A metarepo's are its h
 pin isn't one of its releases (`main`, a hand-made tag), when the `AGENTS.md` header isn't the
 generated one (P1), when `.jig/meta-cache/` is tracked (P3), or when a `BUFFER.md` row is neither
 Open nor Closed or shares its id (P2); a newer metarepo release, a cited path outside
-`contract_paths`, or a metarepo pointer to a file or heading this repo doesn't have, is reported as `jig sync` reports it and refuses nothing. Then the release
+`contract_paths`, or a metarepo pointer to a file or heading this repo doesn't have, is reported as `jig sync` reports it and refuses nothing. So is a staged pin-bump request:
+the release names it, and isn't held by it. Then the release
 settles the sync buffer (above).
 
 After the tag, the release runs `.jig/scripts/publish.sh <version> <artifact>…`: what the repo
@@ -1440,7 +1548,7 @@ jig prints the command to run it again and exits 1.
 ```
 jig init [--trunk main]     config.json, jobs.json, git hooks
 jig init --meta | --para <metarepo> --contract <globs>   ... as a metarepo / pararepo
-jig release [--major|--minor|--patch|--version X.Y.Z] [--force]   the repo's release protocol, then tag, then publish
+jig release [--milestone|--feature|--patch|--version X.Y.Z] [--force]   the repo's release protocol, then tag, then publish
 jig survey [--json] [--levels]   inventory the repo against the jig shape; --levels: each page's level and its evidence
 jig update [--apply]        bring the repo to the current jig layout, and carry out the moves findings approves (dry run without --apply)
 jig update [--apply] --merge-log   on the owner's yes: CHANGELOG.md, the register and folders of decision records into .jig/decisions.md
@@ -1455,6 +1563,7 @@ jig reserve <job> <K>       hubnode: give an open job the next number of counter
 jig consolidate             hubnode: groups of waiting specs whose Touches overlap, to answer before opening
 jig rig [--json] [--fresh]  the repo's picture: what can start, what waits on what and on the owner, the open jobs
 jig rig --store-put|--store-get <path>   store, or print, a model's judgment of one item
+jig rig --close              hubnode, on trunk: remove the finished specs in one commit, their scopes kept on their notes
 jig share <job> <path>…     hubnode: add paths to an open job's shares
 jig reading-list <paths>    what to read before touching these files, and the pages above
 jig install-hooks           rewrite the hooks
