@@ -3,6 +3,7 @@
 Commit: eb87ea51914c38c5d632e7d0da687cecd29381a4
 Date: 2026-11-13
 Spec: .jig/specs/bug-buffer-row-close.md
+Source: Maige-Lite hubnode session / 2026-11-13 / Dave with Claude (staged as feedback-Maige-Lite-2026-11-13-buffer-row-no-close.md): "a buffer row answered by other means, or carried by a moot proposal, has no way to close."
 Review: tier 2, effort 2
 
 ## Built

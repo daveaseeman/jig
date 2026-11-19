@@ -3,6 +3,7 @@
 Commit: bdc2726e64afc0f2eb5262119bf34299c7b6d709
 Date: 2026-11-10
 Spec: .jig/specs/bug-repos-jig-line.md
+Source: maige-ecosystem hubnode session with Dave, 2026-11-10 (Claude) (staged as feedback-maige-ecosystem-2026-11-10-redocument-metarepo.md): "The line "tool reports wait in <dir> while no repo in this list is named jig" prints on every run, whatever the list holds."
 Review: tier 2, effort 2
 Ran: fresh Opus review of 5c4350f: no blocking; S1 two tests for a registered jig (cmd_repos/feedback skill exact name vs staging/forward repo_path) reproduced, fixed in bdc2726 with a smoke case; O1 duplicate smoke msg fixed. Hubnode checked bdc2726 by diff and smoke repos.
 

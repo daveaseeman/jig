@@ -3,6 +3,7 @@
 Commit: c92d622f730d845c034eb55018e88e50e36e03ff
 Date: 2026-11-10
 Spec: .jig/specs/bug-meta-changelog-r3.md
+Source: maige-ecosystem hubnode session with Dave, 2026-11-10 (Claude) (staged as feedback-maige-ecosystem-2026-11-10-redocument-metarepo.md): "In a metarepo, M3 demands a changelog line that R3 refuses." Four jobs blocked at their first commit: "R3 … CHANGELOG.md not job redocument-echo's: ask the hubnode to add it to shares".
 Review: tier 2, effort 2
 Ran: fresh Opus review of 4c0b11b: B1 exemption allowed rewriting or deleting CHANGELOG.md (reproduced), fixed in c92d622 (adds only, vs the job's base) with rewrite and delete smoke cases; O1 comment fixed; FEATURES R3 row updated by the hubnode. Hubnode checked c92d622 by diff and smoke metarepo/rules.
 

@@ -3,6 +3,7 @@
 Commit: d6b4af242956876c6731a935f5cbae274eea1389
 Date: 2026-11-11
 Spec: .jig/specs/update-project-sweep.md
+Source: decision-audit side session in maige-ecosystem, Dave + Claude, 2026-11-11 — findings in maige-ecosystem's .jig/specs/decision-audit.md § 6 (untracked there) (staged as feedback-maige-ecosystem-2026-11-11-scope-roadmap-out-of-product-docs.md): "Scope and roadmap
 Review: tier 2, effort 2
 Ran: fresh Opus reviewer (high) on 6f7f394: B1 two Undefined sections, B2 struck row reviving its superseded row, S1-S5; fixed in d6b4af2; hubnode ran smoke sweep at d6b4af2 (27 PASS, 0 FAIL) covering B1, B2, the metarepo M2/M3 path, not_docs and entry files
 

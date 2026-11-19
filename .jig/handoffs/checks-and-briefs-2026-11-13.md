@@ -3,6 +3,10 @@
 Commit: b4dea710dc20f3c7098fb0561f2e2dde53d56e59
 Date: 2026-11-13
 Spec: .jig/specs/checks-and-briefs.md
+Source: adventure-studio hubnode session / 2026-11-13 / Dave (staged as feedback-adventure-studio-2026-11-13-job-speed-local-checks.md): "A session that ends a turn, for any reason, starts the full check."
+Source: jig hubnode session / 2026-11-13 / Dave with Claude (Opus 5.5) (staged as feedback-jig-2026-11-13-workflow-not-followed.md): "My workflow did not run a check or review like smoke 3-4 times per job, that's insane."
+Source: maige-ecosystem hubnode session / 2026-11-13 / Dave (staged as feedback-maige-ecosystem-2026-11-13-job-flow-speed.md): "why are these taking so long?"
+Source: adventure-studio hubnode session / 2026-11-13 / Dave (staged as feedback-adventure-studio-2026-11-13-job-speed-local-checks.md): "The owner believed jobs ran on a server ("My mac can't run fable")."
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at high
 

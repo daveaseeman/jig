@@ -3,6 +3,7 @@
 Commit: d0bdb2652ce1f670b351522d86e9bc71ab46ff5a
 Date: 2026-11-17
 Spec: .jig/specs/bug-process-in-pages.md
+Source: Daisy hubnode session / 2026-11-16 / the owner (Dave Seeman) (staged as feedback-Daisy-2026-11-16-process-in-pages.md): "docs/ is meant to describe daisy's own code not how to use a tool that defines itself how it is used … Jig has a place for release process, we dont need that in docs because it doesnt describe the app", and "WHY IS JIG MENTIONED IN DAISYS DOCS".
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at high
 Review-change: tier 2, effort 2

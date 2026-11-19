@@ -3,6 +3,7 @@
 Commit: 32e405c13845c9089f83d538597a127704b4fdcf
 Date: 2026-11-10
 Spec: .jig/specs/bug-redocument-any-format.md
+Source: Maige-OS hubnode session, 2026-11-10, Dave Seeman (with Claude) (staged as feedback-Maige-OS-2026-11-10-redocument-non-jig-docs.md): Redocument refuses a repo whose pages are in any format but Now / Rules / Checks.
 Review: tier 2, effort 2
 Ran: fresh Opus review of 4131d2e (Maige-OS clone at b57615a: 44 docmap pages listed, footer names /jig:redocument): B1 update said up to date and never listed off-contract pages, fixed in 32e405c; S1 root docmap key, S2 package READMEs fixed; O1 deep pages out of update routing, O2 clean-repo footer. Hubnode checked 32e405c by diff and smoke homes/update.
 

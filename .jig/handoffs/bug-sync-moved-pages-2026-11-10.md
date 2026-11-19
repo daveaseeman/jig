@@ -3,6 +3,7 @@
 Commit: 7ed7f7230f5d3dae495b7685e95729085dd0e05f
 Date: 2026-11-10
 Spec: .jig/specs/bug-sync-moved-pages.md
+Source: maige-ecosystem hubnode session with Dave, 2026-11-10 (Claude) (staged as feedback-maige-ecosystem-2026-11-10-redocument-metarepo.md): "Nothing checks a pararepo's citations of a metarepo page that moves." Moving `products/hardware/walyt.md` "leaves Maige-Lite's `BUFFER.md` rows and specs citing a path the next pin no longer has."
 Review: tier 2, effort 2
 Ran: fresh Opus review of cfdf5aa: no blocking; S1 false citation when meta name matches a folder here, S2 cost lines x entries, S3 decision-id sections flagged (all reproduced), fixed in 7ed7f72; O5 spec says sync and release, O6 Closed rows and HEAD reads made consistent; O7 rename threshold deferred. Hubnode checked 7ed7f72 by diff and smoke pararepo/sync_buffer/pointers.
 

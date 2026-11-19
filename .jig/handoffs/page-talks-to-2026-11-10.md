@@ -3,6 +3,8 @@
 Commit: d5ce40ebbb7e89d211ace651f5282237ac085b58
 Date: 2026-11-10
 Spec: .jig/specs/page-talks-to.md
+Source: Maige-OS hubnode session, 2026-11-10, Dave Seeman (with Claude) (staged as feedback-Maige-OS-2026-11-10-redocument-non-jig-docs.md): No section for what a system talks to.
+Source: Maige-OS hubnode session, 2026-11-10, Dave Seeman (with Claude) (staged as feedback-Maige-OS-2026-11-10-redocument-non-jig-docs.md): A subsystem page must have a folder of its own.
 Review: tier 2, effort 2
 Ran: fresh Opus review of 42309f2: no blocking; S1 CONTRACT_HEADS doesn't count Talks to as a page marker, deferred (docmap signal in bug-redocument-any-format); O1 adopt subsystem wording fixed in d5ce40e. Hubnode checked d5ce40e by diff.
 

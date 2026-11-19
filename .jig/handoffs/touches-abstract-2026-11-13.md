@@ -3,6 +3,7 @@
 Commit: b550295faba507124697b47d6b0b9d87900e80f6
 Date: 2026-11-13
 Spec: .jig/specs/bug-touches-abstract.md
+Source: maige-ecosystem hubnode session / 2026-11-13 / Dave (staged as feedback-maige-ecosystem-2026-11-13-touches-abstract-entries.md): "`Touches:` has no value for
 Review: tier 2, effort 2
 
 ## Built

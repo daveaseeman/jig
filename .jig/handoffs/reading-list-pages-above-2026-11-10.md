@@ -3,6 +3,7 @@
 Commit: c0f256be0f5d464eff23e9ac26d22cc24494b02c
 Date: 2026-11-10
 Spec: .jig/specs/reading-list-pages-above.md
+Source: Maige-OS hubnode session, 2026-11-10, Dave Seeman (with Claude) (staged as feedback-Maige-OS-2026-11-10-redocument-non-jig-docs.md): The reading list gives a part page without its system page.
 Review: tier 2, effort 2
 Ran: fresh Opus review of 599373b: no blocking; S1 seam-style page climbed to its folder's page, fixed in c0f256b (climb only from folder pages) with a smoke case; O1 board-under-system parent and O2 tracked parents deferred. Hubnode checked c0f256b by diff and smoke homes.
 

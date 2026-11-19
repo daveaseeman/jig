@@ -3,6 +3,8 @@
 Commit: d11522d84abb0705f88afbe2393f43ef1e920a4e
 Date: 2026-11-13
 Spec: .jig/specs/cheaper-rounds.md
+Source: maige-ecosystem hubnode session / 2026-11-13 / Dave (staged as feedback-maige-ecosystem-2026-11-13-job-flow-speed.md): "why are these taking so long?"
+Source: adventure-studio hubnode session / 2026-11-13 / Dave (staged as feedback-adventure-studio-2026-11-13-job-speed-local-checks.md): "`cp` part 1 was built, reviewed and gated three times."
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at unknown (full review of 8754781; recheck of 8754781..915e427; resolution review of fdfd3e4; findings of each taken)
 

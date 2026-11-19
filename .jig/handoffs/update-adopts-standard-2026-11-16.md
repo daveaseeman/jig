@@ -3,6 +3,8 @@
 Commit: 41ddccb69ceeb8fe1ad462602771694a59efae49
 Date: 2026-11-16
 Spec: .jig/specs/update-adopts-standard.md
+Source: Maige-Lite hubnode session 25f7e824 / 2026-11-15 / Dave Seeman (staged as feedback-maige-lite-2026-11-15-update-replaces-workflow.md): "make sure that update checks jig config and completely replaces workflows with the new standard since some were accidentally reset"
+Source: Maige-Lite hubnode session 25f7e824 / 2026-11-13 / Dave Seeman (staged as feedback-maige-lite-2026-11-13-section-counter-outlives-redocument.md): after `/jig:redocument` finished, "`jig update` and `jig survey` listed one finding left: `.jig/config.json reserve.section: numbers page headings: drop it at /jig:redocument's cleanup, once no page holds a numbered heading`". "The cleanup had already run, two days before ... Nothing in jig removes the counter now."
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at high, fresh subagents: full diff, then each fix round's change; 0 blocking after round 2's one
 

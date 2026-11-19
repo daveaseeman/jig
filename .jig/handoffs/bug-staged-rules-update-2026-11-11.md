@@ -3,6 +3,7 @@
 Commit: 0e8b25d14cef523f17319b28b740dd375e5d1794
 Date: 2026-11-11
 Spec: .jig/specs/bug-staged-rules-update.md
+Source: Adventure-Studio hubnode session / 2026-11-11 / Dave, with Claude (staged as feedback-adventure-studio-2026-11-11-agents-md-provenance.md): "`staging resolve` wants a `Source:` line inside AGENTS.md"
 Review: tier 2, effort 2
 Ran: fresh Opus reviewer (high) on 27fe612: B1 stage skill update bullet, S1 merge-commit marks (--full-history), S2 refusal route, S3 new rules files; fixed in 0e8b25d; hubnode ran smoke staging at 0e8b25d (88 PASS, 0 FAIL) including the five new cases
 

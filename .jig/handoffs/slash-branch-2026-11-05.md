@@ -3,6 +3,7 @@
 Commit: 491421f467fcb1ab8751f3d01ddf47c4014af6f2
 Date: 2026-11-05
 Spec: .jig/specs/bug-slash-branch.md
+Source: Claude Code session (walyt-type job, worktree beautiful-jemison-03e945) / 2026-11-04 / Dave Seeman + Claude (staged as feedback-Maige-Lite-2026-11-04-slash-branch-handoff.md): "`jig handoff` and `jig gate` break on a solo branch whose name has a slash". `handoff` fails with `FileNotFoundError: … .jig/handoffs/claude/beautiful-jemison-03e945-2026-11-04.md`. With that folder made by hand, `gate` still prints `claude/beautiful-jemison-03e945 has filed no handoff note on claude/beautiful-jemison-03e945: run jig handoff`.
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at unknown, fresh context (subagent; effort set to high, not readable by the subagent)
 

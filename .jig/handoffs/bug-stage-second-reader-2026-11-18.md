@@ -3,6 +3,7 @@
 Commit: 4715ed57b8a84c8261da1ea5668b7a2cffd06740
 Date: 2026-11-18
 Spec: .jig/specs/bug-stage-second-reader.md
+Source: Dave, chat with Claude, 2026-11-17 (staging Daisy's settings decisions and spec) (staged as feedback-Daisy-2026-11-17-stage-second-reader.md): "we should always double-check staged documents with an opus worker because every time ive done it they found things to correct, make it part of the staging command. please include this example."
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at high
 

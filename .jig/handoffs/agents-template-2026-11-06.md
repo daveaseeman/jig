@@ -3,6 +3,7 @@
 Commit: 7d260f811d3416f98b4ee3ec7d56d3319cb4ea78
 Date: 2026-11-06
 Spec: .jig/specs/bug-doc-homes.md
+Source: Maige-Lite hubnode session local_25f7e824 / 2026-11-04 / Dave Seeman (staged as feedback-Maige-Lite-2026-11-04-agents-template-diff.md): "`jig update`'s 'AGENTS.md against the template' buries the template changes in expected drift … Nothing marks which is which. The hubnode read the Jobs block as missing and asked the owner to add it."
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at unknown, fresh context (subagent; effort set to high, not readable by the subagent); findings A, B blocking fixed at 7d260f8, C–E taken
 

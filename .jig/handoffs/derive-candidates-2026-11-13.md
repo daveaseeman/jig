@@ -3,6 +3,7 @@
 Commit: 5f6cfd1d6078c2d9c53123408fb52580906800ef
 Date: 2026-11-13
 Spec: .jig/specs/bug-derive-candidates.md
+Source: Maige-Lite hubnode session / 2026-11-13 / Dave with Claude (staged as feedback-Maige-Lite-2026-11-13-derive-sh-question.md): "The owner could not answer, and the session could only guess."
 Review: tier 2, effort 2
 
 ## Built

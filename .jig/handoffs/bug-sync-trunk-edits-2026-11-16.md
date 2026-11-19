@@ -3,6 +3,7 @@
 Commit: 0faca447025fe4b6dba8563e5659075b6cdc9968
 Date: 2026-11-16
 Spec: .jig/specs/bug-sync-trunk-edits.md
+Source: adventure-studio hubnode session / 2026-11-16 / Dave (staged as feedback-adventure-studio-2026-11-16-sync-judged-for-trunk-edits.md): "A sync is refused for an edit that came from trunk, and moving entries marks untouched ones as changed"
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at high
 Review-change: tier 2, effort 2

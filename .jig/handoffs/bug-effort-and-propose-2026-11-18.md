@@ -3,6 +3,8 @@
 Commit: 2626367a21629b2593ebfa4702913e33f2401fa3
 Date: 2026-11-18
 Spec: .jig/specs/bug-effort-and-propose.md
+Source: Daisy hubnode session / 2026-11-18 / the owner (Dave Seeman) (staged as feedback-Daisy-2026-11-18-hubnode-effort-clamp.md): "a fable hubnode on low couldn't start opus subnodes on high. any tier 1 model at any effort should read as higher than the next tier even at it's highest effort, and therefore be allowed to start them."
+Source: Maige-OS hubnode session, 2026-11-18, on Dave's word ("The jig gap: file the feedback note.") (staged as r2-refuses-propose-branch.md): "R2 branch propose/Maige-OS-buffer-b5-b7 is on no job. Ask the hubnode to open one, or work on main", refused by the metarepo's `jig check` and pre-commit hook on the branch `jig propose` made, while the metarepo had a job open.
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at high
 Review-change: tier 2, effort 2

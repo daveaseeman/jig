@@ -3,6 +3,7 @@
 Commit: fef4dfce41db95325e3b724c4579b174012717c1
 Date: 2026-11-10
 Spec: .jig/specs/glossary-term-headings.md
+Source: maige-ecosystem hubnode session with Dave, 2026-11-10 (Claude) (staged as feedback-maige-ecosystem-2026-11-10-redocument-metarepo.md): "A glossary term is a heading: make it the checked standard." Its terms are bold words in paragraphs, so no anchor exists for any term; "the seed says 'One term per heading' only as a comment in a new file; nothing checks an existing glossary."
 Review: tier 2, effort 2
 Ran: fresh Opus review of 60fd1da: B1 every README heading reported as a term (reproduced), fixed in fef4dfc (only ### under ## Glossary); S1 M3 on any README edit, scoped to the Glossary section; S2 update skill promised an unbuilt check, now git grep; O1 hand-made meta.json without entry_files deferred. Hubnode checked fef4dfc by diff and smoke metarepo/report_fixes.
 

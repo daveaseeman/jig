@@ -3,6 +3,7 @@
 Commit: 1331c871d33fa9b3aa0ff579c1a93da1e77ba9a8
 Date: 2026-11-10
 Spec: .jig/specs/decision-log.md
+Source: cowork session 2026-11-10 (Dave + Claude) (staged as one-decision-log-in-every-repo.md): "Pararepos have no decision log, while metarepos have both decisions and a changelog. I want one standard in every jig repo instead of several in some places and none in others. Both records track changes, and the decision log goes one step further by recording why. One format is good enough for both."
 Review: tier 2, effort 2
 Ran: fresh Opus review of d897b21 with a Maige-Eco clone trial: B1 prose outside the table deleted, B2 reserve/append_files left on old files, S1-S8 (ranges, whose, [Unreleased], reused rejected ids, branch-switchable guard, terms_changed across migration, seeded log blocking the merge, stale references) all reproduced; fixed in c2e439d, 8e894ab (status who/note any text), 1331c87 (migration commit judged migrated; metarepo migrates on a job). Hubnode trials on fresh Maige-Eco clones: 45 entries, leftover text kept, config rewritten, E-017 converts, migration commit on a job branch passes the hooks.
 

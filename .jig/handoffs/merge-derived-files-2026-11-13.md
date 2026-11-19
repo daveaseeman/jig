@@ -3,6 +3,7 @@
 Commit: d7dbbc5b6795e8fb97dbf4b87432d74d18ad7d88
 Date: 2026-11-13
 Spec: .jig/specs/merge-derived-files.md
+Source: jig hubnode side session (Daisy survey), 2026-11-12, for the owner (staged as feedback-Daisy-2026-11-12-hubnode-merge-scripts.md): the hubnode's merge has no step for a repo's own post-merge work, so the hubnode scripted it.
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at unknown
 

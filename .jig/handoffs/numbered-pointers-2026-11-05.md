@@ -3,6 +3,7 @@
 Commit: 9444dced59a4ac3cf704db3165e302f73648fb42
 Date: 2026-11-05
 Spec: .jig/specs/bug-numbered-pointers.md
+Source: Claude Code session (maige-ecosystem hubnode) / 2026-11-04 / Dave Seeman + Claude (staged as feedback-maige-ecosystem-2026-11-04-section-number-pointers.md): "Every numbered pointer reads as dangling." and "P2 lets a rename through", although a cached metarepo pointer names the renamed file.
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at unknown, fresh context (subagent; effort set to high, not readable by the subagent)
 

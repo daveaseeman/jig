@@ -3,6 +3,8 @@
 Commit: c9eec5cc32b881a6b11d4dcabdab67995fe1e8e4
 Date: 2026-11-17
 Spec: .jig/specs/bug-gate-pair-answers.md
+Source: Adventure Studio hubnode session / 2026-11-16 / Claude for Dave (staged as feedback-adventure-studio-2026-11-16-gate-pair-answers.md): "a pair line whose shape was changed is reported as \"main moved\""
+Source: Adventure Studio hubnode session / 2026-11-16 / Claude for Dave (staged as feedback-adventure-studio-2026-11-16-gate-pair-answers.md): "a pair is made for every entry that shares a page, so most pairs say nothing"
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at high
 Review-change: tier 2, effort 2

@@ -3,6 +3,9 @@
 Commit: 847abdee43da3b3b4cb16368dbabccb9dc30010a
 Date: 2026-11-12
 Spec: .jig/specs/bug-merge-log-conversion.md
+Source: Maige-Eco hubnode session / 2026-11-12 / Claude (Fable 5.2), filed on Dave's word ("Yes, file them") (staged as feedback-maige-ecosystem-2026-11-12-merge-log-conversion.md): "`update --apply --merge-log` reports the register 'kept, holding only what has no home' and leaves all of it."
+Source: Maige-Eco hubnode session / 2026-11-12 / Claude (Fable 5.2), filed on Dave's word ("Yes, file them") (staged as feedback-maige-ecosystem-2026-11-12-merge-log-conversion.md): "false status lines on E-010/E-016/E-037"
+Source: Maige-Eco hubnode session / 2026-11-12 / Claude (Fable 5.2), filed on Dave's word ("Yes, file them") (staged as feedback-maige-ecosystem-2026-11-12-merge-log-conversion.md): "a release section's change lines sit inside the last entry's block"
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at unknown
 

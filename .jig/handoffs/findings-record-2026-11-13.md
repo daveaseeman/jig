@@ -3,6 +3,7 @@
 Commit: 9ae083b4f88972062ebea6f7fd4803fdf85d5422
 Date: 2026-11-13
 Spec: .jig/specs/findings-record.md
+Source: jig hubnode side session (Daisy survey), 2026-11-12, raised by the owner (staged as feedback-Daisy-2026-11-12-update-leaves-old-contract-enforcers.md): 26 of Daisy's pages are still in the wrong form after update, survey and redocument have all run with the owner's approval.
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at unknown
 

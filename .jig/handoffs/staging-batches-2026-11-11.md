@@ -3,6 +3,9 @@
 Commit: 5a7e911bbc8822b05483ee62e9313a30fa3937b4
 Date: 2026-11-11
 Spec: .jig/specs/staging-batches.md
+Source: Guild Ops chat "Evaluate Adventure Studio against v5.0" / 2026-11-10 / Dave, with Claude (staged as feedback-jig-batch-order.md): "A staged batch has no order"
+Source: Guild Ops chat "Evaluate Adventure Studio against v5.0" / 2026-11-10 / Dave, with Claude (staged as feedback-jig-find-target.md): "A chat cannot find its staging target without the repos list"
+Source: Guild Ops chat "Evaluate Adventure Studio against v5.0" / 2026-11-10 / Dave, with Claude (staged as feedback-jig-sweep-protocol.md): "Notes on the staging sweep prompt"
 Review: tier 2, effort 2
 Ran: fresh Opus reviewer (high) on bdd3dcf: no blocking; S1-S7, O1-O3 fixed in 8d829aa (hubnode ran smoke staging_batches and repos, 33 PASS); 5a7e911 is a sync of main with append conflicts only, resolved by jig, no hand edits; full smoke 1010 PASS
 

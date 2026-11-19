@@ -3,6 +3,7 @@
 Commit: 13d82627295e920e8ff2bcf24fc1fcb0c26e821d
 Date: 2026-11-06
 Spec: .jig/specs/docs-page-contract.md
+Source: cowork session 2026-11-06, Dave with Claude (staged as docs-page-contract.md)
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at unknown, fresh context (subagent; effort set to high, not readable by the subagent); should-fix A–D fixed by 13d8262, optionals taken but one deferred
 

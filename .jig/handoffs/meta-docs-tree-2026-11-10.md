@@ -3,6 +3,7 @@
 Commit: 364105a224b1adda852933f706801af385b49759
 Date: 2026-11-10
 Spec: .jig/specs/meta-docs-tree.md
+Source: maige-ecosystem hubnode session with Dave, 2026-11-10 (Claude) (staged as feedback-maige-ecosystem-2026-11-10-redocument-metarepo.md): "`/jig:redocument` and `jig survey` have no path for a metarepo's pages"
 Review: tier 2, effort 2
 Ran: fresh Opus review of 5396b94 (with a Maige-Eco clone survey): B1 folder-named pages outside docs/ counted at home (8 of 26 Maige-Eco pages hidden), B2 not_docs hid every page with no notice (both reproduced); fixed in 364105a with smoke cases; S1 GLOSSARY.md order, S2 entry_files gets docs/**/*.md with --genres, O1 genres loaded for every command, O2 genre Doc homes line, update genre proposal test. Hubnode reran survey on a fresh Maige-Eco clone at 364105a: each not_docs glob named with its hidden pages (decisions/ register excluded), last line names /jig:redocument.
 

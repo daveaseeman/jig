@@ -3,6 +3,7 @@
 Commit: cf8a4980a24257ca60400c9123e813c0d31e1e00
 Date: 2026-11-16
 Spec: .jig/specs/every-copy.md
+Source: maige-ecosystem hubnode session / 2026-11-13 / Dave (staged as feedback-maige-ecosystem-2026-11-13-job-flow-speed.md): "why are these taking so long?"
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at high
 Review-change: tier 2, effort 2

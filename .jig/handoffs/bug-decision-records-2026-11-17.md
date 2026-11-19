@@ -3,6 +3,8 @@
 Commit: a7ec65b4578d4270a5e70c16602dfc00cacc3b36
 Date: 2026-11-17
 Spec: .jig/specs/bug-decision-records.md
+Source: Daisy hubnode session / 2026-11-16 / the owner (Dave Seeman) (staged as feedback-Daisy-2026-11-16-decision-record-folders.md): "a folder of one-file records isn't recognized as a decision register"
+Source: Daisy hubnode session / 2026-11-16 / the owner (Dave Seeman) (staged as feedback-Daisy-2026-11-16-decision-record-folders.md): "`--merge-log` refuses once the log holds any entry"
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at high
 Review-change: tier 2, effort 2

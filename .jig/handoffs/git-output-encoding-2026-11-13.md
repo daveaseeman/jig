@@ -3,6 +3,7 @@
 Commit: 6aa7172e0f675840954c1e5207971715e82c64c9
 Date: 2026-11-13
 Spec: .jig/specs/bug-git-output-encoding.md
+Source: Maige-Lite hubnode session / 2026-11-13 / Dave with Claude (staged as feedback-Maige-Lite-2026-11-13-sync-report-non-utf8.md): "`python3 .jig/jig.py sync` prints the proposal and citation lines, then a traceback ending `UnicodeDecodeError: 'utf-8' codec can't decode byte 0xce in position 76417: invalid continuation byte`"; and, once decoding was tolerant, "`ValueError: not enough values to unpack (expected 3, got 2)` at `h.split("\0", 2)`."
 Review: tier 2, effort 2
 
 ## Built

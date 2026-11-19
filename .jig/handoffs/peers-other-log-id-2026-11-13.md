@@ -3,6 +3,7 @@
 Commit: b1cee840020717034690c232e6e49751b78f30f4
 Date: 2026-11-13
 Spec: .jig/specs/bug-peers-other-log-id.md
+Source: Maige-Lite hubnode session / 2026-11-13 / Dave with Claude (staged as feedback-Maige-Lite-2026-11-13-sync-report-non-utf8.md): "`jig decision E-054 --peers` in the pararepo answers `jig: no live entry E-054 in .jig/decisions.md`, though E-054 is in `.jig/meta-cache/.jig/decisions.md` at the pin."
 Review: tier 2, effort 2
 
 ## Built

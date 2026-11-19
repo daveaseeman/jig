@@ -3,6 +3,7 @@
 Commit: 497713f6f6f5927ad0cebb68c2245502b4b37bec
 Date: 2026-11-13
 Spec: .jig/specs/bug-heading-collision.md
+Source: Maige-Lite hubnode session / 2026-11-13 / Dave with Claude (staged as feedback-Maige-Lite-2026-11-13-section-counter-after-redocument.md): "what stops two parallel jobs from (a) adding the same heading to one page"
 Review: tier 2, effort 2
 
 ## Built

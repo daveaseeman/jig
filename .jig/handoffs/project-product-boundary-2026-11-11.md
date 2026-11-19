@@ -3,6 +3,7 @@
 Commit: 738c23ed129c520220839fb3bb8761cee0beb581
 Date: 2026-11-11
 Spec: .jig/specs/project-product-boundary.md
+Source: decision-audit side session in maige-ecosystem, Dave + Claude, 2026-11-11 — findings in maige-ecosystem's .jig/specs/decision-audit.md § 6 (untracked there) (staged as feedback-maige-ecosystem-2026-11-11-scope-roadmap-out-of-product-docs.md): "Scope and roadmap
 Review: tier 2, effort 2
 Ran: fresh Opus reviewer (high) on fe115a4: B1 reading-list items for parents, B2 review-run evidence, S1-S8, O1-O3; fixed in 42d2ece; hubnode ran smoke boundary, page_contract and roadmap at 738c23e (91 PASS, 0 FAIL), covering the false-positive, git mv and metarepo ROADMAP.md cases
 

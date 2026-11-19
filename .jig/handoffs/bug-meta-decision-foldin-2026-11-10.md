@@ -3,6 +3,7 @@
 Commit: 04e99ceb1eca5d8770a47c61b46b7b3074774fcc
 Date: 2026-11-10
 Spec: .jig/specs/bug-meta-decision-foldin.md
+Source: maige-ecosystem hubnode session with Dave, 2026-11-10 (Claude) (staged as feedback-maige-ecosystem-2026-11-10-redocument-metarepo.md): "A changed decision row asks no page." "Every copy" "is enforced by a spec author's memory: a decision changes and the pages citing it as their source are not asked."
 Review: tier 2, effort 2
 Ran: fresh Opus review of b2f6296: no blocking; S1 citing pages got Undefined lines, S2 register outside entry_files missed (both reproduced), fixed in 04e99ce with smoke cases; O3 one diff + early return, O4 trunk's meta taken; O5 deferred. Hubnode checked 04e99ce by diff and smoke metarepo.
 

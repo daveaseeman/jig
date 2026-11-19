@@ -3,6 +3,9 @@
 Commit: 37ec48ab1c9106121b48fe6e708af713bc4eb4e9
 Date: 2026-11-13
 Spec: .jig/specs/consolidate.md
+Source: maige-ecosystem hubnode session / 2026-11-13 / Dave (staged as feedback-maige-ecosystem-2026-11-13-consolidate-specs-one-job.md): "I'd like to make a command to consolidate specs to run as one job: fewer gates, tests, etc"
+Source: maige-ecosystem hubnode session / 2026-11-13 / Dave (staged as feedback-maige-ecosystem-2026-11-13-job-flow-speed.md): "why are these taking so long?"
+Source: adventure-studio hubnode session / 2026-11-13 / Dave (staged as feedback-adventure-studio-2026-11-13-job-speed-local-checks.md): "`comment-anonymity` was opened with `--shares` listing only its docs and ledgers."
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at unknown
 

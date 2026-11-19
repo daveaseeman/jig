@@ -3,6 +3,7 @@
 Commit: 89b1c226e426904a76b247e6417659b2b50fa96b
 Date: 2026-11-15
 Spec: .jig/specs/roles-and-flows.md
+Source: the owner, 2026-11-11 (staged as feedback-adventure-studio-2026-11-11-sync-log-and-names.md): "`sync` does two unrelated jobs; other names do too". Folded in from `rename-check-rules`, written then and never built.
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at high
 

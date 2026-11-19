@@ -3,6 +3,10 @@
 Commit: 3217adc6377362f9baf2f39cd9690a2d3fab6127
 Date: 2026-11-18
 Spec: .jig/specs/rig-and-versioning.md
+Source: Maige-Eco hubnode session / 2026-11-18 / Dave Seeman (staged as feedback-maige-ecosystem-2026-11-18-rig-batch-one-job.md): "write the /jig:feedback so that these would be offered together in the first round in the future"
+Source: jig hubnode session / 2026-11-18 / Dave (staged as feedback-jig-2026-11-18-merged-job-cleanup.md): "make sure subnodes archive and their specs are removed when jobs are done and merged"
+Source: jig hubnode session / 2026-11-18 / Dave (staged as feedback-jig-2026-11-18-merged-job-cleanup.md): "make jig:rig also close finished specs and subnodes"
+Source: Maige-Eco hubnode session / 2026-11-18 / Dave Seeman (staged as feedback-maige-ecosystem-2026-11-18-versioning-and-pin-trigger.md): "Maige-Eco's next release moves its glossary from `README.md § Glossary` to `docs/glossary.md`. That release carries a `**Breaking:**` line, so jig's rule makes it a major release, v4.0.0."
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at high
 Review-change: tier 2, effort 2

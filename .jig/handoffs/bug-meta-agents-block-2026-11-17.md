@@ -3,6 +3,7 @@
 Commit: 55438e005912c392d1aa95713e1f9bd70c2585e2
 Date: 2026-11-17
 Spec: .jig/specs/bug-meta-agents-block.md
+Source: Maige-Eco hubnode session / 2026-11-17 / Dave Seeman (staged as feedback-maige-ecosystem-2026-11-17-metarepo-agents-line.md): "A metarepo's AGENTS.md has no jig line for its rules, so `jig update` flags the repo's own line for good": `AGENTS.md:31: runs a step in the repo's own words; what owns it now: /jig:hubnode (jig release). Kept as it is: the owner rewords or removes it`
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at high
 Review-change: tier 2, effort 2

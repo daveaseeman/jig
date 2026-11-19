@@ -3,6 +3,7 @@
 Commit: 949ee5527494d1280550af4579adc6c5e6e504ca
 Date: 2026-11-13
 Spec: .jig/specs/page-form-enforced.md
+Source: jig hubnode side session (Daisy survey), 2026-11-12, raised by the owner (staged as feedback-Daisy-2026-11-12-update-leaves-old-contract-enforcers.md): pages in the wrong form commit and merge without a word.
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at unknown
 

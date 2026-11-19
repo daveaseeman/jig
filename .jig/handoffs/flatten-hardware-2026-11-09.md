@@ -3,6 +3,7 @@
 Commit: 8ffd2a90799d108036ea85a351601eb342f5cd15
 Date: 2026-11-09
 Spec: .jig/specs/flatten-hardware.md
+Source: cowork session 2026-11-08, Dave with Claude (staged as flatten-hardware.md)
 Review: tier 2, effort 2
 Ran: two fresh Opus subagent reviews. 1st (9f59fc9): 1 blocking, 4 should-fix, 2 optional, fixed in 185a900; CRLF deferred. Spec amended by owner (datasheets/, every board has a page), reworked in 42641bc. 2nd (42641bc): 1 blocking (missing-page refusal locked unrelated jobs), 3 should-fix, optional O1/O5 taken, fixed in 8ffd2a9; O2/O3 deferred. B1 repro rerun by hubnode at 8ffd2a9: unrelated job passes
 

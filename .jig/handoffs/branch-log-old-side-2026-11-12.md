@@ -3,6 +3,7 @@
 Commit: b50c6ed10443f4290b3d18e12119efa56f6ec05e
 Date: 2026-11-12
 Spec: .jig/specs/bug-branch-log-old-side.md
+Source: Maige-Eco hubnode session / 2026-11-12 / Claude (Fable 5.2), filed on Dave's word ("Yes, file them") (staged as feedback-maige-ecosystem-2026-11-12-merge-log-conversion.md): the merge-log job cannot land its review fixes on its branch because jig's hook freezes the branch's own unmerged log and refuses its revert.
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at unknown
 

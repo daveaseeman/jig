@@ -3,6 +3,7 @@
 Commit: 15968cc7c66ccd73e2e987f05f6f8eaf0ddf0ec9
 Date: 2026-11-07
 Spec: .jig/specs/redocument.md
+Source: cowork session 2026-11-06, Dave with Claude (staged as redocument.md)
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at unknown, fresh context (subagent; effort set to high, not readable by the subagent); four rounds, last at 3f9f692; its should-fix (pointer_cleanup pin check) and optionals fixed by 15968cc
 

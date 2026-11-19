@@ -3,6 +3,7 @@
 Commit: a9d38d65686b69a9dd6c41864835f9419471268e
 Date: 2026-11-13
 Spec: .jig/specs/docs-structure-evidence.md
+Source: jig hubnode side session (Daisy survey), 2026-11-12, raised by the owner (staged as feedback-Daisy-2026-11-12-update-leaves-old-contract-enforcers.md): docs tooling enforces the old shape, and nothing in jig noticed that Daisy's 22 "part" pages may not be subsystems.
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at unknown
 

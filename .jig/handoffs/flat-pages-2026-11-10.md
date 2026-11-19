@@ -3,6 +3,7 @@
 Commit: 1bfce3d1f23a4ad1651af1164254dd51e2a0e3cb
 Date: 2026-11-10
 Spec: .jig/specs/flat-pages.md
+Source: Maige-OS hubnode session, 2026-11-10, Dave Seeman (with Claude) (staged as feedback-Maige-OS-2026-11-10-redocument-non-jig-docs.md): "A subsystem page must have a folder of its own" — "A crate with five modules worth a page needs five subfolders holding one file each."
 Review: tier 2, effort 2
 Ran: fresh Opus review of f5eabb5: B1 growing a flat board page into its folder on a branch refused (config trunk-only, board move refusal), fixed in 1bfce3d (one page in two forms) with a gate smoke case; S2 flat owner, S3 ignored datasheet, S4 stale approval, S5 misfiled seams, S6 old-layout boards flat, S7 retro wording, O8 board_home, test gap all fixed; O9 deferred. Hubnode checked 1bfce3d by diff and smoke homes/hardware.
 

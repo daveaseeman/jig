@@ -3,6 +3,8 @@
 Commit: 7725aba48517f2b22978ddaf508f792e644d36eb
 Date: 2026-11-13
 Spec: .jig/specs/bug-merge-append-conflicts.md
+Source: jig hubnode side session (Daisy survey), 2026-11-12, for the owner (staged as feedback-Daisy-2026-11-12-hubnode-merge-scripts.md): jig merge aborts when the only conflicts are in append files, so batch merges stop.
+Source: Maige-Eco hubnode session / 2026-11-12 / Claude (Fable 5.2), filed on Dave's word ("Yes, file them") (staged as feedback-maige-ecosystem-2026-11-12-merge-log-conversion.md): jig merge refused a branch whose handoff commit also added the review's DEFERRED.md rows.
 Review: tier 2, effort 2
 Ran: claude-opus-5-5 at unknown
 

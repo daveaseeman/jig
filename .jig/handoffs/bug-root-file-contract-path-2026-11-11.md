@@ -3,6 +3,7 @@
 Commit: bfbf39dfbfc42523444b7668b4a48bdc5f4f9c19
 Date: 2026-11-11
 Spec: .jig/specs/bug-root-file-contract-path.md
+Source: Maige-Lite hubnode session, Dave + Claude, 2026-11-11 — investigated in Maige-Lite's .jig/specs/bug-agents-contract-path.md (staged as feedback-Maige-Lite-2026-11-11-agents-md-contract-path.md): "`jig sync` asks for AGENTS.md as a contract path"
 Review: tier 2, effort 2
 Ran: fresh Opus reviewer (high) on 1c17c11: no blocking; S1 and O1-O3 fixed in bfbf39d; hubnode ran smoke sync_buffer at bfbf39d
 

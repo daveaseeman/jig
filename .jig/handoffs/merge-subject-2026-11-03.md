@@ -3,6 +3,7 @@
 Commit: 7ca17e0eb682e91f5c45de185cadbc99cd7ab702
 Date: 2026-11-03
 Spec: .jig/specs/bug-merge-subject.md
+Source: maige-ecosystem hubnode session, 2026-11-03 (sync-buffer replay) (staged as feedback-maige-ecosystem-2026-11-03.md)
 Review: tier 2, effort 1
 Ran: claude-opus-5-5 at xhigh, fresh context (subagent)
 

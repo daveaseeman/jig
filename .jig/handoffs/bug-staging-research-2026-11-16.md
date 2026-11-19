@@ -3,6 +3,7 @@
 Commit: 2e98c3eca5115daf8353ab8e42a26970924712c4
 Date: 2026-11-16
 Spec: .jig/specs/bug-staging-research.md
+Source: Maige-Lite hubnode session 25f7e824 / 2026-11-13 / Dave Seeman (staged as feedback-maige-lite-2026-11-13-staging-preliminary-research.md): "I wouldn't log those as decisions because they're so preliminary"
 Review: tier 2, effort 2
 Ran: Opus high subagent on the full diff (0 blocking, 4 non-blocking: 3 fixed, 1 deferred), then a fresh Opus subagent on the fix round (0 blocking, 2 deferred)
 

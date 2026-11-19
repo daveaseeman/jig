@@ -3,6 +3,7 @@
 Commit: 1bacf654d3c9080b93db518f4e511fbbf0ce653f
 Date: 2026-11-13
 Spec: .jig/specs/bug-roadmap-no-phase.md
+Source: jig hubnode session, staged on Dave's word ("go ahead and stage it now") / 2026-11-13 / Dave with Claude (staged as feedback-Maige-Familiar-2026-11-13-roadmap-no-stage.md): "A roadmap has no place for an item with no stage." and "The view also leaves out each phase's note, so the note saying it is not a stage never reaches a reader of ROADMAP.md."
 Review: tier 2, effort 2
 
 ## Built
