@@ -1414,7 +1414,8 @@ pin-bump`, `destination: .jig/para.json`, with `from`, `pin` and `release` in it
 from the pin to the new tag, the `**Breaking:**` lines, the citations to rewrite with each new
 home jig can name, and the removed or superseded ids with the files that cite them. A later
 release rewrites it in place, covering the whole gap from the pin, while it is open (its release
-above the pin); once the pin holds it, it is answered, and a later release rewrites it only when
+above the pin) and something in that gap breaks what the pararepo cites; when nothing does, the
+release leaves it as it stands and prints a skip line. Once the pin holds it, it is answered, and a later release rewrites it only when
 that release breaks something. A file of that name that isn't this metarepo's request is left
 alone and named. A noted request (its job merged without moving the pin) is never dropped: the
 hubnode specs a job that moves the pin. The release prints a line per pararepo:

@@ -8329,6 +8329,12 @@ def stage_pin_bumps(root: Path, meta: dict, prev: str, tag: str) -> list[str]:
         since = pin if pin and git("rev-parse", "-q", "--verify", f"{pin}^{{commit}}") else prev
         rewrites, ids = broken(there, para, trunk, since)
         breaking = breaking_lines(root, since, tag)
+        # Only what it broke (the owner, 2026-11-18): a gap from the pin that breaks nothing it
+        # cites asks for nothing, so an open request is left as it stands.
+        if not rewrites and not ids and not breaking:
+            out.append(f"{para_name}: skipped, nothing from {since} to {tag} breaks what it cites"
+                       + (f"; {STAGING}/{dest.name} left as it is" if dest.exists() else ""))
+            continue
         body = [f"# {name}: move the pin from {pin} to {tag}", "",
                 f"{name} {tag} broke what this repo cites. Take it in a job: rewrite the uses below, "
                 f"set \"pin\" to \"{tag}\" in {PARA}, run `jig init --para {name}`, and commit the pin "

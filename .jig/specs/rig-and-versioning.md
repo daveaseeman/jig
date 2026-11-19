@@ -211,7 +211,8 @@ all three:
    runs from the pin to the new tag: the `**Breaking:**` lines with their releases, the rewrite
    list with each new home jig can name, the removed or superseded ids with the files that cite
    them, and the commit line `newer_release` prints. A later release rewrites the same file in
-   place. jig writes nothing else there, and leaves a same-named file that isn't a pin-bump from
+   place when something from the pin to its tag breaks what the pararepo cites; when nothing
+   does, it leaves the file as it is and prints a skip line (the owner: "Only what it broke"). jig writes nothing else there, and leaves a same-named file that isn't a pin-bump from
    this metarepo alone, naming it. It uses `forward`'s checks.
 5. **Landing.** `kind: pin-bump` joins `KINDS`. `jig staging resolve` refuses it until the
    pararepo's trunk `para.json` pins the request's release or a later one. Its message names the
@@ -238,8 +239,9 @@ meet in five places, and one design holds both in each:
   `after:`.
 - **Taken, and a request rewritten in place.** The pin-bump's mark carries its release
   (`source: <meta> release <tag> / <date>`), and rig's Part C matches the exact mark. While its
-  spec waits or its job is open, it is `taken`. A later metarepo release rewrites the file, so the
-  mark changes and it is a staged item again, judged afresh. Interpreted: no special case. The
+  spec waits or its job is open, it is `taken`. A later metarepo release that breaks something
+  from the pin rewrites the file, so the mark changes and it is a staged item again, judged
+  afresh; one that breaks nothing leaves it, and its mark. Interpreted: no other special case. The
   rewritten request covers the whole gap from the pin, and its spec covers what the open job's
   doesn't.
 - **After the pin-bump job merges.** Nothing is dropped (`bug-rav-staged-drops`): the merge

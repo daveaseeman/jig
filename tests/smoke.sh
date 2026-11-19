@@ -8273,6 +8273,14 @@ msg="pin bump: one whose release is below the pin is overwritten the same way, n
 expect_pass sh -c "echo \"\$0\" | grep -q '^A: staged .jig/staging/pin-bump-M.md (' && ! echo \"\$0\" | grep -q '^A: not staged' && grep -qx 'release: v0.1.6' '$PBT/A/.jig/staging/pin-bump-M.md' && grep -q 'E-003 (now E-004)' '$PBT/A/.jig/staging/pin-bump-M.md'" "$out"
 [ "$fail" = 0 ] || echo "$out"
 
+# Only what it broke: an open request whose gap from the pin breaks nothing is left as it stands.
+cd "$PBT/A" && setjson .jig/para.json pin v0.1.6 && $J init --para >/dev/null 2>&1 && git add -A && git commit -qm "meta: M → v0.1.6" >/dev/null 2>&1
+sed -i.bak 's/^release: .*$/release: v0.1.9/' .jig/staging/pin-bump-M.md && rm .jig/staging/pin-bump-M.md.bak; held=$(shasum < .jig/staging/pin-bump-M.md)
+cd "$M" && printf 'Once more.\n' >> docs/products/v.md && ulog '- v once more.' && emerge v3 "E-004: v" docs/products/v.md .jig/decisions.md && out=$($J release 2>&1)
+msg="pin bump: an open request whose gap from the pin breaks nothing is left as it is, with a skip line"
+expect_pass sh -c "echo \"\$0\" | grep -qx 'A: skipped, nothing from v0.1.6 to v0.1.7 breaks what it cites; .jig/staging/pin-bump-M.md left as it is' && test \"\$(shasum < '$PBT/A/.jig/staging/pin-bump-M.md')\" = '$held'" "$out"
+[ "$fail" = 0 ] || echo "$out"
+
 # Both logs on the default D- prefix: a qualified citation of a superseded id still selects.
 N="$PBT/N"; mkdir -p "$N" && cd "$N" && git init -q -b main && git config user.email t@t && git config user.name t
 cp -r "$P/jig" .jig && cp "$P/AGENTS.md" "$P/CLAUDE.md" . && mkdir -p docs/products && printf '# X\n\nThe x product.\n' > docs/products/x.md
