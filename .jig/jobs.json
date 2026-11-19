@@ -10,5 +10,15 @@
       "tests/smoke.sh"
     ],
     "reserved": {}
+  },
+  "bug-m5-release-level": {
+    "spec": ".jig/specs/bug-m5-release-level.md",
+    "state": "claimed",
+    "after": [],
+    "owns": [],
+    "shares": [
+      "tests/smoke.sh"
+    ],
+    "reserved": {}
   }
 }
