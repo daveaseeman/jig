@@ -745,6 +745,8 @@ Starting a session is compared one setting at a time, since the tool clamps a ne
 model and its effort apart: `jig roles --from TIER,EFFORT` takes the starting session's own
 settings and says, under each role, whether to start it with its settings or start it and then
 raise its model, its effort, or both, and whether those settings rank below the hubnode floor.
+This ranking is for the hubnode floor and for starting sessions only: `jig gate`'s review-line
+warning (below) still compares tier and effort apart.
 
 **Settings in effect.** `jig roles` prints each role's tier and effort. A repo overrides them
 in `config.json`, each entry with its reason:
