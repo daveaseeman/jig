@@ -746,7 +746,7 @@ with the defaults.
   next `jig reviewed` is refused, full or `--change`, until a spec for the job carrying
   `Bug-for: <job>` on a line of its own, outside fenced code, is committed in that part. A bug
   spec lifts the limit for the part it was written in only: a later part that reaches three
-  strikes needs its own.
+  strikes needs its own, at a new path, as an earlier part's, edited or moved, counts for nothing.
 
 A review with no blocking findings ends the fixing: the job hands off, as `jig next` says.
 Should-fix and optional findings get one round per part; what is left after it gets DEFERRED

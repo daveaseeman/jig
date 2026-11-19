@@ -2470,24 +2470,41 @@ def blocking_reviews(chain: list[str]) -> int:
 
 def bug_spec_for(job: str, chain: list[str]) -> str:
     """The bug spec for JOB written in the current part of CHAIN (newest first), or "": a spec
-    a commit of the part added or changed that names JOB as the part's tip has it. It lifts
-    the strike limit for that part only: one committed in an earlier part would otherwise leave
-    every later part's strikes unlimited. Changed counts, so the bug role can rewrite last
-    part's file at the same path, and a draft can get its line in a later commit; read at the
-    tip, so a line removed later in the part counts for nothing."""
+    a commit of the part added or changed that names JOB as the part's tip has it, and that
+    didn't name JOB at the part's base. It lifts the strike limit for that part only: an earlier
+    part's spec, edited or moved, would otherwise leave every later part's strikes unlimited.
+    A draft that gets its line in a later commit counts; read at the tip, a line removed later
+    in the part counts for nothing."""
     part = this_part(chain)
     if not part:
         return ""
+    base = git("rev-parse", "-q", "--verify", f"{part[-1]}^")
+    earlier = bug_specs_at(base, job) if base else set()
+    # A `git mv` of an earlier part's spec is that spec still, under its old path at the base.
+    moved = {}
+    if base:
+        for line in git("-c", "core.quotePath=false", "diff", "-M", "--name-status", "--diff-filter=R",
+                        base, part[0], "--", f"{DIR}/specs/").splitlines():
+            _, old, new = line.split("\t")
+            moved[new] = old
     on, commit, touched = set(part), "", []
-    for line in git("log", "--first-parent", "--no-merges", "--no-renames", "--diff-filter=AM",
-                    "--name-only", "--format=%x00%H", part[0], "--", f"{DIR}/specs/").splitlines():
+    for line in git("-c", "core.quotePath=false", "log", "--first-parent", "--no-merges", "--no-renames",
+                    "--diff-filter=AM", "--name-only", "--format=%x00%H", part[0], "--",
+                    f"{DIR}/specs/").splitlines():
         if line.startswith("\0"):
             commit = line[1:]
             if commit not in on:
                 break
         elif line and line not in touched:
             touched.append(line)
-    return next((f for f in touched if bug_for(git_raw("show", f"{part[0]}:{f}")) == job), "")
+    return next((f for f in touched if moved.get(f, f) not in earlier
+                 and bug_for(git_raw("show", f"{part[0]}:{f}")) == job), "")
+
+
+def bug_specs_at(rev: str, job: str) -> set[str]:
+    """The specs at REV that name themselves the bug spec for JOB."""
+    paths = {h[0].split(":", 1)[-1] for h in grep_hits("-F", "Bug-for:", rev, "--", f"{DIR}/specs/")}
+    return {f for f in paths if bug_for(git_raw("show", f"{rev}:{f}")) == job}
 
 
 def cmd_reviewed(root: Path, args) -> int:
@@ -2512,9 +2529,14 @@ def cmd_reviewed(root: Path, args) -> int:
         git("branch", "--show-current") or "work"
     # Any review, full or change: a review past the last strike is refused whichever way it's recorded.
     if strikes >= STRIKES and not bug_spec_for(name, chain):
+        part = this_part(chain)
+        base = git("rev-parse", "-q", "--verify", f"{part[-1]}^") if part else ""
+        earlier = sorted(bug_specs_at(base, name)) if base else []
         die(f"{strikes} reviews of this job recorded blocking findings: strike {STRIKES} starts "
             f"Bug, and the next review is refused. Commit the bug role's spec for this part, with "
-            f"`Bug-for: {name}` on a line of its own, then review again")
+            f"`Bug-for: {name}` on a line of its own, then review again"
+            + (f". {', '.join(earlier)} named the job before this part began, so editing or moving "
+               f"it counts for nothing: write this part's spec at a new path" if earlier else ""))
     ran = {k: v for k, v in (("tier", args.tier), ("effort", args.effort), ("ran", args.ran),
                              ("blocking", args.blocking)) if v is not None}
     if change:
@@ -2550,13 +2572,24 @@ def next_step(root: Path, board: "Board", name: str) -> tuple[str, str, str, str
     hub = "continue the hubnode"
     notes = handoff_notes(branch, name) if state == "gated" else []
     m = re.search(r"^Commit: (\w+)", git("show", f"{branch}:{notes[-1]}"), re.M) if notes else None
-    # `jig merge`'s own test: a branch moved past the commit its newest note names is refused,
-    # so a gated job that moved goes through the ordinary steps (review-change, then handoff).
-    if state == "gated" and not (m and changed_since(m.group(1), branch, board)):
-        why = "Job; on the owner's word"
-        if board.jobs[name].get("check") == "batch":
-            why = "Batch; on the owner's word, then one check on " + trunk + " for the batch"
-        return "merge", "hubnode", hub, why
+    if state == "gated":
+        # `jig merge`'s own test: a branch moved past the commit its newest note names is refused.
+        if not (m and changed_since(m.group(1), branch, board)):
+            why = "Job; on the owner's word"
+            if board.jobs[name].get("check") == "batch":
+                why = "Batch; on the owner's word, then one check on " + trunk + " for the batch"
+            return "merge", "hubnode", hub, why
+        # The board still says gated, so the gate's check would read as covering the new commits.
+        step, who, session, _ = chain_step(board, name)
+        return step, who, session, (f"Job; gated at {m.group(1)[:12]}, changed since: mark it "
+                                    f"back; review-change, handoff, gate again")
+    return chain_step(board, name)
+
+
+def chain_step(board: "Board", name: str) -> tuple[str, str, str, str]:
+    """next_step for a job not gated, read from its branch."""
+    trunk, branch = board.trunk, board.branch(name)
+    hub = "continue the hubnode"
     if not git("rev-parse", "-q", "--verify", f"refs/heads/{branch}"):
         return "work", "work", "new session", f"Job; no branch {branch} yet"
     chain = git("rev-list", "--first-parent", branch, f"^{trunk}", "--").splitlines()

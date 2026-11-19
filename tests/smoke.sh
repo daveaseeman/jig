@@ -2312,8 +2312,15 @@ nx "a bug spec from an earlier part lifts nothing: part 2's third strike is bug"
 msg="reviewed: part 2's fourth review is refused, naming Bug-for"
 out=$($J reviewed --change --tier 2 --effort 2 --blocking 0 2>&1); rc=$?
 expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q 'Bug-for: k7'" "$out"
-printf '# k7 bug, part 2\n\nBug-for: k7\n' > .jig/specs/k7-bug.md && git commit -qam "k7: part 2's bug spec, over part 1's"
-msg="reviewed: part 1's bug spec rewritten at the same path in part 2 lifts part 2's limit"
+printf -- '- [x] a box ticked\n' >> .jig/specs/k7-bug.md && git commit -qam "k7: part 1's bug spec edited in part 2"
+msg="reviewed: part 1's bug spec edited in part 2 lifts nothing, and the refusal asks for a new path"
+out=$($J reviewed --change --tier 2 --effort 2 --blocking 0 2>&1); rc=$?
+expect_pass sh -c "test $rc != 0 && echo \"\$0\" | grep -q '.jig/specs/k7-bug.md named the job before this part began.*write this part.s spec at a new path'" "$out"
+git mv .jig/specs/k7-bug.md .jig/specs/k7-bug-1.md && git commit -qm "k7: part 1's bug spec moved"
+msg="reviewed: part 1's bug spec moved in part 2 lifts nothing"
+expect_refuse $J reviewed --change --tier 2 --effort 2 --blocking 0
+printf '# k7 bug, part 2\n\nBug-for: k7\n' > .jig/specs/k7-bug-2.md && git add -A && git commit -qm "k7: part 2's bug spec"
+msg="reviewed: part 2's own bug spec, at a new path, lifts part 2's limit"
 expect_pass $J reviewed --change --tier 2 --effort 2 --blocking 0
 cd "$NX"
 # A draft that gets its Bug-for: line in a later commit of the part counts; the line removed later doesn't.
@@ -2339,7 +2346,7 @@ gated k8
 nx "a gated job with nothing since its note is still the merge" k8 "k8: merge — hubnode, continue the hubnode (Job; on the owner's word)"
 noted=$(git rev-parse --short=12 k8~1)
 (cd .git/jig/worktrees/k8 && printf 'y\n' >> k8/x.txt && git commit -qam more)
-nx "a gated job changed since its note is the review-change, not the merge" k8 "k8: review-change — review, new session (Fix or Sync; once the checks pass, of what changed since $noted)"
+nx "a gated job changed since its note is the review-change, not the merge" k8 "k8: review-change — review, new session (Job; gated at $noted, changed since: mark it back; review-change, handoff, gate again)"
 }
 
 # ---------------------------------------------------------------- init beside an old board

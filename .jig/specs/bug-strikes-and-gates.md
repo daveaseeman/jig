@@ -38,12 +38,17 @@ strike limit only for the part it was written for; and `jig next` never names me
 1. One reader of `Bug-for:`: a line of its own, `Bug-for: <name>` where the name is a job name
    (no `<`, `>` or spaces), outside fenced code. `waiting_specs` and `bug_spec_for` both use it.
 2. A bug spec clears the limit for one part: `cmd_reviewed` and `next_step` accept a
-   `Bug-for: <job>` spec only if the commit adding it is in the current part (on the job's
-   first-parent chain after the part's last handoff note). A later part that reaches three
-   strikes needs a new one.
-3. `next_step` for a gated job whose branch changed since its newest note's commit names the
-   handoff (work, continue the work session), with the reason "gated at <commit>, changed
-   since", not merge.
+   `Bug-for: <job>` spec only if a commit of the current part (on the job's first-parent chain
+   after the part's last handoff note, merges aside) added or changed it, it names the job at
+   the part's tip, and it did not name the job at the part's base (the commit before the
+   part's first), a `git mv` read under its old path. A draft that gets its line later in the
+   part counts; a line removed later doesn't; an earlier part's spec, edited or moved, doesn't.
+   A later part that reaches three strikes needs a new one, at a new path, and the refusal
+   says so when an earlier part's spec names the job.
+3. `next_step` for a gated job whose branch changed since its newest note's commit doesn't name
+   merge: it names the step the branch would get ungated (review-change, then handoff), with
+   the reason "gated at <commit>, changed since: mark it back; review-change, handoff, gate
+   again". `jig merge` is unchanged.
 
 ## Done when
 - [ ] Smoke `next`: a spec quoting `Bug-for: <job>` inside a fenced block, and one with
@@ -54,8 +59,13 @@ strike limit only for the part it was written for; and `jig next` never names me
       1), hands off with `--partial`, then records 3 blocking reviews in part 2: the fourth
       review of part 2 is refused naming `Bug-for`, and `jig next` names bug. FAILs at v0.14.0
       (the reviewer's reproduction: part 2 counted strikes 1 to 4 with no refusal).
+- [ ] Smoke `next`: in part 2, ticking a box in part 1's bug spec, or moving it, leaves the
+      fourth review refused, the refusal asking for a new path; a part-2 spec at a new path
+      lifts it. A draft given its `Bug-for:` line in a later commit lifts it; the line removed
+      later doesn't.
 - [ ] Smoke `next`: a job marked gated, then given a new commit on its branch, makes `jig next`
-      name the handoff with "changed since", not merge; with no new commit, it still names merge.
+      name review-change with "gated at <commit>, changed since: mark it back", not merge; with
+      no new commit, it still names merge.
 - [ ] RULES.md's waiting-spec sentence and strike contract say a bug spec counts for the part
       it was written in, by a line of its own.
 - [ ] `.jig/scripts/check.sh` exits 0; `bash tests/smoke.sh next workflow rig consolidate`
