@@ -13,7 +13,7 @@
   },
   "rig-and-versioning": {
     "spec": ".jig/specs/rig-and-versioning.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/skills/rig/SKILL.md",
