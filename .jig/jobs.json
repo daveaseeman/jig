@@ -1,7 +1,7 @@
 {
   "bug-strikes-and-gates": {
     "spec": ".jig/specs/bug-strikes-and-gates.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [],
     "shares": [
@@ -9,7 +9,8 @@
       "plugin/templates/jig/jig.py",
       "tests/smoke.sh"
     ],
-    "reserved": {}
+    "reserved": {},
+    "check": "batch"
   },
   "bug-m5-release-level": {
     "spec": ".jig/specs/bug-m5-release-level.md",
