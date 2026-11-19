@@ -35,7 +35,7 @@
   },
   "bug-effort-and-propose": {
     "spec": ".jig/specs/bug-effort-and-propose.md",
-    "state": "claimed",
+    "state": "gated",
     "after": [],
     "owns": [
       "plugin/tiers.json"
@@ -46,6 +46,7 @@
       "tests/smoke.sh",
       "plugin/skills/hubnode/SKILL.md"
     ],
-    "reserved": {}
+    "reserved": {},
+    "check": "batch"
   }
 }
